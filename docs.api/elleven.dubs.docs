@@ -1,0 +1,161 @@
+***
+
+title: Dubbing quickstart
+subtitle: Learn how to dub audio and video files across languages using the Dubbing API.
+----------------------------------------------------------------------------------------
+
+This guide will show you how to dub an audio file across languages. In this example we'll dub an audio file from English to Spanish.
+
+## Using the Dubbing API
+
+<Steps>
+  <Step title="Create an API key">
+    [Create an API key in the dashboard here](https://elevenlabs.io/app/settings/api-keys), which you’ll use to securely [access the API](/docs/api-reference/authentication).
+
+    Store the key as a managed secret and pass it to the SDKs either as a environment variable via an `.env` file, or directly in your app’s configuration depending on your preference.
+
+    ```js title=".env"
+    ELEVENLABS_API_KEY=<your_api_key_here>
+    ```
+  </Step>
+
+  <Step title="Install the SDK">
+    We'll also use the `dotenv` library to load our API key from an environment variable.
+
+    <CodeBlocks>
+      ```python
+      pip install elevenlabs
+      pip install python-dotenv
+      ```
+
+      ```typescript
+      npm install @elevenlabs/elevenlabs-js
+      npm install dotenv
+      ```
+    </CodeBlocks>
+
+    <Note>
+      To play the audio through your speakers, you may be prompted to install [MPV](https://mpv.io/)
+      and/or [ffmpeg](https://ffmpeg.org/).
+    </Note>
+  </Step>
+
+  <Step title="Make the API request">
+    Create a new file named `example.py` or `example.mts`, depending on your language of choice and add the following code:
+
+    <CodeBlocks>
+      ```python maxLines=0
+      # example.py
+      import os
+      from dotenv import load_dotenv
+      from elevenlabs.client import ElevenLabs
+      from elevenlabs.play import play
+      import requests
+      from io import BytesIO
+      import time
+
+      load_dotenv()
+
+      elevenlabs = ElevenLabs(
+        api_key=os.getenv("ELEVENLABS_API_KEY"),
+      )
+
+      target_lang = "es"  # Spanish
+
+      audio_url = (
+          "https://storage.googleapis.com/eleven-public-cdn/audio/marketing/nicole.mp3"
+      )
+      response = requests.get(audio_url)
+
+      audio_data = BytesIO(response.content)
+      audio_data.name = "audio.mp3"
+
+      # Start dubbing
+      dubbed = elevenlabs.dubbing.create(
+          file=audio_data, target_lang=target_lang
+      )
+
+      while True:
+          status = elevenlabs.dubbing.get(dubbed.dubbing_id).status
+          if status == "dubbed":
+              dubbed_file = elevenlabs.dubbing.audio.get(dubbed.dubbing_id, target_lang)
+              play(dubbed_file)
+              break
+          else:
+              print("Audio is still being dubbed...")
+              time.sleep(5)
+      ```
+
+      ```typescript maxLines=0
+      // example.mts
+      import { ElevenLabsClient, play } from "@elevenlabs/elevenlabs-js";
+      import "dotenv/config";
+
+      const elevenlabs = new ElevenLabsClient();
+
+      const targetLang = "es"; // spanish
+      const sourceAudio = await fetch(
+        "https://storage.googleapis.com/eleven-public-cdn/audio/marketing/nicole.mp3"
+      );
+      const audioBlob = new Blob([await sourceAudio.arrayBuffer()], {
+        type: "audio/mp3",
+      });
+
+      // Start dubbing
+      const dubbed = await elevenlabs.dubbing.create({
+        file: audioBlob,
+        targetLang: targetLang,
+      });
+
+      while (true) {
+        const { status } = await elevenlabs.dubbing.get(
+          dubbed.dubbingId
+        );
+        if (status === "dubbed") {
+          const dubbedFile = await elevenlabs.dubbing.audio.get(
+            dubbed.dubbingId,
+            targetLang
+          );
+          await play(dubbedFile);
+          break;
+        } else {
+          console.log("Audio is still being dubbed...");
+        }
+
+        // Wait 5 seconds between checks
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+      }
+      ```
+    </CodeBlocks>
+  </Step>
+
+  <Step title="Execute the code">
+    <CodeBlocks>
+      ```python
+      python example.py
+      ```
+
+      ```typescript
+      npx tsx example.mts
+      ```
+    </CodeBlocks>
+
+    You should hear the dubbed audio file playing through your speakers.
+  </Step>
+</Steps>
+
+## Next steps
+
+<CardGroup cols={3}>
+  <Card title="Dubbing overview" icon="file:723e68f3-c315-4988-808f-d31b07c531b7" href="/docs/overview/capabilities/dubbing">
+    Learn about supported languages, formats, and dubbing capabilities
+  </Card>
+
+  <Card title="Browse voices" icon="file:999abe63-548c-4bce-8b81-d97d85742dbf" href="https://elevenlabs.io/app/voice-library">
+    Explore voices available for use in dubbed content
+  </Card>
+
+  <Card title="API reference" icon="duotone book" href="/docs/api-reference/dubbing/create">
+    Explore all Dubbing API parameters and response formats
+  </Card>
+</CardGroup>

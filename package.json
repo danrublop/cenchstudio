@@ -1,0 +1,51 @@
+{
+  "name": "cench-studio",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "server": "node render-server/index.js",
+    "db:start": "docker compose up -d postgres",
+    "db:stop": "docker compose stop postgres",
+    "db:reset": "docker compose down -v && docker compose up -d postgres",
+    "db:migrate": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio",
+    "db:generate": "drizzle-kit generate",
+    "db:setup": "npx tsx scripts/setup.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.37.0",
+    "@dnd-kit/core": "^6.1.0",
+    "@dnd-kit/sortable": "^8.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
+    "@fal-ai/serverless-client": "^0.15.0",
+    "@monaco-editor/react": "^4.6.0",
+    "@types/uuid": "^9.0.7",
+    "@xyflow/react": "^12.10.1",
+    "dotenv": "^17.3.1",
+    "drizzle-orm": "^0.45.1",
+    "html2canvas": "^1.4.1",
+    "lucide-react": "^0.400.0",
+    "next": "^16.2.1",
+    "openai": "^6.33.0",
+    "pg": "^8.20.0",
+    "react": "^18",
+    "react-dom": "^18",
+    "uuid": "^9.0.0",
+    "zustand": "^4.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/pg": "^8.20.0",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "autoprefixer": "^10",
+    "drizzle-kit": "^0.31.10",
+    "postcss": "^8",
+    "tailwindcss": "^3.4.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5"
+  }
+}

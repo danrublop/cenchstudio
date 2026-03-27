@@ -1,0 +1,16 @@
+{
+  "name": "@cench-studio/player",
+  "version": "0.1.0",
+  "description": "Cench Studio interactive player runtime",
+  "main": "dist/cench-studio-player.js",
+  "module": "dist/cench-studio-player.js",
+  "types": "src/index.ts",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite build --watch"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "vite": "^5.0.0"
+  }
+}

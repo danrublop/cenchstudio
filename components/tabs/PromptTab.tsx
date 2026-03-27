@@ -1,0 +1,90 @@
+'use client'
+
+import { useState, useCallback } from 'react'
+import dynamic from 'next/dynamic'
+import { X } from 'lucide-react'
+import { useVideoStore } from '@/lib/store'
+import type { Scene } from '@/lib/types'
+import AgentChat from '../AgentChat'
+
+const MonacoEditor = dynamic(() => import('@monaco-editor/react'), { ssr: false })
+
+interface Props {
+  scene: Scene
+}
+
+export default function PromptTab({ scene }: Props) {
+  const { updateScene, saveSceneHTML } = useVideoStore()
+  const [showCodeEditor, setShowCodeEditor] = useState(false)
+  
+  const isSVG = scene.sceneType === 'svg'
+  const isCanvas = scene.sceneType === 'canvas2d'
+
+  const handleCodeEdit = useCallback(
+    (value: string | undefined) => {
+      if (isSVG) updateScene(scene.id, { svgContent: value ?? '' })
+      else if (isCanvas) updateScene(scene.id, { canvasCode: value ?? '' })
+      else updateScene(scene.id, { sceneCode: value ?? '' })
+    },
+    [scene.id, isSVG, isCanvas, updateScene]
+  )
+
+  const handleCodeEditorSave = useCallback(async () => {
+    await saveSceneHTML(scene.id)
+    setShowCodeEditor(false)
+  }, [scene.id, saveSceneHTML])
+
+  const editorLanguage = isSVG ? 'xml' : 'javascript'
+  const editorValue = isSVG ? scene.svgContent : isCanvas ? scene.canvasCode : scene.sceneCode
+
+  return (
+    <div className="flex flex-col h-full bg-[var(--color-bg)] overflow-hidden">
+      {/* Main Agent Chat Interface */}
+      <div className="flex-1 overflow-hidden">
+        <AgentChat scene={scene} onOpenEditor={() => setShowCodeEditor(true)} />
+      </div>
+
+      {/* Code Editor Modal */}
+      {showCodeEditor && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-6">
+          <div className="w-full max-w-4xl h-[80vh] bg-[var(--color-panel)] border border-[var(--color-border)] rounded-xl flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)]">
+              <span className="text-[var(--color-text-primary)] text-sm font-medium">
+                {isSVG ? 'Edit SVG' : isCanvas ? 'Edit Canvas Code' : `Edit ${scene.sceneType} Code`}
+              </span>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleCodeEditorSave}
+                  className="kbd h-8 px-3 bg-[#e84545] border-[#e84545] shadow-[#800] text-white"
+                >
+                  <span className="text-[10px] uppercase tracking-wider">Save & Close</span>
+                </button>
+                <button
+                  onClick={() => setShowCodeEditor(false)}
+                  className="kbd h-8 w-8 p-0 flex items-center justify-center text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <MonacoEditor
+                defaultLanguage={editorLanguage}
+                value={editorValue}
+                onChange={handleCodeEdit}
+                theme="vs-dark"
+                options={{
+                  minimap: { enabled: false },
+                  fontSize: 13,
+                  wordWrap: 'on',
+                  scrollBeyondLastLine: false,
+                  automaticLayout: true,
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}

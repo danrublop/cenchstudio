@@ -1,0 +1,1129 @@
+Here's the full Claude Code prompt:
+
+---
+
+```
+# INKFRAME — AI VIDEO CREATOR: FULL IMPLEMENTATION SPEC
+# For Claude Code — Read this entire document before writing any code.
+
+---
+
+## WHAT YOU ARE BUILDING
+
+Inkframe is an AI-powered animated explainer video creator with:
+- Multi-layer composited scenes (canvas2d + D3 + Three.js + SVG + Lottie + HTML per scene)
+- An agentic chat interface where users talk to specialized sub-agents
+- WebVideoCreator + FFmpeg export pipeline for real MP4
+- Interactive publish mode (hosted iframe embed)
+- Hand-drawn whiteboard aesthetic via Canvas2D + Rough.js
+- Pre-drawn asset library (150 assets)
+- Scene graph editor for branching (interactive mode)
+
+The core loop:
+  User chats with agent →
+  Agent reads world state →
+  Agent calls tools (structured operations) →
+  Scene HTML regenerates →
+  Preview updates live →
+  User iterates
+
+---
+
+## PART 1 — WORLD STATE (THE AGENT'S "CODEBASE")
+
+This is the single source of truth. Everything the agent reads
+and modifies. Store in Zustand + persist to SQLite.
+
+```ts
+interface WorldState {
+  project: Project
+  scenes: Scene[]
+  sceneGraph: SceneGraph
+  selectedSceneId: string | null
+  history: Snapshot[]        // for undo/redo
+  historyIndex: number
+}
+
+interface Project {
+  id: string
+  name: string
+  outputMode: 'mp4' | 'interactive'
+  globalStyle: GlobalStyle
+  mp4Settings: MP4Settings
+  interactiveSettings: InteractiveSettings
+}
+
+interface GlobalStyle {
+  palette: [string, string, string, string]  // exactly 4 hex colors
+  font: 'Caveat' | 'DM Mono' | 'Georgia' | 'monospace'
+  roughnessLevel: number    // 0-3
+  strokeWidth: number       // 1-5
+  bgColor: string
+}
+
+// THE KEY CHANGE: scenes have LAYERS not a single type
+interface Scene {
+  id: string
+  name: string
+  duration: number          // seconds
+  bgColor: string
+  thumbnail: string | null
+  transition: TransitionConfig
+  layers: SceneLayer[]      // ordered bottom→top
+  interactions: InteractionElement[]
+  audioLayer: AudioLayer | null
+  videoLayer: VideoLayer | null
+}
+
+// Each layer is independently typed and rendered
+type SceneLayer =
+  | Canvas2DLayer
+  | SVGLayer
+  | D3Layer
+  | ThreeLayer
+  | LottieLayer
+  | HTMLLayer
+  | AssetLayer
+
+interface BaseLayer {
+  id: string
+  label: string             // human name: "main diagram", "background sketch"
+  type: LayerType
+  visible: boolean
+  opacity: number           // 0-1
+  blendMode: 'normal' | 'multiply' | 'screen' | 'overlay'
+  zIndex: number
+  // Timing within the scene
+  startAt: number           // seconds into scene when layer begins
+  duration: number | null   // null = runs to end of scene
+  // Generated content
+  generatedCode: string     // the actual JS/SVG/HTML that runs
+  // Structured elements within this layer (for surgical editing)
+  elements: SceneElement[]
+  // Generation metadata
+  prompt: string            // what was asked to generate this layer
+  generatedAt: string
+  modelUsed: string
+}
+
+interface Canvas2DLayer extends BaseLayer {
+  type: 'canvas2d'
+  roughnessLevel: number    // can override global
+  seed: number              // for deterministic randomness
+}
+
+interface SVGLayer extends BaseLayer {
+  type: 'svg'
+  roughnessLevel: number
+  viewBox: string
+}
+
+interface D3Layer extends BaseLayer {
+  type: 'd3'
+  data: any                 // the data driving the visualization
+  chartType: string         // 'bar' | 'line' | 'force' | etc
+}
+
+interface ThreeLayer extends BaseLayer {
+  type: 'three'
+  cameraType: 'perspective' | 'orthographic'
+}
+
+interface LottieLayer extends BaseLayer {
+  type: 'lottie'
+  source: string            // URL or inline JSON
+}
+
+interface HTMLLayer extends BaseLayer {
+  type: 'html'
+  // Pure HTML/CSS for titles, captions, text overlays
+}
+
+interface AssetLayer extends BaseLayer {
+  type: 'assets'
+  placements: AssetPlacement[]
+}
+
+// Structured elements within a layer (what the agent edits surgically)
+type SceneElement =
+  | TextElement
+  | LineElement
+  | ShapeElement
+  | ArrowElement
+  | AssetElement
+  | GroupElement
+
+// (full element interfaces as defined previously)
+// Each has: id, label, position, color, timing, etc.
+```
+
+---
+
+## PART 2 — THE AGENT SYSTEM
+
+### 2.1 Agent Architecture
+
+Four specialized agents. Each has a narrow scope, its own
+system prompt, and its own tool subset. The user chooses
+which agent they're talking to OR lets the router decide.
+
+```
+┌─────────────────────────────────────────┐
+│           CHAT INTERFACE                │
+│  Agent selector + model selector +      │
+│  scene context + tool filter            │
+└──────────────┬──────────────────────────┘
+               │
+    ┌──────────▼──────────┐
+    │   ROUTER AGENT      │  (only if no agent selected)
+    │   Classifies intent │
+    │   Routes to agent   │
+    └──────────┬──────────┘
+               │
+    ┌──────────┼──────────┬──────────────┐
+    ▼          ▼          ▼              ▼
+┌───────┐ ┌───────┐ ┌─────────┐ ┌──────────┐
+│DIREC- │ │SCENE  │ │ EDITOR  │ │DIRECTOR  │
+│TOR    │ │MAKER  │ │ AGENT   │ │ AGENT    │
+│AGENT  │ │AGENT  │ │         │ │          │
+│Plans  │ │Genera-│ │Surgical │ │Global    │
+│multi- │ │tes    │ │edits to │ │style,    │
+│scene  │ │layers │ │elements │ │timing,   │
+│videos │ │for    │ │& layers │ │transitions│
+│       │ │scenes │ │         │ │          │
+└───────┘ └───────┘ └─────────┘ └──────────┘
+```
+
+**Router Agent** (small/fast, used only when no agent selected):
+- Reads user message + current world state summary
+- Decides: which agent should handle this?
+- Returns: { agent: 'director'|'scene-maker'|'editor'|'director' }
+- Uses cheapest/fastest model (haiku or local)
+- Never visible to user
+
+**Director Agent**:
+- Handles: "make me a 5-scene video about X"
+- Plans the full video: scene count, scene topics, layer composition per scene
+- Creates scene stubs in world state
+- Hands off individual scene generation to Scene Maker
+- Thinks about narrative arc, pacing, transitions
+- Tool access: create_scene, delete_scene, reorder_scenes,
+  set_transition, set_project_settings, plan_scenes
+
+**Scene Maker Agent**:
+- Handles: "generate scene 2" or "draw a diagram of X"
+- Decides layer composition for the scene
+- Generates code for each layer (may call sub-generators per layer type)
+- Updates scene.layers with generated content
+- Tool access: add_layer, generate_layer_code, set_scene_duration,
+  set_scene_background, search_assets, add_asset_placement
+
+**Editor Agent**:
+- Handles: "make the cloud bigger", "change title to blue",
+  "move the arrow down", "the chart is too cluttered"
+- Makes SURGICAL edits to existing elements
+- NEVER regenerates a whole scene unless explicitly asked
+- Reads element list, identifies target elements, patches specific fields
+- Tool access: edit_element, move_element, resize_element,
+  delete_element, add_element, adjust_timing, set_roughness,
+  reorder_elements, edit_layer_code (targeted code patch)
+
+**Director of Photography Agent** (named to match film terminology):
+- Handles: global style changes, color palette, transitions,
+  timing adjustments across all scenes, roughness, fonts
+- "Make the whole video feel more professional"
+- "Add smooth transitions everywhere"
+- "Change the color scheme to blues and grays"
+- Tool access: set_global_style, set_transition (all scenes),
+  set_roughness (all scenes), reorder_scenes, set_scene_duration (all)
+
+### 2.2 User-Controlled Agent Selection
+
+THE KEY FEATURE: users can bypass routing and talk directly
+to any agent. They can also control:
+- Which model the selected agent uses
+- Which scene gets context injected
+- Which layer types (tools) are available
+
+This is exposed in the chat UI as an Agent Control Panel.
+
+### 2.3 Knowledge Injection (Remotion-style)
+
+Each agent gets a base system prompt + dynamically injected
+rule files based on context. Never inject all rules at once.
+
+Rule files (markdown, injected when relevant):
+- rules/canvas2d.md      — canvas renderer API, all functions
+- rules/svg.md           — SVG animation patterns, stroke-dashoffset
+- rules/d3.md            — D3 v7 patterns, chart types, data binding
+- rules/three.md         — Three.js r128, what's available, what's not
+- rules/lottie.md        — Lottie integration, playback control
+- rules/assets.md        — asset library index, how to reference assets
+- rules/rough.md         — Rough.js integration, roughness values
+- rules/composition.md   — layer ordering, blending, timing
+- rules/transitions.md   — transition types, FFmpeg xfade params
+- rules/interactions.md  — hotspot, choice, quiz, gate elements
+- rules/timing.md        — animation sequencing, delays, pacing
+- rules/text.md          — text rendering rules (NEVER char-by-char)
+- rules/export.md        — WVC export constraints, determinism rules
+
+Injection logic:
+- Canvas2D layer requested → inject rules/canvas2d.md + rules/rough.md
+- D3 layer → inject rules/d3.md
+- Three.js → inject rules/three.md
+- Any layer → always inject rules/timing.md + rules/text.md
+- Interactive mode → inject rules/interactions.md
+- Transition edit → inject rules/transitions.md
+- Asset placement → inject rules/assets.md
+
+### 2.4 Decision-Time Guidance (Replit-style)
+
+Don't front-load all rules into the system prompt.
+Inject guidance at the moment of decision.
+
+Before generating a canvas2d layer:
+  "You are generating a Canvas2D layer.
+   Available roughness: {scene.roughnessLevel}.
+   Canvas size: 1920x1080. Available assets: {relevantAssets}.
+   Elements already on other layers in this scene: {otherLayerElements}
+   so avoid overlapping with: {occupiedRegions}."
+
+Before making an edit:
+  "You are editing element '{element.label}' (id: {element.id}).
+   Current values: {currentValues}.
+   Other elements in this scene: {siblingElements}.
+   Only change the fields listed in your tool call."
+
+This keeps context lean and decision-focused.
+
+---
+
+## PART 3 — TOOL DEFINITIONS
+
+All tools are typed TypeScript functions on the server.
+The agent calls them via Anthropic tool use API.
+Tools execute, update world state, trigger HTML regeneration,
+trigger preview reload.
+
+### Core scene tools:
+```ts
+create_scene(prompt, position?, duration?)
+delete_scene(sceneId)
+duplicate_scene(sceneId)
+reorder_scenes(sceneId, newIndex)
+set_scene_duration(sceneId, duration)
+set_scene_background(sceneId, color)
+set_transition(sceneId, type, duration)
+```
+
+### Layer tools:
+```ts
+add_layer(sceneId, layerType, label, prompt)
+// Generates code for the layer and adds it
+
+remove_layer(sceneId, layerId)
+reorder_layer(sceneId, layerId, newZIndex)
+set_layer_opacity(sceneId, layerId, opacity)
+set_layer_visibility(sceneId, layerId, visible)
+set_layer_timing(sceneId, layerId, startAt, duration)
+regenerate_layer(sceneId, layerId, newPrompt?)
+// Regenerates a specific layer's code only
+
+patch_layer_code(sceneId, layerId, oldCode, newCode)
+// Surgical code edit — like str_replace in Claude Code
+// For editor agent making targeted changes
+```
+
+### Element tools:
+```ts
+add_element(sceneId, layerId, element)
+edit_element(sceneId, layerId, elementId, changes)
+delete_element(sceneId, layerId, elementId)
+move_element(sceneId, layerId, elementId, x, y)
+resize_element(sceneId, layerId, elementId, width, height)
+reorder_element(sceneId, layerId, elementId, direction)
+adjust_element_timing(sceneId, layerId, elementId, delay, duration)
+```
+
+### Asset tools:
+```ts
+search_assets(query, category?)
+// Returns matching assets from library
+
+place_asset(sceneId, layerId, assetId, x, y, width, height, opts)
+remove_asset(sceneId, layerId, placementId)
+```
+
+### Global tools:
+```ts
+set_global_style(changes)  // palette, font, roughness, etc
+set_all_transitions(type, duration)
+set_roughness_all(level)
+plan_scenes(topic, sceneCount, style)
+// Returns a scene plan array, doesn't execute yet
+```
+
+### Media tools:
+```ts
+set_audio_layer(sceneId, audioConfig)
+set_video_layer(sceneId, videoConfig)
+search_images(query)  // Unsplash API
+place_image(sceneId, layerId, imageUrl, x, y, width, height)
+```
+
+### Interaction tools (interactive mode only):
+```ts
+add_interaction(sceneId, interactionElement)
+edit_interaction(sceneId, interactionId, changes)
+connect_scenes(fromSceneId, toSceneId, condition)
+```
+
+### Export/publish tools:
+```ts
+export_mp4(settings)
+publish_interactive(settings)
+```
+
+---
+
+## PART 4 — AGENT CONTROL PANEL UI
+
+This is the critical UI feature. Sits above the chat input.
+Collapsed by default, expands when user clicks "⚙ Agent Settings".
+
+### 4.1 Agent Selector
+
+Five pills, one selectable at a time (or "Auto"):
+
+```
+[ Auto ] [ Director ] [ Scene Maker ] [ Editor ] [ DoP ]
+```
+
+- Auto: router decides (default)
+- Selecting an agent: bypasses router, sends directly to that agent
+- Selected agent's name appears in chat messages from that agent
+- Color-coded: Director=purple, SceneMaker=blue, Editor=green, DoP=orange
+
+When an agent is selected:
+- Its specific tool subset is active
+- Its specific knowledge rules are always injected
+- The model selector shows that agent's default model
+- The user can override the model
+
+### 4.2 Model Selector
+
+Per-agent model override. Dropdown:
+
+```
+Model: [ claude-sonnet-4-20250514 ▾ ]
+         claude-opus-4-20250514
+         claude-haiku-4-5-20251001
+         (local) qwen2.5-coder:14b    ← if Ollama running
+         (local) llama3.1:8b          ← if Ollama running
+```
+
+Default per agent:
+- Router: haiku (fast, cheap classification)
+- Director: sonnet (complex planning)
+- Scene Maker: sonnet (code generation)
+- Editor: haiku or sonnet (depends on edit complexity)
+- DoP: haiku (mostly simple parameter changes)
+
+User override persists per agent until changed.
+
+Local models: ping localhost:11434 on load to detect Ollama.
+If running, fetch model list and add to dropdown.
+Local models get a "(local)" prefix and a lightning bolt icon.
+
+### 4.3 Scene Context Selector
+
+```
+Scene context: [ All scenes ▾ ]
+                 All scenes
+                 ─────────────
+                 Scene 1: Introduction
+                 Scene 2: The Problem
+                 Scene 3: Our Solution
+                 ...
+```
+
+Default: "All scenes" — agent gets summary of all scenes.
+
+When a specific scene is selected:
+- Agent gets FULL detail of that scene: all layers, all elements,
+  all generated code, all asset placements
+- Agent gets SUMMARY only of other scenes (name + duration + prompt)
+- This keeps context lean while giving full detail where needed
+- The scene also gets highlighted in the scene list panel
+- Chat messages referencing this scene auto-highlight relevant layers
+
+Use case: "I want to talk to the Editor about specifically scene 3"
+→ Select Editor agent + Scene 3 context
+→ Editor gets full scene 3 data, can make precise surgical edits
+
+### 4.4 Tool Filter (Layer Type Filter)
+
+The key specialization feature. A set of toggleable chips:
+
+```
+Active tools:
+[✓ Canvas2D] [✓ SVG] [✓ D3] [✓ Three.js] [✓ Lottie] [✓ Assets]
+[✓ Audio] [✓ Video] [✓ Interactions] [✓ Transitions]
+```
+
+Toggling a tool OFF:
+- Removes it from the agent's available tool list
+- Injects a constraint into the agent's system prompt:
+  "You may NOT use {tool} layers. If the user requests something
+   that would normally use {tool}, achieve it using the available
+   tools instead."
+- The agent adapts: if Three.js is off and user asks for 3D,
+  the agent might fake it with Canvas2D perspective drawing
+
+Use cases:
+- Designer who only wants hand-drawn style: turn off D3, Three.js, Lottie
+- Data analyst who only wants charts: select only D3, HTML
+- Quick sketch mode: Canvas2D only
+- Interactive-only: disable everything except Interactions
+- Simple mode for non-technical clients: Canvas2D + Assets + HTML only
+
+Preset buttons below the chips:
+```
+Presets: [Whiteboard] [Data Story] [3D Showcase] [Simple] [Custom]
+```
+
+Whiteboard: Canvas2D + SVG + Assets + HTML (no D3/Three/Lottie)
+Data Story: D3 + HTML + Canvas2D annotations
+3D Showcase: Three.js + HTML + Canvas2D minimal
+Simple: Canvas2D + HTML only
+Custom: whatever the user set
+
+### 4.5 How Tool Filter Updates Agent Context
+
+When tools are filtered, three things change:
+
+1. Tool definitions sent to Claude API are filtered
+   (only active tool types appear in the tools array)
+
+2. System prompt gets a constraint block injected:
+   ```
+   AVAILABLE LAYER TYPES: canvas2d, svg, html
+   DISABLED LAYER TYPES: d3, three, lottie, assets
+   Never suggest or generate disabled layer types.
+   Achieve all visual goals using only the available types.
+   ```
+
+3. Knowledge rule injection is filtered:
+   Only rule files for active types are injected.
+   This keeps context lean.
+
+### 4.6 Agent Control Panel — Complete UI
+
+```
+┌─────────────────────────────────────────────────────┐
+│ ⚙ Agent Settings                              [−]   │
+├─────────────────────────────────────────────────────┤
+│ Agent:                                              │
+│ [Auto] [Director] [Scene Maker] [Editor] [DoP]     │
+│                                                     │
+│ Model:  [claude-sonnet-4-20250514        ▾]        │
+│                                                     │
+│ Scene context:  [All scenes              ▾]        │
+│                                                     │
+│ Active tools:                                       │
+│ [✓ Canvas2D] [✓ SVG] [✗ D3] [✗ Three.js]         │
+│ [✓ Assets] [✓ HTML] [✗ Lottie]                    │
+│ [✓ Audio] [✗ Video] [✓ Transitions]               │
+│                                                     │
+│ Presets: [Whiteboard] [Data] [3D] [Simple]        │
+└─────────────────────────────────────────────────────┘
+```
+
+---
+
+## PART 5 — CHAT INTERFACE
+
+### 5.1 Chat Panel Layout
+
+Right side of the screen, full height, ~380px wide.
+Split: chat history (scrollable) + agent control panel + input.
+
+```
+┌────────────────────────────────┐
+│  🎬 Inkframe Agent             │
+├────────────────────────────────┤
+│                                │
+│  [chat history scrolls here]   │
+│                                │
+│  ┌────────────────────────┐    │
+│  │ Scene Maker            │    │
+│  │ ─────────────────────  │    │
+│  │ Generated scene 2 with │    │
+│  │ 3 layers:              │    │
+│  │ • Canvas2D: background │    │
+│  │ • D3: bar chart        │    │
+│  │ • HTML: title + labels │    │
+│  │                        │    │
+│  │ [Preview updated ↗]   │    │
+│  └────────────────────────┘    │
+│                                │
+├────────────────────────────────┤
+│ ⚙ Agent Settings       [−/+]  │
+│ [Agent Control Panel here]     │
+├────────────────────────────────┤
+│ ┌──────────────────────────┐   │
+│ │ Tell me what to create...│   │
+│ └──────────────────────────┘   │
+│ [Send]  [Voice]  [Undo ↩]     │
+└────────────────────────────────┘
+```
+
+### 5.2 Message Types
+
+User messages: right-aligned, dark bubble.
+
+Agent messages: left-aligned, colored border matching agent type.
+Each agent message shows:
+- Agent name badge (Director / Scene Maker / Editor / DoP)
+- Model used badge (sonnet / haiku / local)
+- The response text
+- Tool calls made (collapsible): "Called add_layer × 3, set_transition × 1"
+- Preview link if scene was updated: "Scene 2 updated →"
+
+System messages (not from agent): gray, italic.
+  "Switched to Editor agent"
+  "Scene context set to Scene 3"
+  "Three.js tool disabled"
+
+### 5.3 Streaming
+
+Stream Claude's response token by token into the chat bubble.
+Tool calls execute server-side as they complete (not streamed).
+After each tool call completes, send a SSE event:
+  { type: 'tool_complete', tool: 'add_layer', sceneId, layerId }
+Frontend receives this, triggers scene HTML regeneration + iframe reload.
+User sees the preview updating in real time as the agent works.
+
+### 5.4 Undo/Redo
+
+Every tool call that modifies world state creates a snapshot before executing.
+Undo button in chat input reverses the last snapshot.
+Redo re-applies it.
+Show in chat: "↩ Undid: add_layer (Canvas2D background) on Scene 2"
+The agent can also undo: "undo" → editor agent calls undo_last_action tool.
+
+### 5.5 Agent Visibility Into Its Own Actions
+
+After each tool call completes, inject a brief summary
+into the agent's context:
+  "Tool add_layer completed. Layer id: layer-abc123.
+   Scene 2 now has 3 layers: [canvas2d: bg], [d3: chart], [html: title].
+   Occupied regions in scene 2: top 20% (title), center (chart)."
+
+This lets the agent make spatially-aware decisions on subsequent calls.
+Prevents it from placing elements on top of each other.
+
+---
+
+## PART 6 — SCENE HTML GENERATION
+
+### 6.1 Multi-Layer HTML Template
+
+Each scene generates a single HTML file that composites all layers:
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { width:1920px; height:1080px; overflow:hidden;
+           background:{scene.bgColor}; position:relative; }
+    
+    .inkframe-layer {
+      position: absolute;
+      inset: 0;
+      width: 1920px;
+      height: 1080px;
+    }
+    
+    /* Layer-specific opacity/blend */
+    {layerStyles}
+  </style>
+</head>
+<body>
+
+  <!-- LAYER: video background (if present) -->
+  {videoLayerHTML}
+
+  <!-- LAYERS: rendered in z-order -->
+  {layers.map(layer => renderLayer(layer))}
+
+  <!-- INTERACTION OVERLAY (interactive mode only) -->
+  {interactionOverlayHTML}
+
+  <!-- SCRIPTS: load libraries, then run layer code -->
+  <script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/bodymovin/5.12.2/lottie.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.2/anime.min.js"></script>
+
+  <!-- Inlined canvas renderer utilities -->
+  <script>{inlinedCanvasRenderer}</script>
+
+  <!-- Asset library (only assets used in this scene) -->
+  <script>const ASSETS = {usedAssetsJSON};</script>
+
+  <!-- Global constants -->
+  <script>
+    const PALETTE = {paletteJSON};
+    const DURATION = {scene.duration};
+    const ROUGHNESS = {scene.roughnessLevel};
+    const FONT = '{globalStyle.font}';
+    const WIDTH = 1920;
+    const HEIGHT = 1080;
+  </script>
+
+  <!-- Layer code: each layer runs its animation -->
+  <!-- Layers respect startAt timing via setTimeout -->
+  <script>
+    async function runAllLayers() {
+      {layers.map(layer => `
+        // Layer: ${layer.label} (${layer.type})
+        setTimeout(async () => {
+          ${layer.generatedCode}
+        }, ${layer.startAt * 1000});
+      `).join('\n')}
+    }
+    
+    // Auto-calc stroke lengths for SVG layers
+    document.querySelectorAll('.stroke').forEach(el => {
+      if (el.getTotalLength) {
+        el.style.setProperty('--len', el.getTotalLength());
+      }
+    });
+    
+    document.addEventListener('DOMContentLoaded', runAllLayers);
+  </script>
+
+  <!-- Audio -->
+  {audioHTML}
+
+</body>
+</html>
+```
+
+### 6.2 Layer HTML rendering
+
+```ts
+function renderLayer(layer: SceneLayer): string {
+  const baseStyle = `
+    opacity: ${layer.opacity};
+    mix-blend-mode: ${layer.blendMode};
+    z-index: ${layer.zIndex};
+  `;
+
+  switch (layer.type) {
+    case 'canvas2d':
+      return `<canvas id="${layer.id}" class="inkframe-layer"
+                width="1920" height="1080"
+                style="${baseStyle}"></canvas>`;
+
+    case 'svg':
+      return `<svg id="${layer.id}" class="inkframe-layer"
+                viewBox="0 0 1920 1080"
+                style="${baseStyle}">
+                ${layer.generatedCode}
+              </svg>`;
+              // Note: for SVG layers, generatedCode is SVG markup
+              // not JS. The stroke-dashoffset CSS animations run
+              // automatically.
+
+    case 'd3':
+      return `<div id="${layer.id}" class="inkframe-layer"
+                style="${baseStyle}">
+              </div>`;
+              // D3 code appends SVG to this div
+
+    case 'three':
+      return `<div id="${layer.id}" class="inkframe-layer"
+                style="${baseStyle}">
+              </div>`;
+              // Three.js appends canvas to this div
+
+    case 'lottie':
+      return `<div id="${layer.id}" class="inkframe-layer"
+                style="${baseStyle}">
+              </div>`;
+
+    case 'html':
+      return `<div id="${layer.id}" class="inkframe-layer"
+                style="${baseStyle}; font-family: ${globalStyle.font}">
+                ${layer.generatedCode}
+              </div>`;
+              // HTML layers: generatedCode is raw HTML
+
+    case 'assets':
+      return `<canvas id="${layer.id}" class="inkframe-layer"
+                width="1920" height="1080"
+                style="${baseStyle}"></canvas>`;
+  }
+}
+```
+
+---
+
+## PART 7 — SERVER ARCHITECTURE
+
+```
+inkframe/
+├── app/                          # Next.js frontend
+│   ├── page.tsx                  # Main editor
+│   ├── v/[projectId]/page.tsx    # Published viewer
+│   ├── dashboard/[id]/analytics  # Analytics
+│   └── api/
+│       ├── agent/route.ts        # Main agent endpoint (streaming)
+│       ├── upload/route.ts       # File uploads
+│       ├── publish/route.ts      # Publish interactive
+│       └── export/route.ts       # Trigger MP4 export
+│
+├── lib/
+│   ├── agents/
+│   │   ├── router.ts             # Intent classification
+│   │   ├── director.ts           # Multi-scene planning
+│   │   ├── scene-maker.ts        # Layer generation
+│   │   ├── editor.ts             # Surgical edits
+│   │   ├── dop.ts                # Global style/timing
+│   │   └── tools.ts              # All tool implementations
+│   ├── canvas-renderer/
+│   │   ├── index.ts              # All drawing primitives
+│   │   └── inlined.js            # Pre-bundled for injection
+│   ├── assets/
+│   │   ├── library.ts            # 150 asset definitions
+│   │   └── db.ts                 # SQLite asset queries
+│   ├── scene-html/
+│   │   └── generator.ts          # writeSceneHTML()
+│   ├── rules/                    # Knowledge injection markdown
+│   │   ├── canvas2d.md
+│   │   ├── d3.md
+│   │   ├── three.md
+│   │   └── ...
+│   └── world-state/
+│       ├── store.ts              # Zustand store
+│       └── db.ts                 # SQLite persistence
+│
+├── render-server/                # Separate Express, port 3001
+│   ├── index.js
+│   ├── renderer.js               # WebVideoCreator
+│   └── stitcher.js               # FFmpeg concat
+│
+├── packages/
+│   └── player/                   # Inkframe player runtime
+│       └── src/index.ts
+│
+└── data/
+    └── inkframe.db               # SQLite (world state + assets + analytics)
+```
+
+### 7.1 Agent API Route
+
+POST /api/agent — SSE streaming response
+
+Request body:
+```ts
+{
+  message: string
+  
+  // Agent control (from UI panel)
+  agentOverride: 'auto' | 'director' | 'scene-maker' | 'editor' | 'dop'
+  modelOverride: string | null      // null = use agent default
+  sceneContext: 'all' | string      // scene id for focused context
+  activeTools: string[]             // filtered tool types
+  
+  // Current world state (or just the project id to fetch from DB)
+  projectId: string
+  
+  // Conversation history (last N messages for context)
+  history: ChatMessage[]
+}
+```
+
+Response: SSE stream
+```
+data: {"type":"thinking","text":"Looking at scene 2..."}
+data: {"type":"token","text":"I'll add a canvas2d layer"}
+data: {"type":"tool_start","tool":"add_layer","args":{...}}
+data: {"type":"tool_complete","tool":"add_layer","result":{...}}
+data: {"type":"preview_update","sceneId":"scene-2"}
+data: {"type":"token","text":" and then a D3 chart on top."}
+data: {"type":"done"}
+```
+
+### 7.2 Agent Execution Loop
+
+```ts
+async function runAgent(request: AgentRequest): AsyncGenerator<SSEEvent> {
+  // 1. Determine which agent to use
+  const agent = request.agentOverride === 'auto'
+    ? await routeToAgent(request.message, worldState)
+    : request.agentOverride;
+
+  // 2. Build context (decision-time guidance)
+  const context = buildContext({
+    agent,
+    sceneContext: request.sceneContext,
+    activeTools: request.activeTools,
+    worldState,
+  });
+  // context = { systemPrompt, injectedRules, tools, worldStateSummary }
+
+  // 3. Run Claude with tools
+  const stream = anthropic.messages.stream({
+    model: request.modelOverride ?? getDefaultModel(agent),
+    max_tokens: 4000,
+    system: context.systemPrompt,
+    tools: context.tools,  // filtered by activeTools
+    messages: [
+      ...buildWorldStateMessage(context.worldStateSummary),
+      ...request.history,
+      { role: 'user', content: request.message }
+    ]
+  });
+
+  // 4. Stream tokens + execute tool calls
+  for await (const event of stream) {
+    if (event.type === 'content_block_delta') {
+      yield { type: 'token', text: event.delta.text };
+    }
+    if (event.type === 'tool_use') {
+      yield { type: 'tool_start', tool: event.name, args: event.input };
+      
+      // Execute tool, update world state, regenerate HTML
+      const result = await executeTool(event.name, event.input);
+      await regenerateSceneHTML(result.affectedSceneId);
+      
+      yield { type: 'tool_complete', tool: event.name, result };
+      yield { type: 'preview_update', sceneId: result.affectedSceneId };
+      
+      // Inject tool result back into context for next tool call
+      // (so agent knows what it just did before calling next tool)
+    }
+  }
+}
+```
+
+### 7.3 Context Building
+
+```ts
+function buildContext(opts: ContextOpts): AgentContext {
+  const { agent, sceneContext, activeTools, worldState } = opts;
+
+  // Base system prompt per agent
+  const systemPrompt = getAgentSystemPrompt(agent);
+
+  // Inject tool filter constraints
+  const disabledTools = ALL_TOOL_TYPES.filter(t => !activeTools.includes(t));
+  const toolConstraint = disabledTools.length > 0
+    ? `\nDISABLED LAYER TYPES: ${disabledTools.join(', ')}.
+       Never generate these types. Achieve all goals with: ${activeTools.join(', ')}.`
+    : '';
+
+  // World state: full detail for selected scene, summary for others
+  const worldStateSummary = sceneContext === 'all'
+    ? summarizeAllScenes(worldState.scenes)
+    : {
+        focusedScene: getFullSceneDetail(worldState.scenes, sceneContext),
+        otherScenes: worldState.scenes
+          .filter(s => s.id !== sceneContext)
+          .map(summarizeScene)
+      };
+
+  // Inject relevant rule files based on active tools + agent type
+  const rules = selectRelevantRules(agent, activeTools, worldState);
+  const injectedRules = rules.map(r => readRuleFile(r)).join('\n\n');
+
+  // Available tools (filtered)
+  const tools = getToolDefinitions(agent, activeTools);
+
+  return {
+    systemPrompt: systemPrompt + toolConstraint + '\n\n' + injectedRules,
+    tools,
+    worldStateSummary
+  };
+}
+```
+
+---
+
+## PART 8 — IMPLEMENTATION ORDER
+
+Build in this exact sequence. Each step is independently testable.
+
+**Phase 1 — Foundation (Week 1)**
+1. World state model (TypeScript interfaces + Zustand store)
+2. SQLite persistence (world state + snapshots for undo)
+3. Multi-layer scene HTML generator (static, no agent yet)
+4. Preview iframe with layer compositing
+5. Manual layer add/remove UI (no agent, just UI)
+6. Test: manually create a scene with 3 layers, preview renders
+
+**Phase 2 — Canvas Engine (Week 1-2)**
+7. Canvas2D renderer primitives (all animateRough* functions)
+8. Rough.js integration
+9. Asset library (first 30 assets)
+10. Asset picker UI
+11. Test: draw a canvas2d scene manually
+
+**Phase 3 — First Agent (Week 2)**
+12. Scene Maker agent (single agent, no routing yet)
+13. Layer code generation for canvas2d only
+14. Tool: add_layer, regenerate_layer
+15. Basic chat UI (no agent control panel yet)
+16. SSE streaming from agent to frontend
+17. Preview updates on tool completion
+18. Test: "draw a diagram of how the internet works" → canvas2d scene
+
+**Phase 4 — All Layer Types (Week 2-3)**
+19. D3 layer generation + template
+20. Three.js layer generation + template
+21. SVG layer generation + rough.js post-processing
+22. Lottie layer + upload
+23. HTML layer
+24. Test each layer type individually
+
+**Phase 5 — Full Agent System (Week 3)**
+25. Router agent
+26. Director agent
+27. Editor agent (surgical edits)
+28. DoP agent
+29. Undo/redo system (snapshot on each tool call)
+30. Test: multi-agent conversation, edits, undo
+
+**Phase 6 — Agent Control Panel (Week 3-4)**
+31. Agent selector UI
+32. Model selector + Ollama detection
+33. Scene context selector
+34. Tool filter chips + presets
+35. Context building logic (injects constraints based on selections)
+36. Test: filter to Canvas2D only → agent stops offering D3
+
+**Phase 7 — Export + Publish (Week 4)**
+37. WVC render server
+38. FFmpeg stitching + transitions
+39. Export progress UI
+40. Interactive publish pipeline
+41. Embed snippet UI
+42. Inkframe player package
+
+**Phase 8 — Polish (Week 4-5)**
+43. Analytics (SQLite + dashboard)
+44. Asset thumbnail generation script
+45. Password protection for published projects
+46. Mobile responsive chat panel
+47. Keyboard shortcuts
+
+---
+
+## PART 9 — CRITICAL RULES (READ BEFORE WRITING CODE)
+
+**Text rendering:**
+NEVER animate text character by character anywhere in this app.
+Text renders instantly via ctx.fillText() or HTML.
+Timing is controlled by delay before text appears, not animation
+of the text itself. This is non-negotiable.
+
+**Determinism for WVC:**
+All random values use seeded randomness (mulberry32).
+Never use Math.random() in scene code.
+Seeds are fixed integers, assigned by the agent per element.
+This ensures WVC export matches browser preview exactly.
+
+**Layer isolation:**
+Each layer's generated code must be completely self-contained.
+Layers cannot reference each other's DOM elements or variables.
+Use the layer's id as a prefix for all DOM element ids within it.
+Global constants (PALETTE, DURATION, ROUGHNESS, WIDTH, HEIGHT) are shared.
+
+**Tool atomicity:**
+Each tool call is a single atomic world state change.
+Tools always create a snapshot before executing.
+Tools always return { success, affectedSceneId, changes } so the
+agent knows what happened and can inject into next decision.
+
+**Three.js r128 constraints:**
+Never use THREE.CapsuleGeometry (added in r142).
+Never use ES module imports (THREE is a global).
+Never use OrbitControls (not on CDN for r128).
+Implement camera movement manually in the animation loop.
+
+**D3 v7 constraints:**
+d3.event was removed — use event parameter in handlers.
+Always append SVG to #layerId div, never to body.
+Use d3.select('#' + layerId) as the root selection.
+
+**Rough.js seeds:**
+Every animateRough* call gets a unique integer seed.
+Agent increments: seed=1, seed=2, seed=3 etc per scene.
+Same seed = same wobble every render. Required for WVC.
+
+**Asset references:**
+Assets are referenced by id string: ASSETS['cloud-simple'].
+Never hardcode asset drawing code inline — always use drawAsset().
+Asset ids are validated against the library before generation.
+
+**Context window management:**
+World state summary sent to agent: max 2000 tokens.
+Full scene detail (when focused): max 3000 tokens.
+Rule files: max 500 tokens each, inject max 3 at once.
+Conversation history: last 10 messages only.
+These limits keep costs manageable and responses fast.
+
+**Streaming UX:**
+Always stream agent text tokens to frontend.
+Tool calls show "⚙ Calling {tool}..." in chat while executing.
+Never block the UI waiting for tool completion.
+Preview updates happen immediately after each tool, not at end.
+
+---
+
+## PART 10 — PACKAGES
+
+```json
+{
+  "dependencies": {
+    "next": "14.x",
+    "react": "18.x",
+    "typescript": "5.x",
+    "tailwindcss": "3.x",
+    "@anthropic-ai/sdk": "latest",
+    "zustand": "^4.x",
+    "better-sqlite3": "^9.x",
+    "roughjs": "^4.6.6",
+    "@xyflow/react": "^12.x",
+    "@dnd-kit/core": "^6.x",
+    "@dnd-kit/sortable": "^7.x",
+    "@monaco-editor/react": "^4.x",
+    "html2canvas": "^1.x",
+    "fluent-ffmpeg": "^2.x",
+    "ffmpeg-static": "^5.x",
+    "express": "^4.x",
+    "cors": "^2.x",
+    "multer": "^1.x",
+    "web-video-creator": "latest",
+    "concurrently": "^8.x"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.x",
+    "@types/three": "^0.128.x",
+    "@types/d3": "^7.x",
+    "canvas": "^2.x"
+  }
+}
+```
+
+Start: `npm run dev:all`
+which runs: `concurrently "next dev" "node render-server/index.js"`
+```

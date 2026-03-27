@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100vh; overflow: hidden; background: #0d0d12; }
+    #chart { width: 100%; height: 100%; }
+    
+  </style>
+</head>
+<body>
+  <div id="chart"></div>
+  
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+  <script>
+    const DATA = [{"label":"SVG","value":92},{"label":"Canvas","value":78},{"label":"Motion","value":65},{"label":"D3","value":88},{"label":"Three.js","value":71},{"label":"Lottie","value":55}];
+    const WIDTH = 1920, HEIGHT = 1080;
+    window.__pause  = () => {};
+    window.__resume = () => {};
+
+    document.addEventListener('DOMContentLoaded', () => {
+      const audio = document.getElementById('scene-audio');
+      if (audio) {
+        audio.volume = 1;
+        window.__pause  = () => { audio.pause(); };
+        window.__resume = () => { audio.play().catch(() => {}); };
+      }
+    });
+
+    
+const margin = { top: 140, right: 80, bottom: 160, left: 120 };
+const w = WIDTH - margin.left - margin.right;
+const h = HEIGHT - margin.top - margin.bottom;
+
+const svg = d3.select('#chart')
+  .append('svg')
+  .attr('viewBox', `0 0 ${WIDTH} ${HEIGHT}`)
+  .attr('width', '100%')
+  .attr('height', '100%');
+
+const g = svg.append('g')
+  .attr('transform', `translate(${margin.left},${margin.top})`);
+
+// Title
+svg.append('text')
+  .attr('x', WIDTH / 2).attr('y', 80)
+  .attr('text-anchor', 'middle')
+  .attr('font-family', 'sans-serif').attr('font-size', 56).attr('font-weight', 'bold')
+  .attr('fill', '#e84545').attr('opacity', 0)
+  .text('D3 Scene Type Test')
+  .transition().duration(600).attr('opacity', 1);
+
+svg.append('text')
+  .attr('x', WIDTH / 2).attr('y', 128)
+  .attr('text-anchor', 'middle')
+  .attr('font-family', 'sans-serif').attr('font-size', 28)
+  .attr('fill', '#6b6b7a').attr('opacity', 0)
+  .text('Animated bar chart — transitions, stagger, scales')
+  .transition().delay(300).duration(500).attr('opacity', 1);
+
+const x = d3.scaleBand()
+  .domain(DATA.map(d => d.label))
+  .range([0, w]).padding(0.3);
+
+const y = d3.scaleLinear()
+  .domain([0, 100]).range([h, 0]);
+
+// Gridlines
+g.append('g').attr('class', 'grid')
+  .call(d3.axisLeft(y).tickSize(-w).tickFormat(''))
+  .selectAll('line').attr('stroke', '#1e1e2a').attr('stroke-width', 1);
+g.select('.grid .domain').remove();
+
+// X axis
+g.append('g').attr('transform', `translate(0,${h})`)
+  .call(d3.axisBottom(x))
+  .selectAll('text')
+  .attr('font-family', 'sans-serif').attr('font-size', 24).attr('fill', '#6b6b7a');
+
+// Y axis
+g.append('g').call(d3.axisLeft(y).ticks(5).tickFormat(d => d + '%'))
+  .selectAll('text')
+  .attr('font-family', 'sans-serif').attr('font-size', 20).attr('fill', '#6b6b7a');
+
+// Bars
+g.selectAll('.bar')
+  .data(DATA)
+  .enter().append('rect')
+  .attr('class', 'bar')
+  .attr('x', d => x(d.label))
+  .attr('width', x.bandwidth())
+  .attr('y', h).attr('height', 0)
+  .attr('fill', (d, i) => i % 2 === 0 ? '#e84545' : '#3a3a45')
+  .attr('rx', 8)
+  .transition().duration(700)
+  .delay((d, i) => 400 + i * 120)
+  .ease(d3.easeCubicOut)
+  .attr('y', d => y(d.value))
+  .attr('height', d => h - y(d.value));
+
+// Value labels
+g.selectAll('.val-label')
+  .data(DATA)
+  .enter().append('text')
+  .attr('class', 'val-label')
+  .attr('x', d => x(d.label) + x.bandwidth() / 2)
+  .attr('y', d => y(d.value) - 16)
+  .attr('text-anchor', 'middle')
+  .attr('font-family', 'sans-serif').attr('font-size', 26).attr('font-weight', 'bold')
+  .attr('fill', '#f0ece0').attr('opacity', 0)
+  .text(d => d.value + '%')
+  .transition().duration(400)
+  .delay((d, i) => 900 + i * 120)
+  .attr('opacity', 1);
+
+// Footer
+svg.append('text')
+  .attr('x', WIDTH / 2).attr('y', HEIGHT - 30)
+  .attr('text-anchor', 'middle')
+  .attr('font-family', 'sans-serif').attr('font-size', 24)
+  .attr('fill', '#3a3a45').attr('opacity', 0)
+  .text('✓ D3 v7 working — scales, axes, transitions, stagger')
+  .transition().delay(2000).duration(500).attr('opacity', 1);
+
+  </script>
+</body>
+</html>

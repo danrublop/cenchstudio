@@ -1,0 +1,693 @@
+Here's the drawing quality improvements prompt:
+
+---
+
+```
+You are extending Inkframe's Canvas2D drawing engine.
+The app already has: animateRoughLine, animateRoughCircle, 
+animateRoughRect, animateRoughPolygon, animateRoughCurve,
+animateRoughArrow — all using Rough.js + seeded randomness.
+
+The canvas renderer lives in /lib/canvas-renderer/index.ts
+and gets inlined into scene HTML files.
+
+Goal: make every stroke look like it was drawn by a human hand
+with a real marker or pen. Four improvements, implement all four.
+
+---
+
+## IMPROVEMENT 1 — PRESSURE-SENSITIVE STROKE SIMULATION
+
+Currently strokes have uniform width. Real marker strokes:
+- Start thin (pen touching paper, not yet pressed)
+- Thicken through the middle (full pressure)
+- Taper thin at the end (pen lifting)
+- Have slight velocity variation (faster = thinner)
+
+### Implementation
+
+Replace the current per-segment uniform lineWidth with a
+pressure curve applied per bezier segment:
+
+```ts
+// Pressure profile — bell curve with controllable parameters
+function strokePressure(
+  t: number,              // 0-1 progress along stroke
+  opts: {
+    peakAt?: number       // 0-1, where max pressure occurs (default 0.4)
+    minWidth?: number     // fraction of base width at tips (default 0.25)
+    sharpness?: number    // how quickly it peaks (default 2.5)
+  } = {}
+): number {
+  const { peakAt = 0.4, minWidth = 0.25, sharpness = 2.5 } = opts;
+  // Asymmetric bell: rises faster than it falls (like real pen strokes)
+  const peak = Math.exp(-sharpness * Math.pow(t - peakAt, 2));
+  return minWidth + (1 - minWidth) * peak;
+}
+```
+
+Apply to every drawing primitive by rendering each segment
+as its own beginPath/stroke call with computed width:
+
+```ts
+// In the animation loop, replace single ctx.stroke() with:
+function drawSegmentWithPressure(
+  ctx: CanvasRenderingContext2D,
+  points: [number, number][],
+  baseWidth: number,
+  color: string,
+  totalProgress: number,    // how far through the stroke we are
+  pressureOpts?: PressureOpts
+) {
+  for (let i = 0; i < points.length - 1; i++) {
+    const t = i / (points.length - 1);
+    const pressure = strokePressure(t, pressureOpts);
+    const width = baseWidth * pressure;
+    
+    // Velocity-based thinning: estimate speed from point distance
+    const [x1, y1] = points[i];
+    const [x2, y2] = points[i + 1];
+    const dist = Math.sqrt((x2-x1)**2 + (y2-y1)**2);
+    const velocityFactor = Math.max(0.6, 1 - dist * 0.003);
+    
+    ctx.beginPath();
+    ctx.lineWidth = width * velocityFactor;
+    ctx.strokeStyle = color;
+    ctx.lineCap = 'round';
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+  }
+}
+```
+
+### Per-tool pressure profiles
+
+Different tools have different pressure characteristics.
+Add a `tool` option to DrawOpts:
+
+```ts
+type DrawTool = 'marker' | 'pen' | 'chalk' | 'brush'
+
+const PRESSURE_PROFILES: Record<DrawTool, PressureOpts> = {
+  marker: { peakAt: 0.35, minWidth: 0.4,  sharpness: 2.0 },
+  // Markers have a wide, flat pressure curve — consistent
+  
+  pen:    { peakAt: 0.45, minWidth: 0.15, sharpness: 3.5 },
+  // Pens taper aggressively at both ends
+  
+  chalk:  { peakAt: 0.5,  minWidth: 0.5,  sharpness: 1.2 },
+  // Chalk is wide and relatively uniform with rough edges
+  
+  brush:  { peakAt: 0.3,  minWidth: 0.05, sharpness: 4.0 },
+  // Brushes start extremely thin and bloom quickly
+}
+```
+
+Apply profile automatically based on `opts.tool` (default: 'marker').
+
+### Update DrawOpts interface
+
+```ts
+interface DrawOpts {
+  color?: string
+  width?: number
+  roughness?: number
+  seed?: number
+  fill?: string | null
+  fillAlpha?: number
+  tool?: DrawTool          // NEW
+  pressureOpts?: PressureOpts  // NEW — override profile
+}
+```
+
+Update ALL animateRough* functions to use pressure simulation.
+Update the inlined canvas renderer build.
+
+---
+
+## IMPROVEMENT 2 — STROKE TEXTURE OVERLAY
+
+Real markers and chalk leave physical texture — slight grain,
+ink variation, paper tooth. Simulate this with:
+
+### 2a — Per-stroke alpha jitter
+
+As each segment is drawn, vary the alpha slightly using
+seeded randomness. Creates ink variation effect:
+
+```ts
+function jitteredAlpha(
+  baseAlpha: number,
+  t: number,
+  rand: () => number,
+  intensity: number = 0.08   // how much variation (0 = none, 0.2 = heavy)
+): number {
+  const jitter = (rand() - 0.5) * 2 * intensity;
+  return Math.max(0.3, Math.min(1.0, baseAlpha + jitter));
+}
+```
+
+Apply per-segment: ctx.globalAlpha = jitteredAlpha(opacity, t, rand, jitter)
+where jitter amount varies per tool:
+  marker: 0.04   (very slight)
+  pen:    0.02   (almost none)
+  chalk:  0.15   (heavy variation)
+  brush:  0.10   (noticeable)
+
+### 2b — Texture canvas (generate once, reuse)
+
+Generate a noise texture canvas once per scene and composite
+it over all canvas2d layers at low opacity:
+
+```ts
+function generateTextureCanvas(
+  width: number,
+  height: number,
+  seed: number,
+  opts: {
+    grainSize?: number    // px, default 1.5
+    intensity?: number    // 0-1, default 0.06
+    style?: 'grain' | 'paper' | 'chalk'
+  } = {}
+): HTMLCanvasElement {
+  const { grainSize = 1.5, intensity = 0.06, style = 'grain' } = opts;
+  const rand = mulberry32(seed);
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d')!;
+  
+  if (style === 'grain') {
+    // Random noise pixels
+    const imageData = ctx.createImageData(width, height);
+    for (let i = 0; i < imageData.data.length; i += 4) {
+      const noise = rand() * 255;
+      imageData.data[i] = noise;
+      imageData.data[i+1] = noise;
+      imageData.data[i+2] = noise;
+      imageData.data[i+3] = rand() * intensity * 255;
+    }
+    ctx.putImageData(imageData, 0, 0);
+  }
+  
+  if (style === 'paper') {
+    // Larger grain — simulates paper texture
+    for (let x = 0; x < width; x += grainSize) {
+      for (let y = 0; y < height; y += grainSize) {
+        const v = rand() * intensity;
+        ctx.fillStyle = `rgba(0,0,0,${v})`;
+        ctx.fillRect(x, y, grainSize, grainSize);
+      }
+    }
+  }
+  
+  if (style === 'chalk') {
+    // Streaky texture — chalk drags across paper
+    for (let y = 0; y < height; y += 2) {
+      ctx.beginPath();
+      ctx.strokeStyle = `rgba(255,255,255,${rand() * intensity * 0.5})`;
+      ctx.lineWidth = 1 + rand() * 2;
+      ctx.moveTo(0, y + rand() * 2);
+      for (let x = 0; x < width; x += 20) {
+        ctx.lineTo(x, y + (rand() - 0.5) * 3);
+      }
+      ctx.stroke();
+    }
+  }
+  
+  return canvas;
+}
+```
+
+In the scene HTML template, after all canvas2d layers render,
+composite the texture:
+
+```ts
+// Called at end of runAllLayers()
+function applyTextureOverlay(
+  targetCanvas: HTMLCanvasElement,
+  textureStyle: 'grain' | 'paper' | 'chalk',
+  seed: number
+) {
+  const ctx = targetCanvas.getContext('2d')!;
+  const texture = generateTextureCanvas(
+    targetCanvas.width, targetCanvas.height,
+    seed, { style: textureStyle, intensity: 0.05 }
+  );
+  ctx.save();
+  ctx.globalCompositeOperation = 'multiply';
+  ctx.globalAlpha = 0.4;
+  ctx.drawImage(texture, 0, 0);
+  ctx.restore();
+}
+```
+
+Add `textureStyle` to GlobalStyle:
+  'none' | 'grain' | 'paper' | 'chalk'
+
+Default: 'grain' (subtle, works with all tools)
+
+---
+
+## IMPROVEMENT 3 — PATH SMOOTHING (CHAIKIN'S ALGORITHM)
+
+When the agent generates a series of line segments approximating
+a curve (e.g. a cloud outline, a curved arrow), the result has
+jagged corners. Chaikin's algorithm smooths these into natural curves
+without adding visual mass.
+
+### Implementation
+
+```ts
+// Chaikin's corner cutting algorithm
+// Runs N iterations — more iterations = smoother curve
+// ratio controls how much to cut each corner (0.25 is standard)
+function chaikinSmooth(
+  points: [number, number][],
+  iterations: number = 2,
+  ratio: number = 0.25,
+  closed: boolean = false
+): [number, number][] {
+  let pts = [...points];
+  
+  for (let iter = 0; iter < iterations; iter++) {
+    const smoothed: [number, number][] = [];
+    const len = closed ? pts.length : pts.length - 1;
+    
+    for (let i = 0; i < len; i++) {
+      const p0 = pts[i];
+      const p1 = pts[(i + 1) % pts.length];
+      
+      // Cut corners: Q is 25% from p0, R is 75% from p0
+      const Q: [number, number] = [
+        p0[0] + ratio * (p1[0] - p0[0]),
+        p0[1] + ratio * (p1[1] - p0[1])
+      ];
+      const R: [number, number] = [
+        p0[0] + (1 - ratio) * (p1[0] - p0[0]),
+        p0[1] + (1 - ratio) * (p1[1] - p0[1])
+      ];
+      
+      smoothed.push(Q, R);
+    }
+    
+    if (!closed) {
+      // Preserve start and end points
+      smoothed.unshift(pts[0]);
+      smoothed.push(pts[pts.length - 1]);
+    }
+    
+    pts = smoothed;
+  }
+  
+  return pts;
+}
+```
+
+### Apply smoothing before drawing
+
+In animateRoughPolygon and animateCurve, smooth points
+before passing to the rough.js generator:
+
+```ts
+export async function animateRoughPolygon(
+  ctx: CanvasRenderingContext2D,
+  points: [number, number][],
+  opts: DrawOpts,
+  duration: number
+): Promise<void> {
+  // Smooth first — removes jagged corners
+  const smoothed = opts.smooth !== false
+    ? chaikinSmooth(points, opts.smoothIterations ?? 2)
+    : points;
+  
+  // Then apply rough.js for hand-drawn character
+  const rc = rough.canvas(ctx.canvas);
+  const drawable = rc.generator.polygon(smoothed, {
+    roughness: opts.roughness ?? 1.5,
+    seed: opts.seed ?? 1,
+    stroke: opts.color ?? '#1a1a2e',
+    strokeWidth: opts.width ?? 2.5,
+    fill: opts.fill ?? undefined,
+  });
+  
+  return animateDrawable(ctx, drawable, opts, duration);
+}
+```
+
+Add to DrawOpts:
+```ts
+smooth?: boolean          // default true for polygon/curve
+smoothIterations?: number // default 2, max 4
+```
+
+### Where smoothing applies
+
+ON: animateRoughPolygon, animateRoughCurve, animateRoughArrow
+    (curved mode), animateShape (existing helper)
+
+OFF: animateRoughLine, animateRoughRect
+     (straight lines/rectangles should stay straight)
+
+### Closed vs open path smoothing
+
+Polygons/shapes: closed = true (smooth the join between last and first point)
+Curves/paths: closed = false (preserve start and end positions)
+
+---
+
+## IMPROVEMENT 4 — DRAWING TOOL MODES
+
+Add a `tool` system that bundles pressure + texture + roughness
+into named presets. The agent picks a tool based on context.
+Users can also set a global tool in the UI.
+
+### Tool definitions
+
+```ts
+interface DrawingTool {
+  id: DrawToolId
+  name: string
+  description: string   // for agent: when to use this
+  
+  // Rough.js settings
+  roughness: number
+  bowing: number        // how much lines bow (rough.js param)
+  
+  // Stroke settings
+  defaultWidth: number
+  pressureProfile: PressureOpts
+  alphaJitter: number
+  
+  // Texture
+  textureStyle: 'none' | 'grain' | 'paper' | 'chalk'
+  textureIntensity: number
+  
+  // Path smoothing
+  smoothIterations: number
+  
+  // Visual character
+  lineDash: number[]    // [] = solid, [5,3] = dashed
+  lineCap: 'round' | 'square' | 'butt'
+}
+
+type DrawToolId = 'marker' | 'pen' | 'chalk' | 'brush' | 'highlighter'
+
+const DRAWING_TOOLS: Record<DrawToolId, DrawingTool> = {
+  marker: {
+    id: 'marker',
+    name: 'Whiteboard Marker',
+    description: 'Default tool. Bold, confident strokes. Use for main diagrams, shapes, primary content.',
+    roughness: 1.5,
+    bowing: 1,
+    defaultWidth: 3,
+    pressureProfile: { peakAt: 0.35, minWidth: 0.4, sharpness: 2.0 },
+    alphaJitter: 0.04,
+    textureStyle: 'grain',
+    textureIntensity: 0.04,
+    smoothIterations: 2,
+    lineDash: [],
+    lineCap: 'round',
+  },
+  
+  pen: {
+    id: 'pen',
+    name: 'Fine Pen',
+    description: 'Precise, thin strokes. Use for annotations, labels, small detail work, arrows between elements.',
+    roughness: 0.8,
+    bowing: 0.5,
+    defaultWidth: 1.8,
+    pressureProfile: { peakAt: 0.45, minWidth: 0.15, sharpness: 3.5 },
+    alphaJitter: 0.02,
+    textureStyle: 'grain',
+    textureIntensity: 0.02,
+    smoothIterations: 3,
+    lineDash: [],
+    lineCap: 'round',
+  },
+  
+  chalk: {
+    id: 'chalk',
+    name: 'Chalk',
+    description: 'Soft, textured strokes on dark backgrounds. Use for chalkboard aesthetic scenes.',
+    roughness: 2.5,
+    bowing: 1.5,
+    defaultWidth: 4,
+    pressureProfile: { peakAt: 0.5, minWidth: 0.5, sharpness: 1.2 },
+    alphaJitter: 0.15,
+    textureStyle: 'chalk',
+    textureIntensity: 0.12,
+    smoothIterations: 1,
+    lineDash: [],
+    lineCap: 'round',
+  },
+  
+  brush: {
+    id: 'brush',
+    name: 'Paint Brush',
+    description: 'Expressive, tapered strokes. Use for emphasis, artistic fills, dynamic arrows.',
+    roughness: 1.0,
+    bowing: 2,
+    defaultWidth: 5,
+    pressureProfile: { peakAt: 0.3, minWidth: 0.05, sharpness: 4.0 },
+    alphaJitter: 0.10,
+    textureStyle: 'grain',
+    textureIntensity: 0.08,
+    smoothIterations: 2,
+    lineDash: [],
+    lineCap: 'round',
+  },
+  
+  highlighter: {
+    id: 'highlighter',
+    name: 'Highlighter',
+    description: 'Wide semi-transparent strokes. Use for emphasis boxes, underlining text, attention areas.',
+    roughness: 0.5,
+    bowing: 0,
+    defaultWidth: 18,
+    pressureProfile: { peakAt: 0.5, minWidth: 0.85, sharpness: 0.8 },
+    alphaJitter: 0.02,
+    textureStyle: 'none',
+    textureIntensity: 0,
+    smoothIterations: 1,
+    lineDash: [],
+    lineCap: 'square',
+  },
+}
+```
+
+### Tool application
+
+Every animateRough* function accepts `opts.tool`:
+
+```ts
+function applyTool(opts: DrawOpts): ResolvedDrawOpts {
+  const tool = DRAWING_TOOLS[opts.tool ?? 'marker'];
+  return {
+    roughness: opts.roughness ?? tool.roughness,
+    width: opts.width ?? tool.defaultWidth,
+    pressureProfile: opts.pressureOpts ?? tool.pressureProfile,
+    alphaJitter: tool.alphaJitter,
+    smoothIterations: opts.smoothIterations ?? tool.smoothIterations,
+    bowing: tool.bowing,
+    lineDash: tool.lineDash,
+    lineCap: tool.lineCap,
+    // User-specified always wins:
+    color: opts.color ?? '#1a1a2e',
+    fill: opts.fill ?? null,
+    fillAlpha: opts.fillAlpha ?? 0.12,
+    seed: opts.seed ?? 1,
+  };
+}
+```
+
+### Scene-level tool and chalkboard mode
+
+Add to GlobalStyle:
+```ts
+defaultTool: DrawToolId    // default 'marker'
+bgStyle: 'white' | 'chalkboard' | 'kraft' | 'grid' | 'dots'
+```
+
+bgStyle options:
+- white: #fffef9 background (default)
+- chalkboard: #2d4a3e background, use chalk tool default
+- kraft: #c4a882 background (brown paper), pen/marker work well
+- grid: white with subtle 40px grid lines
+- dots: white with subtle 40px dot grid
+
+When bgStyle = 'chalkboard':
+  - Invert default colors (white strokes instead of dark)
+  - Switch default tool to chalk
+  - Texture overlay uses chalk style
+
+### UI for tool selection
+
+In the RIGHT PANEL under the Layers tab for canvas2d layers,
+add a Tool row above Roughness:
+
+```
+Tool: [● Marker] [Pen] [Chalk] [Brush] [Highlighter]
+```
+
+Each button shows a small stroke preview (render 30px preview
+to a mini canvas).
+
+The roughness slider remains but now shows "override" state
+if changed from tool default.
+
+Add bgStyle selector to Project Settings:
+```
+Background: [White] [Chalkboard] [Kraft] [Grid] [Dots]
+```
+
+---
+
+## PART 2 — AGENT PROMPT UPDATES
+
+### Update rules/canvas2d.md
+
+Add this section to the canvas2d knowledge file:
+
+```markdown
+## Drawing Tools
+
+Use the `tool` option on every drawing call to match the visual intent:
+
+- `marker` — default, bold confident strokes, main diagram elements
+- `pen` — thin precise strokes, annotations, labels, detail lines
+- `chalk` — only on chalkboard backgrounds, soft textured strokes
+- `brush` — expressive emphasis, dynamic arrows, artistic elements
+- `highlighter` — semi-transparent emphasis boxes, underlines
+
+Tool sets roughness, width, pressure, and texture automatically.
+You can still override individual properties if needed.
+
+## Pressure and Texture
+
+All strokes have automatic pressure simulation — you don't control this.
+The tool preset handles it. Just pick the right tool.
+
+Texture overlay is applied automatically at scene end.
+Don't add texture manually.
+
+## Path Smoothing
+
+polygon() and curve() calls are smoothed automatically (2 iterations).
+Set smoothIterations: 0 to disable for intentionally angular shapes.
+Set smoothIterations: 3-4 for very organic, flowing curves.
+
+## Chalkboard Scenes
+
+If bgColor is dark (#1a1a2e, #2d4a3e, etc):
+- Use white or light colors for strokes: '#fffef9', '#f0ece0'
+- Default to chalk tool
+- Fills should be light with low alpha (0.08-0.12)
+```
+
+### Update Scene Maker agent prompt
+
+Add tool selection guidance:
+
+```
+When generating canvas2d layer code, always specify the tool:
+
+For main diagram elements (shapes, primary paths): tool: 'marker'
+For text arrows and annotations: tool: 'pen'  
+For emphasis underlining or highlight boxes: tool: 'highlighter'
+For chalkboard-style scenes: tool: 'chalk'
+For expressive/artistic strokes: tool: 'brush'
+
+Mixing tools within a scene creates visual hierarchy:
+- Main elements: marker (bold)
+- Details/labels: pen (fine)
+- Emphasis: highlighter (transparent)
+This is how real whiteboard artists work.
+```
+
+---
+
+## PART 3 — INLINED RENDERER BUILD
+
+The canvas renderer is injected inline into every scene HTML.
+After implementing all four improvements, rebuild the inlined version:
+
+```bash
+# Build the inlined canvas renderer
+npx vite build --config vite.canvas-renderer.config.ts
+# Output: /public/canvas-renderer.js (~15KB minified)
+```
+
+The inlined build must include:
+- mulberry32 (seeded random)
+- chaikinSmooth
+- strokePressure + drawSegmentWithPressure
+- generateTextureCanvas + applyTextureOverlay
+- DRAWING_TOOLS config
+- applyTool helper
+- All animateRough* functions (updated)
+- All animateLine/Circle/etc (updated)
+- drawText (unchanged — text never animated)
+- wait helper
+- drawAsset helper
+
+DO NOT include in inlined build:
+- React/Next.js imports
+- Zustand
+- SQLite
+- Any server-side code
+
+---
+
+## PART 4 — IMPLEMENTATION ORDER
+
+1. Add DrawingTool types + DRAWING_TOOLS config
+2. Implement strokePressure() + drawSegmentWithPressure()
+3. Update animateOps() to use pressure simulation
+4. Implement jitteredAlpha()
+5. Update all animateRough* to use applyTool()
+6. Implement chaikinSmooth()
+7. Apply to animateRoughPolygon + animateCurve
+8. Implement generateTextureCanvas()
+9. Implement applyTextureOverlay()
+10. Add texture call at end of runAllLayers() in scene template
+11. Add bgStyle to GlobalStyle + scene template bg rendering
+12. Add tool selector UI in layer panel
+13. Add bgStyle selector in project settings
+14. Update rules/canvas2d.md with tool guidance
+15. Update Scene Maker system prompt
+16. Rebuild inlined canvas renderer
+17. Test each tool: draw same shape with each, compare visually
+18. Test chalkboard mode end to end
+19. Test WVC export — verify determinism (same output every render)
+
+---
+
+## CRITICAL NOTES
+
+Determinism: all randomness in texture generation and jitter
+uses seeded mulberry32. The seed for texture = scene.id hashed
+to an integer. Same scene always renders identically for WVC.
+
+Performance: generateTextureCanvas runs once per scene load,
+not per frame. Cache the result in a module-level Map keyed
+by seed. Don't regenerate on every animation frame.
+
+Chalk on dark: when bgColor luminance < 0.3, automatically
+flip default stroke color to '#fffef9' and default tool to chalk.
+The agent should not need to handle this manually.
+
+Highlighter blend mode: highlighter strokes use
+ctx.globalCompositeOperation = 'multiply' for realistic
+ink-on-paper blending. Reset to 'source-over' after each stroke.
+
+Pressure on circles: apply pressure along the arc angle (0→2π)
+not along a parametric t. Peak pressure at π/2 (rightmost point
+of the drawing motion, where the hand is moving fastest).
+
+Path smoothing + roughness interaction: smooth BEFORE passing
+to rough.js generator. Chaikin gives you clean curves, then
+rough.js adds hand-drawn character on top of those clean curves.
+Smoothing AFTER roughness would eliminate the rough effect.
+```

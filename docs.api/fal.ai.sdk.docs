@@ -1,0 +1,126 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://fal.ai/docs/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# Python SDK
+
+> API reference for the fal Python package
+
+The `fal` package provides decorators and utilities for building serverless AI applications.
+
+## Installation
+
+```bash  theme={null}
+pip install fal
+```
+
+## Quick Start
+
+```python  theme={null}
+import fal
+
+class MyApp(fal.App):
+    @fal.endpoint("/")
+    def run(self) -> dict:
+        return {"message": "Hello, World!"}
+```
+
+Deploy with:
+
+```bash  theme={null}
+fal deploy my_app.py
+```
+
+See the [Quick Start guide](/serverless/getting-started/quick-start) for a complete walkthrough.
+
+## API Reference
+
+<CardGroup cols={2}>
+  <Card title="fal" icon="cube" href="/reference/serverless-sdk/fal">
+    `App` class, decorators (`endpoint`, `realtime`, `function`, `cached`), `HealthCheck`, `ContainerImage`
+  </Card>
+
+  <Card title="fal.api" icon="server" href="/reference/serverless-sdk/fal.api">
+    `SyncServerlessClient`: manage apps, runners, keys, secrets, and deploy programmatically
+  </Card>
+
+  <Card title="fal.toolkit" icon="toolbox" href="/reference/serverless-sdk/fal.toolkit">
+    File types (`Image`, `Video`, `Audio`), `KVStore`, model downloads, GPU utilities
+  </Card>
+
+  <Card title="fal.exceptions" icon="triangle-exclamation" href="/reference/serverless-sdk/fal.exceptions">
+    Exception classes for error handling
+  </Card>
+
+  <Card title="CLI" icon="terminal" href="/reference/cli/installation">
+    `fal deploy`, `fal apps`, `fal runners`, `fal keys`, `fal secrets`, and more
+  </Card>
+</CardGroup>
+
+## Key Decorators
+
+| Decorator             | Description                                  |
+| :-------------------- | :------------------------------------------- |
+| `@fal.endpoint(path)` | Define an HTTP endpoint on an App            |
+| `@fal.realtime(path)` | WebSocket endpoint for realtime applications |
+| `@fal.function(...)`  | Create a standalone serverless function      |
+| `@fal.cached`         | Cache function results in-memory             |
+
+See the [fal module reference](/reference/serverless-sdk/fal) for full details.
+
+## App Configuration
+
+Configure your app using class variables. See the [full App reference](/reference/serverless-sdk/fal#app) for all options.
+
+| Property          | Description                                                                                                               |
+| :---------------- | :------------------------------------------------------------------------------------------------------------------------ |
+| `machine_type`    | GPU type: `"GPU-A100"`, `"GPU-H100"`, or list for fallback (see [Machine Types](/documentation/deployment/machine-types)) |
+| `requirements`    | Pip packages to install (e.g., `["torch>=2.0"]`)                                                                          |
+| `num_gpus`        | Number of GPUs to allocate                                                                                                |
+| `min_concurrency` | Minimum warm instances (1+ to avoid cold starts)                                                                          |
+| `max_concurrency` | Maximum instances to scale to                                                                                             |
+| `request_timeout` | Maximum seconds per request                                                                                               |
+| `startup_timeout` | Maximum seconds for setup                                                                                                 |
+| `app_auth`        | Auth mode: `"private"`, `"public"`, or `"shared"`                                                                         |
+| `app_files`       | Files/directories to include in deployment                                                                                |
+| `image`           | Custom `ContainerImage` for the application                                                                               |
+
+## Toolkit Highlights
+
+The [fal.toolkit](/reference/serverless-sdk/fal.toolkit) module provides utilities for common tasks:
+
+| Utility                    | Description                              |
+| :------------------------- | :--------------------------------------- |
+| `Image`, `Video`, `Audio`  | File types with automatic CDN upload     |
+| `KVStore`                  | Persistent key-value storage             |
+| `download_model_weights()` | Download and cache model weights         |
+| `clone_repository()`       | Clone git repositories                   |
+| `sync_dir()`               | Sync local directories to remote storage |
+| `get_gpu_type()`           | Detect current GPU type                  |
+
+## SyncServerlessClient
+
+The [SyncServerlessClient](/reference/serverless-sdk/fal.api#syncserverlessclient) provides programmatic access to fal operations (mirrors the CLI):
+
+```python  theme={null}
+from fal.api import SyncServerlessClient
+
+client = SyncServerlessClient()
+
+# Manage apps
+apps = client.apps.list()
+client.apps.scale("my-app", max_concurrency=10)
+
+# Manage runners
+runners = client.runners.list()
+client.runners.stop("runner-id")
+
+# Manage keys and secrets
+client.keys.create(scope="admin")
+client.secrets.set("API_KEY", "value")
+
+# Deploy
+client.deploy("path/to/app.py::MyApp")
+```
+
+For detailed guides on building applications, see the [Serverless documentation](/serverless).

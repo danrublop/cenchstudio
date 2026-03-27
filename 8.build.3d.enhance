@@ -1,0 +1,862 @@
+Good question — let me research what's actually available and good before writing anything.Good — I have what I need. Let me give you the full picture before the prompt.
+
+---
+
+**The honest landscape:**
+
+**Three.js** (MIT) — what you already have. Still the right choice for complex 3D. 5M weekly downloads, most documentation, most examples. The problem is Claude generates mediocre Three.js because it's imperative and verbose — Claude loses track of scene state over long code blocks.
+
+**Babylon.js** (Apache 2.0 license) — more powerful than Three.js, better physics, better PBR materials, excellent inspector tool. But heavier (~800KB vs Three.js ~600KB) and the API is more complex, which makes it harder for Claude to generate reliably. Not worth switching to.
+
+**Zdog** (MIT licensed) — the hidden gem for your use case. A pseudo-3D engine that renders all shapes using 2D drawing APIs in canvas or SVG. Spheres are dots, toruses are circles, capsules are thick lines. Only 28KB. The visual output looks like flat vector illustration in 3D space — which is *exactly* the aesthetic of a whiteboard explainer. A rotating molecule diagram, a 3D bar chart, a spinning globe — Zdog makes these look like designer illustrations not video games. And because the API is tiny and declarative, Claude can generate it reliably.
+
+**Theatre.js** — interesting but complicated license situation. The core `@theatre/core` is Apache 2.0, but the studio/editor `@theatre/studio` is AGPL 3.0. You only need the core for playback (Apache 2.0, fine for commercial use). The studio is for editing which you'd run in dev only. This is fine. But more importantly — Theatre.js is a keyframe animation editor on *top* of Three.js, not a replacement. It adds a visual timeline editor to Three.js scenes. For your use case where Claude generates code, Theatre.js's visual editor is irrelevant. Skip it.
+
+**React Three Fiber** (MIT) — R3F is a React renderer for Three.js. Everything that works in Three.js works here without exception. There is no overhead — components render outside of React. The benefit for Inkframe is that scene code becomes declarative JSX instead of imperative JS, which Claude handles much better. BUT — your scene HTML files aren't React apps. They're vanilla HTML injected into iframes. R3F doesn't work in that context. You'd have to bundle React into every scene file which is impractical.
+
+**The real 3D problem isn't the library — it's Claude's spatial reasoning.** Claude generates Three.js code that technically runs but looks amateurish because it can't reason about 3D composition: camera angles, lighting placement, material quality, animation curves. The fix isn't a better library, it's better constraints and a 3D component library.
+
+---
+
+Here's the prompt:
+
+---
+
+```
+You are extending Inkframe's 3D animation system.
+The app currently generates Three.js r128 code for ThreeLayer scenes
+via Claude. The output quality is mediocre because Claude generating
+arbitrary Three.js scenes produces technically-correct-but-visually-poor
+results.
+
+Add three improvements:
+1. Zdog layer type — for flat pseudo-3D illustration style scenes
+2. A 3D component library — pre-built Three.js scene components
+   Claude assembles rather than invents from scratch
+3. Improved Three.js generation — better constraints, camera presets,
+   lighting rigs, and material system
+
+---
+
+## IMPROVEMENT 1 — ZDOG LAYER TYPE
+
+### Why Zdog for explainer videos
+
+Zdog renders 3D geometry using 2D canvas/SVG drawing.
+The result looks like flat vector illustration with 3D depth.
+This is PERFECT for whiteboard explainer content:
+  - Rotating molecular models
+  - 3D bar charts and graphs
+  - Spinning globes and maps
+  - Product diagrams with depth
+  - Step-by-step assembly animations
+  - Network topology diagrams
+
+The aesthetic matches Canvas2D's hand-drawn feel much better
+than full WebGL Three.js scenes. Zdog scenes feel designed,
+not rendered.
+
+### License
+MIT — fully commercial safe.
+
+### CDN
+https://unpkg.com/zdog@1/dist/zdog.dist.min.js
+
+### Layer type addition
+
+```ts
+interface ZdogLayer extends BaseLayer {
+  type: 'zdog'
+  zoom: number              // scene zoom, default 4
+  dragRotate: boolean       // interactive rotation (preview only)
+  autoSpin: boolean         // continuous rotation
+  spinSpeed: number         // rotation per frame, default 0.01
+  bgColor: string | null    // null = transparent
+}
+```
+
+### Zdog scene HTML template
+
+```html
+<div id="{layer.id}" class="inkframe-layer" style="
+  opacity: {layer.opacity};
+  z-index: {layer.zIndex};">
+  
+  <canvas id="{layer.id}-canvas"
+    width="1920" height="1080"
+    style="display:block;">
+  </canvas>
+</div>
+
+<script src="https://unpkg.com/zdog@1/dist/zdog.dist.min.js"></script>
+<script>
+  setTimeout(() => {
+    const canvas = document.getElementById('{layer.id}-canvas');
+    
+    {layer.generatedCode}
+    // Generated code creates illo, shapes, and the animate loop
+    
+  }, {layer.startAt * 1000});
+</script>
+```
+
+### Zdog generation prompt
+
+```
+You are generating a Zdog pseudo-3D illustration for Inkframe.
+Zdog renders flat vector-style 3D using canvas 2D drawing.
+The visual style is clean, designed, illustrative — like a vector
+diagram with depth. Perfect for diagrams, charts, and models.
+
+ZDOG API (complete reference — stay within this):
+
+  // Create the illustration
+  const illo = new Zdog.Illustration({
+    element: canvas,           // the canvas element
+    zoom: {zoom},              // scale factor
+    dragRotate: false,         // never true in export
+    resize: false,
+    width: 1920,
+    height: 1080,
+  });
+
+  // SHAPES — add to illo or to other shapes
+  new Zdog.Ellipse({ addTo, diameter, stroke, color, fill, translate, rotate })
+  new Zdog.Rect({ addTo, width, height, stroke, color, fill, translate, rotate })
+  new Zdog.RoundedRect({ addTo, width, height, cornerRadius, stroke, color })
+  new Zdog.Polygon({ addTo, radius, sides, stroke, color, fill })
+  new Zdog.Shape({ addTo, path: [{x,y,z},...], stroke, color, closed, fill })
+  new Zdog.Cylinder({ addTo, diameter, length, stroke, color, fill, backface })
+  new Zdog.Cone({ addTo, diameter, length, stroke, color })
+  new Zdog.Box({ addTo, width, height, depth, stroke, color, fill,
+                 leftFace, rightFace, topFace, bottomFace, frontFace, rearFace })
+  new Zdog.Hemisphere({ addTo, diameter, stroke, color, fill, backface })
+  
+  // GROUPS — for organizing and animating together
+  const group = new Zdog.Anchor({ addTo: illo, translate, rotate, scale });
+  // Add shapes to group with addTo: group
+  
+  // TEXT — use Zfont for text on shapes
+  // Note: Zfont requires loading a font. Skip text — use HTML overlay instead.
+  
+  // TRANSLATION: { x, y, z }  where x=right, y=down, z=toward camera
+  // ROTATION:    { x, y, z }  in radians
+  // COLORS:      hex strings from PALETTE
+
+  // ANIMATION LOOP
+  let startTime = null;
+  function animate(timestamp) {
+    if (!startTime) startTime = timestamp;
+    const elapsed = (timestamp - startTime) / 1000; // seconds
+    
+    // Rotate, translate, or modify shapes based on elapsed time
+    group.rotate.y = elapsed * {spinSpeed};
+    
+    illo.updateRenderGraph();
+    
+    if (elapsed < {duration}) {
+      requestAnimationFrame(animate);
+    }
+  }
+  requestAnimationFrame(animate);
+
+PALETTE: {palette}  — use these colors for all shapes
+DURATION: {duration}s
+CANVAS CENTER: x=0, y=0 in Zdog space (Zdog is centered by default)
+ZOOM: {zoom}  — at zoom=4, a shape with diameter=40 appears ~160px
+
+OUTPUT FORMAT:
+{
+  "sceneCode": "// complete Zdog scene code as a string"
+}
+
+RULES:
+- Use Box, Cylinder, Ellipse, and Polygon as primary shapes
+- Use Anchor groups to organize related shapes
+- Animate via rotate.y += speed in the RAF loop for spinning effects
+- Stagger appearance: translate shapes outside canvas at start,
+  animate them in using lerp: shape.translate.y += (target - current) * 0.05
+- Use backface: false on shapes facing away from camera
+- All colors from PALETTE only
+- Maximum ~20 shapes for performance
+- Canvas text: use a separate HTML overlay layer instead of Zfont
+- dragRotate: ALWAYS false (WVC doesn't have mouse events)
+
+WHAT TO BUILD:
+Based on the user prompt, choose the right Zdog shapes:
+  Molecule/atom model → Sphere (Hemisphere×2) + Cylinder bonds + Anchor groups
+  3D bar chart → Box shapes of varying heights + Anchor base
+  Globe → Hemisphere layers stacked + Ellipse rings
+  Gear/mechanical → Polygon teeth + Cylinder body
+  Network diagram → Ellipse nodes + Shape connector lines
+  Product box → Box with different face colors
+  DNA helix → Two Shape paths wound around a Cylinder
+  Hierarchy/org chart → Box nodes + Shape connectors in 3D space
+
+Previous scene context: {previousSummary}
+```
+
+### Zdog tool filter integration
+
+Add to the tool filter chips in Agent Control Panel:
+[✓ Zdog (flat 3D)]
+
+Add to rules/3d.md:
+```
+CHOOSING BETWEEN THREE.JS AND ZDOG:
+
+Use Zdog when:
+- The scene needs a clean, illustrative, vector-design aesthetic
+- Subject is a diagram, model, or chart (not a landscape or environment)
+- You want the 3D to feel designed, not rendered
+- Example prompts: molecule, gear, org chart, 3D bar chart, globe, product box
+
+Use Three.js when:
+- The scene needs realistic materials, lighting, or shadows
+- Subject is environmental (space, room, landscape)
+- You need particle systems, shaders, or complex geometry
+- Example prompts: space scene, particle explosion, shader effect, terrain
+```
+
+---
+
+## IMPROVEMENT 2 — 3D COMPONENT LIBRARY
+
+### The core problem
+
+Claude generating arbitrary Three.js produces poor results
+because it invents geometry, lighting, and camera from scratch.
+The fix: pre-built, tested, high-quality Three.js components
+Claude assembles instead of invents.
+
+Think of it like the 2D asset library but for 3D scene pieces.
+
+### Component structure
+
+```ts
+interface ThreeDComponent {
+  id: string
+  name: string
+  category: ThreeDCategory
+  tags: string[]
+  description: string   // for Claude: when to use this component
+  
+  // Self-contained JS function string
+  // Receives: scene, palette, seed
+  // Returns: { group, update(t) }
+  // t = elapsed seconds
+  buildFn: string
+  
+  // Preview info
+  thumbnail: string     // base64 PNG
+  animates: boolean     // does it animate?
+  interactive: boolean  // responds to camera/mouse?
+}
+
+type ThreeDCategory =
+  | 'objects'         // primary 3D objects
+  | 'environments'    // backgrounds, skyboxes, floors
+  | 'lighting-rigs'   // pre-configured lighting setups
+  | 'cameras'         // camera preset configurations
+  | 'particles'       // particle systems
+  | 'text'            // 3D text setups
+  | 'effects'         // post-processing, shaders
+  | 'data-viz'        // 3D charts, graphs
+```
+
+### Core component library (build these first)
+
+**Lighting rigs (most important — bad lighting kills 3D quality):**
+
+```ts
+{
+  id: 'lighting-studio',
+  name: 'Studio Lighting',
+  description: 'Soft professional studio setup with key, fill, and rim lights. Use for product shots and object showcases.',
+  buildFn: `
+    function build(scene, palette) {
+      // Ambient — very soft overall light
+      const ambient = new THREE.AmbientLight(0xffffff, 0.3);
+      scene.add(ambient);
+      
+      // Key light — main directional from upper left
+      const key = new THREE.DirectionalLight(0xffffff, 1.2);
+      key.position.set(-5, 8, 5);
+      key.castShadow = true;
+      key.shadow.mapSize.width = 2048;
+      key.shadow.mapSize.height = 2048;
+      scene.add(key);
+      
+      // Fill light — softer from right, warm tint
+      const fill = new THREE.DirectionalLight(0xfff4e0, 0.4);
+      fill.position.set(5, 2, 3);
+      scene.add(fill);
+      
+      // Rim light — behind object, cool blue edge
+      const rim = new THREE.DirectionalLight(0xd0e8ff, 0.6);
+      rim.position.set(0, 3, -8);
+      scene.add(rim);
+      
+      return { update: (t) => {} };
+    }
+  `
+},
+{
+  id: 'lighting-dramatic',
+  name: 'Dramatic Lighting',
+  description: 'High contrast single key light with dark shadows. Use for dramatic reveals, important objects.',
+  buildFn: `...`
+},
+{
+  id: 'lighting-soft-overhead',
+  name: 'Soft Overhead',
+  description: 'Even overhead lighting, minimal shadows. Use for diagrams and technical content where clarity matters more than drama.',
+  buildFn: `...`
+},
+{
+  id: 'lighting-neon',
+  name: 'Neon Environment',
+  description: 'Dark background with colored point lights from palette colors. Use for tech, data, or futuristic scenes.',
+  buildFn: `
+    function build(scene, palette) {
+      scene.background = new THREE.Color(0x050510);
+      
+      // Point lights in palette colors
+      palette.forEach((color, i) => {
+        const light = new THREE.PointLight(color, 2, 20);
+        light.position.set(
+          Math.cos(i * Math.PI / 2) * 8,
+          Math.sin(i * 0.7) * 4,
+          Math.sin(i * Math.PI / 2) * 8
+        );
+        scene.add(light);
+      });
+      
+      const ambient = new THREE.AmbientLight(0x111122, 0.5);
+      scene.add(ambient);
+      
+      return { update: (t) => {
+        // Slowly pulse lights
+        scene.children
+          .filter(c => c.isPointLight)
+          .forEach((light, i) => {
+            light.intensity = 1.5 + Math.sin(t * 0.5 + i) * 0.5;
+          });
+      }};
+    }
+  `
+}
+```
+
+**Camera presets:**
+
+```ts
+{
+  id: 'camera-orbit-slow',
+  name: 'Slow Orbit',
+  description: 'Camera slowly orbits around center. Classic for product reveals and object showcases.',
+  buildFn: `
+    function build(camera, duration) {
+      const radius = camera.position.length();
+      const startAngle = Math.atan2(camera.position.z, camera.position.x);
+      
+      return { update: (t) => {
+        const angle = startAngle + (t / duration) * Math.PI * 2 * 0.3;
+        camera.position.x = Math.cos(angle) * radius;
+        camera.position.z = Math.sin(angle) * radius;
+        camera.lookAt(0, 0, 0);
+      }};
+    }
+  `
+},
+{
+  id: 'camera-pullback',
+  name: 'Dramatic Pullback',
+  description: 'Camera starts close and pulls back to reveal the full scene.',
+  buildFn: `...`
+},
+{
+  id: 'camera-top-down',
+  name: 'Top Down',
+  description: 'Overhead view looking straight down. Good for map/grid/network diagrams.',
+  buildFn: `...`
+},
+{
+  id: 'camera-isometric',
+  name: 'Isometric',
+  description: 'Fixed isometric angle, no perspective distortion. Good for architectural and diagram content.',
+  buildFn: `
+    function build(camera) {
+      camera.position.set(10, 10, 10);
+      camera.lookAt(0, 0, 0);
+      // Switch to orthographic for true iso
+      return { update: (t) => {} };
+    }
+  `
+}
+```
+
+**Object components:**
+
+```ts
+{
+  id: 'object-floating-sphere',
+  name: 'Floating Sphere',
+  description: 'Sphere with gentle float animation. Good as a central focus object.',
+  buildFn: `
+    function build(scene, palette, seed) {
+      const group = new THREE.Group();
+      const geo = new THREE.SphereGeometry(1.5, 32, 32);
+      const mat = new THREE.MeshStandardMaterial({
+        color: palette[0],
+        roughness: 0.3,
+        metalness: 0.4,
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      group.add(mesh);
+      scene.add(group);
+      
+      return { group, update: (t) => {
+        group.position.y = Math.sin(t * 0.8) * 0.3;
+        group.rotation.y = t * 0.3;
+      }};
+    }
+  `
+},
+{
+  id: 'object-data-nodes',
+  name: 'Network Nodes',
+  description: 'Connected spheres with animated lines between them. Use for network, data flow, or relationship diagrams.',
+},
+{
+  id: 'object-dna-helix',
+  name: 'DNA Helix',
+  description: 'Rotating double helix. Use for biology, genetics, or "deep structure" metaphors.',
+},
+{
+  id: 'object-bar-chart-3d',
+  name: '3D Bar Chart',
+  description: 'Bars rising from a floor plane. Each bar can have different heights from data.',
+},
+{
+  id: 'object-globe',
+  name: 'Globe',
+  description: 'Earth-like sphere with wireframe grid. Use for global/international content.',
+},
+{
+  id: 'object-atom',
+  name: 'Atom Model',
+  description: 'Nucleus with orbiting electron rings. Use for science, chemistry, physics content.',
+},
+{
+  id: 'object-gear-system',
+  name: 'Gear System',
+  description: 'Two interlocking gears rotating. Use for mechanics, process, settings metaphors.',
+},
+{
+  id: 'object-building-blocks',
+  name: 'Building Blocks',
+  description: 'Cubes assembling into a structure. Use for construction, building, growth metaphors.',
+},
+{
+  id: 'object-funnel',
+  name: '3D Funnel',
+  description: 'Funnel with particles flowing through. Use for sales pipeline, filtering, conversion.',
+},
+{
+  id: 'object-progress-ring',
+  name: 'Progress Ring',
+  description: 'Torus that fills from 0% to N%. Use for showing completion, metrics, goals.',
+}
+```
+
+**Environment components:**
+
+```ts
+{
+  id: 'env-grid-floor',
+  name: 'Grid Floor',
+  description: 'Infinite grid plane below objects. Gives grounding and depth without distraction.',
+},
+{
+  id: 'env-particles-bg',
+  name: 'Particle Background',
+  description: 'Slowly drifting particles behind main content. Adds depth without complexity.',
+},
+{
+  id: 'env-gradient-bg',
+  name: 'Gradient Background',
+  description: 'Smooth color gradient background using palette colors.',
+}
+```
+
+### Component assembly system
+
+Scene code is built by ASSEMBLING components, not generating from scratch:
+
+```ts
+// Agent calls:
+assemble_three_scene(sceneId, {
+  lighting: 'lighting-studio',
+  camera: 'camera-orbit-slow',
+  objects: ['object-floating-sphere', 'object-data-nodes'],
+  environment: 'env-grid-floor',
+  customCode: '// any additional code Claude wants to add',
+  data: { /* for data-viz components */ }
+})
+```
+
+This generates scene HTML by composing component build functions:
+
+```ts
+function generateThreeSceneFromComponents(config: ThreeSceneConfig): string {
+  const lighting = getComponent(config.lighting);
+  const camera = getComponent(config.camera);
+  const objects = config.objects.map(getComponent);
+  const env = config.environment ? getComponent(config.environment) : null;
+  
+  return `
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(60, 1920/1080, 0.1, 1000);
+    camera.position.set(0, 4, 10);
+    
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(1920, 1080);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.2;
+    document.getElementById('${layerId}').appendChild(renderer.domElement);
+    
+    // LIGHTING
+    ${lighting.buildFn}
+    const lightingControls = build_lighting_studio(scene, PALETTE);
+    
+    // CAMERA
+    ${camera.buildFn}
+    const cameraControls = build_camera_orbit_slow(camera, DURATION);
+    
+    // ENVIRONMENT
+    ${env ? `${env.buildFn}\nconst envControls = build_${env.id.replace(/-/g,'_')}(scene, PALETTE);` : ''}
+    
+    // OBJECTS
+    ${objects.map(obj => `
+      ${obj.buildFn}
+      const ${obj.id.replace(/-/g,'_')}_controls = build_${obj.id.replace(/-/g,'_')}(scene, PALETTE, ${Math.random() * 1000 | 0});
+    `).join('\n')}
+    
+    // CUSTOM
+    ${config.customCode || ''}
+    
+    // RENDER LOOP
+    const startTime = performance.now();
+    function animate() {
+      const t = (performance.now() - startTime) / 1000;
+      if (t > DURATION) return;
+      
+      lightingControls.update(t);
+      cameraControls.update(t);
+      ${env ? 'envControls.update(t);' : ''}
+      ${objects.map(obj => `${obj.id.replace(/-/g,'_')}_controls.update(t);`).join('\n')}
+      
+      renderer.render(scene, camera);
+      requestAnimationFrame(animate);
+    }
+    animate();
+  `;
+}
+```
+
+### Updated Three.js agent tool
+
+Replace the single generate_layer tool for Three.js with:
+
+```ts
+{
+  name: 'assemble_three_scene',
+  description: `Assemble a Three.js scene from pre-built components.
+  This produces better quality than generating Three.js from scratch.
+  Choose lighting, camera, objects, and environment from the available
+  components. Add custom code only for unique requirements.
+  
+  Available lighting: ${COMPONENT_IDS.lighting.join(', ')}
+  Available cameras: ${COMPONENT_IDS.cameras.join(', ')}
+  Available objects: ${COMPONENT_IDS.objects.join(', ')}
+  Available environments: ${COMPONENT_IDS.environments.join(', ')}`,
+  
+  input_schema: {
+    sceneId: 'string',
+    lighting: 'string — component id',
+    camera: 'string — component id',
+    objects: 'string[] — 1-3 object component ids',
+    environment: 'string | null — environment component id',
+    customCode: 'string | null — additional Three.js code to run after setup',
+    data: 'object | null — data for data-viz components'
+  }
+}
+```
+
+Still keep `generate_three_layer` for cases where no component fits,
+but instruct the agent to prefer `assemble_three_scene`.
+
+---
+
+## IMPROVEMENT 3 — THREE.JS GENERATION QUALITY
+
+When the agent does generate Three.js from scratch
+(not using components), enforce these quality standards.
+
+### Update rules/three.md
+
+```markdown
+# Three.js Scene Generation Rules
+
+## ALWAYS start with quality renderer settings
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+## ALWAYS use physically-based materials
+
+// WRONG — flat, plastic-looking:
+new THREE.MeshBasicMaterial({ color: 0xff0000 })
+
+// RIGHT — physically realistic:
+new THREE.MeshStandardMaterial({
+  color: palette[0],
+  roughness: 0.4,      // 0 = mirror, 1 = totally rough
+  metalness: 0.1,      // 0 = plastic, 1 = metal
+})
+
+// For glass/transparent:
+new THREE.MeshPhysicalMaterial({
+  color: palette[0],
+  transparent: true,
+  opacity: 0.3,
+  roughness: 0,
+  metalness: 0,
+  transmission: 0.9,
+})
+
+## ALWAYS set up 3-point lighting minimum
+
+Never use just AmbientLight alone — scenes look flat and washed out.
+Always: ambient (low) + directional key + directional fill minimum.
+See lighting-studio component for reference.
+
+## Camera positioning guide
+
+Too close = distorted, claustrophobic
+Too far = tiny objects, lost detail
+
+For a scene with objects of radius ~1-2 units:
+  camera.position.set(0, 4, 10) — good default
+  camera.position.set(0, 8, 0)  — top down
+  camera.position.set(7, 5, 7)  — isometric feel
+
+ALWAYS call camera.lookAt(0, 0, 0) after positioning.
+
+## Smooth animation easing
+
+// WRONG — linear, mechanical:
+object.rotation.y += 0.01
+
+// RIGHT — eased with sine:
+object.rotation.y = Math.sin(t * 0.5) * Math.PI * 0.25
+
+// RIGHT — smooth interpolation to target:
+object.position.y += (targetY - object.position.y) * 0.05
+
+## Shadows
+
+For shadows to work:
+1. renderer.shadowMap.enabled = true
+2. light.castShadow = true
+3. mesh.castShadow = true (the object)
+4. floor.receiveShadow = true (the surface)
+
+Without step 4, objects float unrealistically.
+
+## Scale guide
+
+One Three.js unit ≈ one "unit" in scene space.
+Keep objects between 0.5 and 3 units radius.
+Camera at 8-15 units distance.
+Floor at y = -2 to -4.
+
+## What NOT to generate
+
+Never use:
+- THREE.CapsuleGeometry (not in r128)
+- OrbitControls (not on CDN)
+- ES module imports (THREE is a global)
+- GLTFLoader (no .glb files available)
+- EnvironmentMap/HDR (no HDR files available)
+- TextGeometry alone (requires FontLoader, complex)
+
+## Colors
+
+Always use PALETTE array, never hardcoded hex values.
+new THREE.MeshStandardMaterial({ color: new THREE.Color(PALETTE[0]) })
+THREE.Color accepts hex strings directly.
+
+## Performance
+
+Keep polygon count reasonable for headless Chrome:
+  Simple scenes: < 50k triangles total
+  Medium scenes: < 150k triangles
+  Complex scenes: < 300k triangles
+
+SphereGeometry(1, 32, 32) = ~2k triangles — fine
+SphereGeometry(1, 128, 128) = ~32k triangles — too many for one sphere
+
+## Determinism for WVC export
+
+NEVER use Math.random() — use seeded mulberry32.
+NEVER use Date.now() — use the t parameter from RAF.
+Same seed + same elapsed time = same frame = deterministic export.
+```
+
+### Material quality presets
+
+Inject these as constants in every Three.js scene HTML:
+
+```js
+// Pre-configured material recipes
+const MATERIALS = {
+  plastic: (color) => new THREE.MeshStandardMaterial({
+    color: new THREE.Color(color),
+    roughness: 0.6, metalness: 0.0
+  }),
+  metal: (color) => new THREE.MeshStandardMaterial({
+    color: new THREE.Color(color),
+    roughness: 0.2, metalness: 0.9
+  }),
+  glass: (color) => new THREE.MeshPhysicalMaterial({
+    color: new THREE.Color(color),
+    transparent: true, opacity: 0.25,
+    roughness: 0.0, metalness: 0.0,
+    transmission: 0.9,
+  }),
+  matte: (color) => new THREE.MeshStandardMaterial({
+    color: new THREE.Color(color),
+    roughness: 1.0, metalness: 0.0
+  }),
+  glow: (color) => new THREE.MeshStandardMaterial({
+    color: new THREE.Color(color),
+    emissive: new THREE.Color(color),
+    emissiveIntensity: 0.4,
+    roughness: 0.3, metalness: 0.1,
+  }),
+};
+
+// Agent uses: MATERIALS.metal(PALETTE[0])
+// instead of manually specifying roughness/metalness
+```
+
+### Agent 3D selection guide update
+
+Inject into Scene Maker agent:
+
+```
+3D LAYER SELECTION GUIDE:
+
+Step 1: Does the scene need illustrative/diagram 3D?
+  → Use Zdog layer
+  → Molecule, gear, chart, globe, network diagram, product box
+
+Step 2: Does the scene need real 3D with quality rendering?
+  → Use Three.js layer via assemble_three_scene
+  → Choose components: lighting + camera + 1-3 objects + environment
+  → Use assemble_three_scene, NOT generate_three_layer
+
+Step 3: Does the scene need something no component covers?
+  → Use generate_three_layer with the Three.js rules
+  → ALWAYS start from quality renderer + 3-point lighting
+  → ALWAYS use MATERIALS.* presets
+  → ALWAYS use seeded randomness
+
+NEVER generate Three.js from scratch when a component exists for it.
+Check available components first every time.
+```
+
+---
+
+## PART 2 — LICENSE SUMMARY
+
+All additions are commercial-safe:
+
+Zdog: MIT ✅
+Three.js r128: MIT ✅
+Babylon.js: Apache 2.0 ✅ (not used, just noted)
+Theatre.js @theatre/core: Apache 2.0 ✅ (not used, just noted)
+React Three Fiber: MIT ✅ (not suitable for iframe scenes, not used)
+
+Component library: built by you, you own it ✅
+
+---
+
+## IMPLEMENTATION ORDER
+
+1. ZdogLayer type + scene HTML template
+2. Zdog generation prompt in /api/generate
+3. Zdog tool in tool filter + agent control panel chip
+4. Update rules/3d.md with Zdog vs Three.js guidance
+5. ThreeDComponent interface + SQLite table
+6. Build 4 lighting rig components (most impactful)
+7. Build 4 camera preset components
+8. Build 8 object components (start: sphere, nodes, globe, atom)
+9. Build 3 environment components
+10. Component thumbnail generation script
+11. assemble_three_scene tool + HTML generator
+12. Material presets injected into every Three.js scene HTML
+13. Updated rules/three.md with quality constraints
+14. Test: Zdog molecule → preview → WVC export
+15. Test: assembled Three.js scene (studio lighting + orbit + sphere)
+16. Test: compare assembled vs generated quality
+
+---
+
+## CRITICAL NOTES
+
+Zdog dragRotate: always set to false in scene HTML for WVC export.
+The WVC headless Chrome has no mouse events so drag doesn't work
+and leaving it true causes Zdog to initialize in an unexpected state.
+In preview mode (browser), can be true for interactivity.
+Use a query param: dragRotate: new URLSearchParams(location.search).has('preview')
+
+Zdog canvas sizing: Zdog's coordinate system is centered.
+At zoom=4, a shape at translate: {x:0, y:0} appears at center.
+x increases right, y increases DOWN, z increases TOWARD camera.
+Inject this into the Zdog system prompt — it's non-obvious.
+
+Component buildFn isolation: each component function must be
+completely self-contained. No shared variables between components.
+Prefix all internal variables with the component id to prevent collisions.
+Function naming: build_{componentId.replace(/-/g,'_')}
+
+Three.js r128 on CDN: verify all geometries used in components
+exist in r128. BoxGeometry, SphereGeometry, CylinderGeometry,
+TorusGeometry, PlaneGeometry, ConeGeometry, TubeGeometry,
+EdgesGeometry, WireframeGeometry all exist.
+BufferGeometry exists. CapsuleGeometry does NOT (added r142).
+
+MATERIALS constants must be injected before any scene code runs.
+Add them to the Three.js template between the THREE global and
+the layer's generatedCode/assembled code.
+
+For the component thumbnail generator: use the same canvas
+approach as assets — createCanvas(160, 90) in Node.js with
+the canvas npm package, run the build function, capture frame
+at t=2 seconds, save as base64.
+
+Zdog text: do NOT use Zfont in generated scenes. It requires
+loading a font file which adds complexity and latency. Instead:
+use a separate HTML layer on top of the Zdog layer for any text.
+The agent should automatically add an HTML layer when the Zdog
+scene needs labels or titles.
+```

@@ -1,0 +1,813 @@
+
+
+---
+
+```
+You are extending Inkframe, an AI-powered animated video/interactive 
+explainer creator. The app already has:
+- 5 scene types: svg, motion, d3, three, lottie
+- WebVideoCreator + FFmpeg export pipeline (MP4)
+- Zustand state, Next.js frontend, Express render server
+- Scene HTML files written to /public/scenes/{id}.html
+
+## GOAL
+Add a dual output mode system:
+
+  MODE 1 — "Export MP4"     (existing pipeline, unchanged)
+  MODE 2 — "Publish Interactive" (new: hosted iframe with live interactivity)
+
+The user picks the mode per-project. Same scenes, same editor, 
+two completely different outputs. Interactive mode keeps everything 
+as live HTML/JS — no video encoding at all.
+
+---
+
+## PART 1 — PROJECT-LEVEL OUTPUT MODE
+
+### 1.1 Project Model
+
+Add a top-level project concept to the Zustand store. 
+Currently the store just has a flat list of scenes. 
+Wrap it in a project:
+
+```ts
+interface Project {
+  id: string
+  name: string
+  outputMode: 'mp4' | 'interactive'
+  createdAt: string
+  updatedAt: string
+  
+  // MP4 mode settings
+  mp4Settings: {
+    resolution: '720p' | '1080p' | '4k'
+    fps: 24 | 30 | 60
+    format: 'mp4' | 'webm'
+  }
+  
+  // Interactive mode settings
+  interactiveSettings: {
+    playerTheme: 'dark' | 'light' | 'transparent'
+    showProgressBar: boolean
+    showSceneNav: boolean
+    allowFullscreen: boolean
+    brandColor: string        // accent color for player chrome
+    customDomain: string | null
+    password: string | null   // optional password protection
+  }
+  
+  // Scene graph (works for both modes)
+  // In MP4 mode: scenes play linearly in order
+  // In interactive mode: scenes can branch
+  scenes: Scene[]
+  sceneGraph: SceneGraph     // defines connections between scenes
+}
+
+interface SceneGraph {
+  nodes: SceneNode[]
+  edges: SceneEdge[]
+  startSceneId: string
+}
+
+interface SceneNode {
+  id: string           // matches scene.id
+  position: { x: number, y: number }  // for graph editor UI
+}
+
+interface SceneEdge {
+  id: string
+  fromSceneId: string
+  toSceneId: string
+  condition: EdgeCondition
+}
+
+interface EdgeCondition {
+  type: 'auto'          // plays next automatically after scene ends
+       | 'hotspot'      // user clicks a hotspot
+       | 'choice'       // user selects from multiple options
+       | 'quiz'         // user answers correctly
+       | 'gate'         // user clicks Continue button
+       | 'variable'     // branch based on a variable value
+  
+  // For hotspot/choice/quiz: which interaction element triggers this edge
+  interactionId: string | null
+  
+  // For variable branching
+  variableName: string | null
+  variableValue: string | null
+}
+```
+
+### 1.2 Output Mode Toggle UI
+
+In the top header bar, between the project name and export button,
+add a segmented control:
+
+```
+[ 🎬 MP4 Export ]  [ 🌐 Interactive ]
+```
+
+When switching modes:
+- Show a modal explaining the difference:
+  "MP4 Export: Download a video file. Best for social media, 
+   presentations, and simple website embeds.
+   
+   Interactive: Publish a hosted link your clients embed on their 
+   website. Supports branching, hotspots, quizzes, and pause gates. 
+   Best for onboarding docs and explainer content."
+- No content is lost — same scenes work in both modes
+- In MP4 mode: right panel bottom shows "Export MP4" button
+- In Interactive mode: right panel bottom shows "Publish" button
+
+### 1.3 Scene Graph vs Linear Timeline
+
+In MP4 mode: show the existing linear timeline strip at the bottom.
+In interactive mode: replace the timeline strip with a 
+SCENE GRAPH EDITOR (mini node canvas).
+
+Scene Graph Editor:
+- Each scene is a rounded rectangle node showing:
+  - Scene thumbnail (small)
+  - Scene type badge
+  - Scene name/number
+- Drag nodes to reposition them
+- Click and drag FROM a node's right edge TO another node to 
+  create an edge (auto connection)
+- Edges render as bezier curves with an arrow
+- Edge labels show the condition type (e.g. "hotspot", "auto")
+- Click an edge to edit its condition in a side panel
+- "Start" indicator on the first node (green dot)
+- "End" nodes (no outgoing edges) show a red dot
+- Add/remove edges via right-click context menu on nodes
+- In MP4 mode, the sceneGraph still exists but all edges 
+  are type "auto" and scenes play in list order
+
+Use a lightweight canvas library for this:
+  npm install @xyflow/react
+  (React Flow — MIT licensed)
+
+---
+
+## PART 2 — INTERACTION ELEMENTS
+
+### 2.1 Interaction Element Model
+
+Add to Scene:
+
+```ts
+interface Scene {
+  // ... existing fields ...
+  interactions: InteractionElement[]
+  variables: SceneVariable[]    // variables set/read in this scene
+}
+
+type InteractionElement =
+  | HotspotElement
+  | ChoiceElement
+  | QuizElement
+  | GateElement
+  | TooltipElement
+  | FormInputElement
+
+interface BaseInteraction {
+  id: string
+  type: string
+  // Position as % of canvas (0-100)
+  x: number
+  y: number
+  width: number
+  height: number
+  // When this element appears (seconds into scene)
+  appearsAt: number
+  // Optional: hide after N seconds (null = stays until scene ends)
+  hidesAt: number | null
+  // Animation for appearance
+  entranceAnimation: 'fade' | 'slide-up' | 'pop' | 'none'
+}
+
+interface HotspotElement extends BaseInteraction {
+  type: 'hotspot'
+  label: string
+  shape: 'circle' | 'rectangle' | 'pill'
+  style: 'pulse' | 'glow' | 'border' | 'filled'
+  color: string
+  // Which edge in sceneGraph this triggers (set when connecting in graph)
+  triggersEdgeId: string | null
+  // Or: jump to specific scene directly
+  jumpsToSceneId: string | null
+}
+
+interface ChoiceElement extends BaseInteraction {
+  type: 'choice'
+  question: string | null     // optional question above buttons
+  layout: 'horizontal' | 'vertical' | 'grid'
+  options: ChoiceOption[]
+}
+
+interface ChoiceOption {
+  id: string
+  label: string
+  icon: string | null         // emoji or lucide icon name
+  jumpsToSceneId: string
+  color: string | null        // override button color
+}
+
+interface QuizElement extends BaseInteraction {
+  type: 'quiz'
+  question: string
+  options: QuizOption[]
+  correctOptionId: string
+  onCorrect: 'continue' | 'jump'
+  onCorrectSceneId: string | null
+  onWrong: 'retry' | 'jump' | 'continue'
+  onWrongSceneId: string | null
+  explanation: string | null   // shown after answering
+}
+
+interface QuizOption {
+  id: string
+  label: string
+}
+
+interface GateElement extends BaseInteraction {
+  type: 'gate'
+  // Scene auto-pauses at appearsAt and shows this button
+  buttonLabel: string         // default "Continue →"
+  buttonStyle: 'primary' | 'outline' | 'minimal'
+  // Optionally require a minimum time before gate appears
+  minimumWatchTime: number    // seconds (0 = immediate)
+}
+
+interface TooltipElement extends BaseInteraction {
+  type: 'tooltip'
+  // The trigger area (hotspot that shows tooltip on hover)
+  triggerShape: 'circle' | 'rectangle'
+  triggerColor: string
+  triggerLabel: string | null
+  // The tooltip content
+  tooltipTitle: string
+  tooltipBody: string
+  tooltipPosition: 'top' | 'bottom' | 'left' | 'right'
+  tooltipMaxWidth: number     // px
+}
+
+interface FormInputElement extends BaseInteraction {
+  type: 'form'
+  fields: FormField[]
+  submitLabel: string         // default "Continue"
+  // Variables set from this form (available in subsequent scenes)
+  setsVariables: { fieldId: string, variableName: string }[]
+  jumpsToSceneId: string | null
+}
+
+interface FormField {
+  id: string
+  label: string
+  type: 'text' | 'select' | 'radio'
+  placeholder: string | null
+  options: string[]           // for select/radio
+  required: boolean
+}
+
+interface SceneVariable {
+  name: string
+  // Variables can be displayed in scene content via {varName} tokens
+  // Claude should be prompted to use these in generated content
+}
+```
+
+### 2.2 Interaction Editor UI
+
+In the RIGHT PANEL, add a 4th tab: [Prompt] [Layers] [Interact] [Settings]
+
+**Interact Tab:**
+
+Top section: "Add Interaction Element" button strip:
+  [+ Hotspot] [+ Choice] [+ Quiz] [+ Gate] [+ Tooltip] [+ Form]
+
+Below: list of existing interaction elements on this scene.
+Each element card shows:
+  - Type icon + type name
+  - Position (e.g. "45%, 30%")
+  - Appears at Ns
+  - Edit button → opens element editor panel
+  - Delete button
+
+**Element Editor Panel** (slides in from right or expands inline):
+Form fields for all properties of the selected element.
+All position/size fields have a "Pick on canvas" button that 
+activates a drag-to-place mode on the iframe preview.
+
+**Pick-on-canvas mode:**
+When active:
+  - Overlay a crosshair cursor on the iframe
+  - User clicks and drags to define position + size
+  - Coordinates convert to % of 1920x1080
+  - Deactivates after placement
+  - Show a semi-transparent preview of the element while dragging
+
+### 2.3 Interaction Overlay in Preview
+
+The iframe preview panel gets a sibling overlay div (same size, 
+positioned absolutely on top):
+
+```tsx
+<div style={{ position: 'relative' }}>
+  <iframe src={`/scenes/${scene.id}.html`} ... />
+  <InteractionOverlay 
+    scene={scene}
+    mode="edit"              // 'edit' | 'preview'
+    currentTime={playhead}
+    onElementClick={handleElementClick}
+    onElementMove={handleElementMove}
+  />
+</div>
+```
+
+In EDIT mode:
+- Render all interaction elements as draggable positioned overlays
+- Elements show at all times (ignore appearsAt) for easy editing
+- Selected element has a resize handle and blue border
+- Drag to reposition (updates x/y as %)
+- Corner drag to resize (updates width/height as %)
+
+In PREVIEW mode (toggle in header):
+- Elements appear/hide based on appearsAt/hidesAt vs currentTime
+- Clicking elements triggers their action (jump to scene, show tooltip, etc.)
+- This lets the editor test the interactive flow without publishing
+
+---
+
+## PART 3 — INTERACTIVE PLAYER RUNTIME
+
+### 3.1 Player Package
+
+Create a separate package: /packages/player/
+
+This is a self-contained JS runtime that can be embedded anywhere.
+It should be buildable as a single JS file via Vite:
+
+  /packages/player/
+  ├── src/
+  │   ├── index.ts           # entry point, exports InkframePlayer class
+  │   ├── runtime.ts         # scene sequencer + state machine
+  │   ├── renderer.ts        # iframe management
+  │   ├── interactions.ts    # interaction element rendering + event handling
+  │   ├── variables.ts       # variable store
+  │   └── ui/
+  │       ├── controls.ts    # play/pause/progress bar
+  │       ├── hotspot.ts     # hotspot element renderer
+  │       ├── choice.ts      # choice button renderer
+  │       ├── quiz.ts        # quiz renderer
+  │       ├── gate.ts        # gate/continue button renderer
+  │       ├── tooltip.ts     # tooltip renderer
+  │       └── form.ts        # form renderer
+  ├── package.json
+  └── vite.config.ts         # builds to single inkframe-player.min.js
+
+Player API:
+
+```ts
+class InkframePlayer {
+  constructor(container: HTMLElement, options: PlayerOptions)
+  
+  load(projectUrl: string): Promise<void>
+  // OR
+  loadData(projectData: PublishedProject): void
+  
+  play(): void
+  pause(): void
+  goToScene(sceneId: string): void
+  setVariable(name: string, value: string): void
+  getVariable(name: string): string | undefined
+  
+  on(event: PlayerEvent, handler: Function): void
+  // Events: 'sceneChange', 'interactionFired', 'completed', 
+  //         'variableSet', 'quizAnswered'
+  
+  destroy(): void
+}
+
+interface PlayerOptions {
+  theme: 'dark' | 'light' | 'transparent'
+  showProgressBar: boolean
+  showSceneNav: boolean
+  allowFullscreen: boolean
+  brandColor: string
+  autoplay: boolean
+}
+```
+
+### 3.2 Published Project Data Format
+
+When publishing, the server generates a JSON manifest:
+
+```ts
+interface PublishedProject {
+  id: string
+  version: number
+  name: string
+  playerOptions: PlayerOptions
+  
+  sceneGraph: SceneGraph
+  
+  scenes: PublishedScene[]
+}
+
+interface PublishedScene {
+  id: string
+  type: SceneType
+  duration: number           // seconds
+  htmlUrl: string            // URL to the scene HTML file
+  // OR inline for small scenes:
+  htmlContent: string | null
+  interactions: InteractionElement[]
+  variables: SceneVariable[]
+  transition: TransitionConfig
+}
+```
+
+### 3.3 Player Runtime Logic
+
+```ts
+class Runtime {
+  private currentSceneId: string
+  private variables: Map<string, string> = new Map()
+  private sceneGraph: SceneGraph
+  
+  // Load a scene into the iframe
+  async loadScene(sceneId: string) {
+    const scene = this.getScene(sceneId);
+    this.currentSceneId = sceneId;
+    await this.renderer.loadScene(scene);
+    this.setupInteractions(scene.interactions);
+    this.startPlayhead(scene.duration);
+  }
+  
+  // Called when a scene's duration ends (for 'auto' edges)
+  onSceneEnd() {
+    const nextEdge = this.sceneGraph.edges.find(e => 
+      e.fromSceneId === this.currentSceneId && 
+      e.condition.type === 'auto'
+    );
+    if (nextEdge) this.loadScene(nextEdge.toSceneId);
+    else this.emit('completed');
+  }
+  
+  // Called when an interaction fires
+  onInteractionFired(interactionId: string, value?: string) {
+    const edge = this.sceneGraph.edges.find(e =>
+      e.fromSceneId === this.currentSceneId &&
+      e.condition.interactionId === interactionId
+    );
+    if (edge) this.loadScene(edge.toSceneId);
+  }
+  
+  // Variable branching
+  resolveEdge(fromSceneId: string): SceneEdge | null {
+    const edges = this.sceneGraph.edges
+      .filter(e => e.fromSceneId === fromSceneId);
+    
+    // Check variable conditions first
+    for (const edge of edges) {
+      if (edge.condition.type === 'variable') {
+        const val = this.variables.get(edge.condition.variableName!);
+        if (val === edge.condition.variableValue) return edge;
+      }
+    }
+    // Fall back to auto
+    return edges.find(e => e.condition.type === 'auto') ?? null;
+  }
+}
+```
+
+### 3.4 Interaction Renderers (in player)
+
+The player renders interaction elements as absolutely-positioned 
+divs overlaid on the scene iframe. These are NOT part of the scene 
+HTML — they live in the player's overlay layer. This separation means:
+- Interaction elements work the same in both mp4 and interactive mode
+- MP4 export can optionally "bake in" static versions of interactions
+  as SVG overlays (for a non-interactive preview feel)
+
+**Hotspot renderer:**
+```ts
+function renderHotspot(el: HotspotElement, onClick: () => void) {
+  const div = document.createElement('div');
+  div.style.cssText = `
+    position: absolute;
+    left: ${el.x}%; top: ${el.y}%;
+    width: ${el.width}%; height: ${el.height}%;
+    cursor: pointer;
+    border-radius: ${el.shape === 'circle' ? '50%' : '8px'};
+    background: ${el.color}33;
+    border: 2px solid ${el.color};
+    display: flex; align-items: center; justify-content: center;
+  `;
+  if (el.style === 'pulse') {
+    div.style.animation = 'inkframe-pulse 2s infinite';
+  }
+  if (el.label) {
+    const label = document.createElement('span');
+    label.textContent = el.label;
+    label.style.cssText = 'color:white;font-size:14px;font-weight:600;';
+    div.appendChild(label);
+  }
+  div.addEventListener('click', onClick);
+  return div;
+}
+```
+
+Add CSS keyframes for pulse, glow animations into the player's 
+injected stylesheet.
+
+**Choice renderer:**
+Renders a centered overlay panel with:
+- Optional question text above
+- Row/column/grid of styled buttons
+- Each button click fires onInteractionFired(optionId)
+- Buttons use brandColor for the selected/hover state
+
+**Quiz renderer:**
+- Question text
+- Option buttons (A, B, C, D style)
+- On click: highlight correct (green) / wrong (red)
+- Show explanation text if provided
+- After 1.5s: fire appropriate edge
+
+**Gate renderer:**
+- Pauses the scene playhead when appearsAt is reached
+- Shows a centered button with label
+- On click: resumes and fires auto edge
+
+**Tooltip renderer:**
+- Renders a small pulsing indicator at trigger position
+- On hover: shows a styled tooltip card with title + body
+- Pure CSS hover, no JS needed
+
+**Form renderer:**
+- Centered overlay with form fields
+- On submit: sets variables, fires jumpsToSceneId edge
+- Variable values available in subsequent scenes
+
+### 3.5 Variable Interpolation in Scenes
+
+Scenes can reference variables using {varName} tokens.
+Before loading a scene into the iframe, the player fetches 
+the scene HTML, replaces all {varName} tokens with current 
+variable values, then sets the iframe's srcdoc:
+
+```ts
+async loadScene(scene: PublishedScene) {
+  let html = await fetch(scene.htmlUrl).then(r => r.text());
+  
+  // Replace variable tokens
+  for (const [name, value] of this.variables) {
+    html = html.replaceAll(`{${name}}`, value);
+  }
+  
+  this.iframe.srcdoc = html;
+}
+```
+
+Claude should be aware of this when generating scene content —
+if the scene has variables defined, it can use {VarName} tokens
+in SVG text elements, D3 titles, Three.js text sprites, etc.
+
+---
+
+## PART 4 — PUBLISH PIPELINE
+
+### 4.1 Publish API Route
+
+POST /api/publish
+Body: { projectId: string }
+
+Server logic:
+1. Collect all scene HTML files from /public/scenes/
+2. Collect all uploaded assets from /public/uploads/
+3. Generate the PublishedProject JSON manifest
+4. Write everything to /public/published/{projectId}/
+   ├── manifest.json
+   ├── scenes/
+   │   ├── {sceneId}.html
+   │   └── ...
+   └── assets/
+       └── (uploaded videos, audio, lottie files)
+5. Return { publishedUrl: 'https://inkframe.io/v/{projectId}' }
+
+### 4.2 Published Project Viewer Route
+
+Next.js route: /v/[projectId]/page.tsx
+
+This page:
+- Fetches /published/{projectId}/manifest.json
+- Renders a full-screen div with the Inkframe Player
+- No editor chrome — just the player
+- Handles password protection if set
+- Has og:image meta tag (first scene thumbnail)
+- Responsive: scales player to fit viewport using CSS transform scale
+
+```tsx
+// /app/v/[projectId]/page.tsx
+export default async function ViewerPage({ params }) {
+  const manifest = await fetchManifest(params.projectId);
+  
+  return (
+    <div style={{ 
+      width: '100vw', height: '100vh', 
+      background: '#000',
+      display: 'flex', alignItems: 'center', justifyContent: 'center'
+    }}>
+      <InkframePlayerComponent
+        manifest={manifest}
+        autoplay={true}
+      />
+    </div>
+  );
+}
+```
+
+### 4.3 Embed Snippet
+
+After publishing, show the user this panel:
+
+```
+✅ Published! Share or embed your interactive explainer.
+
+Direct link:
+[ https://inkframe.io/v/abc123 ]  [Copy] [Open]
+
+Embed on your website:
+[<iframe src="https://inkframe.io/v/abc123" width="1280" height="720" 
+  frameborder="0" allowfullscreen></iframe>]  [Copy]
+
+Responsive embed:
+[<div style="position:relative;padding-bottom:56.25%;height:0">
+  <iframe src="https://inkframe.io/v/abc123" 
+    style="position:absolute;top:0;left:0;width:100%;height:100%"
+    frameborder="0" allowfullscreen></iframe>
+</div>]  [Copy]
+
+Script embed (for React/Vue/etc):
+[<script src="https://inkframe.io/player.js"></script>
+<div id="inkframe-player"></div>
+<script>
+  new InkframePlayer(document.getElementById('inkframe-player'), {
+    project: 'abc123'
+  });
+</script>]  [Copy]
+
+[ Password protect ]  [ Unpublish ]  [ Update ]
+```
+
+### 4.4 Update Published
+
+When user edits scenes after publishing:
+- Show "Unpublished changes" badge on Publish button
+- "Update" republishes to the same URL
+- Version number increments in manifest
+- Old URL continues working (no cache busting needed since 
+  manifest.json is fetched fresh on each viewer load)
+
+---
+
+## PART 5 — MP4 MODE INTERACTION BAKING (optional)
+
+When exporting MP4 from a project that has interaction elements,
+offer a choice:
+
+"Your project has interactive elements. How should they appear in the MP4?"
+
+Option A — "Skip interactions" 
+  MP4 plays through linearly, interaction elements don't appear.
+  Best for a clean passive video.
+
+Option B — "Show interactions as visuals"
+  Interaction elements are "baked in" as SVG overlays added to 
+  the scene HTML before WVC renders it:
+  - Hotspots appear as pulsing circles
+  - Choice buttons appear as visible buttons (static, not clickable)
+  - Quiz shows the question (no answer interaction)
+  - Gate shows the continue button (scene auto-continues after 2s)
+  This creates a "preview" feel — viewer sees what's interactive 
+  but in video form.
+
+Option C — "Follow a path"
+  User picks one path through the scene graph.
+  Editor shows the branch points and user selects which option 
+  to follow at each. WVC renders that specific linear path as MP4.
+  Great for creating "demo walkthrough" videos of specific flows.
+
+---
+
+## PART 6 — ANALYTICS (lightweight)
+
+For published interactive projects, add basic analytics:
+
+POST /api/analytics (called by the player runtime)
+Events:
+  - project_started
+  - scene_viewed { sceneId, duration }
+  - interaction_fired { sceneId, interactionId, type, value }
+  - path_taken { fromSceneId, toSceneId, edgeCondition }
+  - project_completed
+  - variable_set { name, value }
+
+Store in a simple SQLite database (use better-sqlite3, MIT licensed):
+  /data/analytics.db
+
+Analytics dashboard at /dashboard/[projectId]/analytics:
+  - Total views
+  - Completion rate
+  - Most common paths (sankey/flow diagram via D3)
+  - Drop-off scenes (where users stop)
+  - Quiz correct/wrong ratios
+  - Choice distribution (which options people pick)
+  - Variable values collected from forms
+
+This is a huge value-add for enterprise clients doing onboarding —
+they can see exactly where new users get confused.
+
+---
+
+## IMPLEMENTATION ORDER
+
+1. Add outputMode toggle to project model + UI
+2. Extend Scene with interactions array
+3. Build InteractionOverlay component (edit mode)
+4. Build each interaction element editor UI
+5. Build canvas pick-to-place mode
+6. Install @xyflow/react, build SceneGraph editor
+7. Build player package (/packages/player/)
+8. Build each interaction renderer in player
+9. Build variable interpolation system
+10. Build /api/publish route
+11. Build /v/[projectId] viewer page
+12. Build embed snippet UI
+13. Build MP4 baking options
+14. Add analytics (SQLite + dashboard)
+
+---
+
+## KEY DEPENDENCIES
+
+```json
+{
+  "dependencies": {
+    "@xyflow/react": "^12.x",      // MIT — scene graph editor
+    "better-sqlite3": "^9.x",      // MIT — analytics storage
+    "@types/better-sqlite3": "^9.x"
+  },
+  "player-package": {
+    "build": "vite build --lib"    // outputs inkframe-player.min.js
+  }
+}
+```
+
+---
+
+## IMPORTANT NOTES
+
+1. The player iframe loads scene HTML via srcdoc for variable 
+   interpolation. This means scenes cannot use relative asset 
+   paths — all assets must use absolute URLs or data URIs. 
+   Update writeSceneHTML to use absolute URLs for all src/href attrs.
+
+2. The scene graph in MP4 mode: all edges are type "auto" and 
+   the export just follows scenes in list order. No changes to 
+   WVC pipeline.
+
+3. Cross-origin iframe: the /v/[projectId] viewer and the 
+   scene HTML files must be on the same origin OR scenes must 
+   use srcdoc. Simplest: serve everything from same Next.js app.
+
+4. Player CSS: inject a <style> tag into the player's shadow DOM 
+   or into the document head with a namespaced prefix (inkframe-*)
+   to avoid conflicts with the host page's CSS.
+
+5. Password protection: store a bcrypt hash in the manifest. 
+   The /v/[projectId] page checks for a cookie; if missing, shows 
+   a password prompt before loading the manifest fully.
+
+6. Analytics privacy: add a banner to published projects 
+   "This presentation collects anonymous viewing data" 
+   and a way for publishers to disable analytics per-project.
+
+7. The player package should work with zero dependencies — 
+   pure vanilla JS/TS, no React, no build requirements for 
+   the end client. They just drop in a <script> tag.
+
+8. For React Flow (scene graph): use the controlled mode with 
+   nodes and edges stored in Zustand. Sync changes back to 
+   sceneGraph in project state.
+
+9. Variable tokens in Three.js scenes: Claude should use 
+   CanvasTexture text sprites. In D3 scenes: use d3.select 
+   title/label elements. Variables are replaced before the 
+   HTML is loaded so they work in all scene types.
+
+10. "Update" republishing: copy only changed scene files 
+    (compare hash of HTML content). Don't re-copy unchanged 
+    scenes to save time on large projects.
+```

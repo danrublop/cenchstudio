@@ -1,0 +1,856 @@
+```
+Add adaptive thinking to Cench Studio's agent system and wire
+the reasoning display into the chat panel UI.
+
+---
+
+## PART 1 — API LAYER
+
+### Update /lib/agents/base.ts (or wherever Anthropic client calls live)
+
+Add a thinking configuration type and helper:
+
+```ts
+import Anthropic from '@anthropic-ai/sdk';
+
+export type ThinkingMode = 'off' | 'adaptive' | 'deep';
+
+export interface AgentCallOptions {
+  model: string;
+  thinkingMode: ThinkingMode;
+  systemPrompt: string;
+  messages: Anthropic.MessageParam[];
+  tools?: Anthropic.Tool[];
+  maxTokens?: number;
+}
+
+function buildThinkingConfig(mode: ThinkingMode): {
+  thinking?: Anthropic.ThinkingConfigParam;
+  temperature?: number;
+} {
+  switch (mode) {
+    case 'off':
+      return {};
+
+    case 'adaptive':
+      return {
+        thinking: { type: 'enabled', budget_tokens: 5000 },
+        // Note: temperature must be 1 when thinking is enabled
+        // Anthropic API requirement — do not pass temperature
+      };
+
+    case 'deep':
+      return {
+        thinking: { type: 'enabled', budget_tokens: 16000 },
+      };
+  }
+}
+
+// Minimum max_tokens when thinking is enabled
+// Must be greater than budget_tokens
+function resolveMaxTokens(
+  mode: ThinkingMode,
+  requested?: number
+): number {
+  if (mode === 'off') return requested ?? 4000;
+  if (mode === 'adaptive') return Math.max(requested ?? 8000, 8000);
+  if (mode === 'deep') return Math.max(requested ?? 20000, 20000);
+  return requested ?? 4000;
+}
+
+export async function* streamAgentResponse(
+  opts: AgentCallOptions
+): AsyncGenerator<AgentStreamEvent> {
+  const anthropic = new Anthropic({
+    apiKey: process.env.ANTHROPIC_API_KEY!,
+  });
+
+  const thinkingConfig = buildThinkingConfig(opts.thinkingMode);
+  const maxTokens = resolveMaxTokens(opts.thinkingMode, opts.maxTokens);
+
+  const streamParams: Anthropic.MessageStreamParams = {
+    model: opts.model,
+    max_tokens: maxTokens,
+    system: opts.systemPrompt,
+    messages: opts.messages,
+    ...(opts.tools ? { tools: opts.tools } : {}),
+    ...(thinkingConfig.thinking
+      ? { thinking: thinkingConfig.thinking }
+      : {}),
+    // Do NOT pass temperature when thinking is enabled
+    // Anthropic requires temperature=1 (the default) for thinking
+  };
+
+  const stream = anthropic.messages.stream(streamParams);
+
+  let currentBlockType: 'thinking' | 'text' | 'tool_use' | null = null;
+  let thinkingBuffer = '';
+  let textBuffer = '';
+
+  for await (const event of stream) {
+    // Block start
+    if (event.type === 'content_block_start') {
+      currentBlockType = event.content_block.type as any;
+
+      if (event.content_block.type === 'thinking') {
+        yield { type: 'thinking_start' };
+      }
+      if (event.content_block.type === 'text') {
+        yield { type: 'text_start' };
+      }
+      if (event.content_block.type === 'tool_use') {
+        yield {
+          type: 'tool_start',
+          toolName: event.content_block.name,
+          toolId: event.content_block.id,
+        };
+      }
+    }
+
+    // Block delta (streaming content)
+    if (event.type === 'content_block_delta') {
+      if (event.delta.type === 'thinking_delta') {
+        thinkingBuffer += event.delta.thinking;
+        yield {
+          type: 'thinking_token',
+          token: event.delta.thinking,
+        };
+      }
+      if (event.delta.type === 'text_delta') {
+        textBuffer += event.delta.text;
+        yield {
+          type: 'text_token',
+          token: event.delta.text,
+        };
+      }
+      if (event.delta.type === 'input_json_delta') {
+        yield {
+          type: 'tool_input_delta',
+          partial: event.delta.partial_json,
+        };
+      }
+    }
+
+    // Block complete
+    if (event.type === 'content_block_stop') {
+      if (currentBlockType === 'thinking') {
+        yield {
+          type: 'thinking_complete',
+          fullThinking: thinkingBuffer,
+        };
+        thinkingBuffer = '';
+      }
+      if (currentBlockType === 'text') {
+        yield { type: 'text_complete', fullText: textBuffer };
+        textBuffer = '';
+      }
+      currentBlockType = null;
+    }
+
+    // Tool use complete
+    if (event.type === 'message_delta') {
+      if (event.delta.stop_reason === 'tool_use') {
+        yield { type: 'needs_tool' };
+      }
+    }
+
+    // Final message complete
+    if (event.type === 'message_stop') {
+      yield { type: 'done' };
+    }
+  }
+}
+
+// Event types emitted by streamAgentResponse
+export type AgentStreamEvent =
+  | { type: 'thinking_start' }
+  | { type: 'thinking_token'; token: string }
+  | { type: 'thinking_complete'; fullThinking: string }
+  | { type: 'text_start' }
+  | { type: 'text_token'; token: string }
+  | { type: 'text_complete'; fullText: string }
+  | { type: 'tool_start'; toolName: string; toolId: string }
+  | { type: 'tool_input_delta'; partial: string }
+  | { type: 'needs_tool' }
+  | { type: 'done' };
+```
+
+---
+
+## PART 2 — ZUSTAND STORE UPDATES
+
+### Extend the agent control state in the Zustand store
+
+```ts
+// In /lib/store/index.ts (or wherever agent UI state lives)
+
+interface AgentControlState {
+  selectedAgent: 'auto' | 'director' | 'scene-maker' | 'editor' | 'dop';
+  selectedModel: string;
+  thinkingMode: ThinkingMode;   // NEW
+  sceneContext: 'all' | string;
+  activeTools: string[];
+}
+
+// Default thinking mode per agent
+export const DEFAULT_THINKING_MODE: Record<string, ThinkingMode> = {
+  'auto': 'adaptive',        // let it decide
+  'director': 'adaptive',    // planning benefits from thinking
+  'scene-maker': 'adaptive', // renderer selection benefits from thinking
+  'editor': 'off',           // simple edits don't need thinking
+  'dop': 'off',              // style changes don't need thinking
+};
+
+// Add to store actions:
+setThinkingMode: (mode: ThinkingMode) => void;
+```
+
+---
+
+## PART 3 — API ROUTE UPDATE
+
+### Update /app/api/agent/route.ts
+
+Accept thinkingMode in the request body and pass it through:
+
+```ts
+export async function POST(req: NextRequest) {
+  const body = await req.json();
+  const {
+    message,
+    agentOverride,
+    modelOverride,
+    thinkingMode = 'adaptive',   // NEW — default adaptive
+    sceneContext,
+    activeTools,
+    projectId,
+    history,
+  } = body;
+
+  // ... existing routing logic ...
+
+  const stream = streamAgentResponse({
+    model: modelOverride ?? getDefaultModel(agent),
+    thinkingMode: thinkingMode as ThinkingMode,
+    systemPrompt: context.systemPrompt,
+    messages: buildMessages(context.worldStateSummary, history, message),
+    tools: context.tools,
+  });
+
+  // SSE response — forward all events
+  const encoder = new TextEncoder();
+
+  return new Response(
+    new ReadableStream({
+      async start(controller) {
+        for await (const event of stream) {
+          // Forward thinking events
+          if (event.type === 'thinking_start') {
+            controller.enqueue(encoder.encode(
+              `data: ${JSON.stringify({ type: 'thinking_start' })}\n\n`
+            ));
+          }
+          if (event.type === 'thinking_token') {
+            controller.enqueue(encoder.encode(
+              `data: ${JSON.stringify({
+                type: 'thinking_token',
+                token: event.token
+              })}\n\n`
+            ));
+          }
+          if (event.type === 'thinking_complete') {
+            controller.enqueue(encoder.encode(
+              `data: ${JSON.stringify({
+                type: 'thinking_complete',
+                fullThinking: event.fullThinking
+              })}\n\n`
+            ));
+          }
+
+          // Forward text tokens (existing)
+          if (event.type === 'text_token') {
+            controller.enqueue(encoder.encode(
+              `data: ${JSON.stringify({
+                type: 'token',
+                text: event.token
+              })}\n\n`
+            ));
+          }
+
+          // Forward tool events (existing)
+          if (event.type === 'tool_start') {
+            controller.enqueue(encoder.encode(
+              `data: ${JSON.stringify({
+                type: 'tool_start',
+                tool: event.toolName
+              })}\n\n`
+            ));
+          }
+
+          if (event.type === 'done') {
+            controller.enqueue(encoder.encode(
+              `data: ${JSON.stringify({ type: 'done' })}\n\n`
+            ));
+            controller.close();
+          }
+        }
+      }
+    }),
+    {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      }
+    }
+  );
+}
+```
+
+---
+
+## PART 4 — AGENT CONTROL PANEL UI
+
+### Add thinking mode selector to the Agent Control Panel
+
+In the existing AgentControlPanel component, add below the Model selector:
+
+```tsx
+// /components/AgentControlPanel.tsx
+
+import { Lightbulb } from 'lucide-react';
+
+const THINKING_OPTIONS: {
+  value: ThinkingMode;
+  label: string;
+  description: string;
+}[] = [
+  {
+    value: 'off',
+    label: 'Off',
+    description: 'Fastest. No reasoning shown.',
+  },
+  {
+    value: 'adaptive',
+    label: 'Auto',
+    description: 'Claude decides when to think deeply.',
+  },
+  {
+    value: 'deep',
+    label: 'Deep',
+    description: 'Always thinks. Best for complex scenes.',
+  },
+];
+
+// Inside the panel JSX, after the Model row:
+<div style={{
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  marginTop: 8,
+}}>
+  <Lightbulb size={13} color="#6b6b7a" />
+  <span style={{
+    fontSize: 11,
+    color: '#6b6b7a',
+    fontFamily: 'DM Mono, monospace',
+    minWidth: 52,
+  }}>
+    Thinking:
+  </span>
+
+  <div style={{ display: 'flex', gap: 4 }}>
+    {THINKING_OPTIONS.map(option => (
+      <button
+        key={option.value}
+        title={option.description}
+        onClick={() => setThinkingMode(option.value)}
+        style={{
+          padding: '3px 10px',
+          borderRadius: 4,
+          border: 'none',
+          fontSize: 11,
+          fontFamily: 'DM Mono, monospace',
+          cursor: 'pointer',
+          background: thinkingMode === option.value
+            ? '#e84545'
+            : '#2a2a32',
+          color: thinkingMode === option.value
+            ? 'white'
+            : '#6b6b7a',
+          transition: 'all 0.15s',
+        }}
+      >
+        {option.label}
+      </button>
+    ))}
+  </div>
+
+  {/* Live indicator when thinking is active */}
+  {isThinking && (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: 4,
+      marginLeft: 4,
+    }}>
+      <div style={{
+        width: 6,
+        height: 6,
+        borderRadius: '50%',
+        background: '#f59e0b',
+        animation: 'pulse 1s infinite',
+      }} />
+      <span style={{
+        fontSize: 10,
+        color: '#f59e0b',
+        fontFamily: 'DM Mono, monospace',
+      }}>
+        thinking...
+      </span>
+    </div>
+  )}
+</div>
+```
+
+---
+
+## PART 5 — CHAT MESSAGE COMPONENT
+
+### Thinking block display in chat
+
+Add a ThinkingBlock component for use inside agent messages:
+
+```tsx
+// /components/chat/ThinkingBlock.tsx
+
+import { useState } from 'react';
+import { ChevronDown, ChevronRight, Brain } from 'lucide-react';
+
+interface ThinkingBlockProps {
+  thinking: string;           // the summarized/full thinking text
+  isStreaming?: boolean;      // true while still receiving tokens
+}
+
+export function ThinkingBlock({
+  thinking,
+  isStreaming = false,
+}: ThinkingBlockProps) {
+  const [expanded, setExpanded] = useState(false);
+
+  // Word count for the collapsed summary
+  const wordCount = thinking.trim().split(/\s+/).length;
+
+  return (
+    <div style={{
+      margin: '6px 0',
+      borderRadius: 6,
+      border: '1px solid #2a2a32',
+      overflow: 'hidden',
+      fontSize: 11,
+      fontFamily: 'DM Mono, monospace',
+    }}>
+      {/* Header — always visible */}
+      <button
+        onClick={() => setExpanded(e => !e)}
+        style={{
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          padding: '6px 10px',
+          background: '#1a1a1f',
+          border: 'none',
+          cursor: 'pointer',
+          color: '#6b6b7a',
+          textAlign: 'left',
+        }}
+      >
+        <Brain size={11} color="#f59e0b" />
+        <span style={{ flex: 1, color: '#9a9aa8' }}>
+          {isStreaming
+            ? 'Thinking...'
+            : `Reasoning (${wordCount} words)`
+          }
+        </span>
+        {!isStreaming && (
+          expanded
+            ? <ChevronDown size={11} />
+            : <ChevronRight size={11} />
+        )}
+      </button>
+
+      {/* Expanded content */}
+      {expanded && !isStreaming && (
+        <div style={{
+          padding: '8px 12px',
+          background: '#111114',
+          color: '#9a9aa8',
+          lineHeight: 1.6,
+          whiteSpace: 'pre-wrap',
+          maxHeight: 320,
+          overflowY: 'auto',
+          borderTop: '1px solid #2a2a32',
+          fontSize: 11,
+        }}>
+          {thinking}
+        </div>
+      )}
+
+      {/* Streaming indicator */}
+      {isStreaming && (
+        <div style={{
+          padding: '6px 12px',
+          background: '#111114',
+          borderTop: '1px solid #2a2a32',
+          display: 'flex',
+          gap: 3,
+          alignItems: 'center',
+        }}>
+          {[0, 1, 2].map(i => (
+            <div
+              key={i}
+              style={{
+                width: 4,
+                height: 4,
+                borderRadius: '50%',
+                background: '#f59e0b',
+                opacity: 0.6,
+                animation: `bounce 1s ${i * 0.15}s infinite`,
+              }}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+```
+
+### Update ChatMessage component to include ThinkingBlock
+
+In your existing ChatMessage component, add thinking state:
+
+```tsx
+// /components/chat/ChatMessage.tsx
+
+interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  text: string;
+  agentType?: string;
+  modelUsed?: string;
+  thinking?: string;          // NEW — the reasoning content
+  isThinkingStreaming?: boolean; // NEW — true while streaming
+  toolCalls?: ToolCallSummary[];
+  createdAt: Date;
+}
+
+// In the assistant message render:
+{message.role === 'assistant' && (
+  <div>
+    {/* Thinking block — show if thinking exists */}
+    {(message.thinking || message.isThinkingStreaming) && (
+      <ThinkingBlock
+        thinking={message.thinking ?? ''}
+        isStreaming={message.isThinkingStreaming}
+      />
+    )}
+
+    {/* Agent badge */}
+    <div style={{ display: 'flex', gap: 6, marginBottom: 4 }}>
+      <span style={{
+        fontSize: 10,
+        padding: '2px 6px',
+        borderRadius: 3,
+        background: AGENT_COLORS[message.agentType ?? 'auto'],
+        color: 'white',
+        fontFamily: 'DM Mono, monospace',
+      }}>
+        {message.agentType ?? 'agent'}
+      </span>
+      <span style={{
+        fontSize: 10,
+        color: '#4a4a52',
+        fontFamily: 'DM Mono, monospace',
+      }}>
+        {message.modelUsed}
+      </span>
+    </div>
+
+    {/* Message text */}
+    <div style={{
+      color: '#f0ece0',
+      lineHeight: 1.6,
+      fontSize: 13,
+    }}>
+      {message.text}
+    </div>
+
+    {/* Tool calls */}
+    {message.toolCalls && message.toolCalls.length > 0 && (
+      <ToolCallList toolCalls={message.toolCalls} />
+    )}
+  </div>
+)}
+```
+
+---
+
+## PART 6 — FRONTEND SSE HANDLER
+
+### Update the chat send handler to process thinking events
+
+In your chat component where you consume the SSE stream:
+
+```tsx
+// /components/chat/ChatPanel.tsx
+
+async function sendMessage(userMessage: string) {
+  // Add user message to chat
+  const userMsg: ChatMessage = {
+    id: generateId(),
+    role: 'user',
+    text: userMessage,
+    createdAt: new Date(),
+  };
+  setMessages(prev => [...prev, userMsg]);
+
+  // Add placeholder assistant message
+  const assistantId = generateId();
+  const assistantMsg: ChatMessage = {
+    id: assistantId,
+    role: 'assistant',
+    text: '',
+    agentType: selectedAgent,
+    modelUsed: selectedModel,
+    thinking: '',
+    isThinkingStreaming: false,
+    toolCalls: [],
+    createdAt: new Date(),
+  };
+  setMessages(prev => [...prev, assistantMsg]);
+  setIsThinking(false);
+
+  // POST to agent API
+  const response = await fetch('/api/agent', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      message: userMessage,
+      agentOverride: selectedAgent,
+      modelOverride: selectedModel,
+      thinkingMode,                  // from store
+      sceneContext,
+      activeTools,
+      projectId: currentProjectId,
+      history: recentHistory,
+    }),
+  });
+
+  // Process SSE stream
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder();
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    const chunk = decoder.decode(value);
+    const lines = chunk.split('\n');
+
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      const data = JSON.parse(line.slice(6));
+
+      switch (data.type) {
+        case 'thinking_start':
+          setIsThinking(true);
+          setMessages(prev => prev.map(m =>
+            m.id === assistantId
+              ? { ...m, isThinkingStreaming: true, thinking: '' }
+              : m
+          ));
+          break;
+
+        case 'thinking_token':
+          setMessages(prev => prev.map(m =>
+            m.id === assistantId
+              ? { ...m, thinking: (m.thinking ?? '') + data.token }
+              : m
+          ));
+          break;
+
+        case 'thinking_complete':
+          setIsThinking(false);
+          setMessages(prev => prev.map(m =>
+            m.id === assistantId
+              ? {
+                  ...m,
+                  thinking: data.fullThinking,
+                  isThinkingStreaming: false,
+                }
+              : m
+          ));
+          break;
+
+        case 'token':
+          setMessages(prev => prev.map(m =>
+            m.id === assistantId
+              ? { ...m, text: m.text + data.text }
+              : m
+          ));
+          break;
+
+        case 'tool_start':
+          setMessages(prev => prev.map(m =>
+            m.id === assistantId
+              ? {
+                  ...m,
+                  toolCalls: [
+                    ...(m.toolCalls ?? []),
+                    { name: data.tool, status: 'running' }
+                  ]
+                }
+              : m
+          ));
+          break;
+
+        case 'tool_complete':
+          setMessages(prev => prev.map(m =>
+            m.id === assistantId
+              ? {
+                  ...m,
+                  toolCalls: m.toolCalls?.map(tc =>
+                    tc.name === data.tool
+                      ? { ...tc, status: 'done' }
+                      : tc
+                  ) ?? []
+                }
+              : m
+          ));
+          break;
+
+        case 'done':
+          setIsThinking(false);
+          break;
+      }
+    }
+  }
+}
+```
+
+---
+
+## PART 7 — CSS ANIMATIONS
+
+Add to your global CSS or a <style> tag in the layout:
+
+```css
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+```
+
+---
+
+## PART 8 — SEND thinkingMode IN /cench SKILL CALLS
+
+The Claude Code skill calls POST /api/agent (or generates code
+directly). For the skill, thinking mode is controlled by a
+planning block in the prompt, not the API parameter.
+
+Update .claude/skills/cench/SKILL.md to add at the top of the
+generation section:
+
+```markdown
+## Planning (output before generating scenes)
+
+Before generating any scenes, output a <planning> block:
+
+<planning>
+Topic: [what this explains]
+Audience: [who this is for, if inferable]
+Scene count: [N] — [why this many, not more or fewer]
+Renderer choices:
+  - Scene 1 "[name]": [type] — [one sentence why this type]
+  - Scene 2 "[name]": [type] — [one sentence why]
+  ...
+Narrative arc: [how scenes build on each other]
+Duration rationale: [why these durations]
+What I'm NOT doing: [notable alternatives considered and rejected]
+</planning>
+
+Then generate scenes.
+The planning block is shown to the user so they can understand
+and redirect your choices before you do the work.
+```
+
+---
+
+## IMPLEMENTATION ORDER
+
+1. Create /lib/agents/base.ts with streamAgentResponse
+   and buildThinkingConfig
+2. Update /app/api/agent/route.ts to accept thinkingMode
+   and forward thinking SSE events
+3. Add thinkingMode to Zustand store + setThinkingMode action
+4. Create /components/chat/ThinkingBlock.tsx
+5. Update ChatMessage interface to include thinking fields
+6. Update ChatMessage component to render ThinkingBlock
+7. Update chat sendMessage handler to process thinking SSE events
+8. Add thinking mode selector to AgentControlPanel
+9. Add pulse/bounce CSS animations to global styles
+10. Update SKILL.md with <planning> block requirement
+11. Test: send "make a scene about black holes" with thinking=adaptive
+    → verify thinking block appears in chat, streams, then collapses
+12. Test: send "make the title bigger" with thinking=adaptive
+    → verify thinking is skipped (adaptive mode)
+13. Test: switch to thinking=off → verify no thinking block appears
+14. Test: switch to thinking=deep → verify longer reasoning block
+
+---
+
+## CRITICAL NOTES
+
+Temperature constraint: when thinking is enabled (adaptive or deep),
+do NOT pass temperature to the API. Anthropic requires temperature=1
+(the default) for thinking mode. Passing any temperature value
+causes an API error. The buildThinkingConfig function handles this
+by omitting temperature entirely.
+
+budget_tokens vs max_tokens: max_tokens must always be greater than
+budget_tokens. The resolveMaxTokens function enforces this.
+For deep mode (budget=16000), max_tokens must be at least 16001 —
+set to 20000 to give room for the actual response after thinking.
+
+Claude 4 thinking is summarized by default: the thinking content
+in API responses for Opus 4.6 and Sonnet 4.6 is a summary of the
+internal reasoning, not the raw stream. This is still highly useful
+for showing users why choices were made. It streams token by token
+so the UX feels responsive. The ThinkingBlock component handles
+both streaming (dots animation) and complete (expandable) states.
+
+Adaptive thinking on simple requests: when thinkingMode='adaptive'
+and the user asks something simple like "change the color to blue",
+Claude will skip thinking entirely and the thinking_start event
+will never fire. The ThinkingBlock simply won't appear. This is
+correct behavior — don't add a fallback message like "no reasoning
+needed", just show nothing.
+
+Tool use + thinking: the Anthropic API supports extended thinking
+with tool use. tool_choice must be 'auto' or 'none' — never force
+a specific tool when thinking is enabled. The agent tools are all
+configured with auto tool choice so this works without changes.
+
+Conversation history: thinking blocks from previous turns are
+automatically ignored by the Anthropic API when building context.
+You do NOT need to filter them out of the history array you send.
+The API handles this internally.
+```

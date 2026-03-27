@@ -1,0 +1,494 @@
+
+
+Build a full-stack AI-powered animated video creator  Users type prompts to generate scenes made of animated SVG drawings, with support for audio tracks, video overlays, and text. The browser is for editing and preview. Export happens server-side via WebVideoCreator and FFmpeg producing real MP4s.
+
+---
+
+## STACK
+
+Frontend: Next.js 14 (App Router) + TypeScript + Tailwind
+Backend: Node.js Express server (separate process, port 3001)
+Rendering: web-video-creator (npm: web-video-creator) — MIT/Apache, commercial-safe
+AI: Anthropic Claude API (claude-sonnet-4-20250514) for SVG scene generation
+Audio: user-uploaded mp3/wav or openai, heygen, gemnei, elleven labs, TTS API for voiceover
+Video: user-uploaded mp4 as background layer under SVG drawings
+Storage: local filesystem for MVP (./renders/, ./uploads/, ./scenes/)
+
+---
+
+## CORE CONCEPT
+
+Each "scene" is a self-contained HTML page that plays animated SVG drawings
+using stroke-dashoffset pen-draw effects. Scenes can also contain:
+- A background video layer (<video> element behind SVG)
+- An audio track (voiceover or music, <audio> element)
+- Text overlays (animated in via CSS)
+
+During preview: scenes render live in an iframe in the browser.
+During export: the Node server uses WebVideoCreator to headlessly capture
+each scene as a video, then FFmpeg stitches all scenes into one MP4.
+
+---
+
+## PROJECT STRUCTURE
+
+inkframe/
+├── app/                          # Next.js frontend
+│   ├── page.tsx                  # Main editor UI
+│   ├── api/
+│   │   ├── generate/route.ts     # Streams Claude SVG response
+│   │   └── export/route.ts       # Triggers render server
+├── render-server/                # Separate Node.js Express server
+│   ├── index.js                  # Express app, port 3001
+│   ├── renderer.js               # WebVideoCreator logic
+│   ├── stitcher.js               # FFmpeg scene stitching
+│   └── uploads/                  # Temp files during render
+├── public/
+│   └── scenes/                   # Static HTML scene files served during WVC render
+└── package.json
+
+---
+
+## FRONTEND UI LAYOUT
+
+Dark theme. Three-panel layout:
+
+### LEFT PANEL — Scene List (280px wide)
+- List of scene cards, each showing:
+  - Thumbnail (rasterized iframe snapshot via html2canvas)
+  - Scene number + prompt snippet (truncated to 2 lines)
+  - Duration badge (e.g. "8s")
+  - Layer icons: SVG (always), video camera if has video, music note if has audio
+  - Right-click context menu: Duplicate, Delete, Move Up/Down
+- Drag to reorder (use @dnd-kit/core)
+- "＋ New Scene" button at bottom — opens prompt modal
+- Global Style panel below scene list:
+  - Color palette (4 hex swatches, editable)
+  - Stroke width slider (1–5)
+  - Font selector (Caveat / DM Mono / Georgia / monospace)
+  - Scene duration slider (3s–20s)
+
+### CENTER PANEL — Preview Player
+- 16:9 iframe preview of the selected scene (800px wide)
+- Scene renders live — iframe src points to /public/scenes/{id}.html
+- Playback bar below iframe:
+  - Play / Pause button
+  - Scrub bar showing progress across ALL scenes with scene boundary markers
+  - Current time / total time
+  - Scene label at current position
+- Below scrub bar: mini timeline strip showing all scenes in order as colored blocks
+
+### RIGHT PANEL — Scene Editor (320px wide)
+- Tabs: [Prompt] [Layers] [Settings]
+
+**Prompt tab:**
+- Large textarea: "Describe this scene..."
+- Enhance button (rewrites prompt to be more visually descriptive using Claude)
+- Generate button → calls /api/generate → streams SVG into scene
+- Regenerate button (replaces existing SVG)
+- While generating: show animated pen cursor with "drawing..." text
+- Scene context toggle: "Continue from previous scene" (sends prev scene summary)
+
+**Layers tab:**
+- SVG Layer (always present, cannot remove):
+  - Shows token count / element count of current SVG
+  - "Edit SVG" button opens a code editor modal (Monaco or textarea)
+- Video Layer (optional):
+  - Toggle to enable
+  - Upload mp4 or paste URL
+  - Opacity slider (0–100%)
+  - Z-order: behind SVG (always)
+  - Trim: start time / end time within the video file
+- Audio Layer (optional):
+  - Toggle to enable
+  - Upload mp3/wav OR click "Generate Voiceover" (calls ElevenLabs with scene prompt as script)
+  - Volume slider
+  - Fade in / fade out toggles (0.5s ease)
+  - Start offset (delay audio by N seconds into scene)
+- Text Overlays (array, add multiple):
+  - Text content input
+  - Font, size, color pickers
+  - Position: x/y as % of canvas
+  - Animation: fade-in, slide-up, typewriter
+  - Appear at: Ns into scene
+
+**Settings tab:**
+- Scene name (custom label)
+- Duration override
+- Transition to next scene: None / Crossfade / Wipe Left / Wipe Right (0.5s)
+- Background color (default #fffef9)
+
+---
+
+## SCENE HTML FORMAT
+
+Each scene is a self-contained HTML file written to /public/scenes/{id}.html.
+This file is what WebVideoCreator loads during export.
+Structure:
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { width: 1920px; height: 1080px; overflow: hidden; background: {bgColor}; }
+    
+    /* Video layer */
+    #video-layer {
+      position: absolute; inset: 0;
+      opacity: {videoOpacity};
+      z-index: 1;
+    }
+    #video-layer video { width: 100%; height: 100%; object-fit: cover; }
+    
+    /* SVG layer */
+    #svg-layer {
+      position: absolute; inset: 0;
+      z-index: 2;
+    }
+    
+    /* Text overlays */
+    .text-overlay {
+      position: absolute;
+      z-index: 3;
+      opacity: 0;
+    }
+    
+    /* Stroke animation classes */
+    .stroke {
+      fill: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-dasharray: var(--len, 1000);
+      stroke-dashoffset: var(--len, 1000);
+      animation: draw var(--dur, 1s) ease-in-out var(--delay, 0s) forwards;
+    }
+    .fadein {
+      opacity: 0;
+      animation: pop var(--dur, 0.4s) ease var(--delay, 0s) forwards;
+    }
+    @keyframes draw { to { stroke-dashoffset: 0; } }
+    @keyframes pop  { to { opacity: 1; } }
+  </style>
+</head>
+<body>
+
+  <!-- VIDEO LAYER (optional) -->
+  <div id="video-layer" style="display:{hasVideo ? 'block' : 'none'}">
+    <video src="{videoSrc}" muted playsinline></video>
+  </div>
+
+  <!-- SVG LAYER — AI generated -->
+  <div id="svg-layer">
+    {svgContent}
+  </div>
+
+  <!-- AUDIO (optional) -->
+  {hasAudio ? `<audio src="${audioSrc}" id="scene-audio"></audio>` : ''}
+
+  <!-- TEXT OVERLAYS (optional) -->
+  {textOverlays.map(t => `
+    <div class="text-overlay" style="left:${t.x}%;top:${t.y}%;font-family:${t.font};
+         font-size:${t.size}px;color:${t.color};
+         animation:${t.animation} ${t.duration}s ease ${t.delay}s forwards">
+      ${t.content}
+    </div>
+  `).join('')}
+
+  <script>
+    // Auto-start video and audio when page loads (WVC will control timing)
+    document.addEventListener('DOMContentLoaded', () => {
+      const video = document.querySelector('video');
+      const audio = document.getElementById('scene-audio');
+      if (video) {
+        video.currentTime = {videoTrimStart};
+        video.play();
+      }
+      if (audio) {
+        setTimeout(() => audio.play(), {audioStartOffset} * 1000);
+      }
+    });
+  </script>
+</body>
+</html>
+
+
+When a scene is updated (new SVG, new audio, new video), regenerate this file
+and write it to /public/scenes/{id}.html. The iframe in the browser previews it
+live. The render server loads this same file via WVC.
+
+CLAUDE SVG GENERATION
+POST /api/generate streams a Claude response.
+System prompt (inject style vars):
+
+You are an SVG animation artist for a video creator tool called Inkframe.
+Generate a single <svg> element with viewBox="0 0 1920 1080" that draws itself
+using CSS animations.
+
+STRICT RULES:
+- Output ONLY the raw <svg>...</svg> element. No markdown. No explanation.
+- Use ONLY these colors: {palette[0]}, {palette[1]}, {palette[2]}, {palette[3]}
+- Default stroke-width: {strokeWidth}
+- Default font: {font}
+- All lines/paths must animate using stroke-dasharray/stroke-dashoffset with
+  class="stroke" and CSS variables --len (path length) and --delay (start delay)
+- All filled shapes/text must use class="fadein" for opacity reveal
+- Total animation must complete within {duration} seconds
+- Stagger delays so elements draw sequentially, not all at once
+- Use stroke-linecap="round" and stroke-linejoin="round" on all paths
+- For text: use <text> elements with class="fadein", font-family="{font}"
+- Include comments labeling each visual section (e.g. <!-- title -->)
+- Make it visually rich: use labels, arrows, annotations where appropriate
+
+Previous scene summary (for continuity): {previousSummary || "none"}
+Canvas: 1920x1080px
+
+
+User message: the scene prompt.
+Stream the response token by token. As SVG tokens stream in, inject them
+directly into the iframe’s #svg-layer div using innerHTML so the user
+watches it draw live as Claude responds.
+After generation completes:
+	1.	Extract a one-line summary from Claude (second API call, fast) for context chaining
+	2.	Write the full scene HTML to /public/scenes/{id}.html
+	3.	Capture a thumbnail via html2canvas on the iframe content
+	4.	Update scene state
+
+RENDER SERVER (render-server/index.js)
+Express server on port 3001. Single endpoint:
+POST /render
+Body: { scenes: SceneObject[], outputName: string }
+Logic in renderer.js:
+
+import WebVideoCreator, { VIDEO_ENCODER } from "web-video-creator";
+
+export async function renderScenes(scenes, outputDir) {
+  const wvc = new WebVideoCreator();
+  wvc.config({
+    mp4Encoder: VIDEO_ENCODER.CPU.H264, // fallback, works everywhere
+    browserHeadless: true,
+    browserUseGPU: false, // safer for cloud Linux
+    debug: false,
+  });
+
+  const videoPaths = [];
+
+  for (const scene of scenes) {
+    const outputPath = path.join(outputDir, `scene-${scene.id}.mp4`);
+    
+    const video = wvc.createSingleVideo({
+      // Serve the scene HTML from Next.js public folder
+      url: `http://localhost:3000/scenes/${scene.id}.html`,
+      width: 1920,
+      height: 1080,
+      fps: 30,
+      duration: scene.duration * 1000, // ms
+      outputPath,
+      // Audio is embedded in the HTML via <audio> tag, WVC captures it
+    });
+
+    await new Promise((resolve, reject) => {
+      video.on("progress", (p) => {
+        // Send SSE progress update to frontend
+        console.log(`Scene ${scene.id}: ${p.toFixed(0)}%`);
+      });
+      video.on("completed", resolve);
+      video.on("error", reject);
+      video.start();
+    });
+
+    videoPaths.push(outputPath);
+  }
+
+  return videoPaths;
+}
+
+
+After all scenes render, stitch.js runs FFmpeg concat:
+
+import ffmpeg from "fluent-ffmpeg";
+
+export async function stitchScenes(videoPaths, transitions, outputPath) {
+  // Build FFmpeg concat with optional crossfade transitions
+  // For simple concat (no transitions): use concat demuxer
+  // For crossfade: use xfade filter between consecutive clips
+  
+  const command = ffmpeg();
+  videoPaths.forEach(p => command.input(p));
+  
+  if (transitions.every(t => t.type === "none")) {
+    // Simple concat
+    command
+      .on("end", resolve)
+      .on("error", reject)
+      .mergeToFile(outputPath);
+  } else {
+    // Build xfade filter chain
+    // xfade=transition=fade:duration=0.5:offset={sceneEndTime - 0.5}
+    // Chain them: [0][1]xfade=...[v01]; [v01][2]xfade=...[v012]; etc.
+    buildXfadeChain(command, videoPaths, transitions, outputPath);
+  }
+}
+
+
+Export endpoint streams progress back to frontend via SSE:
+
+data: {"type":"scene_progress","scene":1,"progress":45}
+data: {"type":"scene_done","scene":1}
+data: {"type":"stitching"}
+data: {"type":"complete","downloadUrl":"/renders/output.mp4"}
+
+
+STATE MANAGEMENT
+Single Zustand store (useVideoStore):
+
+interface Scene {
+  id: string
+  prompt: string
+  summary: string
+  svgContent: string
+  duration: number
+  bgColor: string
+  thumbnail: string | null
+  
+  // Video layer
+  videoLayer: {
+    enabled: boolean
+    src: string | null        // URL or /uploads/filename
+    opacity: number           // 0-1
+    trimStart: number         // seconds
+    trimEnd: number | null
+  }
+  
+  // Audio layer
+  audioLayer: {
+    enabled: boolean
+    src: string | null
+    volume: number            // 0-1
+    fadeIn: boolean
+    fadeOut: boolean
+    startOffset: number       // seconds
+  }
+  
+  // Text overlays
+  textOverlays: TextOverlay[]
+  
+  // Transition to next scene
+  transition: "none" | "crossfade" | "wipe-left" | "wipe-right"
+}
+
+interface VideoStore {
+  scenes: Scene[]
+  selectedSceneId: string | null
+  globalStyle: GlobalStyle
+  isGenerating: boolean
+  isExporting: boolean
+  exportProgress: ExportProgress | null
+  
+  // Actions
+  addScene: (prompt: string) => void
+  updateScene: (id: string, updates: Partial<Scene>) => void
+  deleteScene: (id: string) => void
+  reorderScenes: (fromIndex: number, toIndex: number) => void
+  generateSVG: (sceneId: string) => Promise<void>
+  exportVideo: () => Promise<string>
+}
+
+
+FILE UPLOAD HANDLING
+Next.js API route POST /api/upload:
+	∙	Accept mp4, mp3, wav, webm
+	∙	Save to /public/uploads/{uuid}.{ext}
+	∙	Return { url: “/uploads/{uuid}.{ext}” }
+	∙	Max size: 100MB
+
+EXPORT UI
+When user clicks Export:
+	1.	Show export modal with:
+	∙	Resolution selector: 720p / 1080p / 4K
+	∙	FPS: 24 / 30 / 60
+	∙	Format: MP4 (h264) / WebM
+	∙	“Start Export” button
+	2.	Modal transforms into progress view:
+	∙	Per-scene progress bars
+	∙	“Stitching scenes…” phase
+	∙	“Complete! Download MP4” button when done
+	3.	POST to /api/export → proxies to render-server:3001/render
+	4.	Use EventSource for SSE progress updates
+
+KEY DEPENDENCIES
+Frontend:
+	∙	next, react, typescript, tailwindcss
+	∙	zustand (state)
+	∙	@dnd-kit/core @dnd-kit/sortable (drag to reorder)
+	∙	@monaco-editor/react (SVG code editor)
+	∙	html2canvas (thumbnails)
+	∙	eventsource (SSE client, built into browser)
+Backend render server:
+	∙	express
+	∙	web-video-creator
+	∙	fluent-ffmpeg
+	∙	ffmpeg-static (bundles FFmpeg binary)
+	∙	multer (file uploads, though uploads handled by Next.js)
+	∙	cors
+
+IMPORTANT IMPLEMENTATION NOTES
+	1.	WVC requires Linux for production. Mac will crash with headless experimental API.
+Add a compatibility mode fallback for local dev on Mac using WVC’s browserHeadless: false
+with a visible Chrome window.
+	2.	SVG stroke-dasharray animations: the –len CSS variable must equal the
+actual SVG path length. Claude cannot know exact path lengths, so generate
+a <script> block at the bottom of each SVG that auto-calculates and sets
+–len on all .stroke elements using getTotalLength():
+
+document.querySelectorAll('.stroke').forEach(el => {
+  if (el.getTotalLength) {
+    el.style.setProperty('--len', el.getTotalLength());
+  }
+});
+
+
+	2.	Include this script in every scene HTML file, runs on load.
+
+const t = parseFloat(new URLSearchParams(location.search).get('t') || '0');
+// Then delay all animations by -t (use negative animation-delay)
+
+
+	8.	Thumbnail generation: after iframe loads a scene, call html2canvas on the
+iframe’s contentDocument.body. Do this 500ms after load to let animations settle.
+	9.	The Claude streaming response will be raw SVG markup. Parse it on the fly:
+buffer tokens until you have a complete opening <svg tag, then inject into
+the DOM and keep updating innerHTML as more tokens arrive.
+	10.	Transitions in FFmpeg xfade: the offset param is the timestamp (in seconds
+from video start) at which the transition begins. Calculate as:
+offset = sum of all previous scene durations - transition_duration/2
+Chain: [0][1]xfade=fade:duration=0.5:offset=7.75[v01];[v01][2]xfade=fade:duration=0.5:offset=15.25[v012]
+
+VISUAL DESIGN
+Dark theme throughout:
+	∙	Background: #0d0d0f
+	∙	Panel bg: #111114
+	∙	Card bg: #1a1a1f
+	∙	Border: #2a2a32
+	∙	Accent: #e84545
+	∙	Text primary: #f0ece0
+	∙	Text muted: #6b6b7a
+	∙	Font: DM Mono for UI chrome, Caveat for scene labels
+The preview iframe should have a subtle drop shadow and film-grain overlay
+to give it a cinematic feel.
+The timeline strip at the bottom uses scene thumbnail colors as block backgrounds.
+Active scene has a 2px red top border.
+
+Build this as a complete, working application. Start with:
+	1.	Project scaffolding (Next.js + render server)
+	2.	Core state management (Zustand store)
+	3.	Scene HTML generation and iframe preview
+	4.	Claude SVG generation with streaming
+	5.	Scene list UI with drag-to-reorder
+	6.	Layers panel (video + audio upload)
+	7.	Render server with WVC
+	8.	Export pipeline with FFmpeg stitching
+	9.	Export progress UI
+Do not use placeholder components. Build real, working implementations for each step.

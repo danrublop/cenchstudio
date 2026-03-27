@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; animation-play-state: paused; }
+    body { width: 1920px; height: 1080px; overflow: hidden; background: #fffef9; }
+
+    #video-layer {
+      position: absolute; inset: 0;
+      opacity: 1;
+      z-index: 1;
+      display: none;
+    }
+    #video-layer video { width: 100%; height: 100%; object-fit: cover; }
+
+    #svg-layer {
+      position: absolute; inset: 0;
+      z-index: 2;
+    }
+    #svg-layer svg { width: 100%; height: 100%; }
+
+    .text-overlay {
+      position: absolute;
+      z-index: 3;
+      opacity: 0;
+      white-space: pre-wrap;
+    }
+
+    .svg-object svg { width: 100%; height: auto; display: block; background: transparent; }
+
+    /* Stroke animation */
+    .stroke {
+      fill: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-dasharray: var(--len, 1000);
+      stroke-dashoffset: var(--len, 1000);
+      animation: draw var(--dur, 1s) ease-in-out var(--delay, 0s) forwards;
+    }
+    .fadein {
+      opacity: 0;
+      animation: pop var(--dur, 0.4s) ease var(--delay, 0s) forwards;
+    }
+    @keyframes draw      { to { stroke-dashoffset: 0; } }
+    @keyframes pop       { to { opacity: 1; } }
+    @keyframes scaleIn   { from { opacity: 0; transform: scale(0); } to { opacity: 1; transform: scale(1); } }
+    @keyframes slideUp   { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes slideLeft { from { opacity: 0; transform: translateX(50px); } to { opacity: 1; transform: translateX(0); } }
+    @keyframes bounceIn  { 0% { opacity: 0; transform: scale(0); } 60% { opacity: 1; transform: scale(1.15); } 100% { transform: scale(1); } }
+    @keyframes rotateIn  { from { opacity: 0; transform: rotate(-15deg); } to { opacity: 1; transform: rotate(0deg); } }
+    @keyframes fadeInOverlay { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes slideUpOverlay {
+      from { opacity: 0; transform: translateY(20px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .scale {
+      opacity: 0; transform-origin: center center;
+      animation: scaleIn var(--dur, 0.4s) ease var(--delay, 0s) forwards;
+    }
+    .slide-up {
+      opacity: 0;
+      animation: slideUp var(--dur, 0.5s) ease var(--delay, 0s) forwards;
+    }
+    .slide-left {
+      opacity: 0;
+      animation: slideLeft var(--dur, 0.5s) ease var(--delay, 0s) forwards;
+    }
+    .bounce {
+      opacity: 0; transform-origin: center center;
+      animation: bounceIn var(--dur, 0.6s) cubic-bezier(0.34, 1.56, 0.64, 1) var(--delay, 0s) forwards;
+    }
+    .rotate {
+      opacity: 0; transform-origin: center center;
+      animation: rotateIn var(--dur, 0.5s) ease var(--delay, 0s) forwards;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="video-layer">
+    
+  </div>
+
+  
+
+  
+
+  <div class="svg-object" id="obj-cfc32230-ed68-41c2-9dae-5fb1bb2d3a15" style="position:absolute;left:0%;top:0%;width:100%;opacity:1;z-index:2;pointer-events:none;"><svg viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .stroke { stroke-dasharray: var(--len); stroke-dashoffset: var(--len); animation: draw var(--dur, 1s) ease-out var(--delay, 0s) forwards; }
+    @keyframes draw { to { stroke-dashoffset: 0; } }
+    
+    .fadein { opacity: 0; animation: fadein var(--dur, 1s) ease-out var(--delay, 0s) forwards; }
+    @keyframes fadein { to { opacity: 1; } }
+    
+    .scale { opacity: 0; transform: scale(0); transform-origin: center; animation: scale var(--dur, 1s) ease-out var(--delay, 0s) forwards; }
+    @keyframes scale { to { opacity: 1; transform: scale(1); } }
+    
+    .slide-up { opacity: 0; transform: translateY(40px); animation: slideup var(--dur, 1s) ease-out var(--delay, 0s) forwards; }
+    @keyframes slideup { to { opacity: 1; transform: translateY(0); } }
+    
+    .slide-left { opacity: 0; transform: translateX(40px); animation: slideleft var(--dur, 1s) ease-out var(--delay, 0s) forwards; }
+    @keyframes slideleft { to { opacity: 1; transform: translateX(0); } }
+    
+    .bounce { opacity: 0; transform: scale(0); transform-origin: center; animation: bounce var(--dur, 1s) ease-out var(--delay, 0s) forwards; }
+    @keyframes bounce { 0% { opacity: 0; transform: scale(0); } 60% { opacity: 1; transform: scale(1.1); } 100% { opacity: 1; transform: scale(1); } }
+    
+    .rotate { opacity: 0; transform: rotate(-180deg); transform-origin: center; animation: rotate var(--dur, 1s) ease-out var(--delay, 0s) forwards; }
+    @keyframes rotate { to { opacity: 1; transform: rotate(0deg); } }
+  </style>
+
+  <!-- Background -->
+  <g id="bg">
+    <rect width="1920" height="1080" fill="#666675" class="fadein" style="--dur: 0.8s; --delay: 0s"/>
+    <rect x="80" y="120" width="1760" height="840" rx="20" fill="#ffffff" class="fadein" style="--dur: 1s; --delay: 0.4s"/>
+  </g>
+
+  <!-- Midground - Doctor and Patient -->
+  <g id="midground">
+    <!-- Doctor figure -->
+    <circle cx="400" cy="340" r="60" fill="none" stroke="#666675" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="stroke" style="--dur: 1.2s; --delay: 1.6s"/>
+    <rect x="340" y="400" width="120" height="180" rx="10" fill="none" stroke="#666675" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="stroke" style="--dur: 1.4s; --delay: 2.0s"/>
+    <rect x="360" y="420" width="80" height="40" fill="#ffffff" class="fadein" style="--dur: 0.8s; --delay: 2.4s"/>
+    <line x1="280" y1="450" x2="340" y2="470" stroke="#666675" stroke-width="2.5" stroke-linecap="round" class="stroke" style="--dur: 0.8s; --delay: 2.6s"/>
+    <line x1="460" y1="470" x2="520" y2="450" stroke="#666675" stroke-width="2.5" stroke-linecap="round" class="stroke" style="--dur: 0.8s; --delay: 2.8s"/>
+    <line x1="340" y1="580" x2="320" y2="640" stroke="#666675" stroke-width="2.5" stroke-linecap="round" class="stroke" style="--dur: 0.8s; --delay: 3.0s"/>
+    <line x1="460" y1="580" x2="480" y2="640" stroke="#666675" stroke-width="2.5" stroke-linecap="round" class="stroke" style="--dur: 0.8s; --delay: 3.2s"/>
+
+    <!-- Stethoscope -->
+    <circle cx="280" cy="450" r="20" fill="none" stroke="#666675" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="stroke" style="--dur: 1s; --delay: 3.4s"/>
+    <path d="M280 470 Q260 500 240 530" fill="none" stroke="#666675" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="stroke" style="--dur: 1.2s; --delay: 3.6s"/>
+
+    <!-- Patient figure -->
+    <circle cx="700" cy="340" r="60" fill="none" stroke="#666675" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="stroke" style="--dur: 1.2s; --delay: 2.2s"/>
+    <rect x="640" y="400" width="120" height="180" rx="10" fill="none" stroke="#666675" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="stroke" style="--dur: 1.4s; --delay: 2.6s"/>
+    <line x1="580" y1="470" x2="640" y2="450" stroke="#666675" stroke-width="2.5" stroke-linecap="round" class="stroke" style="--dur: 0.8s; --delay: 3.0s"/>
+    <line x1="760" y1="450" x2="820" y2="470" stroke="#666675" stroke-width="2.5" stroke-linecap="round" class="stroke" style="--dur: 0.8s; --delay: 3.2s"/>
+    <line x1="640" y1="580" x2="620" y2="640" stroke="#666675" stroke-width="2.5" stroke-linecap="round" class="stroke" style="--dur: 0.8s; --delay: 3.4s"/>
+    <line x1="760" y1="580" x2="780" y2="640" stroke="#666675" stroke-width="2.5" stroke-linecap="round" class="stroke" style="--dur: 0.8s; --delay: 3.6s"/>
+
+    <!-- Heart diagram -->
+    <path d="M1200 300 C1150 250 1050 250 1050 350 C1050 250 950 250 900 300 C900 350 950 450 1050 500 C1150 450 1200 350 1200 300Z" fill="none" stroke="#e84545" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="stroke" style="--dur: 2s; --delay: 2.8s"/>
+    
+    <!-- Inflamed areas around heart -->
+    <circle cx="980" cy="320" r="25" fill="#e84545" opacity="0.3" class="scale" style="--dur: 1s; --delay: 4.0s"/>
+    <circle cx="1120" cy="340" r="20" fill="#e84545" opacity="0.3" class="scale" style="--dur: 1s; --delay: 4.2s"/>
+    <circle cx="1040" cy="420" r="30" fill="#e84545" opacity="0.3" class="scale" style="--dur: 1s; --delay: 4.4s"/>
+
+    <!-- ECG line -->
+    <path d="M1300 500 L1320 500 L1340 480 L1360 520 L1380 460 L1400 540 L1420 500 L1500 500" fill="none" stroke="#e84545" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="stroke" style="--dur: 1.5s; --delay: 3.8s"/>
+  </g>
+
+  <!-- Foreground - Connecting lines and arrows -->
+  <g id="fg">
+    <!-- Arrow from doctor to heart -->
+    <line x1="520" y1="450" x2="880" y2="380" stroke="#666675" stroke-width="2.5" stroke-linecap="round" class="stroke" style="--dur: 1.2s; --delay: 4.8s"/>
+    <polygon points="880,380 870,375 870,385" fill="#666675" class="fadein" style="--dur: 0.5s; --delay: 6.0s"/>
+
+    <!-- Diagnostic indicators -->
+    <circle cx="1050" cy="200" r="8" fill="#e84545" class="bounce" style="--dur: 1s; --delay: 5.2s"/>
+    <circle cx="1100" cy="180" r="6" fill="#e84545" class="bounce" style="--dur: 1s; --delay: 5.4s"/>
+    <circle cx="1000" cy="180" r="6" fill="#e84545" class="bounce" style="--dur: 1s; --delay: 5.6s"/>
+
+    <!-- Examination table -->
+    <line x1="600" y1="640" x2="800" y2="640" stroke="#666675" stroke-width="4" stroke-linecap="round" class="stroke" style="--dur: 0.8s; --delay: 5.0s"/>
+    <line x1="620" y1="640" x2="620" y2="680" stroke="#666675" stroke-width="2.5" stroke-linecap="round" class="stroke" style="--dur: 0.6s; --delay: 5.4s"/>
+    <line x1="780" y1="640" x2="780" y2="680" stroke="#666675" stroke-width="2.5" stroke-linecap="round" class="stroke" style="--dur: 0.6s; --delay: 5.6s"/>
+  </g>
+
+  <!-- Text layer -->
+  <g id="text">
+    <text x="960" y="80" text-anchor="middle" font-family="sans-serif" font-size="72" font-weight="bold" fill="#666675" dominant-baseline="middle" class="slide-left" style="--dur: 1.2s; --delay: 5.6s">MYOCARDITIS EXAMINATION</text>
+    
+    <text x="400" y="720" text-anchor="middle" font-family="sans-serif" font-size="36" fill="#666675" dominant-baseline="middle" class="slide-up" style="--dur: 1s; --delay: 6.0s">DOCTOR</text>
+    <text x="700" y="720" text-anchor="middle" font-family="sans-serif" font-size="36" fill="#666675" dominant-baseline="middle" class="slide-up" style="--dur: 1s; --delay: 6.2s">PATIENT</text>
+    
+    <text x="1050" y="560" text-anchor="middle" font-family="sans-serif" font-size="42" font-weight="bold" fill="#e84545" dominant-baseline="middle" class="slide-up" style="--dur: 1s; --delay: 6.4s">INFLAMED HEART</text>
+    <text x="1050" y="600" text-anchor="middle" font-family="sans-serif" font-size="28" fill="#666675" dominant-baseline="middle" class="slide-up" style="--dur: 1s; --delay: 6.6s">Myocardium inflammation</text>
+
+    <text x="1400" y="460" text-anchor="middle" font-family="sans-serif" font-size="32" fill="#e84545" dominant-baseline="middle" class="slide-up" style="--dur: 1s; --delay: 6.8s">Irregular rhythm</text>
+    
+    <text x="240" y="580" text-anchor="middle" font-family="sans-serif" font-size="28" fill="#666675" dominant-baseline="middle" class="slide-up" style="--dur: 1s; --delay: 7.0s">Stethoscope</text>
+    <text x="240" y="610" text-anchor="middle" font-family="sans-serif" font-size="24" fill="#666675" dominant-baseline="middle" class="slide-up" style="--dur: 1s; --delay: 7.2s">Heart sounds</text>
+  </g>
+</svg></div>
+
+  
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      // Auto-calculate stroke-dasharray lengths
+      document.querySelectorAll('.stroke').forEach(el => {
+        if (el.getTotalLength) {
+          el.style.setProperty('--len', el.getTotalLength());
+        }
+      });
+
+      const video = document.querySelector('#video-layer video');
+      if (video) video.currentTime = 0;
+
+      const audio = document.getElementById('scene-audio');
+      if (audio) audio.volume = 1;
+
+      // Scrub: offset animation delays by -t seconds for all animated elements
+      const t = parseFloat(new URLSearchParams(location.search).get('t') || '0');
+      if (t > 0) {
+        document.querySelectorAll('*').forEach(el => {
+          const s = window.getComputedStyle(el);
+          if (s.animationName && s.animationName !== 'none') {
+            const delay = parseFloat(s.animationDelay) || 0;
+            el.style.animationDelay = (delay - t) + 's';
+          }
+        });
+        if (video) video.currentTime = 0 + t;
+      }
+    });
+  </script>
+</body>
+</html>

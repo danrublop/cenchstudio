@@ -1,0 +1,1084 @@
+Here's the prompt:
+
+---
+
+```
+You are extending Inkframe's content generation system.
+The app already has: Canvas2D drawing, SVG, D3, Three.js, Lottie,
+asset library, and an agent system with tool-calling.
+
+Add AI-generated media as first-class layer types:
+- AI Avatar layers (HeyGen API)
+- AI Video layers (Google Veo 3 API)
+- AI Image layers (multiple models, with background removal for stickers)
+
+CRITICAL NEW SYSTEM: Permission gates.
+Before calling any external paid API, the agent MUST request
+permission from the user unless auto-approval is enabled.
+This is non-negotiable — implement it before any API calls.
+
+---
+
+## PART 1 — PERMISSION SYSTEM
+
+This is the foundation everything else builds on.
+Every external API call that costs money goes through this gate.
+
+### 1.1 Permission config (stored in project settings)
+
+```ts
+interface APIPermissions {
+  // Per-API auto-approval settings
+  heygen: PermissionConfig
+  veo3: PermissionConfig
+  imageGen: PermissionConfig
+  backgroundRemoval: PermissionConfig
+  elevenLabs: PermissionConfig
+  unsplash: PermissionConfig     // free, but still trackable
+}
+
+interface PermissionConfig {
+  mode: 'always_ask'    // ask every time (default)
+        | 'always_allow' // never ask, just do it
+        | 'always_deny'  // block completely, agent can't use this API
+        | 'ask_once'     // ask first time per session, remember answer
+  
+  // Spend limits (optional)
+  sessionLimit: number | null   // max $ to spend this session, null = unlimited
+  monthlyLimit: number | null   // max $ this calendar month
+  
+  // Tracking
+  sessionSpend: number          // running total this session
+  monthlySpend: number          // running total this month
+}
+```
+
+Default for all APIs: mode = 'always_ask', no limits.
+
+### 1.2 Permission request flow
+
+When the agent wants to call a paid API, it emits a special
+tool call: request_permission(api, estimatedCost, reason).
+
+This does NOT call the API. It pauses and sends a SSE event
+to the frontend:
+
+```ts
+// SSE event type
+{
+  type: 'permission_request',
+  id: string,              // unique request id
+  api: string,             // 'heygen' | 'veo3' | 'imageGen' etc
+  estimatedCost: string,   // '$0.08' | '$1.20' | 'unknown'
+  reason: string,          // agent's explanation: "Generating avatar for intro scene"
+  details: {               // what will be generated
+    prompt?: string
+    duration?: number
+    model?: string
+    resolution?: string
+  }
+}
+```
+
+Frontend shows a permission dialog in the chat panel:
+
+```
+┌─────────────────────────────────────────────────┐
+│ 🔑 Agent requesting API access                  │
+├─────────────────────────────────────────────────┤
+│ API:      HeyGen Avatar Generation              │
+│ Reason:   Generate a presenter avatar for the  │
+│           intro scene speaking the script       │
+│ Cost:     ~$0.12 (12 credits)                  │
+│ Prompt:   "Professional male presenter,         │
+│           blue shirt, neutral background"       │
+├─────────────────────────────────────────────────┤
+│ [Allow once] [Always allow HeyGen] [Deny]       │
+│ □ Don't ask again this session                  │
+└─────────────────────────────────────────────────┘
+```
+
+User response sends back:
+```ts
+{
+  type: 'permission_response',
+  id: string,
+  decision: 'allow' | 'deny',
+  remember: 'once' | 'session' | 'always'
+}
+```
+
+Agent resumes only after receiving permission_response.
+If denied: agent responds in chat explaining it can't proceed
+and suggests alternatives.
+
+### 1.3 Permission tool definition
+
+```ts
+// Tool the agent calls to request permission
+{
+  name: 'request_permission',
+  description: `ALWAYS call this before calling any external 
+  paid API including heygen_generate_avatar, veo3_generate_video,
+  generate_image, remove_background, elevenlabs_tts.
+  Wait for permission before proceeding.
+  If permission mode is always_allow, this resolves immediately.
+  If permission mode is always_deny, do not call the API.`,
+  input_schema: {
+    api: 'string — api identifier',
+    estimatedCost: 'string — human readable cost estimate',
+    reason: 'string — why you need this API for the user\'s request',
+    details: 'object — what will be generated (prompt, duration, model etc)'
+  }
+}
+```
+
+### 1.4 Auto-approval handling
+
+If PermissionConfig.mode === 'always_allow':
+  request_permission resolves immediately with { decision: 'allow' }
+  No UI dialog shown
+  Agent continues without pause
+
+If mode === 'always_deny':
+  request_permission resolves with { decision: 'deny' }
+  Agent receives denial, does not call the API
+  Agent tells user this API is disabled and offers alternatives
+
+If mode === 'ask_once' and already approved this session:
+  resolves immediately with { decision: 'allow' }
+
+### 1.5 Permission settings UI
+
+In Project Settings panel, add "API Permissions" section:
+
+```
+API Permissions
+
+HeyGen Avatars
+  Mode:  [Always ask ▾]    Monthly limit: [$__]
+  This session: $0.00      This month: $0.00
+
+Veo 3 Video Generation
+  Mode:  [Always ask ▾]    Monthly limit: [$__]
+  This session: $0.00      This month: $0.00
+
+Image Generation
+  Mode:  [Always allow ▾]  Monthly limit: [$__]
+  This session: $0.00      This month: $0.00
+
+Background Removal
+  Mode:  [Always allow ▾]  Monthly limit: [$__]
+  This session: $0.00      This month: $0.00
+
+ElevenLabs TTS
+  Mode:  [Always ask ▾]    Monthly limit: [$__]
+  This session: $0.00      This month: $0.00
+```
+
+### 1.6 Spend tracking
+
+Every successful paid API call logs to SQLite:
+```sql
+CREATE TABLE api_spend (
+  id TEXT PRIMARY KEY,
+  project_id TEXT,
+  api TEXT,
+  cost_usd REAL,
+  description TEXT,
+  created_at TEXT
+);
+```
+
+After each call: update PermissionConfig.sessionSpend
+and monthlySpend. If either exceeds the limit, auto-deny
+future requests and notify user in chat.
+
+---
+
+## PART 2 — HEYGEN AVATAR LAYER
+
+### 2.1 What it is
+
+HeyGen generates talking head videos from:
+- A script (text or SSML)
+- An avatar selection (from HeyGen's library or custom)
+- Optional: voice selection
+
+The result is an MP4 video with the avatar speaking.
+We remove the background using BRIA RMBG to make it transparent.
+Result: a WebM with alpha channel — the avatar floats over content.
+
+### 2.2 Layer type
+
+```ts
+interface AvatarLayer extends BaseLayer {
+  type: 'avatar'
+  
+  // HeyGen config
+  avatarId: string          // HeyGen avatar ID
+  voiceId: string           // HeyGen voice ID
+  script: string            // what the avatar says
+  
+  // Background removal
+  removeBackground: boolean // default true
+  
+  // Positioning on canvas
+  x: number                 // center x (0-1920)
+  y: number                 // center y (0-1080)
+  width: number             // px
+  height: number            // px
+  
+  // Result
+  videoUrl: string | null   // URL to generated WebM with alpha
+  thumbnailUrl: string | null
+  
+  // Generation state
+  status: 'pending' | 'generating' | 'ready' | 'error'
+  heygenVideoId: string | null  // for polling
+  estimatedDuration: number     // seconds (from script length)
+}
+```
+
+### 2.3 HeyGen API integration
+
+```ts
+// /lib/apis/heygen.ts
+
+const HEYGEN_BASE = 'https://api.heygen.com/v2';
+
+// List available avatars (call once, cache)
+export async function listAvatars(): Promise<HeyGenAvatar[]>
+
+// Generate a video
+export async function generateAvatarVideo(opts: {
+  avatarId: string
+  voiceId: string
+  script: string
+  width?: number
+  height?: number
+  bgColor?: string    // use 'green' for easy removal, or HeyGen's built-in removal
+}): Promise<{ videoId: string, estimatedSeconds: number }>
+
+// Poll for completion (HeyGen is async, takes 1-3 minutes)
+export async function getVideoStatus(videoId: string): Promise<{
+  status: 'pending' | 'processing' | 'completed' | 'failed'
+  videoUrl?: string
+  thumbnailUrl?: string
+}>
+
+// Download and cache locally
+export async function downloadVideo(videoUrl: string, outputPath: string): Promise<void>
+```
+
+### 2.4 Background removal
+
+Use fal.ai's BRIA RMBG model (fast, high quality, handles hair well):
+
+```ts
+// /lib/apis/background-removal.ts
+import * as fal from '@fal-ai/serverless-client';
+
+export async function removeVideoBackground(
+  videoPath: string,
+  outputPath: string
+): Promise<void> {
+  // Strategy: extract frames, remove bg per frame, reassemble
+  // For video: use ffmpeg to extract PNG frames
+  // Process frames in parallel batches via fal.ai
+  // Reassemble with ffmpeg using -vcodec libvpx-vp9 for WebM alpha
+
+  // Extract frames
+  await extractFrames(videoPath, '/tmp/frames/', 30);  // 30fps
+  
+  // Remove background from each frame in parallel
+  const framePaths = await listFiles('/tmp/frames/');
+  const batchSize = 10;
+  
+  for (let i = 0; i < framePaths.length; i += batchSize) {
+    const batch = framePaths.slice(i, i + batchSize);
+    await Promise.all(batch.map(async (framePath) => {
+      const result = await fal.run('fal-ai/bria-rmbg', {
+        input: { image_url: await toBase64DataUrl(framePath) }
+      });
+      await saveImage(result.image.url, framePath.replace('.png', '_nobg.png'));
+    }));
+  }
+  
+  // Reassemble into WebM with alpha
+  await ffmpeg()
+    .input('/tmp/frames/%04d_nobg.png')
+    .inputOptions(['-framerate 30'])
+    .outputOptions([
+      '-c:v libvpx-vp9',
+      '-pix_fmt yuva420p',  // yuva = alpha channel
+      '-auto-alt-ref 0',
+      '-b:v 2M'
+    ])
+    .output(outputPath)
+    .run();
+}
+```
+
+### 2.5 Avatar generation tool
+
+```ts
+{
+  name: 'generate_avatar',
+  description: `Generate a talking head avatar video using HeyGen.
+  The avatar will speak the provided script.
+  Background is automatically removed for transparent overlay.
+  MUST call request_permission('heygen', cost, reason) first.
+  Generation takes 1-5 minutes — inform the user.`,
+  
+  input_schema: {
+    sceneId: 'string',
+    script: 'string — what the avatar will say',
+    avatarId: 'string — HeyGen avatar ID (call list_avatars first if unsure)',
+    voiceId: 'string — HeyGen voice ID',
+    x: 'number — center x position 0-1920',
+    y: 'number — center y position 0-1080',
+    width: 'number — avatar width in px (default 400)',
+    removeBackground: 'boolean — default true',
+    label: 'string — layer name'
+  }
+}
+
+{
+  name: 'list_avatars',
+  description: 'List available HeyGen avatars. Call this when user asks to see avatar options or when you need to find an appropriate avatar for a scene.',
+  input_schema: {}
+}
+```
+
+### 2.6 Avatar layer in scene HTML
+
+```html
+<!-- Avatar layer renders as a <video> element -->
+<div id="{layer.id}" class="inkframe-layer" style="
+  opacity: {layer.opacity};
+  z-index: {layer.zIndex};">
+  
+  <video
+    id="{layer.id}-video"
+    style="
+      position: absolute;
+      left: {layer.x - layer.width/2}px;
+      top:  {layer.y - layer.height/2}px;
+      width: {layer.width}px;
+      height: {layer.height}px;
+    "
+    src="{layer.videoUrl}"
+    playsinline
+    muted>
+  </video>
+</div>
+
+<script>
+  // Start avatar video at layer.startAt seconds
+  setTimeout(() => {
+    document.getElementById('{layer.id}-video').play();
+  }, {layer.startAt * 1000});
+</script>
+```
+
+The WebM with alpha channel composites transparently over other layers.
+WVC captures this correctly since it uses headless Chrome which
+handles WebM alpha natively.
+
+### 2.7 Generation progress in chat
+
+Avatar generation is async (1-5 min). Handle gracefully:
+
+1. Agent calls generate_avatar tool
+2. Tool starts HeyGen job, immediately returns { status: 'generating', jobId }
+3. Agent responds in chat: "Started avatar generation. This takes 2-4 minutes.
+   I'll notify you when it's ready. You can keep working on other scenes."
+4. Server polls HeyGen every 15 seconds
+5. When complete: SSE event to frontend:
+   { type: 'avatar_ready', sceneId, layerId, videoUrl }
+6. Frontend shows notification in chat:
+   "✓ Avatar ready — Scene 2 updated"
+7. Scene HTML regenerates, preview reloads
+
+### 2.8 Avatar picker UI
+
+When user asks about avatars or agent calls list_avatars,
+show an avatar picker in the chat:
+
+Grid of avatar thumbnails (from HeyGen's list endpoint).
+Each shows: preview image, name, gender, style tags.
+Click to select → auto-fills avatarId in next generate_avatar call.
+
+---
+
+## PART 3 — VEO 3 VIDEO GENERATION
+
+### 3.1 What it is
+
+Google Veo 3 generates short video clips from text prompts.
+High quality, realistic motion, up to 8 seconds per clip.
+Available via Google AI Studio API / Vertex AI.
+
+Use cases in Inkframe:
+- Background video scenes (landscape, abstract motion, product shots)
+- B-roll footage between diagram scenes
+- Atmospheric scene backgrounds (rain, city, abstract)
+- Full video scenes (Veo clip IS the scene)
+
+### 3.2 Layer type
+
+```ts
+interface Veo3Layer extends BaseLayer {
+  type: 'veo3'
+  
+  // Generation config
+  prompt: string
+  negativePrompt: string | null
+  aspectRatio: '16:9' | '9:16' | '1:1'
+  duration: 5 | 8              // seconds (Veo 3 supports 5 or 8)
+  
+  // Playback
+  loop: boolean                // loop the clip if scene is longer
+  playbackRate: number         // 0.5-2.0, default 1.0
+  
+  // Result
+  videoUrl: string | null
+  thumbnailUrl: string | null
+  
+  // State
+  status: 'pending' | 'generating' | 'ready' | 'error'
+  operationName: string | null  // Google AI operation name for polling
+}
+```
+
+### 3.3 Veo 3 API integration
+
+```ts
+// /lib/apis/veo3.ts
+
+// Veo 3 via Google AI Studio (REST API)
+const VEO3_BASE = 'https://generativelanguage.googleapis.com/v1beta';
+
+export async function generateVeo3Video(opts: {
+  prompt: string
+  negativePrompt?: string
+  aspectRatio: '16:9' | '9:16' | '1:1'
+  durationSeconds: 5 | 8
+}): Promise<{ operationName: string }> {
+  const response = await fetch(
+    `${VEO3_BASE}/models/veo-3.0-generate-preview:generateVideo?key=${process.env.GOOGLE_AI_KEY}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prompt: { text: opts.prompt },
+        negativePrompt: opts.negativePrompt,
+        generationConfig: {
+          mediaResolution: 'MEDIA_RESOLUTION_HIGH',  // 1080p
+          aspectRatio: opts.aspectRatio,
+          durationSeconds: opts.durationSeconds,
+        }
+      })
+    }
+  );
+  const data = await response.json();
+  return { operationName: data.name };
+}
+
+// Poll for completion (Veo takes 2-10 minutes)
+export async function getVeo3Status(operationName: string): Promise<{
+  done: boolean
+  videoUri?: string        // Google Cloud Storage URI when done
+  error?: string
+}>
+
+// Download from GCS to local cache
+export async function downloadVeo3Video(
+  gcsUri: string,
+  outputPath: string
+): Promise<void>
+```
+
+### 3.4 Veo 3 tool
+
+```ts
+{
+  name: 'generate_veo3_video',
+  description: `Generate a video clip using Google Veo 3.
+  Best for: atmospheric backgrounds, b-roll footage, abstract motion,
+  product showcases, nature scenes, urban environments.
+  NOT for: diagrams, explanations, talking heads (use HeyGen for that).
+  Clips are 5 or 8 seconds. Loop if scene is longer.
+  MUST call request_permission('veo3', cost, reason) first.
+  Generation takes 2-10 minutes.`,
+  
+  input_schema: {
+    sceneId: 'string',
+    prompt: 'string — detailed description of the video to generate',
+    negativePrompt: 'string | null — what to avoid',
+    aspectRatio: '16:9 | 9:16 | 1:1',
+    duration: '5 | 8',
+    loop: 'boolean — loop if scene duration is longer than clip',
+    asBackground: 'boolean — if true, places behind other layers at z:0',
+    label: 'string'
+  }
+}
+```
+
+### 3.5 Veo 3 as a full scene
+
+When the user wants an entire scene to be a Veo video:
+
+```ts
+// Director agent can create a "veo scene" — 
+// a scene with only a Veo3Layer at full canvas size
+
+create_scene({
+  prompt: 'aerial view of a city at night, time lapse',
+  layers: [{
+    type: 'veo3',
+    x: 0, y: 0, width: 1920, height: 1080,
+    prompt: 'aerial cityscape night time lapse, cinematic',
+    duration: 8,
+    loop: true
+  }]
+})
+```
+
+### 3.6 Veo 3 + Canvas2D composite
+
+The killer use case: Veo generates a beautiful background,
+Canvas2D draws annotations on top.
+
+Example: "Show our global expansion"
+→ Veo layer: world map aerial footage
+→ Canvas2D layer: animated dots appearing on cities with labels
+→ HTML layer: title "Our Global Reach"
+
+Agent decides this composition automatically based on the prompt.
+
+### 3.7 Prompt enhancement for Veo 3
+
+Veo 3 prompts need cinematic language. Add an enhance step:
+
+Before calling Veo 3, the agent rewrites the user's description
+into a cinematically-phrased prompt using a fast Claude call:
+
+```
+User said: "a cloud computing animation"
+Enhanced: "abstract visualization of data flowing through luminous 
+cloud nodes, soft blue and white light particles streaming between 
+floating server clusters, cinematic depth of field, 4K"
+```
+
+This happens automatically — user writes simply,
+Veo 3 gets a rich cinematic prompt.
+
+---
+
+## PART 4 — AI IMAGE GENERATION + STICKERS
+
+### 4.1 Models supported
+
+Multiple models via their APIs or fal.ai as a unified gateway:
+
+```ts
+type ImageModel =
+  | 'flux-1.1-pro'        // fal.ai — highest quality, slowest
+  | 'flux-schnell'        // fal.ai — fast, good quality
+  | 'ideogram-v3'         // fal.ai — great for text in images
+  | 'recraft-v3'          // fal.ai — best for illustrations/icons
+  | 'stable-diffusion-3'  // fal.ai — versatile
+  | 'dall-e-3'            // OpenAI — reliable, safe
+```
+
+Model selection guide (injected into agent):
+- Photo-realistic: flux-1.1-pro
+- Fast iteration: flux-schnell
+- Contains text/labels: ideogram-v3
+- Illustration/diagram style: recraft-v3
+- General purpose: stable-diffusion-3
+
+### 4.2 Image generation tool
+
+```ts
+{
+  name: 'generate_image',
+  description: `Generate an AI image and place it in a scene.
+  For stickers (transparent bg): set removeBackground: true.
+  For background images: set removeBackground: false.
+  Choose model based on content type — see model guide.
+  MUST call request_permission('imageGen', cost, reason) first.`,
+  
+  input_schema: {
+    sceneId: 'string',
+    layerId: 'string | null',  // null = create new layer
+    prompt: 'string',
+    negativePrompt: 'string | null',
+    model: 'ImageModel',
+    aspectRatio: '1:1 | 16:9 | 9:16 | 4:3 | 3:4',
+    
+    // Placement
+    x: 'number',
+    y: 'number',
+    width: 'number',
+    height: 'number',
+    
+    // Sticker mode
+    removeBackground: 'boolean',
+    // If true: runs BRIA RMBG after generation
+    // Result is PNG with transparency
+    
+    // Style guidance
+    style: 'photorealistic | illustration | flat | sketch | 3d | pixel | watercolor | null'
+    // Injected into prompt automatically
+  }
+}
+```
+
+### 4.3 Image generation API
+
+```ts
+// /lib/apis/image-gen.ts
+import * as fal from '@fal-ai/serverless-client';
+
+const MODEL_IDS: Record<ImageModel, string> = {
+  'flux-1.1-pro': 'fal-ai/flux-pro/v1.1',
+  'flux-schnell': 'fal-ai/flux/schnell',
+  'ideogram-v3': 'fal-ai/ideogram/v3',
+  'recraft-v3': 'fal-ai/recraft-v3',
+  'stable-diffusion-3': 'fal-ai/stable-diffusion-v3-medium',
+  'dall-e-3': null,  // uses OpenAI SDK directly
+};
+
+const STYLE_PROMPTS: Record<string, string> = {
+  illustration: ', vector illustration style, clean lines',
+  flat: ', flat design, simple shapes, minimal',
+  sketch: ', pencil sketch, hand-drawn, whiteboard style',
+  '3d': ', 3D render, octane render, soft lighting',
+  watercolor: ', watercolor illustration, painted',
+  photorealistic: ', photorealistic, 4K, detailed',
+};
+
+export async function generateImage(opts: {
+  prompt: string
+  negativePrompt?: string
+  model: ImageModel
+  aspectRatio: string
+  style?: string
+}): Promise<{ imageUrl: string, width: number, height: number }> {
+  
+  const fullPrompt = opts.prompt + (opts.style ? STYLE_PROMPTS[opts.style] ?? '' : '');
+  
+  if (opts.model === 'dall-e-3') {
+    // OpenAI path
+    const response = await openai.images.generate({
+      model: 'dall-e-3',
+      prompt: fullPrompt,
+      size: aspectRatioToSize(opts.aspectRatio),
+      quality: 'standard',
+      n: 1,
+    });
+    return { imageUrl: response.data[0].url!, width: 1024, height: 1024 };
+  }
+  
+  // fal.ai path
+  const result = await fal.run(MODEL_IDS[opts.model], {
+    input: {
+      prompt: fullPrompt,
+      negative_prompt: opts.negativePrompt,
+      aspect_ratio: opts.aspectRatio,
+      num_inference_steps: opts.model === 'flux-schnell' ? 4 : 28,
+      guidance_scale: 3.5,
+    }
+  });
+  
+  return {
+    imageUrl: result.images[0].url,
+    width: result.images[0].width,
+    height: result.images[0].height,
+  };
+}
+```
+
+### 4.4 Background removal for stickers
+
+```ts
+// /lib/apis/background-removal.ts
+
+export async function removeImageBackground(
+  imageUrl: string
+): Promise<string> {  // returns data URL with transparency
+  
+  const result = await fal.run('fal-ai/bria-rmbg', {
+    input: {
+      image_url: imageUrl,
+      sync_mode: true,    // wait for result inline
+    }
+  });
+  
+  // Result is PNG with alpha channel
+  return result.image.url;
+}
+```
+
+Cost: ~$0.01 per image for BRIA RMBG. Fast (~2 seconds).
+
+### 4.5 Sticker layer type
+
+```ts
+interface StickerLayer extends BaseLayer {
+  type: 'sticker'
+  
+  // Generation
+  prompt: string
+  model: ImageModel
+  style: string | null
+  
+  // Result
+  imageUrl: string | null      // original with background
+  stickerUrl: string | null    // PNG with alpha, no background
+  
+  // Placement
+  x: number
+  y: number
+  width: number
+  height: number
+  rotation: number             // degrees
+  
+  // State
+  status: 'pending' | 'generating' | 'removing-bg' | 'ready' | 'error'
+}
+```
+
+### 4.6 Sticker in scene HTML
+
+```html
+<div id="{layer.id}" class="inkframe-layer" style="
+  opacity: {layer.opacity};
+  z-index: {layer.zIndex};">
+  
+  <img
+    id="{layer.id}-img"
+    src="{layer.stickerUrl || layer.imageUrl}"
+    style="
+      position: absolute;
+      left: {layer.x - layer.width/2}px;
+      top:  {layer.y - layer.height/2}px;
+      width: {layer.width}px;
+      height: {layer.height}px;
+      transform: rotate({layer.rotation}deg);
+      object-fit: contain;
+      {layer.animateIn ? 'opacity: 0;' : ''}
+    "
+  >
+</div>
+
+<script>
+  // Animate in if requested
+  {layer.animateIn ? `
+    setTimeout(() => {
+      const img = document.getElementById('${layer.id}-img');
+      img.style.transition = 'opacity 0.4s ease, transform 0.4s ease';
+      img.style.opacity = '1';
+      img.style.transform = 'rotate(${layer.rotation}deg) scale(1)';
+    }, ${layer.startAt * 1000});
+  ` : ''}
+</script>
+```
+
+### 4.7 Sticker tool shorthand
+
+```ts
+{
+  name: 'generate_sticker',
+  description: `Generate an image with background removed for use as
+  a floating sticker/illustration in a scene. 
+  Best for: icons, characters, objects, logos, decorative elements.
+  Uses illustration or flat style by default for clean edges after bg removal.
+  MUST call request_permission('imageGen', estimatedCost, reason) first.`,
+  
+  input_schema: {
+    sceneId: 'string',
+    prompt: 'string — describe the sticker (object, character, icon)',
+    model: 'ImageModel — default: recraft-v3 for illustrations',
+    style: 'illustration | flat | sketch | 3d — default: illustration',
+    x: 'number',
+    y: 'number',
+    size: 'number — width and height in px (stickers are square)',
+    rotation: 'number — degrees, default 0',
+    animateIn: 'boolean — pop in with scale animation, default true'
+  }
+}
+```
+
+### 4.8 Image model selector UI
+
+When agent generates an image or user opens image generation:
+show a model picker with visual examples:
+
+```
+Generate Image
+
+Model:
+[● Flux Pro]  Best quality, slower
+[  Flux Fast] Good quality, instant  
+[  Ideogram]  Best for text in images
+[  Recraft]   Best for illustrations ← recommended for stickers
+[  DALL-E 3]  Reliable, safe
+
+Style: [Illustration ▾]
+```
+
+Show estimated cost and time per model:
+  Flux Pro: ~$0.05, ~15 seconds
+  Flux Fast: ~$0.003, ~3 seconds
+  Ideogram: ~$0.08, ~10 seconds
+  Recraft: ~$0.04, ~8 seconds
+  DALL-E 3: ~$0.04, ~10 seconds
+
+---
+
+## PART 5 — AGENT PROMPT UPDATES
+
+### 5.1 New rule file: rules/media-generation.md
+
+```markdown
+# AI Media Generation
+
+## Permission Gate
+ALWAYS call request_permission() before any of these tools:
+- generate_avatar (HeyGen)
+- generate_veo3_video
+- generate_image
+- generate_sticker
+- remove_background (if standalone)
+
+Never call the actual generation tool without receiving permission first.
+Wait for the permission_response event before proceeding.
+If denied, offer alternatives using existing tools.
+
+## When to use each tool
+
+### generate_avatar
+Use when: user wants a presenter, narrator, explainer character,
+spokesperson, or talking head in a scene.
+Always ask: what should the avatar say? (need script)
+Duration: scene duration should match script speaking time.
+~150 words per minute for natural pacing.
+
+### generate_veo3_video
+Use when: user wants cinematic footage, atmospheric backgrounds,
+abstract motion, b-roll, product shots, or nature scenes.
+NOT for: anything with text, diagrams, or explanations.
+Enhance the user's prompt cinematically before calling.
+Duration: 5 or 8 seconds only. Set loop: true for longer scenes.
+
+### generate_image
+Use when: user wants a specific photo, illustration, or graphic
+that doesn't exist in the asset library.
+Choose model based on content type.
+For text-containing images: ideogram-v3
+For illustrations: recraft-v3
+For photos: flux-1.1-pro or stable-diffusion-3
+
+### generate_sticker
+Use when: user wants a floating illustrated element with no background.
+Always use removeBackground: true.
+Prefer recraft-v3 model for clean illustration edges.
+Stickers animate in by default (pop scale effect).
+
+## Compositing strategy
+Generated media works best as layers:
+- Veo video: bottom layer (background)
+- Canvas2D diagram: middle layer (main content)
+- Stickers: above diagrams
+- Avatar: top layer, positioned to side of content
+- HTML text: always top layer
+
+## Async generation
+HeyGen and Veo take minutes. Tell the user:
+"This will take 2-5 minutes. You can continue working on other scenes."
+Never block the conversation waiting — the system will notify when ready.
+Image generation (fal.ai) is near-instant (3-15 seconds).
+```
+
+### 5.2 Agent tool list update
+
+Add to Scene Maker agent tools:
+- request_permission
+- list_avatars
+- generate_avatar
+- generate_veo3_video
+- generate_image
+- generate_sticker
+
+Add to Director agent tools:
+- request_permission
+- generate_veo3_video (for planning video scenes)
+- generate_image (for planning image scenes)
+
+Add rule injection:
+When any media generation tool is in activeTools:
+  inject rules/media-generation.md
+
+### 5.3 Tool filter integration
+
+In the Agent Control Panel tool filter, add:
+
+```
+[✓ Canvas2D] [✓ SVG] [✓ D3] [✓ Three.js] [✓ Lottie]
+[✓ Assets] [✓ HTML] [✓ Audio] [✓ Video]
+[✓ Avatars (HeyGen)] [✓ AI Video (Veo3)]
+[✓ AI Images] [✓ Stickers] [✓ Interactions]
+```
+
+Disabling a media type:
+- Removes its tools from the agent's tool list
+- Removes its rule section from injected context
+- Agent cannot suggest or use that type
+
+Preset updates:
+  Whiteboard: Canvas2D + SVG + Assets + HTML (no media gen)
+  Full Production: all enabled
+  Budget mode: no Avatars, no Veo3, Images allowed
+  Offline: no media gen at all
+
+---
+
+## PART 6 — BACKEND SETUP
+
+### 6.1 New API routes
+
+```
+POST /api/generate-avatar
+  Body: { sceneId, layerId, avatarConfig }
+  Starts HeyGen job, returns { jobId }
+  Polls in background, emits SSE when done
+
+POST /api/generate-video
+  Body: { sceneId, layerId, veo3Config }
+  Starts Veo 3 job, returns { operationName }
+  Polls in background, emits SSE when done
+
+POST /api/generate-image
+  Body: { sceneId, layerId?, imageConfig }
+  Synchronous for fast models, returns { imageUrl }
+  For stickers: also runs bg removal before returning
+
+POST /api/remove-background
+  Body: { imageUrl | imagePath }
+  Runs BRIA RMBG, returns { resultUrl }
+
+GET /api/list-avatars
+  Returns cached HeyGen avatar list (refresh every 24h)
+```
+
+### 6.2 Media cache
+
+All generated media cached locally to avoid re-generation:
+
+```
+/public/generated/
+  avatars/{hash}.webm       # avatar videos with alpha
+  videos/{hash}.mp4         # Veo 3 clips
+  images/{hash}.png         # generated images
+  stickers/{hash}.png       # bg-removed images
+```
+
+Cache key: hash of generation params (prompt + model + config).
+Same prompt = same cache key = no re-generation cost.
+
+### 6.3 Environment variables
+
+```bash
+HEYGEN_API_KEY=
+GOOGLE_AI_KEY=          # for Veo 3
+FAL_KEY=                # for image gen + bg removal
+OPENAI_API_KEY=         # for DALL-E 3 (optional)
+ANTHROPIC_API_KEY=      # already set
+
+# Cost tracking (optional, for spend limits)
+ENABLE_SPEND_TRACKING=true
+```
+
+### 6.4 Dependencies
+
+```bash
+npm install @fal-ai/serverless-client   # fal.ai (MIT)
+npm install openai                       # OpenAI SDK (MIT)
+# HeyGen: REST API, no SDK needed
+# Veo 3: REST API via Google AI Studio
+# BRIA RMBG: via fal.ai
+```
+
+---
+
+## PART 7 — IMPLEMENTATION ORDER
+
+1. Permission system (gate, config, UI dialog) — build first
+2. SQLite spend tracking table
+3. Permission settings UI in project settings
+4. fal.ai client setup + generate_image (simplest)
+5. Background removal (BRIA via fal.ai)
+6. generate_sticker (image + bg removal combined)
+7. Sticker layer type + scene HTML rendering
+8. Image/sticker layer in UI (picker + placement)
+9. HeyGen client + list_avatars
+10. generate_avatar tool + avatar layer type
+11. Avatar background removal pipeline (frame extraction)
+12. Avatar polling + SSE notifications
+13. Veo 3 client + generate_veo3_video
+14. Veo 3 polling + SSE notifications
+15. Prompt enhancement for Veo 3 (Claude fast call)
+16. rules/media-generation.md
+17. Agent tool list + rule injection updates
+18. Tool filter chips for media types
+19. Media cache system
+20. Test: sticker → instant
+    Test: image → instant
+    Test: avatar → 2-5 min, SSE notification
+    Test: veo3 → 2-10 min, SSE notification
+21. Test: permission deny → agent offers alternative
+22. Test: always_allow → no dialog shown
+23. Test: spend limit reached → auto-deny
+
+---
+
+## CRITICAL NOTES
+
+Permission gate is non-optional. If you implement any media
+generation tool call WITHOUT first routing through
+request_permission(), that is a bug. Every external paid API
+call in the system goes through the gate. No exceptions.
+
+WVC export with avatars: WebM with alpha plays correctly
+in headless Chrome. WVC captures the composited frame
+including the transparent avatar over other layers.
+Test this in WVC before shipping.
+
+Veo 3 availability: as of March 2026, Veo 3 is available
+via Google AI Studio API key with waitlist access.
+Add a graceful fallback: if Veo 3 returns 403/429,
+tell the user and suggest Veo 2 or a Canvas2D animation instead.
+
+Frame-by-frame avatar bg removal is compute-intensive.
+Run on the render server (port 3001), not the Next.js server.
+Cache aggressively — same avatar + same script = same video.
+
+HeyGen green screen option: HeyGen supports generating avatars
+on a pure green background natively, which is easier to chroma-key
+than BRIA's neural approach. Test both and pick the cleaner result.
+For hair and complex edges: BRIA wins.
+For simple/clean studio avatars: green screen chroma-key via FFmpeg.
+
+Sticker style guide for agent: always use `illustration` or `flat`
+style for stickers, never `photorealistic`. Photo-realistic images
+look bad after background removal due to edge artifacts.
+Illustrations have clean, well-defined edges that remove cleanly.
+
+Image cache deduplication: before calling any generation API,
+check if a cached result exists for the same prompt+model+config hash.
+If yes, return cached URL immediately. No API call, no cost, instant.
+```

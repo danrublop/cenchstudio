@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100vh; overflow: hidden; background: #0d0d12; }
+    
+      #title { font-family:sans-serif; font-size:72px; font-weight:bold; color:#e84545;
+        text-align:center; position:absolute; left:0; right:0; top:80px; opacity:0; }
+      #sub { font-family:sans-serif; font-size:32px; color:#6b6b7a;
+        text-align:center; position:absolute; left:0; right:0; top:180px; opacity:0; }
+      .box { position:absolute; border-radius:16px; opacity:0; }
+      #b1 { width:200px; height:200px; background:#e84545; left:200px; top:350px; }
+      #b2 { width:200px; height:200px; background:#181818; border:3px solid #e84545; left:500px; top:350px; }
+      #b3 { width:200px; height:200px; background:#151515; left:800px; top:350px; }
+      #b4 { width:200px; height:200px; background:#e84545; opacity:0.5; left:1100px; top:350px; }
+      #b5 { width:200px; height:200px; background:#f0ece0; left:1400px; top:350px; }
+      .label { font-family:sans-serif; font-size:22px; color:#6b6b7a;
+        position:absolute; text-align:center; opacity:0; }
+      #footer { font-family:sans-serif; font-size:24px; color:#3a3a45;
+        text-align:center; position:absolute; left:0; right:0; bottom:50px; opacity:0; }
+    
+  </style>
+</head>
+<body>
+  
+      <div id="title">Motion.js + Anime.js Scene Type Test</div>
+      <div id="sub">animate() · stagger() · timeline() · spring easing</div>
+      <div id="b1" class="box"></div>
+      <div id="b2" class="box"></div>
+      <div id="b3" class="box"></div>
+      <div id="b4" class="box"></div>
+      <div id="b5" class="box"></div>
+      <div class="label" id="l1" style="left:200px;top:570px;width:200px">Motion animate()</div>
+      <div class="label" id="l2" style="left:500px;top:570px;width:200px">anime stagger</div>
+      <div class="label" id="l3" style="left:800px;top:570px;width:200px">spring easing</div>
+      <div class="label" id="l4" style="left:1100px;top:570px;width:200px">opacity anim</div>
+      <div class="label" id="l5" style="left:1400px;top:570px;width:200px">scale+rotate</div>
+      <div id="footer">✓ Motion library working</div>
+    
+  
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.2/anime.min.js"></script>
+  <script type="module">
+    import { animate, stagger } from "https://esm.sh/motion@11";
+
+    window.__pause  = () => { document.querySelectorAll('*').forEach(el => { const s = getComputedStyle(el); if (s.animationName && s.animationName !== 'none') el.style.animationPlayState = 'paused'; }); };
+    window.__resume = () => { document.querySelectorAll('*').forEach(el => { const s = getComputedStyle(el); if (s.animationName && s.animationName !== 'none') el.style.animationPlayState = 'running'; }); };
+
+    document.addEventListener('DOMContentLoaded', () => {
+      const audio = document.getElementById('scene-audio');
+      if (audio) {
+        audio.volume = 1;
+        const _p = window.__pause, _r = window.__resume;
+        window.__pause  = () => { _p(); audio.pause(); };
+        window.__resume = () => { _r(); audio.play().catch(() => {}); };
+      }
+    });
+
+    
+      // Motion animate
+      animate('#title', { opacity: [0, 1], y: [40, 0] }, { duration: 0.7, easing: 'ease-out' });
+      animate('#sub',   { opacity: [0, 1] }, { duration: 0.5, delay: 0.4, easing: 'ease-out' });
+
+      // Box 1: Motion animate with spring
+      animate('#b1', { opacity: [0, 1], scale: [0, 1] }, { duration: 0.6, delay: 0.6, easing: 'spring(1, 100, 10, 0)' });
+      animate('#l1', { opacity: [0, 1] }, { duration: 0.4, delay: 1.3 });
+
+      // Boxes 2-5: anime stagger
+      anime({
+        targets: ['#b2','#b3','#b4','#b5'],
+        opacity: [0, 1],
+        translateY: [60, 0],
+        delay: anime.stagger(150, { start: 800 }),
+        duration: 600,
+        easing: 'easeOutCubic',
+      });
+      anime({
+        targets: ['#l2','#l3','#l4','#l5'],
+        opacity: [0, 1],
+        delay: anime.stagger(150, { start: 1600 }),
+        duration: 400,
+        easing: 'easeOutCubic',
+      });
+
+      // Box 3: continuous spring bounce
+      setTimeout(() => {
+        anime({
+          targets: '#b3',
+          translateY: [-20, 0],
+          direction: 'alternate',
+          loop: true,
+          duration: 800,
+          easing: 'easeInOutSine',
+        });
+      }, 1400);
+
+      // Box 5: rotate
+      animate('#b5', { rotate: [0, 360] }, { duration: 2, delay: 1.5, repeat: Infinity, easing: 'linear' });
+
+      // Footer
+      animate('#footer', { opacity: [0, 1] }, { duration: 0.5, delay: 3.5 });
+    
+  </script>
+</body>
+</html>

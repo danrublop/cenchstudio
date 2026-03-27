@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; animation-play-state: paused; }
+    body { width: 1920px; height: 1080px; overflow: hidden; background: #fffef9; }
+
+    #video-layer {
+      position: absolute; inset: 0;
+      opacity: 1;
+      z-index: 1;
+      display: none;
+    }
+    #video-layer video { width: 100%; height: 100%; object-fit: cover; }
+
+    #svg-layer {
+      position: absolute; inset: 0;
+      z-index: 2;
+    }
+    #svg-layer svg { width: 100%; height: 100%; }
+
+    .text-overlay {
+      position: absolute;
+      z-index: 3;
+      opacity: 0;
+      white-space: pre-wrap;
+    }
+
+    .svg-object svg { width: 100%; height: auto; display: block; background: transparent; }
+
+    /* Stroke animation */
+    .stroke {
+      fill: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-dasharray: var(--len, 1000);
+      stroke-dashoffset: var(--len, 1000);
+      animation: draw var(--dur, 1s) ease-in-out var(--delay, 0s) forwards;
+    }
+    .fadein {
+      opacity: 0;
+      animation: pop var(--dur, 0.4s) ease var(--delay, 0s) forwards;
+    }
+    @keyframes draw { to { stroke-dashoffset: 0; } }
+    @keyframes pop  { to { opacity: 1; } }
+    @keyframes fadeInOverlay { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes slideUpOverlay {
+      from { opacity: 0; transform: translateY(20px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+
+  <div id="video-layer">
+    
+  </div>
+
+  
+
+  
+
+  <div class="svg-object" id="obj-b8b2a0c2-5533-448f-9233-921f72aace79" style="position:absolute;left:13%;top:14%;width:76%;opacity:1;z-index:2;pointer-events:none;"><svg viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .stroke {
+      fill: none;
+      stroke-dasharray: var(--len);
+      stroke-dashoffset: var(--len);
+      animation: draw var(--dur, 2s) ease-out var(--delay, 0s) forwards;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-width: 2.5;
+    }
+    .fadein {
+      opacity: 0;
+      animation: fadeIn 0.8s ease-out var(--delay, 0s) forwards;
+    }
+    @keyframes draw {
+      to { stroke-dashoffset: 0; }
+    }
+    @keyframes fadeIn {
+      to { opacity: 1; }
+    }
+  </style>
+
+  <!-- Patient head outline -->
+  <path d="M 600 200 Q 550 150 520 200 Q 510 250 520 300 Q 530 350 580 380 Q 630 380 680 350 Q 690 300 680 250 Q 670 200 650 180 Q 625 160 600 200" 
+        stroke="#f0ece0" class="stroke" style="--len: 800; --delay: 0.5s; --dur: 2s"/>
+
+  <!-- Hair -->
+  <path d="M 520 200 Q 500 160 520 140 Q 560 120 600 130 Q 640 125 670 140 Q 690 160 680 200" 
+        stroke="#151515" class="stroke" style="--len: 400; --delay: 1s; --dur: 1.5s"/>
+
+  <!-- Left eye -->
+  <ellipse cx="570" cy="240" rx="8" ry="12" fill="#151515" class="fadein" style="--delay: 1.8s"/>
+  
+  <!-- Right eye -->
+  <ellipse cx="630" cy="240" rx="8" ry="12" fill="#151515" class="fadein" style="--delay: 1.9s"/>
+
+  <!-- Nose -->
+  <path d="M 600 260 L 595 275 M 600 260 L 605 275" 
+        stroke="#151515" class="stroke" style="--len: 30; --delay: 2s; --dur: 0.8s"/>
+
+  <!-- Mouth open coughing -->
+  <ellipse cx="600" cy="300" rx="15" ry="20" stroke="#151515" fill="#121212" class="stroke" style="--len: 100; --delay: 2.2s; --dur: 1s"/>
+
+  <!-- Neck -->
+  <path d="M 580 380 L 580 420 M 620 380 L 620 420" 
+        stroke="#f0ece0" class="stroke" style="--len: 80; --delay: 2.5s; --dur: 1s"/>
+
+  <!-- Body torso -->
+  <path d="M 580 420 Q 520 450 500 520 L 500 650 Q 500 680 530 680 L 670 680 Q 700 680 700 650 L 700 520 Q 680 450 620 420" 
+        stroke="#f0ece0" class="stroke" style="--len: 900; --delay: 3s; --dur: 2.5s"/>
+
+  <!-- Left arm -->
+  <path d="M 520 480 Q 480 500 460 540 Q 450 580 470 620" 
+        stroke="#f0ece0" class="stroke" style="--len: 200; --delay: 3.5s; --dur: 1.5s"/>
+
+  <!-- Left hand on chest -->
+  <circle cx="470" cy="620" r="12" stroke="#f0ece0" class="stroke" style="--len: 75; --delay: 4s; --dur: 1s"/>
+
+  <!-- Right arm raised to cover mouth -->
+  <path d="M 680 480 Q 720 460 750 440 Q 780 430 800 450 Q 790 480 770 500 Q 750 520 730 530" 
+        stroke="#f0ece0" class="stroke" style="--len: 300; --delay: 4.2s; --dur: 2s"/>
+
+  <!-- Right hand covering mouth area -->
+  <circle cx="730" cy="530" r="12" stroke="#f0ece0" class="stroke" style="--len: 75; --delay: 4.8s; --dur: 1s"/>
+  
+  <!-- Hand details/fingers -->
+  <path d="M 720 525 L 715 520 M 725 520 L 722 515 M 730 518 L 728 513 M 738 522 L 740 517" 
+        stroke="#f0ece0" class="stroke" style="--len: 60; --delay: 5s; --dur: 1s"/>
+
+  <!-- Cough particles/droplets -->
+  <circle cx="650" cy="280" r="3" fill="#e84545" class="fadein" style="--delay: 5.2s"/>
+  <circle cx="670" cy="290" r="2" fill="#e84545" class="fadein" style="--delay: 5.3s"/>
+  <circle cx="690" cy="300" r="2.5" fill="#e84545" class="fadein" style="--delay: 5.4s"/>
+  <circle cx="710" cy="310" r="1.5" fill="#e84545" class="fadein" style="--delay: 5.5s"/>
+  <circle cx="720" cy="285" r="2" fill="#e84545" class="fadein" style="--delay: 5.6s"/>
+
+  <!-- More cough particles -->
+  <circle cx="665" cy="270" r="1" fill="#e84545" class="fadein" style="--delay: 5.4s"/>
+  <circle cx="685" cy="275" r="1.5" fill="#e84545" class="fadein" style="--delay: 5.5s"/>
+  <circle cx="705" cy="290" r="1" fill="#e84545" class="fadein" style="--delay: 5.7s"/>
+
+  <!-- Chest area highlighting internal irritation -->
+  <path d="M 560 520 Q 580 540 600 560 Q 620 540 640 520 Q 630 500 620 480 Q 600 470 580 480 Q 570 500 560 520" 
+        stroke="#e84545" class="stroke" style="--len: 300; --delay: 5.8s; --dur: 1.5s"/>
+
+  <!-- Internal chest irritation lines -->
+  <path d="M 580 500 Q 590 510 600 520 Q 610 510 620 500" 
+        stroke="#e84545" class="stroke" style="--len: 80; --delay: 6s; --dur: 1s"/>
+  
+  <path d="M 575 520 Q 600 530 625 520" 
+        stroke="#e84545" class="stroke" style="--len: 100; --delay: 6.2s; --dur: 1s"/>
+
+  <!-- Medical annotation arrow pointing to chest -->
+  <path d="M 800 400 L 750 450 L 760 455 L 750 450 L 755 440" 
+        stroke="#181818" class="stroke" style="--len: 120; --delay: 6.5s; --dur: 1s"/>
+
+  <!-- Medical label -->
+  <text x="810" y="390" font-family="sans-serif" font-size="24" fill="#181818" class="fadein" style="--delay: 6.8s">PERSISTENT COUGH</text>
+  <text x="810" y="420" font-family="sans-serif" font-size="18" fill="#181818" class="fadein" style="--delay: 7s">Respiratory irritation</text>
+
+  <!-- Additional annotation for droplets -->
+  <path d="M 750 250 L 710 280 L 718 285 L 710 280 L 715 272" 
+        stroke="#e84545" class="stroke" style="--len: 100; --delay: 7.2s; --dur: 0.8s"/>
+
+  <!-- Droplet label -->
+  <text x="760" y="240" font-family="sans-serif" font-size="20" fill="#e84545" class="fadein" style="--delay: 7.5s">Expelled droplets</text>
+
+  <!-- Background medical cross for context -->
+  <path d="M 1200 200 L 1200 350 M 1125 275 L 1275 275" 
+        stroke="#151515" stroke-width="8" class="stroke" style="--len: 450; --delay: 0.2s; --dur: 1.5s"/>
+
+  <!-- Symptom severity indicator -->
+  <rect x="1350" y="400" width="200" height="30" stroke="#181818" fill="none" class="stroke" style="--len: 460; --delay: 7.8s; --dur: 0.5s"/>
+  <rect x="1355" y="405" width="120" height="20" fill="#e84545" class="fadein" style="--delay: 8s"/>
+  <text x="1360" y="450" font-family="sans-serif" font-size="16" fill="#181818" class="fadein" style="--delay: 8s">Severity: Moderate</text>
+
+</svg></div>
+
+  
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      // Auto-calculate stroke-dasharray lengths
+      document.querySelectorAll('.stroke').forEach(el => {
+        if (el.getTotalLength) {
+          el.style.setProperty('--len', el.getTotalLength());
+        }
+      });
+
+      const video = document.querySelector('#video-layer video');
+      if (video) video.currentTime = 0;
+
+      const audio = document.getElementById('scene-audio');
+      if (audio) audio.volume = 1;
+
+      // Scrub: offset animation delays by -t seconds for all animated elements
+      const t = parseFloat(new URLSearchParams(location.search).get('t') || '0');
+      if (t > 0) {
+        document.querySelectorAll('*').forEach(el => {
+          const s = window.getComputedStyle(el);
+          if (s.animationName && s.animationName !== 'none') {
+            const delay = parseFloat(s.animationDelay) || 0;
+            el.style.animationDelay = (delay - t) + 's';
+          }
+        });
+        if (video) video.currentTime = 0 + t;
+      }
+    });
+  </script>
+</body>
+</html>

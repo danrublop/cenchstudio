@@ -1,0 +1,152 @@
+# HeyGen API Documentation Documentation
+
+## Guides
+- [Adding Built-in Voice Chat Integration to Demo Project](https://docs.heygen.com/docs/adding-built-in-voice-chat-integration-to-demo-project.md): Integrate voice chat into demo project for interactive avatar interactions
+- [Adding Chroma Key to Streaming Demo Project](https://docs.heygen.com/docs/adding-chroma-key-to-streaming-demo.md): Integrate chroma keying into your streaming demo
+- [Adding Speech-to-Text Integration to Demo Project](https://docs.heygen.com/docs/adding-speech-to-text-integration-to-demo-project.md): Add Speech-to-Text Power to Your HeyGen Demo Project
+- [Demo: Create a Vite Project with Streaming SDK](https://docs.heygen.com/docs/creating-a-vite-project-with-streaming-sdk.md): Creating a Vite Project with Streaming SDK
+- [Integrating OpenAI Assistant with Streaming SDK](https://docs.heygen.com/docs/integrate-with-opeanai-assistant.md): Seamlessly integrate OpenAI Assistant with HeyGen
+- [Firewall Configuration](https://docs.heygen.com/docs/firewall-configuration.md)
+- [Streaming API Overview](https://docs.heygen.com/docs/streaming-api.md): Real-time Interactive Avatars with Streaming API
+- [React Native Integration with Streaming API + LiveKit](https://docs.heygen.com/docs/react-native-integration-guide-with-streaming-api-livekit.md): Seamlessly integrate real-time avatar streaming in React Native with LiveKit
+- [Session Management Best Practices](https://docs.heygen.com/docs/session-management-best-practices.md)
+- [Streaming API Integration: using LiveKit](https://docs.heygen.com/docs/streaming-api-integration-with-livekit-v2.md): Boost real-time video streaming with HeyGen and LiveKit integration
+- [Using Agent Framework with Heygen Managed LiveKit Credentials](https://docs.heygen.com/docs/using-heygen-with-managed-livekit-credentials.md): Beta
+- [Using your own Livekit Instance](https://docs.heygen.com/docs/using-your-own-livekit-instance.md): Beta
+- [Demo: Create an iOS App featuring Interactive Avatar](https://docs.heygen.com/docs/streaming-avatar-ios-sdk.md)
+- [Streaming Avatar SDK](https://docs.heygen.com/docs/streaming-avatar-sdk.md): Add real-time AI avatars to your app with HeyGen SDK
+- [Streaming Avatar SDK API Reference](https://docs.heygen.com/docs/streaming-avatar-sdk-reference.md): Streaming Avatar SDK API Reference
+- [Video Agent](https://docs.heygen.com/docs/overview-video-agent.md): Generate videos with a single prompt using the [HeyGen Video Agent API](https://docs.heygen.com/reference/generate-video-agent). No web app required.
+- [API Key ](https://docs.heygen.com/docs/api-key.md)
+- [Authentication Methods](https://docs.heygen.com/docs/authentication-methods.md)
+- [OAuth 2.0](https://docs.heygen.com/docs/connecting-your-app-to-heygen-with-oauth-20.md): Securely integrate your application with HeyGen using OAuth 2.0
+- [Train Photo Avatar](https://docs.heygen.com/docs/create-and-train-photo-avatar-groups.md): Create and train photo avatar groups for personalized AI avatar
+- [Design Avatar Using a Prompt](https://docs.heygen.com/docs/generate-ai-avatar-photos.md): Create personalized AI avatars with customizable features
+- [Photo Avatar](https://docs.heygen.com/docs/photo-avatars-api.md): Generate avatar from static image
+- [Digital Twin](https://docs.heygen.com/docs/video-avatars-api.md): Bring your own video to life with HeyGen’s Enterprise Digital Twin APIs.
+- [Quick Start](https://docs.heygen.com/docs/quick-start.md): Get from zero to a working integration in minutes. All requests use the same auth.
+- [HeyGen Skills Guide](https://docs.heygen.com/docs/heygen-skills-for-claude-code.md): Covers: `heygen` · `heygen-best-practices` · `text-to-speech` · `video-translate`
+- [HubSpot + Zapier](https://docs.heygen.com/docs/automatically-generate-and-deliver-personalized-videos-via-hubspot-zapier.md): Automate personalized video creation and delivery with HubSpot and Zapier
+- [Use Templates with Zapier](https://docs.heygen.com/docs/create-a-video-from-template-with-zapier-v3.md): Easily Automate Video Creation with HeyGen Templates Zapier
+- [Zapier Integration ](https://docs.heygen.com/docs/create-an-avatar-video-with-zapier.md): Automate avatar video creation using HeyGen's Zapier integration.
+- [HubSpot Email](https://docs.heygen.com/docs/deliver-personalized-videos-via-hubspot-email.md): Embed and deliver personalized HeyGen videos through HubSpot emails
+- [Gmail Mail Merge](https://docs.heygen.com/docs/deliver-personalized-videos-via-mail-merge-with-gmail.md): Send personalized videos to multiple recipients using Gmail mail merge
+- [Google Sheets + Zapier](https://docs.heygen.com/docs/generate-personalized-videos-from-template-via-google-sheets-zapier.md): Automate personalized video creation using Google Sheets and Zapier
+- [HubSpot Integration](https://docs.heygen.com/docs/sending-personalized-videos-with-the-heygen-hubspot-app.md): Automate and send personalized videos through HubSpot campaigns
+- [ Slack Integration](https://docs.heygen.com/docs/slack.md)
+- [Personalized Videos v2](https://docs.heygen.com/docs/upcoming-changes-in-personalized-video-jan-2025.md): Explore upcoming changes to personalized video features in 2025
+- [Webhook Events](https://docs.heygen.com/docs/using-heygens-webhook-events.md): Receive real-time notifications for avatar video events
+- [Write Your Endpoint To Process Webhook Events](https://docs.heygen.com/docs/write-your-endpoint-to-process-webhook-events.md): Build and process real-time webhook events with ease
+- [HeyGen Remote MCP Server](https://docs.heygen.com/docs/heygen-remote-mcp-server.md): Connect HeyGen video generation to any MCP-compatible AI agent — no API keys, no local server, no separate credits.
+- [Overview](https://docs.heygen.com/docs/create-videos-with-avatars.md): With the HeyGen v2 API, you can create videos using different types of avatars.
+- [WebM Format](https://docs.heygen.com/docs/create-webm-avatar-videos.md): Generate transparent background WebM videos with avatar speech
+- [Customize Video Background](https://docs.heygen.com/docs/customize-video-background.md): Easily customize the background of your avatar videos.
+- [Generate Studio Video](https://docs.heygen.com/docs/create-video.md): Generate realistic avatar videos using HeyGen API.
+- [Audio Source as Voice](https://docs.heygen.com/docs/using-audio-source-as-voice.md): Use custom audio files as voice for your avatar videos.
+- [Guide: Simple Python App for Generating Videos from HeyGen Templates](https://docs.heygen.com/docs/guide-simple-python-app-for-generating-videos-from-heygen-templates.md): Create Custom Videos Using HeyGen Templates with Python
+- [Generate Video from Template](https://docs.heygen.com/docs/generate-video-from-template-v3.md): Create and customize Videos using HeyGen's Template V3 API
+- [Replace Audio in Template](https://docs.heygen.com/docs/replace-audio-in-template-1.md): Replace audio tracks in your video templates using HeyGen's Template API
+- [Replace Avatar in Template](https://docs.heygen.com/docs/replace-avatar-in-template-1.md): Learn how to replace avatars within HeyGen templates using the Template API
+- [Replace Image in Template](https://docs.heygen.com/docs/replace-image-in-template-1.md): Easily replace images in templates for personalized video creation
+- [Replace Text/Voice in Template](https://docs.heygen.com/docs/replace-textvoice-in-template.md): Modify script text and voice in templates using HeyGen's API
+- [Replace Video in Template](https://docs.heygen.com/docs/replace-video-in-template-1.md): Easily replace video elements within HeyGen template using API
+- [Video Playback Styles in Template](https://docs.heygen.com/docs/video-playback-styles-in-template.md): Master video playback with flexible styles for seamless integration
+- [Generate Studio Template](https://docs.heygen.com/docs/generate-video-from-template-v2.md): Create and customize videos using HeyGen's Template API
+- [Create Personalized Video Template](https://docs.heygen.com/docs/create-personalized-video-template-v3.md): Create custom video templates with dynamic, personalized content
+- [Personalized Videos](https://docs.heygen.com/docs/personalized-video-service.md): Create and deliver personalized videos with HeyGen
+- [Starfish](https://docs.heygen.com/docs/starfish.md): Generate speech from your text using HeyGen’s TTS in-house model
+- [Bulk Video Translation](https://docs.heygen.com/docs/bulk-video-translation.md): Translate multiple videos in bulk using HeyGen's API
+- [Video Translate](https://docs.heygen.com/docs/video-translate-api.md): Programmatically generate translated versions of your videos
+
+## API Reference
+- [Create a Knowledge Base](https://docs.heygen.com/reference/create-a-knowledge-base.md): Create a new knowledge base with a specified name, opening line, and custom prompt.
+- [Delete Knowledge Base](https://docs.heygen.com/reference/delete-knowledge-base.md): Delete a specific knowledge base by its ID.
+- [List Knowledge Bases](https://docs.heygen.com/reference/list-knowledge-bases.md): Retrieve a list of all existing knowledge bases associated with your account.
+- [Update Knowledge Base](https://docs.heygen.com/reference/update-knowledge-base.md): Update an existing knowledge base by ID.
+- [WSS Audio to Video API (Beta)](https://docs.heygen.com/reference/audio-to-video-api.md)
+- [Close Session](https://docs.heygen.com/reference/close-session.md): This endpoint is used to terminate an active streaming session.
+- [Create Session Token](https://docs.heygen.com/reference/create-session-token.md): This endpoint is used to generate a new access token for a streaming session.
+- [Interrupt Task](https://docs.heygen.com/reference/interrupt-task.md): This endpoint is used to interrupt the speaking of an Interactive Avatar.
+- [Keep Alive](https://docs.heygen.com/reference/keep-alive.md): Resets the idle‐timeout countdown for an active streaming session.
+- [List Sessions (History)](https://docs.heygen.com/reference/list-sessions-v2.md): This endpoint retrieves a paginated history of all streaming sessions, including metadata such as session duration, timestamps, and other details.
+- [List Sessions (Active)](https://docs.heygen.com/reference/list-sessions.md): This endpoint retrieves a list of currently active (open) streaming sessions.
+- [New Session](https://docs.heygen.com/reference/new-session.md): This endpoint is used to initiate a new streaming session.
+- [Send Task](https://docs.heygen.com/reference/send-task.md): This endpoint is used to send a text to an Interactive Avatar, prompting it to speak the provided text.
+- [Start Session](https://docs.heygen.com/reference/start-session.md): This endpoint is used to start the connection for an existing streaming session.
+- [List Streaming Avatars](https://docs.heygen.com/reference/streaming-avatar-list.md): This API endpoint allows you to retrieve a list of public and custom interactive avatars.
+- [Create with Video Agent](https://docs.heygen.com/reference/generate-video-agent.md): Generate a video with a one-shot prompt.
+- [Delete Asset](https://docs.heygen.com/reference/delete-asset.md): Deletes a specific asset by its unique asset ID.
+- [List Assets](https://docs.heygen.com/reference/list-assets.md): Retrieves a paginated list of all assets (images, audios, videos) created under your account.
+- [Upload Asset](https://docs.heygen.com/reference/upload-asset.md): Uploads a media file (image, video, or audio) to the authenticated user's HeyGen account and returns the asset ID for future use.
+- [List All Avatar Groups](https://docs.heygen.com/reference/list-all-avatar-groups.md): Retrieves a list of all available avatar groups.
+- [List All Avatars in One Avatar Group](https://docs.heygen.com/reference/list-all-avatars-in-one-avatar-group.md): Retrieves all avatars that belong to a specific avatar group.
+- [List All Avatars](https://docs.heygen.com/reference/list-avatars-v2.md): Retrieves a list of all available avatars
+- [Get Avatar Details](https://docs.heygen.com/reference/retrieve-avatar-details.md): Retrieves detailed information about a specific avatar by its ID.
+- [Get Digital Twin Generation Status](https://docs.heygen.com/reference/check-video-avatar-generation-status.md): Checks the current status of the Digital Twin generation process and returns relevant details.
+- [Delete Digital Twin](https://docs.heygen.com/reference/delete-video-avatar.md): Deletes a Digital Twin by its ID.
+- [Create Digital Twin](https://docs.heygen.com/reference/submit-video-avatar-creation-request.md): Submits the URLs for the required training footage and consent statement to create a Digital Twin.
+- [Create Folder](https://docs.heygen.com/reference/create-folder.md): Creates a new folder under your account.
+- [List Folders](https://docs.heygen.com/reference/list-folders.md): Retrieves a paginated list of folders created under your account.
+- [Restore Folder](https://docs.heygen.com/reference/restore-folder.md): Restores a previously deleted folder, returning it to its original location.
+- [Trash Folder](https://docs.heygen.com/reference/trash-folder.md): Deletes a specific folder by its unique folder ID.
+- [Update Folder (Rename Only)](https://docs.heygen.com/reference/update-folder.md): Updates the name of an existing folder.
+- [Generate Video](https://docs.heygen.com/reference/create-video-1.md): Create a video from an avatar or image with Avatar IV. Supports photo avatars, digital twins, and direct image input. The video is generated asynchronously — poll status via GET /v2/videos/{video_id}.
+- [Authentication](https://docs.heygen.com/reference/authentication.md): Authenticate with HeyGen API
+- [Error Responses](https://docs.heygen.com/reference/errors.md)
+- [API Limits and Costs](https://docs.heygen.com/reference/limits.md): Overview of usage limits and API costs
+- [Postman Collections](https://docs.heygen.com/reference/postman-collections.md): Easily test and integrate HeyGen APIs with pre-configured Postman collections
+- [Add Looks to Photo Avatar Group](https://docs.heygen.com/reference/add-looks-to-photo-avatar-group.md): Adds additional looks (images) to an existing photo avatar group.
+- [Add Motion](https://docs.heygen.com/reference/add-motion.md): Adds natural motion or animation to an existing avatar or look, turning a still image into a moving, lifelike one.
+- [Get Photo/Look Generation Status](https://docs.heygen.com/reference/check-photolook-generation-status.md): Retrieves the current status and details of an avatar or look by its ID.
+- [Create Photo Avatar Group](https://docs.heygen.com/reference/create-photo-avatar-group.md): Creates an avatar group, which can include both AI-generated and user-uploaded photos of the avatar.
+- [Delete Photo Avatar](https://docs.heygen.com/reference/delete-photo-avatar-by-id.md): Deletes an avatar/look by its ID.
+- [Delete Photo Avatar Group](https://docs.heygen.com/reference/delete-photo-avatar-group.md): Deletes an avatar group by its ID. Once deleted, all avatars/looks within the group are removed permanently and cannot be recovered.
+- [Generate Photo Avatar Looks](https://docs.heygen.com/reference/generate-photo-avatar-looks.md): Generates additional looks (images) for a trained avatar group.
+- [Create Photo Avatar](https://docs.heygen.com/reference/generate-photo-avatar-photos.md): Generates a personalized AI avatar based on text prompts, and attribute inputs.
+- [Get Training Job Status](https://docs.heygen.com/reference/get-training-job-status.md): Retrieves the current training status and details of the training job.
+- [Photo Avatar Details](https://docs.heygen.com/reference/photo-avatar-details.md): Retrieves detailed information about an avatar or look using its ID.
+- [Train Photo Avatar Group](https://docs.heygen.com/reference/train-photo-avatar-group.md): Initiates the training process for a photo avatar group. This endpoint builds an AI model for the specified avatar group. The trained model enables consistent avatar generation across multiple looks of the same subject.
+- [Create a WebM Video](https://docs.heygen.com/reference/create-a-webm-video.md): Creates a video in WebM format.
+- [Generate Studio Video](https://docs.heygen.com/reference/create-an-avatar-video-v2.md): Generates videos using the AI Studio backend with support for avatars, voices, and dynamic backgrounds.  You can create videos using either your photo avatar or digital twin. This endpoint supports Avatar III and Avatar IV.
+- [Get Video Status/Details](https://docs.heygen.com/reference/video-status.md): Retrieves the status and details of a specific video by ID.
+- [Generate Video from Template](https://docs.heygen.com/reference/generate-from-template-v2.md): Generates a video based on the specified template, including scene IDs to define the sequence of scenes and variable values for replacement.
+- [Retrieve Template Details (V3)](https://docs.heygen.com/reference/get-template-v3.md): Retrieves the details of a template created under your account by its ID, including all variables available for replacement. For templates created in the New AI Studio, the scenes field is also returned, showing variables mapped to each `scene`.
+- [Retrieve Template Details](https://docs.heygen.com/reference/get-template-v2.md): Retrieves the details of a template created under your account by its ID, including all variables available for replacement.
+- [List Templates](https://docs.heygen.com/reference/list-templates-v2.md): Retrieves a list of templates created under your account. Default templates provided by the platform are not included.
+- [List Compatible Voices](https://docs.heygen.com/reference/list-tts-voices.md): Retrieve a list of public and custom voices compatible with HeyGen's Starfish TTS model.
+- [Text-to-Speech — Starfish](https://docs.heygen.com/reference/text-to-speech.md): Generate a speech audio file from any text input using a specified voice, powered by HeyGen's Starfish model.
+- [Get Proofread Status](https://docs.heygen.com/reference/check-proofread-status.md): Retrieves the current status of a specific proofread file using its unique ID.
+- [Download Proofread SRT](https://docs.heygen.com/reference/download-proofread-srt.md): Returns a link to download the proofread SRT file for the specified proofread.
+- [Generate Proofread](https://docs.heygen.com/reference/generate-proofread.md): Generates a proofread of a translated video based on the specified parameters.
+- [Translate Video from Proofread](https://docs.heygen.com/reference/generate-video-from-proofread.md): Generates the translated video based on an approved proofread version.
+- [List Supported Languages](https://docs.heygen.com/reference/list-supported-languages.md): Retrieves a list of languages supported by the video translation feature.
+- [Upload Proofread SRT](https://docs.heygen.com/reference/tempupload-srt.md): Uploads an SRT file to an existing proofread using a presigned URL.
+- [Video Translate Caption](https://docs.heygen.com/reference/video-translate-caption.md): Retrieves the caption file for a translated video.
+- [Get Translation Status](https://docs.heygen.com/reference/video-translate-status.md): Retrieves the real-time status of a specific video translation using its ID.
+- [Translate Video](https://docs.heygen.com/reference/video-translate.md): Translates a video into one or more of 175+ supported languages with natural-sounding voice and accurate lip-sync.
+- [Get Current User Information](https://docs.heygen.com/reference/get-current-user-information.md): Retrieves the profile information of the currently authenticated user.
+- [Get Remaining Quota](https://docs.heygen.com/reference/get-remaining-quota-v2.md): Retrieves the remaining API quota for the authenticated user.
+- [Delete a Video](https://docs.heygen.com/reference/delete-a-video.md): Deletes a video by its ID. Supports both generated videos and translated videos.
+- [Get Sharable Video URL](https://docs.heygen.com/reference/retrieve-sharable-video-url.md): Generates a public, shareable URL for a specific video. The generated link allows anyone with the URL to view the video without authentication.
+- [Get Video List](https://docs.heygen.com/reference/video-list.md): Retrieve a list of videos associated with your account.
+- [List All Locales for Voices](https://docs.heygen.com/reference/list-all-locales-for-voices.md): Retrieves a list of available locales for voices, including their language, label, and locale identifiers.
+- [List Brand Glossary](https://docs.heygen.com/reference/list-brand-voices.md): Retrieves a list of brand glossaries created under your account. Brand Glossary defines translation and pronunciation rules for maintaining consistent terminology and pronunciation across videos.
+- [List All Voices](https://docs.heygen.com/reference/list-voices-v2.md): Retrieves a list of all available AI Voices.
+- [Update Brand Glossary](https://docs.heygen.com/reference/update-brand-voice.md): Updates an existing brand glossary with specified changes.
+- [Add a Webhook Endpoint](https://docs.heygen.com/reference/add-a-webhook-endpoint.md): Registers a webhook endpoint to receive real-time event notifications from HeyGen.
+- [Delete a Webhook Endpoint](https://docs.heygen.com/reference/delete-a-webhook-endpoint.md): Deletes an existing webhook endpoint by its ID.
+- [List Available Webhook Events](https://docs.heygen.com/reference/list-available-webhook-events.md): Retrieves a list of all supported webhook events.
+- [List Webhook Endpoints](https://docs.heygen.com/reference/list-webhook-endpoints.md): Retrieves a list of all webhook endpoints that are registered under your account.
+- [Update a Webhook Endpoint](https://docs.heygen.com/reference/update-a-webhook-endpoint.md): Updates an existing webhook endpoint.
+
+## Pages
+- [API Feature Requests](https://docs.heygen.com/api-feature-requests.md)
+- [Slack](https://docs.heygen.com/slack.md)
+- [Tools](https://docs.heygen.com/tools-1.md)
+
+## Changelog
+- [3 API Updates: Cheaper Video Agent, Starfish TTS Goes API, and Video Translation Opens Up](https://docs.heygen.com/changelog/3-api-updates-cheaper-video-agent-starfish-tts-goes-api-and-video-translation-opens-up.md)
+- [Avatar IV Now Available in Create Avatar Video API](https://docs.heygen.com/changelog/avatar-iv-support-now-available-in-create-avatar-video-api.md)
+- [New Endpoint: Video Agent (Prompt-to-Video)](https://docs.heygen.com/changelog/new-endpoint-video-agent-prompt-to-video.md)
+- [New Voice Model for Avatar Video API](https://docs.heygen.com/changelog/new-voice-model-for-avatar-video-api.md)
+- [New Mode in Video Translation API](https://docs.heygen.com/changelog/new-mode-in-video-translation-api.md)

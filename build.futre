@@ -1,0 +1,11 @@
+Export improvements:
+GIF export. Many clients want GIFs for embedding in emails or Slack. FFmpeg can do this but the palette optimization matters a lot for quality. Add dedicated GIF export with dithering options.
+Transparent background export (WebM with alpha). For clients who want to overlay the animation on their own backgrounds. Three.js and Canvas2D both support transparent output.
+Chapters/timestamps in MP4. Embed chapter markers in the MP4 metadata corresponding to scene boundaries. When shared on YouTube or embedded with a compatible player these show up as navigation points.
+Social format presets. 9:16 vertical (TikTok/Reels), 1:1 square (Instagram), 16:9 landscape (YouTube/presentations). The canvas resizes and the agent's layout hints change accordingly. Some elements might need to be repositioned or resized per format.
+Interactive mode improvements:
+Branching analytics visualized as a Sankey diagram showing which paths users actually take. This is D3-renderable in the dashboard and enormously valuable for onboarding optimization.
+A/B scene testing. Two versions of a scene, the player randomly assigns users to version A or B and analytics tracks which path performs better. Simple to implement — it's just a random edge condition in the scene graph.
+Conditional content. Variables set from a form early in the presentation drive content in later scenes — not just text tokens but entire scene branches. "What's your role?" → developer → shows code-focused scenes. This already partly exists via the variable system but the agent needs to know how to generate content conditionally.
+The single highest-impact addition not in the spec:
+A waveform-synced audio visualizer. When a voiceover or music track is added, analyze the audio (via Web Audio API or server-side) and drive visual elements with the amplitude. The canvas2d strokes could pulse, text could vibrate slightly, colors could shift with the beat. This is the feature that makes explainer videos feel alive and is what separates amateur from professional motion graphics.

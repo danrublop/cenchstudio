@@ -1,0 +1,995 @@
+```
+You are updating Cench Studio's style system so that visual style
+presets automatically drive renderer choice, roughness, texture
+overlays, and drawing tool defaults. Currently these are all manual
+decisions. After this change, picking a style preset configures
+everything automatically.
+
+No new libraries needed. You already have:
+  - generateTextureCanvas() in /lib/canvas-renderer/index.ts
+  - ROUGHNESS global injected into scene templates
+  - Rough.js loaded in canvas2d scene template
+  - Tool presets (marker, pen, chalk, brush) in the renderer
+  - bgStyle, defaultTool in GlobalStyle type
+
+---
+
+## PART 1 — STYLE PRESET DEFINITIONS
+
+Create /lib/styles/presets.ts:
+
+```ts
+export type StylePresetId =
+  | 'whiteboard'
+  | 'chalkboard'
+  | 'blueprint'
+  | 'clean'
+  | 'data-story'
+  | 'newspaper'
+  | 'neon'
+  | 'kraft'
+
+export interface StylePreset {
+  id: StylePresetId
+  name: string
+  description: string
+  emoji: string
+
+  // Visual output config
+  palette: [string, string, string, string]
+  bgColor: string
+  bgStyle: 'plain' | 'paper' | 'grid' | 'dots' | 'chalkboard' | 'kraft'
+  font: 'Caveat' | 'DM Mono' | 'Georgia' | 'monospace'
+
+  // Renderer preferences
+  preferredRenderer: 'canvas2d' | 'svg' | 'auto'
+  // 'auto' = agent decides per scene
+  // 'canvas2d' = strongly prefer canvas2d (organic content)
+  // 'svg' = strongly prefer svg (technical/precise content)
+
+  // Drawing character
+  roughnessLevel: number       // 0 = clean, 3 = very rough
+  defaultTool: 'marker' | 'pen' | 'chalk' | 'brush' | 'highlighter'
+  strokeColorOverride: string | null
+  // null = use palette[0]
+  // string = override (e.g. '#fffef9' for chalk on dark bg)
+
+  // Texture overlay (applied automatically after canvas2d renders)
+  textureStyle: 'none' | 'grain' | 'paper' | 'chalk' | 'lines'
+  textureIntensity: number     // 0-1, amount of texture
+  textureBlendMode: 'multiply' | 'screen' | 'overlay'
+
+  // D3/data scenes
+  axisColor: string            // color for chart axes/labels
+  gridColor: string            // color for chart grid lines
+
+  // Agent instruction (injected into scene generation prompts)
+  agentGuidance: string
+}
+
+export const STYLE_PRESETS: Record<StylePresetId, StylePreset> = {
+
+  whiteboard: {
+    id: 'whiteboard',
+    name: 'Whiteboard',
+    description: 'Hand-drawn marker on white board. Natural, educational feel.',
+    emoji: '📋',
+    palette: ['#1a1a2e', '#e84545', '#16a34a', '#2563eb'],
+    bgColor: '#fffef9',
+    bgStyle: 'paper',
+    font: 'Caveat',
+    preferredRenderer: 'canvas2d',
+    roughnessLevel: 1.5,
+    defaultTool: 'marker',
+    strokeColorOverride: null,
+    textureStyle: 'grain',
+    textureIntensity: 0.04,
+    textureBlendMode: 'multiply',
+    axisColor: '#4a4a52',
+    gridColor: '#e5e5e8',
+    agentGuidance: `Use canvas2d with animateRough* functions.
+Prefer organic, hand-drawn shapes over geometric precision.
+Use wait() between elements for natural drawing pacing.
+Text is Caveat font, always instant (never animated).
+Arrows and labels are the primary annotation tools.`,
+  },
+
+  chalkboard: {
+    id: 'chalkboard',
+    name: 'Chalkboard',
+    description: 'White chalk on dark green board. Classroom aesthetic.',
+    emoji: '🖊️',
+    palette: ['#fffef9', '#86efac', '#fbbf24', '#f87171'],
+    bgColor: '#2d4a3e',
+    bgStyle: 'chalkboard',
+    font: 'Caveat',
+    preferredRenderer: 'canvas2d',
+    roughnessLevel: 2.5,
+    defaultTool: 'chalk',
+    strokeColorOverride: '#fffef9',
+    // Chalk strokes are white/light on dark background
+    textureStyle: 'chalk',
+    textureIntensity: 0.12,
+    textureBlendMode: 'screen',
+    axisColor: '#fffef988',
+    gridColor: '#fffef922',
+    agentGuidance: `Use canvas2d with chalk tool.
+Background is dark green — all strokes default to white (#fffef9).
+Use PALETTE[0] (#fffef9) as the primary stroke color.
+Use PALETTE[1-3] sparingly for emphasis only.
+Rough, textured strokes are correct — this is chalk on a board.
+Large text, generous spacing. Think classroom lecture.`,
+  },
+
+  blueprint: {
+    id: 'blueprint',
+    name: 'Blueprint',
+    description: 'Technical diagram on dark blue. Precise, engineering feel.',
+    emoji: '📐',
+    palette: ['#93c5fd', '#60a5fa', '#fffef9', '#fbbf24'],
+    bgColor: '#1e3a5f',
+    bgStyle: 'grid',
+    font: 'DM Mono',
+    preferredRenderer: 'svg',
+    roughnessLevel: 0,
+    defaultTool: 'pen',
+    strokeColorOverride: '#93c5fd',
+    textureStyle: 'none',
+    textureIntensity: 0,
+    textureBlendMode: 'multiply',
+    axisColor: '#93c5fd88',
+    gridColor: '#93c5fd22',
+    agentGuidance: `Use SVG with clean lines — no roughness.
+Prefer precise geometric shapes: perfect circles, right-angle boxes.
+Use stroke-dasharray for dimension lines and reference lines.
+Monospace font (DM Mono) for all labels and measurements.
+Blueprint aesthetic: light blue lines on dark blue background.
+Add small cross/plus markers at key points.
+Include dimension annotations where relevant.`,
+  },
+
+  clean: {
+    id: 'clean',
+    name: 'Clean',
+    description: 'Minimal, polished presentation style. Professional.',
+    emoji: '✨',
+    palette: ['#1a1a2e', '#e84545', '#16a34a', '#2563eb'],
+    bgColor: '#ffffff',
+    bgStyle: 'plain',
+    font: 'Georgia',
+    preferredRenderer: 'svg',
+    roughnessLevel: 0,
+    defaultTool: 'pen',
+    strokeColorOverride: null,
+    textureStyle: 'none',
+    textureIntensity: 0,
+    textureBlendMode: 'multiply',
+    axisColor: '#6b7280',
+    gridColor: '#f3f4f6',
+    agentGuidance: `Use SVG with clean, smooth lines.
+No roughness. Geometric precision.
+Georgia font for headings, clean sans-serif feel.
+Minimal elements — avoid clutter.
+Use fill with low opacity (0.08-0.15) for shape backgrounds.
+Professional presentation aesthetic.`,
+  },
+
+  'data-story': {
+    id: 'data-story',
+    name: 'Data Story',
+    description: 'Dark background, optimized for charts and data visualization.',
+    emoji: '📊',
+    palette: ['#60a5fa', '#34d399', '#f59e0b', '#f87171'],
+    bgColor: '#0f0f13',
+    bgStyle: 'plain',
+    font: 'DM Mono',
+    preferredRenderer: 'auto',
+    roughnessLevel: 0.3,
+    defaultTool: 'pen',
+    strokeColorOverride: null,
+    textureStyle: 'grain',
+    textureIntensity: 0.03,
+    textureBlendMode: 'screen',
+    axisColor: '#4a4a5a',
+    gridColor: '#2a2a3a',
+    agentGuidance: `Prefer D3 for data scenes.
+Use canvas2d or SVG for diagram/annotation scenes.
+Dark background — all elements should be light/bright.
+Monospace font for numbers and data labels.
+Chart animations: bars grow up, lines draw left-to-right.
+Keep data visualization clean — minimal decoration.
+Use PALETTE colors for data series, never for structure.`,
+  },
+
+  newspaper: {
+    id: 'newspaper',
+    name: 'Newspaper',
+    description: 'Editorial, monochrome. Text-heavy, journalistic.',
+    emoji: '📰',
+    palette: ['#1a1a1a', '#404040', '#737373', '#d4d4d4'],
+    bgColor: '#f5f0e0',
+    bgStyle: 'paper',
+    font: 'Georgia',
+    preferredRenderer: 'svg',
+    roughnessLevel: 0.5,
+    defaultTool: 'pen',
+    strokeColorOverride: null,
+    textureStyle: 'paper',
+    textureIntensity: 0.08,
+    textureBlendMode: 'multiply',
+    axisColor: '#404040',
+    gridColor: '#d4d4d4',
+    agentGuidance: `Monochrome palette — grays and near-black only.
+Georgia serif font. Editorial, journalistic tone.
+Slight roughness for warmth, not so much it looks unprofessional.
+Text is the primary element — diagrams support text, not vice versa.
+Paper texture background. Think printed newspaper or magazine.`,
+  },
+
+  neon: {
+    id: 'neon',
+    name: 'Neon',
+    description: 'Dark background, glowing neon colors. Futuristic, tech.',
+    emoji: '⚡',
+    palette: ['#f0ece0', '#00ff88', '#ff0080', '#00cfff'],
+    bgColor: '#0a0a0f',
+    bgStyle: 'plain',
+    font: 'DM Mono',
+    preferredRenderer: 'canvas2d',
+    roughnessLevel: 0.8,
+    defaultTool: 'brush',
+    strokeColorOverride: null,
+    textureStyle: 'grain',
+    textureIntensity: 0.05,
+    textureBlendMode: 'screen',
+    axisColor: '#00ff8844',
+    gridColor: '#00ff8811',
+    agentGuidance: `Dark background — use bright PALETTE colors for all strokes.
+Brush tool for expressive, glowing stroke feel.
+Use glow effect: draw each stroke twice — once thick at low opacity,
+once thin at full opacity — to simulate neon glow.
+Monospace font. Tech/futuristic tone.
+Use PALETTE[1] (green) for primary content.
+Use PALETTE[2] (pink) and PALETTE[3] (cyan) for accents.`,
+  },
+
+  kraft: {
+    id: 'kraft',
+    name: 'Kraft Paper',
+    description: 'Brown paper, warm and tactile. Artisan, hand-made feel.',
+    emoji: '📦',
+    palette: ['#1c0a00', '#92400e', '#b45309', '#d97706'],
+    bgColor: '#c4a882',
+    bgStyle: 'kraft',
+    font: 'Caveat',
+    preferredRenderer: 'canvas2d',
+    roughnessLevel: 2.0,
+    defaultTool: 'marker',
+    strokeColorOverride: '#1c0a00',
+    textureStyle: 'paper',
+    textureIntensity: 0.15,
+    textureBlendMode: 'multiply',
+    axisColor: '#92400e88',
+    gridColor: '#92400e22',
+    agentGuidance: `Warm brown palette on kraft paper background.
+Caveat font — handwritten, artisan feel.
+Dark ink strokes on warm paper. No bright colors.
+Heavy texture. This should look like something drawn with a
+marker on brown packaging paper.`,
+  },
+}
+
+// Helper: get preset by id (with fallback)
+export function getPreset(id: StylePresetId): StylePreset {
+  return STYLE_PRESETS[id] ?? STYLE_PRESETS.whiteboard;
+}
+
+// Resolve effective style from preset + any overrides
+export function resolveStyle(
+  presetId: StylePresetId,
+  overrides: Partial<GlobalStyle> = {}
+): ResolvedStyle {
+  const preset = getPreset(presetId);
+  return {
+    ...preset,
+    ...overrides,
+    // Never let overrides break critical preset behaviors
+    strokeColor: overrides.strokeColorOverride
+      ?? preset.strokeColorOverride
+      ?? preset.palette[0],
+  };
+}
+
+export interface ResolvedStyle extends StylePreset {
+  strokeColor: string   // the actual stroke color to use
+}
+```
+
+---
+
+## PART 2 — UPDATE GlobalStyle TYPE
+
+In /lib/db/schema.ts and /lib/types.ts, update GlobalStyle:
+
+```ts
+export interface GlobalStyle {
+  // Now just points to a preset + optional overrides
+  presetId: StylePresetId
+
+  // Optional per-project overrides (null = use preset default)
+  paletteOverride: [string, string, string, string] | null
+  bgColorOverride: string | null
+  fontOverride: string | null
+
+  // Deprecated individual fields — keep for migration only
+  // New code reads from resolveStyle(presetId, overrides)
+  palette?: [string, string, string, string]
+  roughnessLevel?: number
+  // etc — these become derived from preset
+}
+```
+
+Migration: for existing projects that have the old flat GlobalStyle,
+add a migration in /scripts/migrate-styles.ts that:
+- Detects projects with old-style GlobalStyle (has palette but no presetId)
+- Finds the closest matching preset by palette/bgColor similarity
+- Sets presetId + moves any custom values to override fields
+- Run once: npx tsx scripts/migrate-styles.ts
+
+---
+
+## PART 3 — UPDATE writeSceneHTML
+
+In /lib/scene-html/generator.ts, update all template functions
+to read from the resolved style preset:
+
+```ts
+import { resolveStyle, StylePresetId } from '../styles/presets';
+import { generateTextureCanvas } from '../canvas-renderer';
+
+export async function writeSceneHTML(
+  scene: Scene,
+  globalStyle: GlobalStyle
+): Promise<string> {
+  // Resolve preset into concrete style values
+  const style = resolveStyle(
+    globalStyle.presetId ?? 'whiteboard',
+    {
+      paletteOverride: globalStyle.paletteOverride ?? undefined,
+      bgColorOverride: globalStyle.bgColorOverride ?? undefined,
+      fontOverride: globalStyle.fontOverride ?? undefined,
+    }
+  );
+
+  // Apply scene-level style override on top
+  const sceneStyle = scene.styleOverride
+    ? { ...style, ...scene.styleOverride }
+    : style;
+
+  switch (scene.renderer ?? inferRenderer(scene, sceneStyle)) {
+    case 'canvas2d': return renderCanvas2DTemplate(scene, sceneStyle);
+    case 'svg':      return renderSVGTemplate(scene, sceneStyle);
+    // etc
+  }
+}
+
+// Infer renderer from style preset if not explicitly set
+function inferRenderer(scene: Scene, style: ResolvedStyle): string {
+  if (style.preferredRenderer === 'auto') {
+    // Fall back to scene type
+    if (scene.layers.some(l => l.type === 'd3')) return 'd3';
+    if (scene.layers.some(l => l.type === 'three')) return 'three';
+    return 'canvas2d';
+  }
+  return style.preferredRenderer;
+}
+```
+
+### Canvas2D template — automatic texture overlay
+
+In renderCanvas2DTemplate(), after the scene code block,
+automatically inject texture overlay code based on style:
+
+```ts
+function renderCanvas2DTemplate(scene: Scene, style: ResolvedStyle): string {
+  const useTexture = style.textureStyle !== 'none';
+  const useRoughJs = style.roughnessLevel > 0;
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body {
+      width: 1920px;
+      height: 1080px;
+      overflow: hidden;
+      background: ${style.bgColor};
+      ${style.bgStyle === 'grid' ? `
+        background-image:
+          linear-gradient(${style.gridColor} 1px, transparent 1px),
+          linear-gradient(90deg, ${style.gridColor} 1px, transparent 1px);
+        background-size: 40px 40px;
+      ` : ''}
+      ${style.bgStyle === 'dots' ? `
+        background-image: radial-gradient(
+          circle, ${style.gridColor} 1px, transparent 1px
+        );
+        background-size: 40px 40px;
+      ` : ''}
+    }
+  </style>
+  ${useRoughJs
+    ? `<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>`
+    : ''}
+</head>
+<body>
+  ${renderVideoLayer(scene)}
+  <canvas id="main-canvas" width="1920" height="1080"
+    style="display:block; position:absolute; inset:0;"></canvas>
+  <canvas id="texture-canvas" width="1920" height="1080"
+    style="display:block; position:absolute; inset:0; pointer-events:none;
+           mix-blend-mode:${style.textureBlendMode}; opacity:${style.textureIntensity};
+           ${useTexture ? '' : 'display:none;'}"></canvas>
+  ${renderOtherLayers(scene)}
+
+  <script>
+    // ── Global constants ──────────────────────────────────
+    const PALETTE   = ${JSON.stringify(style.palette)};
+    const DURATION  = ${scene.duration};
+    const ROUGHNESS = ${style.roughnessLevel};
+    const FONT      = '${style.font}';
+    const WIDTH     = 1920;
+    const HEIGHT    = 1080;
+    const TOOL      = '${style.defaultTool}';
+    const STROKE_COLOR = '${style.strokeColor}';
+    // STROKE_COLOR is the preset's default stroke color.
+    // Use PALETTE[N] for accent colors.
+    // Use STROKE_COLOR for primary content strokes.
+
+    // ── mulberry32 seeded random ──────────────────────────
+    function mulberry32(seed) {
+      return function() {
+        seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+        let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+        t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+      }
+    }
+
+    // ── Canvas renderer utilities (inlined) ───────────────
+    ${inlinedCanvasRenderer}
+
+    // ── Drawing tool defaults ─────────────────────────────
+    // The TOOL and ROUGHNESS constants are automatically set
+    // from the project style preset. When calling animateRough*
+    // functions, you may omit tool and roughness — they default
+    // to the preset values:
+    //
+    //   animateRoughLine(ctx, x1,y1,x2,y2, {
+    //     color: STROKE_COLOR,
+    //     seed: 1,
+    //     // tool and roughness inherited from preset
+    //   }, 600)
+    //
+    // Override only when you need a different feel for a specific element.
+
+    // ── Seek mode ─────────────────────────────────────────
+    const SEEK_TIME = parseFloat(
+      new URLSearchParams(location.search).get('t') || '0'
+    );
+
+    // ── Scene code ────────────────────────────────────────
+    ${scene.layers.map(l => `
+      // Layer: ${l.label} (${l.type})
+      setTimeout(async () => {
+        ${l.generatedCode}
+      }, ${getAbsoluteStartAt(l, scene.layers) * 1000});
+    `).join('\n')}
+
+    // ── Automatic texture overlay ─────────────────────────
+    // Applied after all layers finish rendering.
+    // Controlled by style preset — not by scene code.
+    ${useTexture ? `
+    (function applyTextureOverlay() {
+      const textureCanvas = document.getElementById('texture-canvas');
+      if (!textureCanvas) return;
+      const ctx = textureCanvas.getContext('2d');
+      const rand = mulberry32(${hashString(scene.id)});
+
+      ${style.textureStyle === 'grain' ? `
+        const imageData = ctx.createImageData(1920, 1080);
+        for (let i = 0; i < imageData.data.length; i += 4) {
+          const noise = rand() * 255;
+          imageData.data[i]   = noise;
+          imageData.data[i+1] = noise;
+          imageData.data[i+2] = noise;
+          imageData.data[i+3] = rand() * 255;
+        }
+        ctx.putImageData(imageData, 0, 0);
+      ` : ''}
+
+      ${style.textureStyle === 'paper' ? `
+        for (let x = 0; x < 1920; x += 1.5) {
+          for (let y = 0; y < 1080; y += 1.5) {
+            const v = rand();
+            ctx.fillStyle = \`rgba(0,0,0,\${v})\`;
+            ctx.fillRect(x, y, 1.5, 1.5);
+          }
+        }
+      ` : ''}
+
+      ${style.textureStyle === 'chalk' ? `
+        for (let y = 0; y < 1080; y += 2) {
+          ctx.beginPath();
+          ctx.strokeStyle = \`rgba(255,255,255,\${rand() * 0.3})\`;
+          ctx.lineWidth = 1 + rand() * 2;
+          ctx.moveTo(0, y + rand() * 2);
+          for (let x = 0; x < 1920; x += 20) {
+            ctx.lineTo(x, y + (rand() - 0.5) * 4);
+          }
+          ctx.stroke();
+        }
+      ` : ''}
+
+      ${style.textureStyle === 'lines' ? `
+        for (let y = 0; y < 1080; y += 28) {
+          ctx.beginPath();
+          ctx.strokeStyle = \`rgba(0,0,0,0.06)\`;
+          ctx.lineWidth = 0.5;
+          ctx.moveTo(0, y);
+          ctx.lineTo(1920, y);
+          ctx.stroke();
+        }
+      ` : ''}
+    })();
+    ` : '// No texture overlay for this style preset'}
+
+    // ── getTotalLength for SVG strokes ────────────────────
+    document.querySelectorAll('.stroke').forEach(el => {
+      if (el.getTotalLength) {
+        el.style.setProperty('--len', el.getTotalLength());
+      }
+    });
+  </script>
+</body>
+</html>`;
+}
+```
+
+### SVG template — automatic roughness post-processing
+
+In renderSVGTemplate(), apply Rough.js post-processing
+based on preset roughnessLevel:
+
+```ts
+function renderSVGTemplate(scene: Scene, style: ResolvedStyle): string {
+  const svgContent = buildSVGContent(scene, style);
+
+  // Apply roughness post-processing if preset calls for it
+  const processedSVG = style.roughnessLevel > 0.2
+    ? roughenSVG(svgContent, style.roughnessLevel, scene.id)
+    : svgContent;
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    * { margin:0; padding:0; }
+    body {
+      width:1920px; height:1080px; overflow:hidden;
+      background:${style.bgColor};
+      ${buildBgStyleCSS(style)}
+    }
+    .stroke {
+      fill: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-dasharray: var(--len, 1000);
+      stroke-dashoffset: var(--len, 1000);
+      animation: draw var(--dur, 1s) ease-in-out var(--delay, 0s) forwards;
+    }
+    .fadein {
+      opacity: 0;
+      animation: pop var(--dur, 0.4s) ease var(--delay, 0s) forwards;
+    }
+    @keyframes draw { to { stroke-dashoffset: 0; } }
+    @keyframes pop  { to { opacity: 1; } }
+  </style>
+  ${style.roughnessLevel > 0.2
+    ? '<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>'
+    : ''}
+</head>
+<body>
+  ${renderVideoLayer(scene)}
+  <div style="position:absolute;inset:0;">
+    ${processedSVG}
+  </div>
+  <script>
+    const PALETTE = ${JSON.stringify(style.palette)};
+    const DURATION = ${scene.duration};
+    const ROUGHNESS = ${style.roughnessLevel};
+    document.querySelectorAll('.stroke').forEach(el => {
+      if (el.getTotalLength) {
+        el.style.setProperty('--len', el.getTotalLength());
+      }
+    });
+  </script>
+</body>
+</html>`;
+}
+
+function buildBgStyleCSS(style: ResolvedStyle): string {
+  switch (style.bgStyle) {
+    case 'grid':
+      return `
+        background-image:
+          linear-gradient(${style.gridColor} 1px, transparent 1px),
+          linear-gradient(90deg, ${style.gridColor} 1px, transparent 1px);
+        background-size: 40px 40px;`;
+    case 'dots':
+      return `
+        background-image: radial-gradient(
+          circle, ${style.gridColor} 1.5px, transparent 1.5px
+        );
+        background-size: 40px 40px;`;
+    default:
+      return '';
+  }
+}
+
+// Deterministic hash of scene id for texture seed
+function hashString(str: string): number {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash) + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
+```
+
+---
+
+## PART 4 — UPDATE AGENT SYSTEM PROMPTS
+
+In /lib/agents/scene-maker.ts, inject style guidance
+from the resolved preset into the system prompt:
+
+```ts
+function buildSceneMakerSystemPrompt(
+  style: ResolvedStyle,
+  activeTools: string[]
+): string {
+  return `You are the Scene Maker agent for Cench Studio.
+Generate animated scenes that render in a browser and get captured by WVC.
+
+## Active Style Preset: ${style.name} ${style.emoji}
+${style.agentGuidance}
+
+## Automatic style settings (DO NOT override these in generated code)
+ROUGHNESS = ${style.roughnessLevel}
+  — set automatically, rough.js applied based on this value
+  — do not manually set roughness in tool calls
+
+TOOL = '${style.defaultTool}'
+  — default drawing tool is set by the style preset
+  — only override for specific elements that need a different feel
+
+STROKE_COLOR = '${style.strokeColor}'
+  — primary stroke color for this style
+  — use PALETTE[N] for accent colors
+
+TEXTURE = ${style.textureStyle !== 'none' ? `'${style.textureStyle}' at ${Math.round(style.textureIntensity * 100)}% intensity` : 'none'}
+  — applied automatically after rendering, do not add manually
+
+PREFERRED RENDERER = ${style.preferredRenderer}
+  — ${style.preferredRenderer === 'canvas2d'
+       ? 'use canvas2d with animateRough* functions'
+       : style.preferredRenderer === 'svg'
+       ? 'use SVG with .stroke/.fadein CSS classes'
+       : 'choose the best renderer per scene'}
+
+## Core rules
+${CORE_RULES}
+
+## Available tools
+${buildToolList(activeTools)}`;
+}
+```
+
+---
+
+## PART 5 — UPDATE SKILL RULES
+
+### Update .claude/skills/cench/rules/core.md
+
+Add at the top, before all other rules:
+
+```markdown
+# Core Rules
+
+## Style preset drives everything — read this first
+
+The project has a style preset that automatically sets:
+  ROUGHNESS     — how rough/wobbly strokes are (0=clean, 3=very rough)
+  TOOL          — default drawing tool (marker, pen, chalk, etc)
+  STROKE_COLOR  — the primary ink color for this style
+  TEXTURE       — background texture (applied automatically)
+  FONT          — default font family
+
+These are injected as globals in every scene template.
+DO NOT manually set roughness, tool, or texture in generated code.
+Just use ROUGHNESS, TOOL, STROKE_COLOR as constants.
+
+## Renderer preference
+
+The style preset has a preferred renderer.
+Check the system prompt for "PREFERRED RENDERER" before choosing
+canvas2d vs svg for a scene.
+
+Whiteboard/Chalkboard/Neon/Kraft → canvas2d (organic strokes)
+Blueprint/Clean/Newspaper → svg (precise lines)
+Data Story → auto (D3 for data, canvas2d for diagrams)
+
+## Colors
+
+Primary strokes: STROKE_COLOR (set by preset, may be white on dark bg)
+Accent colors: PALETTE[1], PALETTE[2], PALETTE[3]
+Never hardcode hex values.
+
+## Everything else below applies regardless of style preset.
+```
+
+### Update .claude/skills/cench/rules/canvas2d.md
+
+Remove the roughness guidance section — it's now automatic.
+Replace with:
+
+```markdown
+## Roughness and tool — automatic from style preset
+
+ROUGHNESS and TOOL are set automatically by the style preset.
+Use them as constants — do not override unless you have a specific
+reason for an individual element:
+
+  // Normal usage — inherits preset roughness and tool
+  await animateRoughLine(ctx, x1, y1, x2, y2, {
+    color: STROKE_COLOR,
+    seed: 1,
+  }, 600);
+
+  // Override for specific element (rare)
+  await animateRoughLine(ctx, x1, y1, x2, y2, {
+    color: PALETTE[1],
+    roughness: 0,   // force clean line for this one element
+    tool: 'pen',    // force pen for annotation
+    seed: 2,
+  }, 400);
+
+Default opts when omitted:
+  roughness: ROUGHNESS   (from preset)
+  tool:      TOOL        (from preset)
+  color:     STROKE_COLOR (from preset)
+```
+
+---
+
+## PART 6 — STYLE PRESET SELECTOR UI
+
+Replace the current GlobalStyle editor in Project Settings
+with a preset picker:
+
+```tsx
+// /components/StylePresetPicker.tsx
+
+import { STYLE_PRESETS, StylePresetId } from '@/lib/styles/presets';
+
+export function StylePresetPicker({
+  currentPresetId,
+  onChange,
+}: {
+  currentPresetId: StylePresetId;
+  onChange: (id: StylePresetId) => void;
+}) {
+  return (
+    <div>
+      <div style={{
+        fontSize: 11,
+        color: '#6b6b7a',
+        fontFamily: 'DM Mono, monospace',
+        marginBottom: 8,
+      }}>
+        Visual Style
+      </div>
+
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(2, 1fr)',
+        gap: 6,
+      }}>
+        {Object.values(STYLE_PRESETS).map(preset => (
+          <button
+            key={preset.id}
+            onClick={() => onChange(preset.id)}
+            title={preset.description}
+            style={{
+              padding: '8px 10px',
+              borderRadius: 6,
+              border: currentPresetId === preset.id
+                ? '2px solid #e84545'
+                : '2px solid #2a2a32',
+              background: preset.bgColor,
+              cursor: 'pointer',
+              textAlign: 'left',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 2,
+              transition: 'border-color 0.15s',
+            }}
+          >
+            {/* Mini palette strip */}
+            <div style={{ display: 'flex', gap: 2, marginBottom: 2 }}>
+              {preset.palette.map((color, i) => (
+                <div
+                  key={i}
+                  style={{
+                    width: 10,
+                    height: 10,
+                    borderRadius: 2,
+                    background: color,
+                  }}
+                />
+              ))}
+            </div>
+
+            <div style={{
+              fontSize: 11,
+              fontWeight: 600,
+              color: preset.strokeColorOverride ?? preset.palette[0],
+              fontFamily: preset.font === 'Caveat'
+                ? 'Caveat, cursive'
+                : preset.font === 'DM Mono'
+                ? 'DM Mono, monospace'
+                : 'Georgia, serif',
+              lineHeight: 1,
+            }}>
+              {preset.emoji} {preset.name}
+            </div>
+
+            <div style={{
+              fontSize: 9,
+              color: preset.strokeColorOverride ?? preset.palette[0],
+              opacity: 0.6,
+              fontFamily: 'DM Mono, monospace',
+            }}>
+              {preset.description.split('.')[0]}
+            </div>
+          </button>
+        ))}
+      </div>
+
+      {/* Show what the preset does */}
+      <div style={{
+        marginTop: 10,
+        padding: '8px 10px',
+        background: '#1a1a1f',
+        borderRadius: 6,
+        fontSize: 10,
+        color: '#6b6b7a',
+        fontFamily: 'DM Mono, monospace',
+        lineHeight: 1.6,
+      }}>
+        {(() => {
+          const p = STYLE_PRESETS[currentPresetId];
+          return <>
+            <div>Renderer: {p.preferredRenderer}</div>
+            <div>Roughness: {p.roughnessLevel} / 3</div>
+            <div>Tool: {p.defaultTool}</div>
+            <div>Texture: {p.textureStyle}{p.textureStyle !== 'none'
+              ? ` (${Math.round(p.textureIntensity * 100)}%)`
+              : ''}</div>
+          </>;
+        })()}
+      </div>
+    </div>
+  );
+}
+```
+
+Remove from the UI:
+- Roughness slider (now automatic)
+- defaultTool selector (now automatic)
+- bgStyle dropdown (now automatic)
+- textureStyle dropdown (now automatic)
+
+Keep as optional overrides (advanced section, collapsed by default):
+- Palette color pickers (override preset colors)
+- bgColor override
+- Font override
+
+---
+
+## PART 7 — UPDATE CLAUDE.md
+
+Add to the project CLAUDE.md so Claude Code understands
+the automatic style system:
+
+```markdown
+## Style System
+
+Projects use a style preset that automatically configures:
+  - Renderer preference (canvas2d vs svg)
+  - Roughness level (0-3)
+  - Default drawing tool
+  - Stroke color defaults
+  - Background texture
+
+When generating scenes, read the style guidance in the system prompt.
+The globals ROUGHNESS, TOOL, STROKE_COLOR are injected automatically
+by writeSceneHTML — do not hardcode these values in scene code.
+
+Available presets: whiteboard, chalkboard, blueprint, clean,
+data-story, newspaper, neon, kraft
+
+Texture overlays are applied automatically after render —
+do not add generateTextureCanvas() calls in scene code.
+```
+
+---
+
+## IMPLEMENTATION ORDER
+
+1. Create /lib/styles/presets.ts with all 8 preset definitions
+2. Update GlobalStyle type to use presetId
+3. Create /scripts/migrate-styles.ts and run it
+4. Update renderCanvas2DTemplate() — inject preset globals,
+   add automatic texture overlay code
+5. Update renderSVGTemplate() — inject preset globals,
+   add conditional Rough.js post-processing
+6. Update buildBgStyleCSS() for grid/dots backgrounds
+7. Update scene-maker agent system prompt to inject
+   style.agentGuidance
+8. Update core.md — add style preset section at top
+9. Update canvas2d.md — replace roughness section
+10. Build StylePresetPicker component
+11. Replace GlobalStyle editor in Project Settings with picker
+12. Test each preset end-to-end:
+    - Set project to 'chalkboard'
+    - Run /cench explain photosynthesis
+    - Verify: dark bg, white strokes, chalk texture, high roughness
+    - Set project to 'blueprint'
+    - Run /cench explain TCP handshake
+    - Verify: dark blue bg, grid, clean SVG lines, monospace font
+
+---
+
+## CRITICAL NOTES
+
+The texture canvas sits on top of the main canvas using
+CSS mix-blend-mode. This is why it works across all content
+without knowing what's drawn — it's a post-process layer.
+
+For chalkboard preset: strokeColorOverride is '#fffef9' (white).
+The scene code should use STROKE_COLOR (not PALETTE[0]) as the
+primary stroke color. PALETTE[0] is also white in this preset,
+so it's the same value — but the distinction matters when users
+override the palette while keeping the chalkboard preset.
+
+For blueprint preset: roughnessLevel is 0. The Rough.js script
+tag is conditionally excluded from the template when roughness=0,
+keeping the scene HTML lean and avoiding unnecessary CDN loads.
+
+hashString(scene.id) produces a deterministic seed for the
+texture canvas based on the scene's UUID. This ensures the
+same scene always renders the same texture pattern across
+renders — critical for WVC export determinism.
+
+The agentGuidance string in each preset is injected verbatim
+into the scene-maker system prompt. Keep it concise — it adds
+tokens to every generation call. Aim for 3-6 lines maximum.
+```

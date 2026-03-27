@@ -1,0 +1,538 @@
+
+You are extending an existing Next.js video creator app called "Inkframe." 
+The app already has: SVG scene generation via Claude API, a scene list, 
+iframe preview, Zustand state, and a Node.js render server using 
+WebVideoCreator + FFmpeg.
+
+## GOAL
+Add a scene type system so each scene is not just SVG — it can be one of 
+five types, each with its own Claude generation prompt, HTML template, and 
+UI. All scene types render in the same WVC pipeline unchanged since they 
+all run in a browser.
+
+---
+
+## SCENE TYPES
+
+Add a `type` field to the Scene model:
+  "svg"      — existing pen-draw SVG animations (current behavior)
+  "lottie"   — Lottie JSON animation as the main visual layer
+  "motion"   — Motion (MIT) timeline-based animations on DOM elements
+  "d3"       — D3.js data-driven animated charts/graphs
+  "three"    — Three.js 3D scene
+
+---
+
+## 1. DEPENDENCIES TO INSTALL
+
+Frontend (Next.js):
+  npm install motion lottie-web @rive-app/canvas d3 three
+  npm install @types/d3 @types/three
+
+Scene HTML files load libraries via CDN (so WVC doesn't need them bundled):
+  Motion:    https://cdnjs.cloudflare.com/ajax/libs/motion/11.11.9/motion.js
+  Anime.js:  https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.2/anime.min.js
+  Lottie:    https://cdnjs.cloudflare.com/ajax/libs/bodymovin/5.12.2/lottie.min.js
+  D3:        https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js
+  Three.js:  https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js
+  Rive:      https://unpkg.com/@rive-app/canvas@2.21.6/rive.js
+
+---
+
+## 2. SCENE TYPE SELECTOR UI
+
+In the RIGHT PANEL "Prompt" tab, above the textarea, add a horizontal 
+type selector row. Five icon buttons, one per type. Active type is 
+highlighted in accent red. Hovering shows a tooltip with the type name.
+
+Icons (use lucide-react):
+  svg    → PenLine
+  lottie → Layers
+  motion → Zap
+  d3     → BarChart2
+  three  → Box
+
+When type changes on an existing scene, show a confirm dialog:
+  "Changing scene type will clear the current content. Continue?"
+If confirmed, clear svgContent / sceneCode and set new type. Regenerate 
+thumbnail as blank.
+
+---
+
+## 3. ZUSTAND STATE CHANGES
+
+Extend Scene interface:
+
+```ts
+interface Scene {
+  // ... existing fields ...
+  type: 'svg' | 'lottie' | 'motion' | 'd3' | 'three'
+  
+  // For svg: existing svgContent field
+  svgContent: string
+  
+  // For motion/d3/three: generated JS code as a string
+  sceneCode: string
+  
+  // For lottie: JSON animation data or remote URL
+  lottieSource: string | null  // URL to .json or inline JSON string
+  lottieUploadedFile: string | null  // /uploads/filename.json
+  
+  // For d3: the data payload Claude uses
+  d3Data: any | null
+  
+  // For three: optional extra assets
+  threeAssets: string[]
+}
+```
+
+---
+
+## 4. HTML TEMPLATES PER SCENE TYPE
+
+When writing /public/scenes/{id}.html, branch on scene.type.
+
+### Template: SVG (existing, unchanged)
+Keep current template exactly as-is.
+The auto-getTotalLength() script must remain.
+
+### Template: Motion
+```html
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { width:1920px; height:1080px; overflow:hidden; background:{bgColor}; }
+    /* Scene-specific styles injected here by Claude */
+    {styles}
+  </style>
+</head>
+<body>
+  {htmlContent}
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.2/anime.min.js"></script>
+  <script type="module">
+    import { animate, stagger, timeline } from "https://cdnjs.cloudflare.com/ajax/libs/motion/11.11.9/motion.js";
+    {sceneCode}
+  </script>
+</body>
+</html>
+```
+
+### Template: Lottie
+```html
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { width:1920px; height:1080px; overflow:hidden; background:{bgColor}; }
+    #lottie-container { width:100%; height:100%; }
+  </style>
+</head>
+<body>
+  <div id="lottie-container"></div>
+  <!-- optional SVG overlay layer for text/annotations -->
+  <div id="svg-overlay" style="position:absolute;inset:0;pointer-events:none">
+    {svgOverlay}
+  </div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/bodymovin/5.12.2/lottie.min.js"></script>
+  <script>
+    lottie.loadAnimation({
+      container: document.getElementById('lottie-container'),
+      renderer: 'svg',
+      loop: false,
+      autoplay: true,
+      {lottieSource.startsWith('http') 
+        ? `path: "${lottieSource}"` 
+        : `animationData: ${lottieSource}`}
+    });
+  </script>
+</body>
+</html>
+```
+
+### Template: D3
+```html
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { width:1920px; height:1080px; overflow:hidden; background:{bgColor}; 
+           font-family:{font}; }
+    {styles}
+  </style>
+</head>
+<body>
+  <div id="chart" style="width:1920px;height:1080px;"></div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+  <script>
+    const DATA = {JSON.stringify(scene.d3Data)};
+    const WIDTH = 1920;
+    const HEIGHT = 1080;
+    const PALETTE = {JSON.stringify(palette)};
+    {sceneCode}
+  </script>
+</body>
+</html>
+```
+
+### Template: Three.js
+```html
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin:0; padding:0; }
+    body { width:1920px; height:1080px; overflow:hidden; background:{bgColor}; }
+    canvas { display:block; }
+  </style>
+</head>
+<body>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script>
+    const WIDTH = 1920;
+    const HEIGHT = 1080;
+    const PALETTE = {JSON.stringify(palette)};
+    const DURATION = {scene.duration}; // seconds
+    {sceneCode}
+  </script>
+</body>
+</html>
+```
+
+---
+
+## 5. CLAUDE GENERATION PROMPTS PER TYPE
+
+All calls use claude-sonnet-4-20250514. Each type gets its own system prompt.
+The existing /api/generate route should branch on scene.type.
+
+### SVG prompt (existing — keep unchanged)
+
+### Motion system prompt:
+```
+You are an animation coder for Inkframe, a video creator app.
+Generate a scene using the Motion animation library (MIT) and Anime.js.
+
+OUTPUT FORMAT — return a JSON object with exactly these fields:
+{
+  "styles": "/* CSS string */",
+  "htmlContent": "<!-- HTML string, no <script> or <style> tags -->",
+  "sceneCode": "// JS string using Motion animate/timeline/stagger APIs"
+}
+Output ONLY the raw JSON. No markdown. No explanation.
+
+RULES:
+- Canvas is 1920x1080px
+- Use only these colors: {palette}
+- Font: {font}
+- Total animation duration: {duration}s
+- Motion is available as: animate, stagger, timeline (already imported)
+- Anime.js is available as: anime (already loaded)
+- Use Motion for entrance/exit animations on DOM elements
+- Use Anime.js for SVG stroke animations if SVG elements are present
+- Stagger elements for visual interest — nothing should animate simultaneously
+- Use spring() or ease curves for natural motion
+- All elements should start invisible (opacity:0) and animate in
+- Include labels, headings, and descriptive text appropriate to the prompt
+- Make it visually rich — use the full canvas space
+
+Previous scene context: {previousSummary}
+```
+
+### D3 system prompt:
+```
+You are a data visualization coder for Inkframe, a video creator app.
+Generate an animated D3.js chart/visualization scene.
+
+OUTPUT FORMAT — return a JSON object with exactly these fields:
+{
+  "styles": "/* CSS string */",
+  "sceneCode": "// D3 JS code string",
+  "suggestedData": { } // the data structure you used, so user can edit it
+}
+Output ONLY the raw JSON. No markdown. No explanation.
+
+RULES:
+- Canvas is 1920x1080px (WIDTH and HEIGHT constants are pre-defined)
+- Data is available as the DATA constant (pre-defined, may be null — 
+  if null, generate realistic sample data for the prompt)
+- D3 is available as the d3 global
+- Color palette available as PALETTE array (4 colors)
+- Font: {font}
+- Total animation: {duration}s
+- Chart must animate in using D3 transitions:
+  - Bars grow from 0
+  - Lines draw from left to right
+  - Pies rotate in
+  - Nodes fade and force-settle
+- Always include: a title, axis labels, a legend if applicable
+- Use d3.transition().duration() for all entering elements
+- Stagger entrance with .delay((d,i) => i * 100)
+- Make axes clean and readable at 1080p scale — increase font sizes 
+  (axis labels: 18px, title: 36px, tick labels: 14px)
+- Container: append SVG to #chart div, full 1920x1080
+
+Chart types you can generate:
+  bar, horizontal-bar, grouped-bar, stacked-bar,
+  line, multi-line, area, stacked-area,
+  scatter, bubble,
+  pie, donut,
+  force-graph (network), tree, treemap, 
+  choropleth (use simple geo if needed),
+  heatmap, sankey
+
+Previous scene context: {previousSummary}
+```
+
+### Three.js system prompt:
+```
+You are a 3D scene coder for Inkframe, a video creator app.
+Generate an animated Three.js 3D scene.
+
+OUTPUT FORMAT — return a JSON object with exactly these fields:
+{
+  "sceneCode": "// Three.js JS code string"
+}
+Output ONLY the raw JSON. No markdown. No explanation.
+
+RULES:
+- Canvas is 1920x1080px (WIDTH and HEIGHT constants are pre-defined)
+- THREE is available as the global (r128)
+- PALETTE is a pre-defined array of 4 hex color strings
+- DURATION is total scene duration in seconds (pre-defined)
+- DO NOT use THREE.CapsuleGeometry (not in r128) — use 
+  CylinderGeometry or SphereGeometry instead
+- DO NOT use ES module imports — THREE is already a global
+- Setup required boilerplate yourself:
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(WIDTH, HEIGHT);
+    document.body.appendChild(renderer.domElement);
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, WIDTH/HEIGHT, 0.1, 1000);
+- Use PALETTE colors for materials (THREE.MeshPhongMaterial or MeshStandardMaterial)
+- Add ambient + directional lighting
+- Animate using a requestAnimationFrame loop
+- Camera should move or orbit slightly for cinematic feel
+- Auto-stop the animation loop after DURATION seconds
+- Add text labels using THREE.CanvasTexture on PlaneGeometry sprites
+- Keep geometry count reasonable — this renders in headless Chrome
+
+Previous scene context: {previousSummary}
+```
+
+### Lottie system prompt (for the SVG overlay annotations):
+```
+You are generating SVG annotations to overlay on a Lottie animation.
+The Lottie animation is already playing as the background.
+
+Generate a <svg> element with viewBox="0 0 1920 1080" containing 
+labels, arrows, callouts, and annotations that complement the 
+Lottie animation underneath.
+
+Use the same stroke-dashoffset draw-on animation technique.
+Colors: {palette}. Font: {font}.
+Output ONLY the raw <svg> element.
+
+Previous scene context: {previousSummary}
+```
+
+---
+
+## 6. RIGHT PANEL — TYPE-SPECIFIC UI
+
+### SVG tab (existing — unchanged)
+
+### Motion tab:
+- Prompt textarea (same as SVG)
+- Generate / Regenerate buttons
+- Below generated content: show element count in the HTML
+- "Edit Code" button → opens Monaco editor with the sceneCode JS
+
+### D3 tab:
+- Prompt textarea describing the chart/data story
+- Data editor section:
+  - Toggle: "Use sample data" / "Paste my data"
+  - If paste: JSON textarea, validated with visual error state
+  - If sample: show the suggestedData returned by Claude, 
+    editable inline
+- Chart type hint (optional): dropdown "Let Claude decide" or 
+  pick a specific chart type
+- Generate button
+- "Edit Code" button → Monaco editor
+
+### Three.js tab:
+- Prompt textarea
+- Generate button  
+- Quality hint: "Simple" / "Detailed" toggle 
+  (injects into prompt: "keep geometry minimal" vs "use rich detail")
+- "Edit Code" button → Monaco editor
+- Warning banner: "3D scenes may take longer to export"
+
+### Lottie tab:
+- Two sections:
+
+  **Lottie Animation:**
+  - Upload .json file button → POST /api/upload → stores in /public/uploads/
+  - OR paste LottieFiles.com URL (direct CDN link to .json)
+  - Preview thumbnail once loaded (render first frame via lottie-web)
+  - "Browse LottieFiles.com" link (opens in new tab)
+
+  **SVG Overlay (optional):**
+  - Prompt textarea: "Describe annotations to draw over the animation"
+  - Generate button → calls Claude with Lottie overlay prompt
+  - Generates SVG annotations that draw on top
+
+---
+
+## 7. API ROUTE CHANGES
+
+### /api/generate/route.ts
+
+Add type routing:
+
+```ts
+const { prompt, sceneId, type, d3Data, previousSummary, style } = await req.json();
+
+if (type === 'svg') {
+  // existing streaming SVG logic — unchanged
+  return streamingSVGResponse(prompt, style, previousSummary);
+}
+
+if (type === 'motion' || type === 'd3' || type === 'three') {
+  // Non-streaming: Claude returns JSON, parse it, return it
+  const response = await anthropic.messages.create({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 4000,
+    system: getSystemPrompt(type, style, previousSummary),
+    messages: [{ role: 'user', content: prompt }]
+  });
+  
+  const raw = response.content[0].text;
+  const cleaned = raw.replace(/```json|```/g, '').trim();
+  const parsed = JSON.parse(cleaned);
+  
+  return NextResponse.json({ type, result: parsed });
+}
+
+if (type === 'lottie') {
+  // Generate SVG overlay only
+  return streamingSVGResponse(
+    `Generate SVG annotations to overlay on a Lottie animation. ${prompt}`,
+    style, previousSummary
+  );
+}
+```
+
+### /api/upload/route.ts (extend existing)
+Accept .json files in addition to video/audio.
+Validate JSON is valid Lottie format by checking for `v`, `w`, `h`, `layers` keys.
+
+---
+
+## 8. SCENE HTML REGENERATION
+
+The function writeSceneHTML(scene) should branch on type:
+
+```ts
+function writeSceneHTML(scene: Scene, style: GlobalStyle): string {
+  switch (scene.type) {
+    case 'svg':    return renderSVGTemplate(scene, style);
+    case 'motion': return renderMotionTemplate(scene, style);
+    case 'd3':     return renderD3Template(scene, style);
+    case 'three':  return renderThreeTemplate(scene, style);
+    case 'lottie': return renderLottieTemplate(scene, style);
+  }
+}
+```
+
+Write to /public/scenes/{id}.html atomically (write temp → rename).
+Trigger iframe reload after write.
+
+---
+
+## 9. THUMBNAIL GENERATION PER TYPE
+
+- SVG: existing html2canvas after 500ms — unchanged
+- Motion: html2canvas after 800ms (wait for entrance animations to 
+  partially complete)
+- D3: html2canvas after 1200ms (wait for chart transitions)
+- Three.js: html2canvas on the canvas element after 1500ms
+- Lottie: use lottie-web to seek to frame 30 in a hidden div, 
+  then html2canvas
+
+---
+
+## 10. SCENE CARD UI CHANGES
+
+Each scene card in the left panel shows a type badge:
+  SVG → red pill "SVG"
+  Motion → blue pill "Motion"  
+  D3 → green pill "D3"
+  Three.js → purple pill "3D"
+  Lottie → orange pill "Lottie"
+
+---
+
+## 11. EXPORT / WVC — NO CHANGES NEEDED
+
+WebVideoCreator loads /public/scenes/{id}.html via URL regardless of type.
+All five types render in headless Chrome exactly the same way.
+No changes to render-server/renderer.js or stitcher.js.
+
+The only thing to verify: CDN URLs in scene HTML templates must be 
+accessible from the render server's network. If deploying on a 
+restricted network, swap CDN URLs for locally-served copies in /public/libs/.
+
+---
+
+## IMPLEMENTATION ORDER
+
+1. Extend Scene type in Zustand store
+2. Add type selector UI component (5 icon buttons)
+3. Add HTML template functions (renderMotionTemplate, etc.)
+4. Update writeSceneHTML to branch on type
+5. Update /api/generate to route by type
+6. Build D3 tab UI (data editor is the most complex)
+7. Build Three.js tab UI
+8. Build Lottie tab UI (file upload + URL)
+9. Build Motion tab UI
+10. Type badge on scene cards
+11. Type-specific thumbnail timing
+12. Test each type end-to-end in WVC export
+
+---
+
+## IMPORTANT NOTES
+
+- Motion library CDN: verify the exact version exports 
+  `animate`, `stagger`, `timeline` as named exports from 
+  the browser bundle — test before deploying
+  
+- Three.js r128 via CDN: DO NOT use OrbitControls or other 
+  extras — they are not on the Cloudflare CDN for r128. 
+  Implement manual camera rotation in the animate loop instead.
+
+- D3 v7 API: use d3.select, d3.scaleLinear, d3.axisBottom etc. 
+  Claude should generate v7-compatible code. 
+  Note: d3.event was removed in v7 — use event parameter in handlers.
+
+- Lottie .json files can be large (1–5MB). Add a 5MB size limit 
+  on upload and warn users.
+
+- For the D3 data editor: debounce JSON validation by 500ms 
+  so it doesn't fire on every keystroke.
+
+- Monaco editor for code panels: lazy load it 
+  (dynamic import) so it doesn't bloat the initial bundle.
+
+- All five scene types must gracefully degrade in the browser 
+  preview if generation fails — show a red error state with 
+  the error message and a Retry button.
+```

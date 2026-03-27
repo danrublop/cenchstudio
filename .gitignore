@@ -1,0 +1,27 @@
+# Dependencies
+node_modules
+render-server/node_modules
+
+# Next.js
+.next
+out
+
+# Production
+build
+dist
+
+# Env
+.env.local
+.env.*.local
+
+# Generated files
+public/scenes/*.html
+public/uploads/*
+!public/uploads/.gitkeep
+renders/*
+!renders/.gitkeep
+
+# Misc
+.DS_Store
+*.pem
+npm-debug.log*
