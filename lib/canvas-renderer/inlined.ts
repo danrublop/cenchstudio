@@ -214,13 +214,17 @@ function applyTool(opts) {
     color: opts.color || '#000000',
     width: opts.width !== undefined ? opts.width : toolConfig.defaultWidth,
     roughness: opts.roughness !== undefined ? opts.roughness : toolConfig.roughness,
+    bowing: opts.bowing !== undefined ? opts.bowing : (toolConfig.bowing || 0.4),
     seed: opts.seed !== undefined ? opts.seed : 42,
     fill: opts.fill !== undefined ? opts.fill : null,
     fillAlpha: opts.fillAlpha !== undefined ? opts.fillAlpha : 0.15,
     tool: toolId,
     pressureOpts: opts.pressureOpts || toolConfig.pressureProfile,
+    alphaJitter: opts.alphaJitter !== undefined ? opts.alphaJitter : (toolConfig.alphaJitter || 0),
     smooth: opts.smooth !== undefined ? opts.smooth : (toolConfig.smoothIterations > 0),
     smoothIterations: opts.smoothIterations !== undefined ? opts.smoothIterations : toolConfig.smoothIterations,
+    lineDash: opts.lineDash || (toolConfig.lineDash || []),
+    lineCap: opts.lineCap || (toolConfig.lineCap || 'round'),
     toolConfig: toolConfig,
   };
 }
@@ -858,5 +862,149 @@ function drawAsset(ctx, assetId, opts) {
 
   return Promise.resolve();
 }
+// ── Progress-Based Drawing (for GSAP proxy pattern) ─────────────────────────
+// These draw a stroke at 0-1 completion. Used with GSAP timeline:
+//   const proxy = { p: 0 };
+//   window.__tl.to(proxy, { p: 1, duration: 0.8, onUpdate: draw }, 0);
+//   function draw() { drawRoughLineAtProgress(ctx, ...proxy.p, opts); }
+
+function _renderPointsAtProgress(ctx, allPoints, progress, baseWidth, color, pressureOpts, rand, alphaJitter, lineDash, lineCap) {
+  lineDash = lineDash || [];
+  lineCap = lineCap || 'round';
+  var total = allPoints.length;
+  if (total < 2 || progress <= 0) return;
+  var p = Math.min(1, progress);
+  var targetIndex = Math.floor(p * (total - 1)) + 1;
+
+  ctx.save();
+  ctx.setLineDash(lineDash);
+  ctx.lineCap = lineCap;
+
+  for (var i = 0; i < targetIndex - 1 && i < total - 1; i++) {
+    var globalT = i / Math.max(total - 2, 1);
+    var globalTNext = (i + 1) / Math.max(total - 2, 1);
+    var widthMid = strokePressure((globalT + globalTNext) / 2, pressureOpts) * baseWidth;
+    var alpha = jitteredAlpha(1, globalT, rand, alphaJitter);
+
+    ctx.globalAlpha = alpha;
+    ctx.lineWidth = widthMid;
+    ctx.strokeStyle = color;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(allPoints[i][0], allPoints[i][1]);
+    ctx.lineTo(allPoints[i + 1][0], allPoints[i + 1][1]);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+function drawRoughLineAtProgress(ctx, x1, y1, x2, y2, progress, opts) {
+  if (progress <= 0) return;
+  opts = opts || {};
+  var resolved = applyTool(opts);
+  var rand = mulberry32(opts.seed || 1);
+  var numPts = Math.max(8, Math.floor(Math.sqrt((x2-x1)*(x2-x1) + (y2-y1)*(y2-y1)) / 6));
+  var pts = _wobbleLine(x1, y1, x2, y2, resolved.roughness, resolved.bowing, numPts, rand);
+  if (resolved.smooth) pts = chaikinSmooth(pts, resolved.smoothIterations, 0.25, false);
+  _renderPointsAtProgress(ctx, pts, progress, resolved.width, resolved.color, resolved.pressureOpts, rand, resolved.alphaJitter, resolved.lineDash, resolved.lineCap);
+
+  if (opts.fill && progress >= 1) {
+    ctx.save();
+    ctx.globalAlpha = opts.fillAlpha || 0.15;
+    ctx.fillStyle = opts.fill;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function drawRoughCircleAtProgress(ctx, cx, cy, diameter, progress, opts) {
+  if (progress <= 0) return;
+  opts = opts || {};
+  var resolved = applyTool(opts);
+  var rand = mulberry32(opts.seed || 1);
+  var radius = diameter / 2;
+  var numPts = Math.max(24, Math.floor(radius * 0.8));
+  var pts = _wobbleCircle(cx, cy, radius, resolved.roughness, numPts, rand);
+  if (resolved.smooth) pts = chaikinSmooth(pts, resolved.smoothIterations, 0.25, true);
+  _renderPointsAtProgress(ctx, pts, progress, resolved.width, resolved.color, resolved.pressureOpts, rand, resolved.alphaJitter, resolved.lineDash, resolved.lineCap);
+
+  if (opts.fill && progress >= 1) {
+    ctx.save();
+    ctx.globalAlpha = opts.fillAlpha || 0.15;
+    ctx.fillStyle = opts.fill;
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+function drawRoughRectAtProgress(ctx, x, y, w, h, progress, opts) {
+  if (progress <= 0) return;
+  opts = opts || {};
+  var resolved = applyTool(opts);
+  var rand = mulberry32(opts.seed || 1);
+  var corners = [[x,y],[x+w,y],[x+w,y+h],[x,y+h],[x,y]];
+  var allPts = [];
+  for (var i = 0; i < corners.length - 1; i++) {
+    var seg = _wobbleLine(corners[i][0], corners[i][1], corners[i+1][0], corners[i+1][1], resolved.roughness, resolved.bowing, 8, rand);
+    allPts = allPts.concat(seg);
+  }
+  if (resolved.smooth) allPts = chaikinSmooth(allPts, resolved.smoothIterations, 0.25, false);
+  _renderPointsAtProgress(ctx, allPts, progress, resolved.width, resolved.color, resolved.pressureOpts, rand, resolved.alphaJitter, resolved.lineDash, resolved.lineCap);
+
+  if (opts.fill && progress >= 1) {
+    ctx.save();
+    ctx.globalAlpha = opts.fillAlpha || 0.15;
+    ctx.fillStyle = opts.fill;
+    ctx.fillRect(x, y, w, h);
+    ctx.restore();
+  }
+}
+
+function drawRoughArrowAtProgress(ctx, x1, y1, x2, y2, progress, opts) {
+  if (progress <= 0) return;
+  // Draw shaft at full progress, head appears at end
+  var shaftProgress = Math.min(1, progress / 0.85);
+  drawRoughLineAtProgress(ctx, x1, y1, x2, y2, shaftProgress, opts);
+
+  if (progress > 0.85) {
+    opts = opts || {};
+    var resolved = applyTool(opts);
+    var angle = Math.atan2(y2 - y1, x2 - x1);
+    var headLen = Math.min(30, Math.sqrt((x2-x1)*(x2-x1)+(y2-y1)*(y2-y1)) * 0.15);
+    var headProgress = (progress - 0.85) / 0.15;
+    var a1x = x2 - headLen * Math.cos(angle - 0.4) * headProgress;
+    var a1y = y2 - headLen * Math.sin(angle - 0.4) * headProgress;
+    var a2x = x2 - headLen * Math.cos(angle + 0.4) * headProgress;
+    var a2y = y2 - headLen * Math.sin(angle + 0.4) * headProgress;
+
+    ctx.save();
+    ctx.strokeStyle = resolved.color;
+    ctx.lineWidth = resolved.width;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(a1x, a1y); ctx.lineTo(x2, y2); ctx.lineTo(a2x, a2y);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function drawTextAtProgress(ctx, text, x, y, progress, opts) {
+  if (progress <= 0) return;
+  opts = opts || {};
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, progress);
+  ctx.font = (opts.weight || 'bold') + ' ' + (opts.size || 48) + 'px ' + (opts.font || FONT || 'Caveat');
+  ctx.fillStyle = opts.color || STROKE_COLOR || '#1a1a2e';
+  ctx.textAlign = opts.align || 'center';
+  ctx.textBaseline = opts.baseline || 'middle';
+  ctx.fillText(text, x, y);
+  ctx.restore();
+}
+
 // ── End Cench Studio Canvas2D Drawing Engine ──────────────────────────────────
 `

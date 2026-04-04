@@ -16,6 +16,8 @@ const ALLOWED_TYPES: Record<string, string> = {
 const MAX_SIZE = 100 * 1024 * 1024 // 100MB
 
 export async function POST(req: NextRequest) {
+  console.warn('[upload] Legacy /api/upload endpoint used — prefer /api/projects/[projectId]/assets')
+
   try {
     const formData = await req.formData()
     const file = formData.get('file') as File | null
@@ -26,10 +28,7 @@ export async function POST(req: NextRequest) {
 
     const ext = ALLOWED_TYPES[file.type]
     if (!ext) {
-      return NextResponse.json(
-        { error: `Unsupported file type: ${file.type}` },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: `Unsupported file type: ${file.type}` }, { status: 400 })
     }
 
     if (file.size > MAX_SIZE) {

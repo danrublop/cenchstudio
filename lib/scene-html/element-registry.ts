@@ -1,0 +1,413 @@
+/**
+ * Element registry injected into every scene HTML.
+ *
+ * Provides:
+ * - window.__elements: registry of all scene elements
+ * - window.__register(): register an element with properties + bbox
+ * - window.__hitTest(): find element at a point (reverse z-order)
+ * - Click handler that selects elements and posts to parent
+ * - Selection highlight overlay (dashed box + corner handles)
+ * - patch_element message handler for live property updates
+ *
+ * Injected AFTER playback-controller and BEFORE scene code.
+ */
+
+export const ELEMENT_REGISTRY = `
+(function() {
+  // ── Element registry ────────────────────────────────────
+  window.__elements = {};
+  window.__selected = null;
+
+  window.__register = function(element) {
+    window.__elements[element.id] = element;
+  };
+
+  // ── Hit detection ───────────────────────────────────────
+  window.__hitTest = function(x, y) {
+    var elements = Object.values(window.__elements);
+    for (var i = elements.length - 1; i >= 0; i--) {
+      var el = elements[i];
+      if (!el.bbox || el.visible === false) continue;
+      if (
+        x >= el.bbox.x && x <= el.bbox.x + el.bbox.w &&
+        y >= el.bbox.y && y <= el.bbox.y + el.bbox.h
+      ) {
+        return el;
+      }
+    }
+    return null;
+  };
+
+  function __physicsCardBodyScale() {
+    var bodyStyle = document.body.style.transform || '';
+    var m = bodyStyle.match(/scale\\(([^)]+)\\)/);
+    if (m) return parseFloat(m[1]);
+    return Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+  }
+
+  var __PHYSICS_CARD_PRESETS = {
+    glass_dark: { bg: 'rgba(8,12,22,0.72)', border: 'rgba(255,255,255,0.18)', shadow: '0 14px 45px rgba(0,0,0,0.28)', text: '#ffffff', blur: 3 },
+    glass_light: { bg: 'rgba(255,255,255,0.78)', border: 'rgba(0,0,0,0.12)', shadow: '0 14px 45px rgba(0,0,0,0.2)', text: '#0f172a', blur: 3 },
+    neon: { bg: 'rgba(5,10,30,0.8)', border: 'rgba(56,189,248,0.55)', shadow: '0 0 0 1px rgba(56,189,248,0.4), 0 14px 45px rgba(56,189,248,0.24)', text: '#dbeafe', blur: 2 },
+    chalk: { bg: 'rgba(22,25,35,0.86)', border: 'rgba(203,213,225,0.35)', shadow: '0 10px 30px rgba(0,0,0,0.35)', text: '#e2e8f0', blur: 1 },
+  };
+
+  function __setCardVar(root, name, val) {
+    if (val === null || val === undefined || val === 'none' || val === '') root.style.removeProperty(name);
+    else root.style.setProperty(name, String(val));
+  }
+
+  function __patchPhysicsCardDOM(element, property, value) {
+    var root = document.getElementById('physics-explain-card-root');
+    var canvas = element.canvasId ? document.getElementById(element.canvasId) : null;
+    if (property === 'simScale' && canvas) {
+      canvas.style.setProperty('--sim-scale', String(value));
+      return;
+    }
+    if (property === 'visible') {
+      if (root) root.style.display = value ? '' : 'none';
+      return;
+    }
+    if (property === 'opacity') {
+      if (root) root.style.setProperty('--card-opacity', String(value));
+      return;
+    }
+    if (!root) return;
+    if (property === 'cardPreset') {
+      var pr = __PHYSICS_CARD_PRESETS[value] || __PHYSICS_CARD_PRESETS.glass_dark;
+      root.style.setProperty('--card-bg', pr.bg);
+      root.style.setProperty('--card-border', pr.border);
+      root.style.setProperty('--card-shadow', pr.shadow);
+      root.style.setProperty('--card-text', pr.text);
+      root.style.setProperty('--card-blur', pr.blur + 'px');
+      return;
+    }
+    if (property === 'cardX') root.style.left = value + '%';
+    else if (property === 'cardY') root.style.top = value + '%';
+    else if (property === 'cardWidth') root.style.width = value + '%';
+    else if (property === 'cardBg') __setCardVar(root, '--card-bg', value);
+    else if (property === 'cardBorder') __setCardVar(root, '--card-border', value);
+    else if (property === 'cardShadow') __setCardVar(root, '--card-shadow', value);
+    else if (property === 'cardText') __setCardVar(root, '--card-text', value);
+    else if (property === 'cardBlur') root.style.setProperty('--card-blur', value + 'px');
+    else if (property === 'cardRadius') root.style.setProperty('--card-radius', value + 'px');
+    else if (property === 'cardPadding') root.style.setProperty('--card-padding', value + 'px');
+    else if (property === 'titleSize') root.style.setProperty('--card-title-size', value + 'px');
+    else if (property === 'bodySize') root.style.setProperty('--card-body-size', value + 'px');
+    else if (property === 'equationSize') root.style.setProperty('--card-equation-size', value + 'px');
+    else if (property === 'textAlign') root.style.setProperty('--card-text-align', String(value));
+    else if (property === 'titleColor') {
+      var t = document.querySelector('.scene-title');
+      if (t) {
+        if (value === null || value === 'none' || value === '') t.style.removeProperty('color');
+        else t.style.color = String(value);
+      }
+    }
+    else if (property === 'bodyColor') {
+      var n = document.querySelector('.narration-text');
+      if (n) {
+        if (value === null || value === 'none' || value === '') n.style.removeProperty('color');
+        else n.style.color = String(value);
+      }
+    }
+  }
+
+  // ── Click handler ───────────────────────────────────────
+  document.addEventListener('click', function(e) {
+    // The scene body uses transform:scale(s) via fitToViewport().
+    // e.clientX/Y are in the *scaled* viewport, so we need to
+    // convert back to 1920x1080 scene coordinates.
+    // Use the body's current CSS transform scale factor.
+    var body = document.body;
+    var bodyStyle = body.style.transform || '';
+    var scaleMatch = bodyStyle.match(/scale\\(([^)]+)\\)/);
+    var bodyScale = scaleMatch ? parseFloat(scaleMatch[1]) : 1;
+    // If no body transform, fall back to viewport ratio
+    if (!bodyScale || isNaN(bodyScale)) {
+      bodyScale = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+    }
+    var x = e.clientX / bodyScale;
+    var y = e.clientY / bodyScale;
+
+    var hit = window.__hitTest(x, y);
+
+    if (hit) {
+      window.__selected = hit.id;
+      showSelectionHighlight(hit);
+      window.parent.postMessage({
+        source: 'cench-scene',
+        type: 'element_selected',
+        elementId: hit.id,
+        element: JSON.parse(JSON.stringify(hit)),
+      }, '*');
+    } else {
+      window.__selected = null;
+      clearSelectionHighlight();
+      window.parent.postMessage({
+        source: 'cench-scene',
+        type: 'element_deselected',
+      }, '*');
+    }
+  });
+
+  // ── Selection highlight overlay ─────────────────────────
+  var highlightCanvas = null;
+
+  function showSelectionHighlight(element) {
+    if (!element.bbox) return;
+
+    if (!highlightCanvas) {
+      highlightCanvas = document.createElement('canvas');
+      highlightCanvas.width = 1920;
+      highlightCanvas.height = 1080;
+      highlightCanvas.style.cssText =
+        'position:absolute;inset:0;pointer-events:none;z-index:9999;';
+      // Scale with the body
+      var bodyTransform = document.body.style.transform;
+      if (bodyTransform) {
+        highlightCanvas.style.transformOrigin = 'top left';
+      }
+      document.body.appendChild(highlightCanvas);
+    }
+
+    var ctx = highlightCanvas.getContext('2d');
+    ctx.clearRect(0, 0, 1920, 1080);
+
+    var bx = element.bbox.x;
+    var by = element.bbox.y;
+    var bw = element.bbox.w;
+    var bh = element.bbox.h;
+    var pad = 8;
+
+    // Dashed selection box
+    ctx.strokeStyle = '#e84545';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 3]);
+    ctx.strokeRect(bx - pad, by - pad, bw + pad * 2, bh + pad * 2);
+
+    // Corner handles
+    ctx.fillStyle = '#e84545';
+    ctx.setLineDash([]);
+    var corners = [
+      [bx - pad, by - pad],
+      [bx + bw + pad, by - pad],
+      [bx - pad, by + bh + pad],
+      [bx + bw + pad, by + bh + pad],
+    ];
+    corners.forEach(function(c) {
+      ctx.fillRect(c[0] - 4, c[1] - 4, 8, 8);
+    });
+
+    // Element label
+    ctx.fillStyle = '#e84545';
+    ctx.font = '20px DM Mono, monospace';
+    ctx.fillText(element.label || element.id, bx - pad, by - pad - 8);
+  }
+
+  function clearSelectionHighlight() {
+    if (highlightCanvas) {
+      var ctx = highlightCanvas.getContext('2d');
+      ctx.clearRect(0, 0, 1920, 1080);
+    }
+  }
+
+  // ── Highlight from parent (when selecting in layers panel) ──
+  window.__highlightElement = function(elementId) {
+    var el = window.__elements[elementId];
+    if (el) {
+      window.__selected = elementId;
+      showSelectionHighlight(el);
+    }
+  };
+
+  window.__clearHighlight = function() {
+    window.__selected = null;
+    clearSelectionHighlight();
+  };
+
+  // ── Property patching from parent ──────────────────────
+  window.addEventListener('message', function(e) {
+    if (!e.data || e.data.target !== 'cench-scene') return;
+
+    if (e.data.type === 'patch_element') {
+      var elementId = e.data.elementId;
+      var property = e.data.property;
+      var value = e.data.value;
+      var element = window.__elements[elementId];
+      if (!element) return;
+
+      element[property] = value;
+
+      if (element.type === 'physics-card') {
+        __patchPhysicsCardDOM(element, property, value);
+        var root = document.getElementById('physics-explain-card-root');
+        if (root && window.__selected === elementId) {
+          var r = root.getBoundingClientRect();
+          var s = __physicsCardBodyScale();
+          element.bbox = { x: r.left / s, y: r.top / s, w: r.width / s, h: r.height / s };
+          showSelectionHighlight(element);
+        }
+        if (window.__tl && !window.__tl.isActive()) {
+          try { window.__tl.seek(window.__tl.time()); } catch(ignore) {}
+        }
+        return;
+      }
+
+      // Re-render: for canvas2d, call redrawAll if it exists
+      if (window.__redrawAll) {
+        window.__redrawAll();
+      }
+      // For SVG, apply attribute directly to the DOM node
+      var domEl = document.getElementById(elementId);
+      if (domEl) {
+        // Map element properties to DOM attributes
+        if (property === 'fill' || property === 'stroke') {
+          domEl.setAttribute(property, value || 'none');
+        } else if (property === 'strokeWidth') {
+          domEl.setAttribute('stroke-width', value);
+        } else if (property === 'fillOpacity') {
+          domEl.setAttribute('fill-opacity', value);
+        } else if (property === 'opacity') {
+          domEl.setAttribute('opacity', value);
+        } else if (property === 'visible') {
+          domEl.style.display = value ? '' : 'none';
+        } else if (property === 'text') {
+          domEl.textContent = value;
+        } else if (property === 'fontSize') {
+          domEl.setAttribute('font-size', value);
+        } else if (property === 'fontFamily') {
+          domEl.setAttribute('font-family', value);
+        } else if (property === 'fontWeight') {
+          domEl.setAttribute('font-weight', value);
+        } else if (property === 'textAnchor') {
+          domEl.setAttribute('text-anchor', value);
+        } else if (['x','y','cx','cy','r','rx','ry','width','height','x1','y1','x2','y2'].indexOf(property) !== -1) {
+          domEl.setAttribute(property, value);
+          // Update bbox for selection highlight
+          try {
+            var nb = domEl.getBBox();
+            element.bbox = { x: nb.x, y: nb.y, w: nb.width, h: nb.height };
+          } catch(ignored) {}
+        }
+      }
+
+      // Update selection highlight if this element is selected
+      if (window.__selected === elementId && element.bbox) {
+        showSelectionHighlight(element);
+      }
+
+      // Re-seek timeline to current time to show the change
+      if (window.__tl && !window.__tl.isActive()) {
+        window.__tl.seek(window.__tl.time());
+      }
+    }
+
+    if (e.data.type === 'highlight_element') {
+      if (e.data.elementId) {
+        window.__highlightElement(e.data.elementId);
+      } else {
+        window.__clearHighlight();
+      }
+    }
+
+    if (e.data.type === 'get_elements') {
+      window.parent.postMessage({
+        source: 'cench-scene',
+        type: 'elements_list',
+        elements: JSON.parse(JSON.stringify(window.__elements)),
+      }, '*');
+    }
+  });
+
+  // ── Auto-register SVG elements on load ──────────────────
+  var SVG_SCAN_TAGS = 'rect,circle,ellipse,line,polyline,polygon,path,text,g,image,use';
+
+  window.addEventListener('load', function() {
+    // Scan ALL visible SVG elements (not just those with id)
+    var autoIdx = 0;
+    document.querySelectorAll('svg').forEach(function(svg) {
+      svg.querySelectorAll(SVG_SCAN_TAGS).forEach(function(el) {
+        // Assign stable id if missing
+        if (!el.id) {
+          el.id = 'auto-' + el.tagName.toLowerCase() + '-' + (autoIdx++);
+        }
+        // Skip if already registered by scene code
+        if (window.__elements[el.id]) return;
+
+        // Skip invisible or tiny elements
+        var bbox;
+        try {
+          var b = el.getBBox();
+          bbox = { x: b.x, y: b.y, w: b.width, h: b.height };
+          // Skip zero-size elements (markers, defs, clip-paths)
+          if (bbox.w < 2 && bbox.h < 2) return;
+        } catch(e) {
+          return; // Can't measure = not renderable
+        }
+
+        // Skip elements inside <defs>, <clipPath>, <mask>, <pattern>
+        var skip = false;
+        var parent = el.parentElement;
+        while (parent && parent !== svg) {
+          var pTag = parent.tagName.toLowerCase();
+          if (pTag === 'defs' || pTag === 'clippath' || pTag === 'mask' || pTag === 'pattern' || pTag === 'marker') { skip = true; break; }
+          parent = parent.parentElement;
+        }
+        if (skip) return;
+
+        var tagName = el.tagName.toLowerCase();
+        var type = 'svg-shape';
+        if (tagName === 'text' || tagName === 'tspan') type = 'svg-text';
+        else if (tagName === 'path') type = 'svg-path';
+        else if (tagName === 'rect') type = 'svg-shape';
+        else if (tagName === 'circle' || tagName === 'ellipse') type = 'svg-shape';
+        else if (tagName === 'line' || tagName === 'polyline' || tagName === 'polygon') type = 'svg-shape';
+        else if (tagName === 'image') type = 'svg-shape';
+        else if (tagName === 'g') type = 'svg-shape';
+
+        // Build readable label
+        var autoLabel = el.dataset ? el.dataset.label : null;
+        if (!autoLabel) {
+          if (type === 'svg-text') {
+            autoLabel = (el.textContent || '').trim().slice(0, 30) || 'Text';
+          } else {
+            autoLabel = tagName + (el.id && !el.id.startsWith('auto-') ? '#' + el.id : ' ' + (autoIdx));
+          }
+        }
+
+        // Extract computed style for inherited properties
+        var cs = window.getComputedStyle(el);
+
+        window.__register({
+          id: el.id,
+          type: type,
+          label: autoLabel,
+          bbox: bbox,
+          stroke: el.getAttribute('stroke') || cs.stroke || 'none',
+          strokeWidth: parseFloat(el.getAttribute('stroke-width') || cs.strokeWidth || '0'),
+          fill: el.getAttribute('fill') || cs.fill || 'none',
+          fillOpacity: parseFloat(el.getAttribute('fill-opacity') || '1'),
+          opacity: parseFloat(el.getAttribute('opacity') || cs.opacity || '1'),
+          visible: el.style.display !== 'none' && cs.display !== 'none',
+          animStartTime: 0,
+          animDuration: 0,
+          text: (type === 'svg-text') ? (el.textContent || '') : '',
+          fontSize: parseFloat(el.getAttribute('font-size') || cs.fontSize || '16'),
+          fontFamily: el.getAttribute('font-family') || cs.fontFamily || '',
+          x: parseFloat(el.getAttribute('x') || el.getAttribute('cx') || '0'),
+          y: parseFloat(el.getAttribute('y') || el.getAttribute('cy') || '0'),
+        });
+      });
+    });
+
+    // Report all registered elements to parent
+    setTimeout(function() {
+      window.parent.postMessage({
+        source: 'cench-scene',
+        type: 'elements_list',
+        elements: JSON.parse(JSON.stringify(window.__elements)),
+      }, '*');
+    }, 100);
+  });
+})();
+`

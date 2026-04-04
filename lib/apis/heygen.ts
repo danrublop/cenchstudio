@@ -69,22 +69,24 @@ export async function generateAvatarVideo(opts: {
   const data = await heygenFetch('/video/generate', {
     method: 'POST',
     body: JSON.stringify({
-      video_inputs: [{
-        character: {
-          type: 'avatar',
-          avatar_id: opts.avatarId,
-          avatar_style: 'normal',
+      video_inputs: [
+        {
+          character: {
+            type: 'avatar',
+            avatar_id: opts.avatarId,
+            avatar_style: 'normal',
+          },
+          voice: {
+            type: 'text',
+            input_text: opts.script,
+            voice_id: opts.voiceId,
+          },
+          background: {
+            type: 'color',
+            value: opts.bgColor ?? '#00FF00', // green for chroma key
+          },
         },
-        voice: {
-          type: 'text',
-          input_text: opts.script,
-          voice_id: opts.voiceId,
-        },
-        background: {
-          type: 'color',
-          value: opts.bgColor ?? '#00FF00', // green for chroma key
-        },
-      }],
+      ],
       dimension: {
         width: opts.width ?? 512,
         height: opts.height ?? 512,
@@ -126,4 +128,46 @@ export async function downloadVideo(videoUrl: string): Promise<Buffer> {
   const response = await fetch(videoUrl)
   if (!response.ok) throw new Error(`Failed to download HeyGen video: ${response.status}`)
   return Buffer.from(await response.arrayBuffer())
+}
+
+// ── List voices ────────────────────────────────────────────────────────────
+
+let voiceCache: { voices: HeyGenVoice[]; fetchedAt: number } | null = null
+const VOICE_CACHE_TTL = 24 * 60 * 60 * 1000
+
+export async function listVoices(): Promise<HeyGenVoice[]> {
+  if (voiceCache && Date.now() - voiceCache.fetchedAt < VOICE_CACHE_TTL) {
+    return voiceCache.voices
+  }
+
+  const data = await heygenFetch('/voices')
+  const voices: HeyGenVoice[] = (data.voices ?? []).map((v: any) => ({
+    voice_id: v.voice_id,
+    language: v.language,
+    gender: v.gender,
+    name: v.name,
+    preview_audio: v.preview_audio ?? null,
+  }))
+
+  voiceCache = { voices, fetchedAt: Date.now() }
+  return voices
+}
+
+// ── Starfish TTS ───────────────────────────────────────────────────────────
+
+export async function generateStarfishTTS(opts: {
+  text: string
+  voiceId: string
+  speed?: number
+}): Promise<{ audioUrl: string }> {
+  const data = await heygenFetch('/tts', {
+    method: 'POST',
+    body: JSON.stringify({
+      text: opts.text,
+      voice_id: opts.voiceId,
+      speed: opts.speed ?? 1.0,
+    }),
+  })
+
+  return { audioUrl: data.audio_url ?? data.url }
 }

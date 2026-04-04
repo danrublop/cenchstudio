@@ -1,10 +1,11 @@
 'use client'
 
-import { useCallback, useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, type ComponentProps } from 'react'
 import {
   ReactFlow,
   Background,
   MiniMap,
+  MiniMapNode,
   useNodesState,
   useEdgesState,
   type Node,
@@ -27,7 +28,8 @@ import TimelineControls from './timeline/TimelineControls'
 
 function SceneFlowNode({ data }: { data: { scene: Scene; isStart: boolean; isEnd: boolean } }) {
   const { scene, isStart, isEnd } = data
-  const hasContent = scene.svgContent || scene.canvasCode || scene.sceneCode || scene.lottieSource
+  const hasContent =
+    scene.svgContent || scene.canvasCode || scene.canvasBackgroundCode?.trim() || scene.sceneCode || scene.lottieSource
 
   return (
     <div
@@ -81,28 +83,38 @@ function SceneFlowNode({ data }: { data: { scene: Scene; isStart: boolean; isEnd
 
 const nodeTypes: NodeTypes = { sceneNode: SceneFlowNode }
 
+type SceneNodeData = { scene: Scene; isStart: boolean; isEnd: boolean }
+
+/** Thicker stroke on minimap when selected; keeps default MiniMapNode rendering. */
+function SceneMiniMapNode(props: ComponentProps<typeof MiniMapNode>) {
+  return <MiniMapNode {...props} strokeWidth={props.selected ? 2.75 : 1.65} />
+}
+
 // ── GraphContent ──────────────────────────────────────────────────────────
 
 function GraphContent() {
-  const { scenes, project, updateSceneGraph, selectScene } = useVideoStore()
+  const { scenes, project, updateSceneGraph, selectScene, selectedSceneId } = useVideoStore()
   const { zoomIn, zoomOut, fitView } = useReactFlow()
 
   // Derive nodes from scene graph
   const initialNodes: Node[] = useMemo(() => {
-    return project.sceneGraph.nodes.map((n) => {
-      const scene = scenes.find((s) => s.id === n.id)
-      if (!scene) return null
-      const hasOutgoing = project.sceneGraph.edges.some((e) => e.fromSceneId === n.id)
-      const isStart = project.sceneGraph.startSceneId === n.id
-      const isEnd = !hasOutgoing
-      return {
-        id: n.id,
-        type: 'sceneNode',
-        position: n.position,
-        data: { scene, isStart, isEnd },
-      }
-    }).filter(Boolean) as Node[]
-  }, [scenes, project.sceneGraph])
+    return project.sceneGraph.nodes
+      .map((n) => {
+        const scene = scenes.find((s) => s.id === n.id)
+        if (!scene) return null
+        const hasOutgoing = project.sceneGraph.edges.some((e) => e.fromSceneId === n.id)
+        const isStart = project.sceneGraph.startSceneId === n.id
+        const isEnd = !hasOutgoing
+        return {
+          id: n.id,
+          type: 'sceneNode',
+          position: n.position,
+          selected: n.id === selectedSceneId,
+          data: { scene, isStart, isEnd } satisfies SceneNodeData,
+        }
+      })
+      .filter(Boolean) as Node[]
+  }, [scenes, project.sceneGraph, selectedSceneId])
 
   // Derive edges from scene graph
   const initialEdges: Edge[] = useMemo(() => {
@@ -122,8 +134,12 @@ function GraphContent() {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
 
-  useEffect(() => { setNodes(initialNodes) }, [initialNodes, setNodes])
-  useEffect(() => { setEdges(initialEdges) }, [initialEdges, setEdges])
+  useEffect(() => {
+    setNodes(initialNodes)
+  }, [initialNodes, setNodes])
+  useEffect(() => {
+    setEdges(initialEdges)
+  }, [initialEdges, setEdges])
 
   const onConnect = useCallback(
     (connection: Connection) => {
@@ -139,7 +155,7 @@ function GraphContent() {
       }
       updateSceneGraph(newGraph)
     },
-    [project.sceneGraph, updateSceneGraph]
+    [project.sceneGraph, updateSceneGraph],
   )
 
   const onNodesChangeWithPersist = useCallback(
@@ -154,7 +170,7 @@ function GraphContent() {
       })
       updateSceneGraph({ ...project.sceneGraph, nodes: updatedNodes })
     },
-    [onNodesChange, project.sceneGraph, updateSceneGraph]
+    [onNodesChange, project.sceneGraph, updateSceneGraph],
   )
 
   const onEdgesChangeWithPersist = useCallback(
@@ -168,14 +184,45 @@ function GraphContent() {
         edges: project.sceneGraph.edges.filter((e) => !removedIds.has(e.id)),
       })
     },
-    [onEdgesChange, project.sceneGraph, updateSceneGraph]
+    [onEdgesChange, project.sceneGraph, updateSceneGraph],
   )
 
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: Node) => {
       selectScene(node.id)
     },
-    [selectScene]
+    [selectScene],
+  )
+
+  const minimapNodeColor = useCallback(
+    (node: Node) => {
+      const d = node.data as SceneNodeData
+      const sel = node.id === selectedSceneId
+      if (sel) return 'rgba(232, 69, 69, 0.42)'
+      if (d.isStart) return '#166534'
+      if (d.isEnd) return '#991b1b'
+      return 'var(--minimap-node-fill, #3f3f48)'
+    },
+    [selectedSceneId],
+  )
+
+  const minimapNodeStrokeColor = useCallback(
+    (node: Node) => {
+      const d = node.data as SceneNodeData
+      const sel = node.id === selectedSceneId
+      if (sel) return 'var(--color-accent, #e84545)'
+      if (d.isStart) return '#4ade80'
+      if (d.isEnd) return '#fca5a5'
+      return 'var(--minimap-node-stroke, rgba(107, 107, 122, 0.55))'
+    },
+    [selectedSceneId],
+  )
+
+  const onMiniMapNodeClick = useCallback(
+    (_: React.MouseEvent, node: Node) => {
+      selectScene(node.id)
+    },
+    [selectScene],
   )
 
   return (
@@ -200,9 +247,28 @@ function GraphContent() {
           onFitAll={() => fitView({ padding: 0.2, duration: 400 })}
         />
         <MiniMap
-          style={{ background: 'var(--color-panel)', border: '1px solid var(--color-border)' }}
-          nodeColor="#e84545"
-          maskColor="rgba(0,0,0,0.4)"
+          position="bottom-left"
+          pannable
+          zoomable
+          zoomStep={12}
+          ariaLabel="Scene graph overview — drag to pan the view, scroll to zoom"
+          className="!m-2 !rounded-md !border !border-[var(--color-border)] !shadow-md"
+          style={{
+            width: 200,
+            height: 132,
+            background: 'var(--color-panel)',
+          }}
+          bgColor="var(--color-panel)"
+          maskColor="var(--minimap-mask)"
+          maskStrokeColor="var(--color-accent)"
+          maskStrokeWidth={1.5}
+          offsetScale={6}
+          nodeColor={minimapNodeColor}
+          nodeStrokeColor={minimapNodeStrokeColor}
+          nodeBorderRadius={4}
+          nodeStrokeWidth={1.65}
+          nodeComponent={SceneMiniMapNode}
+          onNodeClick={onMiniMapNodeClick}
         />
       </ReactFlow>
     </div>

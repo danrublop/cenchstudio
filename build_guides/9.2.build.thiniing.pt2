@@ -1,0 +1,729 @@
+Two great questions — let me address both properly.
+
+---
+
+## Question 1 — Expanding the style system to other features
+
+The preset pattern you just built is actually a general-purpose **configuration cascade** pattern. The same idea extends to everything else in the system. Here's what's worth doing:
+
+**Export quality presets** — right now export settings are manual. But "this is a social media clip" implies different settings than "this is a board presentation." A preset for "Social (9:16, 30fps, 60s max)" vs "Presentation (16:9, 60fps, no limit)" vs "Quick Draft (720p, 24fps)" cascades into the WVC render settings automatically.
+
+**Agent behavior presets** — "Detailed mode" (Director always plans first, Scene Maker uses adaptive thinking, Editor asks before big changes) vs "Fast mode" (skip planning, no thinking, just generate). This changes which agents activate and what models they use.
+
+**Interaction presets for published videos** — "Course" preset automatically adds quiz gates between scenes and a progress bar. "Product Demo" preset adds hotspots on every scene. "Simple Embed" disables all interactions. Right now these are all manual per-scene decisions.
+
+**Scene density presets** — "Dense" (8-12 elements per scene, lots of labels) vs "Minimal" (3-5 elements, breathing room) vs "Annotated" (every element gets a label and arrow). This gets injected into the scene generation prompt as a constraint.
+
+The pattern is always the same: one named choice at the project level cascades into multiple downstream settings that would otherwise require individual decisions.
+
+---
+
+## Question 2 — Storing prompt/result data to improve prompts
+
+This is essentially building a **prompt engineering feedback loop** — and it's genuinely one of the most valuable things you can add to an AI product. What you're describing is closer to what teams like Anthropic, OpenAI, and every serious AI product company do internally: log inputs, outputs, and quality signals, then use that data to improve prompts, rules, and model selection.
+
+Here's how to think about it properly:
+
+**What to capture per generation:**
+
+Every time Claude generates a scene, you want to log:
+- The full system prompt used (which rules were injected, what style guidance)
+- The user prompt
+- Which model and thinking mode
+- The generated output (scene code)
+- The scene type chosen by the agent
+- Time to generate
+- Token count (input + output + thinking)
+- Cost
+
+Then quality signals — these are what make the data useful:
+- Did the user keep the scene or regenerate it? (implicit quality signal)
+- Did they edit it after? (partial quality signal — kept but needed fixing)
+- Did the export succeed without errors? (technical quality)
+- Did they rate it? (explicit, if you add thumbs up/down)
+- Which specific elements did they edit? (what was wrong)
+
+**What you do with this data:**
+
+With even 50-100 logged generations you can start answering:
+
+"When users ask for flowcharts, does SVG or Canvas2D get regenerated less?" — tells you which renderer to prefer for that use case.
+
+"When thinking=adaptive is on vs off, do users edit less?" — tells you if thinking is actually improving quality.
+
+"Which rule files correlate with fewer regenerations?" — tells you which rules are working.
+
+"For chalkboard style, what prompts produce the most regenerations?" — tells you what the rules are missing.
+
+"Does Opus produce meaningfully fewer regenerations than Sonnet, enough to justify the cost?" — tells you optimal model routing.
+
+This is prompt engineering informed by data rather than intuition.
+
+**The architecture:**
+
+You already have an `api_spend` table and `analytics_events` table. You need one more table: `generation_log`. Every scene generation writes a row. User actions (regenerate, edit, keep, rate) update that row with quality signals.
+
+Over time you query this table to find patterns. The queries themselves become prompts to Claude — "here are 200 generation logs where users regenerated within 30 seconds, what patterns do you see in the prompts and rules that might explain this?" Claude analyzes its own failure modes.
+
+---
+
+Here's the implementation prompt for both:
+
+---
+
+```
+Add two systems to Cench Studio:
+
+1. Extended style cascade — apply the preset pattern to
+   export quality, agent behavior, interaction defaults,
+   and scene density
+
+2. Generation logging system — store every prompt + result
+   with quality signals to enable data-driven prompt
+   engineering
+
+---
+
+## SYSTEM 1 — EXTENDED STYLE CASCADE
+
+### 1.1 Add preset dimensions to StylePreset
+
+Extend the StylePreset interface in /lib/styles/presets.ts:
+
+```ts
+export interface StylePreset {
+  // ... existing visual fields ...
+
+  // Export quality
+  export: {
+    resolution: '720p' | '1080p' | '4k'
+    fps: 24 | 30 | 60
+    format: 'mp4' | 'webm'
+  }
+
+  // Agent behavior
+  agent: {
+    thinkingMode: ThinkingMode          // default for this style
+    planFirst: boolean                  // Director plans before Scene Maker acts
+    confirmBeforeBigChanges: boolean    // Editor asks before scene-level changes
+    preferredSceneCount: { min: number, max: number }
+  }
+
+  // Scene content density
+  density: {
+    elementsPerScene: { min: number, max: number }
+    labelEverything: boolean            // add labels to all diagram elements
+    breathingRoom: boolean              // generous whitespace between elements
+    annotationStyle: 'minimal' | 'detailed' | 'none'
+  }
+
+  // Interactive mode defaults
+  interactive: {
+    autoAddGates: boolean               // add Continue gates between scenes
+    autoAddQuizzes: boolean             // add quiz on key concept scenes
+    showProgressBar: boolean
+    playerTheme: 'dark' | 'light' | 'transparent'
+  }
+}
+```
+
+### 1.2 Add these fields to each preset
+
+Update all 8 presets in STYLE_PRESETS with sensible defaults:
+
+whiteboard:
+  export: { resolution: '1080p', fps: 30, format: 'mp4' }
+  agent: { thinkingMode: 'adaptive', planFirst: true,
+           confirmBeforeBigChanges: false,
+           preferredSceneCount: { min: 3, max: 6 } }
+  density: { elementsPerScene: { min: 4, max: 8 },
+             labelEverything: true, breathingRoom: true,
+             annotationStyle: 'detailed' }
+  interactive: { autoAddGates: false, autoAddQuizzes: false,
+                 showProgressBar: true, playerTheme: 'light' }
+
+chalkboard:
+  export: { resolution: '1080p', fps: 30, format: 'mp4' }
+  agent: { thinkingMode: 'adaptive', planFirst: true,
+           confirmBeforeBigChanges: false,
+           preferredSceneCount: { min: 3, max: 5 } }
+  density: { elementsPerScene: { min: 3, max: 6 },
+             labelEverything: true, breathingRoom: true,
+             annotationStyle: 'detailed' }
+  interactive: { autoAddGates: false, autoAddQuizzes: true,
+                 showProgressBar: true, playerTheme: 'dark' }
+
+blueprint:
+  export: { resolution: '1080p', fps: 24, format: 'mp4' }
+  agent: { thinkingMode: 'deep', planFirst: true,
+           confirmBeforeBigChanges: true,
+           preferredSceneCount: { min: 2, max: 4 } }
+  density: { elementsPerScene: { min: 6, max: 12 },
+             labelEverything: true, breathingRoom: false,
+             annotationStyle: 'detailed' }
+  interactive: { autoAddGates: false, autoAddQuizzes: false,
+                 showProgressBar: false, playerTheme: 'dark' }
+
+clean:
+  export: { resolution: '1080p', fps: 60, format: 'mp4' }
+  agent: { thinkingMode: 'off', planFirst: false,
+           confirmBeforeBigChanges: false,
+           preferredSceneCount: { min: 3, max: 8 } }
+  density: { elementsPerScene: { min: 2, max: 5 },
+             labelEverything: false, breathingRoom: true,
+             annotationStyle: 'minimal' }
+  interactive: { autoAddGates: false, autoAddQuizzes: false,
+                 showProgressBar: true, playerTheme: 'light' }
+
+data-story:
+  export: { resolution: '1080p', fps: 30, format: 'mp4' }
+  agent: { thinkingMode: 'adaptive', planFirst: true,
+           confirmBeforeBigChanges: false,
+           preferredSceneCount: { min: 3, max: 7 } }
+  density: { elementsPerScene: { min: 1, max: 3 },
+             labelEverything: true, breathingRoom: true,
+             annotationStyle: 'minimal' }
+  interactive: { autoAddGates: false, autoAddQuizzes: false,
+                 showProgressBar: true, playerTheme: 'dark' }
+
+// Apply similar sensible defaults to newspaper, neon, kraft
+
+### 1.3 Use preset export settings in the export pipeline
+
+In /app/api/export/route.ts, read from the project preset
+instead of requiring the user to pick settings every time:
+
+```ts
+const preset = getPreset(project.globalStyle.presetId);
+const exportSettings = {
+  resolution: preset.export.resolution,
+  fps: preset.export.fps,
+  format: preset.export.format,
+  // User can still override in the export modal
+  ...project.mp4Settings,  // user overrides take precedence
+};
+```
+
+Show the preset defaults in the export modal with an "override" toggle.
+
+### 1.4 Use preset agent settings in the agent system
+
+In /lib/agents/context-builder.ts, read from preset:
+
+```ts
+const preset = getPreset(project.globalStyle.presetId);
+
+// Default thinking mode from preset (user can override in UI)
+const effectiveThinkingMode = userThinkingOverride
+  ?? store.thinkingMode
+  ?? preset.agent.thinkingMode;
+
+// Scene count guidance injected into Director prompt
+const sceneCountGuidance = `
+Preferred scene count for this style: 
+${preset.agent.preferredSceneCount.min}–${preset.agent.preferredSceneCount.max} scenes.
+`;
+
+// Density guidance injected into Scene Maker prompt
+const densityGuidance = `
+Element density: ${preset.density.elementsPerScene.min}–${preset.density.elementsPerScene.max} elements per scene.
+${preset.density.labelEverything ? 'Label every diagram element.' : 'Labels only on key elements.'}
+${preset.density.breathingRoom ? 'Leave generous whitespace between elements.' : 'Pack elements efficiently.'}
+Annotation style: ${preset.density.annotationStyle}
+`;
+```
+
+### 1.5 Auto-add interactions based on preset
+
+In the Director agent, after planning scenes, automatically
+add interactions based on the preset's interactive config:
+
+```ts
+if (preset.interactive.autoAddQuizzes) {
+  // Add a quiz interaction on the last "concept" scene
+  // (not title scenes, not summary scenes)
+}
+
+if (preset.interactive.autoAddGates) {
+  // Add a Continue gate at the end of each scene
+  // except the last one
+}
+```
+
+---
+
+## SYSTEM 2 — GENERATION LOGGING
+
+### 2.1 Database table
+
+Add to /lib/db/schema.ts:
+
+```ts
+export const generationLogs = pgTable('generation_logs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  projectId: uuid('project_id')
+    .references(() => projects.id, { onDelete: 'cascade' }),
+  sceneId: uuid('scene_id')
+    .references(() => scenes.id, { onDelete: 'set null' }),
+  layerId: uuid('layer_id')
+    .references(() => layers.id, { onDelete: 'set null' }),
+
+  // The generation context
+  userPrompt: text('user_prompt').notNull(),
+  systemPromptHash: text('system_prompt_hash'),
+  // Hash not full text — full prompt is expensive to store
+  // Use the hash to group similar prompts together
+  systemPromptSnapshot: text('system_prompt_snapshot'),
+  // Store a truncated version (first 500 chars) for debugging
+
+  // What rules/context were injected
+  injectedRules: jsonb('injected_rules').$type<string[]>(),
+  // e.g. ['core.md', 'canvas2d.md', 'svg.md']
+
+  stylePresetId: text('style_preset_id'),
+  agentType: text('agent_type'),
+  modelUsed: text('model_used'),
+  thinkingMode: text('thinking_mode'),
+
+  // The output
+  sceneType: text('scene_type'),
+  // What type did the agent choose: svg | canvas2d | d3 | three | zdog
+  generatedCodeLength: integer('generated_code_length'),
+  // Proxy for complexity
+
+  // Thinking (summarized)
+  thinkingContent: text('thinking_content'),
+  // The reasoning block content — hugely valuable for analysis
+
+  // Performance
+  generationTimeMs: integer('generation_time_ms'),
+  inputTokens: integer('input_tokens'),
+  outputTokens: integer('output_tokens'),
+  thinkingTokens: integer('thinking_tokens'),
+  costUsd: real('cost_usd'),
+
+  // Quality signals (updated after generation)
+  userAction: text('user_action'),
+  // 'kept' | 'regenerated' | 'edited' | 'deleted'
+  // Set by frontend when user takes action
+  timeToActionMs: integer('time_to_action_ms'),
+  // How long between generation completing and user action
+  // Short time + regenerated = user immediately disliked it
+  editDistance: integer('edit_distance'),
+  // Character diff between generated code and final code
+  // 0 = kept exactly, large = heavily edited
+  userRating: integer('user_rating'),
+  // 1-5 if user explicitly rates, null if not rated
+  exportSucceeded: boolean('export_succeeded'),
+  // Did WVC successfully export this scene?
+  exportErrorMessage: text('export_error_message'),
+
+  // Analysis fields (populated by the analysis system)
+  qualityScore: real('quality_score'),
+  // Computed from signals: 0-1
+  // High = kept quickly with no edits
+  // Low = regenerated or heavily edited
+  analysisNotes: text('analysis_notes'),
+  // Free text notes from automated or manual analysis
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (t) => ({
+  projectIdx: index('gen_log_project_idx').on(t.projectId),
+  modelIdx: index('gen_log_model_idx').on(t.modelUsed),
+  presetIdx: index('gen_log_preset_idx').on(t.stylePresetId),
+  actionIdx: index('gen_log_action_idx').on(t.userAction),
+  createdIdx: index('gen_log_created_idx').on(t.createdAt),
+}));
+```
+
+### 2.2 Logging in the agent API route
+
+In /app/api/agent/route.ts, wrap the generation call:
+
+```ts
+import { createGenerationLog, updateGenerationLog } from
+  '@/lib/db/queries/generation-logs';
+import { hashString } from '@/lib/utils';
+
+export async function POST(req: NextRequest) {
+  const startTime = Date.now();
+  const body = await req.json();
+
+  // ... build context, determine agent ...
+
+  // Create log entry before generation starts
+  const logId = await createGenerationLog({
+    projectId: body.projectId,
+    userPrompt: body.message,
+    systemPromptHash: hashString(context.systemPrompt),
+    systemPromptSnapshot: context.systemPrompt.slice(0, 500),
+    injectedRules: context.injectedRuleFiles,
+    stylePresetId: project.globalStyle.presetId,
+    agentType: agent,
+    modelUsed: effectiveModel,
+    thinkingMode: body.thinkingMode ?? 'adaptive',
+  });
+
+  // Stream the response, collecting metadata
+  let totalInputTokens = 0;
+  let totalOutputTokens = 0;
+  let totalThinkingTokens = 0;
+  let thinkingContent = '';
+  let chosenSceneType = '';
+
+  const stream = streamAgentResponse({ ... });
+
+  // ... SSE streaming to client ...
+
+  // After generation completes, update the log
+  const generationTimeMs = Date.now() - startTime;
+
+  await updateGenerationLog(logId, {
+    generationTimeMs,
+    inputTokens: totalInputTokens,
+    outputTokens: totalOutputTokens,
+    thinkingTokens: totalThinkingTokens,
+    thinkingContent: thinkingContent.slice(0, 2000),
+    // Store first 2000 chars of thinking — enough for analysis
+    sceneType: chosenSceneType,
+    generatedCodeLength: generatedCode.length,
+    costUsd: calculateCost(effectiveModel, {
+      input: totalInputTokens,
+      output: totalOutputTokens,
+      thinking: totalThinkingTokens,
+    }),
+  });
+
+  // Return logId in the SSE done event so frontend can reference it
+  yield { type: 'done', logId };
+}
+```
+
+### 2.3 Quality signal collection in the frontend
+
+When a user takes action on a generated scene, update the log:
+
+```ts
+// In the scene card component — track user actions
+
+// When user clicks Regenerate
+async function handleRegenerate(sceneId: string, logId: string) {
+  const timeToAction = Date.now() - generationCompletedAt;
+
+  await fetch('/api/generation-log', {
+    method: 'PATCH',
+    body: JSON.stringify({
+      logId,
+      userAction: 'regenerated',
+      timeToActionMs: timeToAction,
+    }),
+  });
+
+  // Then trigger new generation
+}
+
+// When user keeps the scene (moves on, edits nothing)
+// Fire after 30 seconds of inactivity on this scene
+function markAsKept(logId: string) {
+  fetch('/api/generation-log', {
+    method: 'PATCH',
+    body: JSON.stringify({
+      logId,
+      userAction: 'kept',
+      timeToActionMs: Date.now() - generationCompletedAt,
+    }),
+  });
+}
+
+// When user edits layer code
+async function handleCodeEdit(sceneId: string, layerId: string,
+  logId: string, originalCode: string, newCode: string) {
+
+  const editDistance = levenshteinDistance(originalCode, newCode);
+
+  await fetch('/api/generation-log', {
+    method: 'PATCH',
+    body: JSON.stringify({
+      logId,
+      userAction: 'edited',
+      timeToActionMs: Date.now() - generationCompletedAt,
+      editDistance,
+    }),
+  });
+}
+```
+
+Simple edit distance for code changes:
+```ts
+// /lib/utils/edit-distance.ts
+// Approximate edit distance — count character differences
+// Don't need full Levenshtein, just a rough signal
+export function approximateEditDistance(a: string, b: string): number {
+  if (a === b) return 0;
+  const longer = a.length > b.length ? a : b;
+  const shorter = a.length > b.length ? b : a;
+  // Count differing chars at same position + length difference
+  let diffs = Math.abs(a.length - b.length);
+  for (let i = 0; i < shorter.length; i++) {
+    if (a[i] !== b[i]) diffs++;
+  }
+  return diffs;
+}
+```
+
+### 2.4 Quality score computation
+
+Run this on a schedule (or on-demand) to compute quality scores:
+
+```ts
+// /lib/generation-logs/score.ts
+
+export function computeQualityScore(log: GenerationLog): number {
+  // No user action yet — can't score
+  if (!log.userAction) return -1;
+
+  let score = 0.5; // start neutral
+
+  // User action signals
+  if (log.userAction === 'kept') score += 0.3;
+  if (log.userAction === 'regenerated') score -= 0.4;
+  if (log.userAction === 'deleted') score -= 0.5;
+  if (log.userAction === 'edited') score += 0.1;
+  // edited = partially good (kept the scene, but needed work)
+
+  // Time to action (faster = stronger signal)
+  if (log.timeToActionMs && log.userAction === 'regenerated') {
+    if (log.timeToActionMs < 5000) score -= 0.2;
+    // Regenerated in under 5 seconds = immediate rejection
+  }
+  if (log.timeToActionMs && log.userAction === 'kept') {
+    if (log.timeToActionMs > 30000) score += 0.1;
+    // Kept for 30+ seconds = likely reviewed and approved
+  }
+
+  // Edit distance (higher = more rework needed)
+  if (log.editDistance) {
+    const relativeEdit = log.editDistance / (log.generatedCodeLength ?? 1);
+    if (relativeEdit > 0.3) score -= 0.2;  // changed >30% of code
+    if (relativeEdit > 0.6) score -= 0.2;  // changed >60% of code
+    if (relativeEdit < 0.05) score += 0.1; // barely changed
+  }
+
+  // Explicit rating
+  if (log.userRating) {
+    score += (log.userRating - 3) * 0.1; // 5=+0.2, 4=+0.1, 3=0, 2=-0.1, 1=-0.2
+  }
+
+  // Export success
+  if (log.exportSucceeded === false) score -= 0.3;
+  if (log.exportSucceeded === true) score += 0.1;
+
+  return Math.max(0, Math.min(1, score));
+}
+```
+
+### 2.5 Analysis dashboard
+
+Add a route at /app/dashboard/prompt-engineering/page.tsx:
+
+```tsx
+// Shows aggregated insights from generation logs
+
+// Key queries to run and display:
+
+// 1. Quality by scene type
+// "Which scene types have highest quality scores?"
+// SELECT scene_type, AVG(quality_score), COUNT(*), 
+//        SUM(CASE WHEN user_action='regenerated' THEN 1 ELSE 0 END) as regen_count
+// FROM generation_logs WHERE quality_score >= 0
+// GROUP BY scene_type ORDER BY AVG(quality_score) DESC
+
+// 2. Quality by model
+// "Does Opus outperform Sonnet enough to justify cost?"
+// Same query but GROUP BY model_used
+
+// 3. Quality by thinking mode
+// "Does adaptive thinking improve quality?"
+// Same query but GROUP BY thinking_mode
+
+// 4. Quality by style preset
+// "Which presets produce the best results?"
+// Same query but GROUP BY style_preset_id
+
+// 5. Low quality patterns
+// "What do bad generations have in common?"
+// SELECT user_prompt, thinking_content, scene_type, quality_score
+// FROM generation_logs
+// WHERE quality_score < 0.3
+// ORDER BY quality_score ASC
+// LIMIT 20
+
+// 6. High quality patterns
+// "What do great generations look like?"
+// Same but quality_score > 0.8
+
+// 7. Rule file effectiveness
+// "Which rule files correlate with good outcomes?"
+// SELECT rule, AVG(quality_score)
+// FROM generation_logs,
+//      jsonb_array_elements_text(injected_rules) as rule
+// GROUP BY rule ORDER BY AVG(quality_score) DESC
+```
+
+Display as simple tables and bar charts using D3 (naturally).
+
+### 2.6 AI-powered analysis endpoint
+
+Add /app/api/analyze-logs/route.ts:
+
+```ts
+// POST with a question, get back Claude's analysis of the logs
+
+export async function POST(req: NextRequest) {
+  const { question, limit = 50 } = await req.json();
+
+  // Fetch relevant logs based on the question
+  const logs = await db.select({
+    userPrompt: generationLogs.userPrompt,
+    systemPromptSnapshot: generationLogs.systemPromptSnapshot,
+    injectedRules: generationLogs.injectedRules,
+    stylePresetId: generationLogs.stylePresetId,
+    agentType: generationLogs.agentType,
+    modelUsed: generationLogs.modelUsed,
+    thinkingMode: generationLogs.thinkingMode,
+    sceneType: generationLogs.sceneType,
+    thinkingContent: generationLogs.thinkingContent,
+    userAction: generationLogs.userAction,
+    timeToActionMs: generationLogs.timeToActionMs,
+    editDistance: generationLogs.editDistance,
+    qualityScore: generationLogs.qualityScore,
+  })
+  .from(generationLogs)
+  .where(isNotNull(generationLogs.qualityScore))
+  .orderBy(desc(generationLogs.createdAt))
+  .limit(limit);
+
+  const response = await anthropic.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 4000,
+    thinking: { type: 'enabled', budget_tokens: 8000 },
+    system: `You are a prompt engineering analyst for Cench Studio,
+an AI-powered video creator. You analyze generation logs to find
+patterns that explain why some AI-generated scenes are good and
+others aren't. Your goal is to suggest concrete improvements to
+system prompts, rule files, and model selection.
+
+Be specific. Quote actual prompts and thinking content.
+Suggest exact wording changes to rule files.
+Focus on actionable insights not general observations.`,
+    messages: [{
+      role: 'user',
+      content: `Question: ${question}
+
+Generation logs (${logs.length} samples):
+${JSON.stringify(logs, null, 2)}`
+    }]
+  });
+
+  return NextResponse.json({
+    analysis: response.content
+      .filter(b => b.type === 'text')
+      .map(b => b.text)
+      .join(''),
+    thinking: response.content
+      .filter(b => b.type === 'thinking')
+      .map(b => b.thinking)
+      .join(''),
+    logsAnalyzed: logs.length,
+  });
+}
+```
+
+### 2.7 Analysis UI in the dashboard
+
+In the prompt engineering dashboard, add an analysis panel:
+
+```
+Ask Claude about your generation data
+
+┌────────────────────────────────────────────────────┐
+│ Why do users regenerate canvas2d scenes more than  │
+│ SVG scenes?                                        │
+│                                              [Ask] │
+└────────────────────────────────────────────────────┘
+
+Suggested questions:
+[Why do whiteboard scenes get regenerated?]
+[Which model produces the best Three.js scenes?]
+[What prompts lead to the most edits?]
+[Which rule files correlate with high quality?]
+[What does the thinking block say before bad generations?]
+
+─────────────────────────────────────────────────────
+Claude's analysis:
+
+▶ Reasoning (expand to see how Claude approached this)
+
+Based on 47 canvas2d regenerations vs 12 SVG regenerations...
+```
+
+---
+
+## IMPLEMENTATION ORDER
+
+**System 1 (Style cascade):**
+1. Add export/agent/density/interactive fields to StylePreset interface
+2. Update all 8 presets with sensible values
+3. Use preset.export in export modal as defaults
+4. Use preset.agent.thinkingMode as default thinking mode
+5. Inject density guidance into scene-maker system prompt
+6. Auto-add interactions in Director agent based on preset
+
+**System 2 (Generation logging):**
+1. Add generation_logs table to schema, run migration
+2. Add createGenerationLog + updateGenerationLog query helpers
+3. Create /app/api/generation-log/route.ts (PATCH for updates)
+4. Instrument /app/api/agent/route.ts to log each generation
+5. Add quality signal collection in scene card frontend
+6. Add approximateEditDistance utility
+7. Add computeQualityScore function
+8. Create /app/dashboard/prompt-engineering/page.tsx
+9. Add key aggregate queries as D3 bar charts
+10. Add /app/api/analyze-logs/route.ts
+11. Add analysis question UI panel in dashboard
+
+---
+
+## CRITICAL NOTES
+
+**Privacy:** generation logs contain user prompts. Add a
+project-level setting: `enableGenerationLogging: boolean`
+defaulting to true. Show users what's being logged in settings.
+In the future when you have multiple users, make logs
+only visible to the project owner.
+
+**Thinking content storage:** storing thinkingContent.slice(0, 2000)
+captures the most useful part (Claude's reasoning about renderer
+choice, scene structure, etc) without bloating the DB.
+The thinking block is often the most valuable signal — it shows
+exactly why Claude made a choice that the user then rejected.
+
+**Quality score computation:** run computeQualityScore() lazily
+(when a log is updated with userAction) not eagerly (on all logs
+at once). Add a background job to score any logs older than 1 hour
+that still have null quality_score — catches cases where the
+frontend failed to report the user action.
+
+**The AI analysis endpoint:** this is Claude analyzing its own
+outputs. Use extended thinking for this call — the reasoning about
+why certain patterns lead to rejections is itself valuable and
+should be shown in the UI. Budget 8000 thinking tokens so it
+can reason carefully through the logs before responding.
+
+**Start small:** instrument just the Scene Maker agent first.
+Once you have 20-30 logs with quality signals, run the first
+analysis query. The insights will tell you exactly what to
+improve in the rules. This is a tighter feedback loop than
+any amount of upfront prompt engineering.
+```

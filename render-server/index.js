@@ -1,9 +1,12 @@
 import express from 'express'
 import cors from 'cors'
 import path from 'path'
+import fs from 'fs/promises'
+import os from 'os'
 import { fileURLToPath } from 'url'
 import { renderScenes } from './renderer.js'
 import { stitchScenes } from './stitcher.js'
+import { mixSceneAudio } from './audio-mixer.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PORT = process.env.PORT || 3001
@@ -23,7 +26,7 @@ app.get('/health', (_req, res) => {
 /**
  * POST /render
  * Body: {
- *   scenes: Array<{ id: string, duration: number, transition: string }>,
+ *   scenes: Array<{ id: string, duration: number, transition: string, audioLayer?: AudioLayer }>,
  *   outputName: string,
  *   settings: { resolution: '720p'|'1080p'|'4k', fps: 24|30|60, format: 'mp4' }
  * }
@@ -31,6 +34,7 @@ app.get('/health', (_req, res) => {
  * Returns SSE stream:
  *   data: { type: 'scene_progress', scene: N, progress: 0-100 }
  *   data: { type: 'scene_done', scene: N }
+ *   data: { type: 'mixing_audio' }
  *   data: { type: 'stitching' }
  *   data: { type: 'complete', downloadUrl: '/renders/output.mp4' }
  *   data: { type: 'error', message: '...' }
@@ -62,8 +66,8 @@ app.post('/render', async (req, res) => {
       '4k':    { width: 3840, height: 2160 },
     }[resolution] || { width: 1920, height: 1080 }
 
-    // Render each scene to an MP4
-    const videoPaths = await renderScenes(scenes, {
+    // Render each scene to an MP4 (silent)
+    const silentVideoPaths = await renderScenes(scenes, {
       outputDir: OUTPUT_DIR,
       baseUrl: NEXT_BASE_URL,
       width: dimensions.width,
@@ -77,11 +81,47 @@ app.post('/render', async (req, res) => {
       },
     })
 
+    // Mix audio tracks into each scene video (if audioLayer is present)
+    const hasAnyAudio = scenes.some((s) => s.audioLayer?.enabled)
+    let videoPaths = silentVideoPaths
+
+    if (hasAnyAudio) {
+      send({ type: 'mixing_audio' })
+      const tempDir = path.join(os.tmpdir(), `cench-audio-${Date.now()}`)
+      await fs.mkdir(tempDir, { recursive: true })
+
+      try {
+        // Mix audio sequentially to avoid overwhelming the system with concurrent FFmpeg processes
+        videoPaths = [...silentVideoPaths]
+        for (let i = 0; i < silentVideoPaths.length; i++) {
+          const scene = scenes[i]
+          if (!scene.audioLayer?.enabled) continue
+
+          const mixedPath = silentVideoPaths[i].replace(/\.mp4$/, '-mixed.mp4')
+          videoPaths[i] = await mixSceneAudio(
+            silentVideoPaths[i],
+            scene.audioLayer,
+            scene.duration,
+            mixedPath,
+            tempDir,
+            NEXT_BASE_URL
+          )
+        }
+      } finally {
+        // Clean up temp audio downloads
+        await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {})
+      }
+    }
+
     // Stitch scenes into final MP4
     send({ type: 'stitching' })
 
     const outputPath = path.join(OUTPUT_DIR, `${outputName}.mp4`)
-    const transitions = scenes.map((s) => ({ type: s.transition || 'none', duration: 0.5 }))
+    const transitions = scenes.map((s) => {
+      const raw = s.transition
+      const type = typeof raw === 'string' ? raw : (raw && typeof raw === 'object' && typeof raw.type === 'string' ? raw.type : 'none')
+      return { type: type || 'none', duration: 0.5 }
+    })
 
     await stitchScenes(videoPaths, transitions, outputPath)
 

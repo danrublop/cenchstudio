@@ -1,7 +1,9 @@
 // Shared types for the player package (mirrors lib/types.ts subset)
 
-export type SceneType = 'svg' | 'canvas2d' | 'motion' | 'd3' | 'three' | 'lottie'
-export type TransitionType = 'none' | 'crossfade' | 'wipe-left' | 'wipe-right'
+import type { TransitionType } from '../../../lib/transitions'
+export type { TransitionType }
+
+export type SceneType = 'svg' | 'canvas2d' | 'motion' | 'd3' | 'three' | 'lottie' | 'zdog'
 
 export interface SceneNode {
   id: string
@@ -91,7 +93,7 @@ export interface GateElement extends BaseInteraction {
 
 export interface TooltipElement extends BaseInteraction {
   type: 'tooltip'
-  triggerShape: 'circle' | 'rectangle'
+  triggerShape: 'circle' | 'pill' | 'rounded' | 'square' | 'rectangle'
   triggerColor: string
   triggerLabel: string | null
   tooltipTitle: string
@@ -158,9 +160,4 @@ export interface PublishedProject {
   scenes: PublishedScene[]
 }
 
-export type PlayerEvent =
-  | 'sceneChange'
-  | 'interactionFired'
-  | 'completed'
-  | 'variableSet'
-  | 'quizAnswered'
+export type PlayerEvent = 'sceneChange' | 'interactionFired' | 'completed' | 'variableSet' | 'quizAnswered'

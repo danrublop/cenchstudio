@@ -1,0 +1,2247 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base href="http://localhost:3000/">
+  <!-- GSAP (free, commercial use — all plugins free as of 3.13) -->
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14/dist/gsap.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14/dist/DrawSVGPlugin.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14/dist/MorphSVGPlugin.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14/dist/MotionPathPlugin.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14/dist/SplitText.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14/dist/TextPlugin.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14/dist/CustomEase.min.js"></script>
+  <script>gsap.registerPlugin(DrawSVGPlugin, MorphSVGPlugin, MotionPathPlugin, SplitText, TextPlugin, CustomEase);</script>
+  <!-- Lottie-web for LottieFiles animations -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/bodymovin/5.12.2/lottie.min.js"></script>
+  <!-- CenchMotion component library -->
+  <script src="/sdk/cench-motion.js"></script>
+  <!-- CenchCamera cinematic camera motion -->
+  <script src="/sdk/cench-camera.js"></script>
+  <!-- CenchInteract interaction components -->
+  <script src="/sdk/interaction-components.js"></script>
+
+  <meta charset="UTF-8">
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 1920px; height: 1080px; overflow: hidden; background: #fffef9;
+      transform-origin: top left;
+      
+    }
+    #scene-camera {
+      position: absolute;
+      inset: 0;
+      width: 1920px;
+      height: 1080px;
+      overflow: hidden;
+      transform-origin: center center;
+      will-change: transform, filter;
+    }
+    canvas {
+      display: block;
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 1920px;
+      height: 1080px;
+      margin: 0;
+      padding: 0;
+      border: 0;
+    }
+  </style>
+  <script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>
+  <script>
+    function fitToViewport() {
+      var s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+      document.body.style.transform = 'scale(' + s + ')';
+    }
+    window.addEventListener('resize', fitToViewport);
+    document.addEventListener('DOMContentLoaded', fitToViewport);
+  </script>
+</head>
+<body>
+  <div id="scene-camera">
+  <canvas id="c" width="1920" height="1080"></canvas>
+  <canvas id="texture-canvas" width="1920" height="1080"
+    style="display:block; position:absolute; inset:0; pointer-events:none;
+           mix-blend-mode:multiply; opacity:0.04;"></canvas>
+  
+
+  <script>
+    // ── Scene globals ─────────────────────────────────────
+    var SCENE_ID     = '94646452-f374-4821-9df6-51365a77f733';
+    var PALETTE      = ["#1a1a2e","#e84545","#16a34a","#2563eb"];
+    var DURATION     = 16;
+    var ROUGHNESS    = 1.5;
+    var FONT         = 'Caveat';
+    var WIDTH        = 1920;
+    var HEIGHT       = 1080;
+    var TOOL         = 'marker';
+    var STROKE_COLOR = '#1a1a2e';
+
+    // Seeded random
+    function mulberry32(seed) {
+      return function() {
+        seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+        var t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+        t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+      }
+    }
+
+    // Audio volume is handled by the playback controller
+  </script>
+
+  
+
+  </div><!-- /scene-camera -->
+
+  <script>
+
+// ── Cench Studio Canvas2D Drawing Engine ─────────────────────────────────────
+// Auto-injected by the scene template. All functions are global.
+
+// ── Drawing Tool Configurations ───────────────────────────────────────────────
+
+var DRAWING_TOOLS = {
+  marker: {
+    id: 'marker',
+    name: 'Marker',
+    description: 'Broad, consistent strokes with slight wobble. Bold and readable.',
+    roughness: 0.6,
+    bowing: 0.4,
+    defaultWidth: 6,
+    pressureProfile: { peakAt: 0.35, minWidth: 0.55, sharpness: 1.8 },
+    alphaJitter: 0.04,
+    textureStyle: 'none',
+    textureIntensity: 0,
+    smoothIterations: 1,
+    lineDash: [],
+    lineCap: 'round',
+  },
+  pen: {
+    id: 'pen',
+    name: 'Pen',
+    description: 'Fine, precise strokes with natural hand-drawn character.',
+    roughness: 0.4,
+    bowing: 0.25,
+    defaultWidth: 2.5,
+    pressureProfile: { peakAt: 0.4, minWidth: 0.25, sharpness: 2.5 },
+    alphaJitter: 0.02,
+    textureStyle: 'none',
+    textureIntensity: 0,
+    smoothIterations: 2,
+    lineDash: [],
+    lineCap: 'round',
+  },
+  chalk: {
+    id: 'chalk',
+    name: 'Chalk',
+    description: 'Rough, textured strokes with grain — perfect for chalkboard scenes.',
+    roughness: 1.8,
+    bowing: 0.6,
+    defaultWidth: 8,
+    pressureProfile: { peakAt: 0.5, minWidth: 0.3, sharpness: 1.4 },
+    alphaJitter: 0.18,
+    textureStyle: 'chalk',
+    textureIntensity: 0.6,
+    smoothIterations: 0,
+    lineDash: [],
+    lineCap: 'round',
+  },
+  brush: {
+    id: 'brush',
+    name: 'Brush',
+    description: 'Wide, tapered brush strokes with strong pressure variation.',
+    roughness: 0.9,
+    bowing: 0.5,
+    defaultWidth: 14,
+    pressureProfile: { peakAt: 0.3, minWidth: 0.08, sharpness: 3.2 },
+    alphaJitter: 0.08,
+    textureStyle: 'grain',
+    textureIntensity: 0.3,
+    smoothIterations: 3,
+    lineDash: [],
+    lineCap: 'round',
+  },
+  highlighter: {
+    id: 'highlighter',
+    name: 'Highlighter',
+    description: 'Broad, semi-transparent strokes for emphasis.',
+    roughness: 0.3,
+    bowing: 0.15,
+    defaultWidth: 18,
+    pressureProfile: { peakAt: 0.5, minWidth: 0.7, sharpness: 1.2 },
+    alphaJitter: 0.03,
+    textureStyle: 'none',
+    textureIntensity: 0,
+    smoothIterations: 2,
+    lineDash: [],
+    lineCap: 'square',
+  },
+};
+
+// ── Seeded PRNG ───────────────────────────────────────────────────────────────
+
+function mulberry32(seed) {
+  var a = seed >>> 0;
+  return function () {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    var t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// ── Pressure Curve ────────────────────────────────────────────────────────────
+
+function strokePressure(t, opts) {
+  opts = opts || {};
+  var peakAt = opts.peakAt !== undefined ? opts.peakAt : 0.4;
+  var minWidth = opts.minWidth !== undefined ? opts.minWidth : 0.25;
+  var sharpness = opts.sharpness !== undefined ? opts.sharpness : 2.5;
+
+  var distFromPeak = Math.abs(t - peakAt);
+  var maxDist = Math.max(peakAt, 1 - peakAt);
+  var normalized = Math.min(distFromPeak / maxDist, 1);
+  var pressure = 1 - (1 - minWidth) * Math.pow(normalized, sharpness);
+  return Math.max(minWidth, Math.min(1, pressure));
+}
+
+// ── Alpha Jitter ──────────────────────────────────────────────────────────────
+
+function jitteredAlpha(baseAlpha, t, rand, intensity) {
+  if (intensity <= 0) return baseAlpha;
+  var jitter = (rand() - 0.5) * 2 * intensity;
+  return Math.max(0.1, Math.min(1, baseAlpha + jitter));
+}
+
+// ── Pressure-Sensitive Stroke ─────────────────────────────────────────────────
+
+function drawSegmentWithPressure(ctx, points, baseWidth, color, pressureOpts, rand, alphaJitter) {
+  if (points.length < 2) return;
+  pressureOpts = pressureOpts || {};
+  alphaJitter = alphaJitter || 0;
+
+  var total = points.length - 1;
+
+  for (var i = 0; i < total; i++) {
+    var t = i / Math.max(total - 1, 1);
+    var tNext = (i + 1) / Math.max(total - 1, 1);
+
+    var widthMid = strokePressure((t + tNext) / 2, pressureOpts) * baseWidth;
+    var alpha = jitteredAlpha(1, t, rand, alphaJitter);
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.lineWidth = widthMid;
+    ctx.strokeStyle = color;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(points[i][0], points[i][1]);
+    ctx.lineTo(points[i + 1][0], points[i + 1][1]);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+// ── Path Smoothing ────────────────────────────────────────────────────────────
+
+function chaikinSmooth(points, iterations, ratio, closed) {
+  if (iterations === undefined) iterations = 2;
+  if (ratio === undefined) ratio = 0.25;
+  if (closed === undefined) closed = false;
+
+  if (points.length < 3 || iterations <= 0) return points;
+
+  var pts = points.slice();
+
+  for (var iter = 0; iter < iterations; iter++) {
+    var newPts = [];
+    var len = closed ? pts.length : pts.length - 1;
+
+    if (!closed) {
+      newPts.push(pts[0]);
+    }
+
+    for (var i = 0; i < len; i++) {
+      var a = pts[i];
+      var b = pts[(i + 1) % pts.length];
+
+      var q = [
+        a[0] + ratio * (b[0] - a[0]),
+        a[1] + ratio * (b[1] - a[1]),
+      ];
+      var r = [
+        b[0] - ratio * (b[0] - a[0]),
+        b[1] - ratio * (b[1] - a[1]),
+      ];
+
+      newPts.push(q, r);
+    }
+
+    if (!closed) {
+      newPts.push(pts[pts.length - 1]);
+    }
+
+    pts = newPts;
+  }
+
+  return pts;
+}
+
+// ── Tool Resolution ───────────────────────────────────────────────────────────
+
+function applyTool(opts) {
+  opts = opts || {};
+  var toolId = opts.tool || 'pen';
+  var toolConfig = DRAWING_TOOLS[toolId] || DRAWING_TOOLS['pen'];
+
+  return {
+    color: opts.color || '#000000',
+    width: opts.width !== undefined ? opts.width : toolConfig.defaultWidth,
+    roughness: opts.roughness !== undefined ? opts.roughness : toolConfig.roughness,
+    bowing: opts.bowing !== undefined ? opts.bowing : (toolConfig.bowing || 0.4),
+    seed: opts.seed !== undefined ? opts.seed : 42,
+    fill: opts.fill !== undefined ? opts.fill : null,
+    fillAlpha: opts.fillAlpha !== undefined ? opts.fillAlpha : 0.15,
+    tool: toolId,
+    pressureOpts: opts.pressureOpts || toolConfig.pressureProfile,
+    alphaJitter: opts.alphaJitter !== undefined ? opts.alphaJitter : (toolConfig.alphaJitter || 0),
+    smooth: opts.smooth !== undefined ? opts.smooth : (toolConfig.smoothIterations > 0),
+    smoothIterations: opts.smoothIterations !== undefined ? opts.smoothIterations : toolConfig.smoothIterations,
+    lineDash: opts.lineDash || (toolConfig.lineDash || []),
+    lineCap: opts.lineCap || (toolConfig.lineCap || 'round'),
+    toolConfig: toolConfig,
+  };
+}
+
+// ── Texture Cache ─────────────────────────────────────────────────────────────
+
+var _textureCache = {};
+
+function generateTextureCanvas(width, height, seed, opts) {
+  var style = opts.style || 'none';
+  if (style === 'none') return null;
+
+  var intensity = opts.intensity !== undefined ? opts.intensity : 0.3;
+  var rand = mulberry32(seed);
+
+  var offscreen;
+  try {
+    offscreen = new OffscreenCanvas(width, height);
+  } catch (e) {
+    offscreen = document.createElement('canvas');
+    offscreen.width = width;
+    offscreen.height = height;
+  }
+
+  var octx = offscreen.getContext('2d');
+  var imageData = octx.createImageData(width, height);
+  var data = imageData.data;
+
+  for (var i = 0; i < data.length; i += 4) {
+    var noiseVal = 0;
+
+    if (style === 'grain') {
+      noiseVal = rand() * intensity;
+    } else if (style === 'paper') {
+      var coarse = rand() * 0.6;
+      var fine = rand() * 0.4;
+      noiseVal = (coarse + fine) * intensity * 0.5;
+    } else if (style === 'chalk') {
+      var v = rand();
+      noiseVal = v < 0.12 ? v * intensity * 2 : 0;
+    }
+
+    var luminance = Math.floor(noiseVal * 255);
+    data[i] = luminance;
+    data[i + 1] = luminance;
+    data[i + 2] = luminance;
+    data[i + 3] = Math.floor(intensity * 60);
+  }
+
+  octx.putImageData(imageData, 0, 0);
+  return offscreen;
+}
+
+function applyTextureOverlay(targetCanvas, textureStyle, seed) {
+  if (textureStyle === 'none') return;
+
+  var key = textureStyle + ':' + seed + ':' + targetCanvas.width + ':' + targetCanvas.height;
+
+  var texture;
+  if (_textureCache[key]) {
+    texture = _textureCache[key];
+  } else {
+    var toolEntry = DRAWING_TOOLS[textureStyle];
+    var intensity = toolEntry ? toolEntry.textureIntensity : 0.3;
+    texture = generateTextureCanvas(targetCanvas.width, targetCanvas.height, seed, {
+      style: textureStyle,
+      intensity: intensity,
+    });
+    _textureCache[key] = texture;
+  }
+
+  if (!texture) return;
+
+  var ctx = targetCanvas.getContext('2d');
+  if (!ctx) return;
+
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+  ctx.drawImage(texture, 0, 0);
+  ctx.restore();
+}
+
+// ── Internal: Hand-drawn Point Generation ─────────────────────────────────────
+
+function _wobbleLine(x1, y1, x2, y2, roughness, bowing, numPoints, rand) {
+  var pts = [];
+  var dx = x2 - x1;
+  var dy = y2 - y1;
+  var len = Math.sqrt(dx * dx + dy * dy);
+
+  var perpX = -dy / len;
+  var perpY = dx / len;
+
+  var bowAmount = bowing * len * 0.06;
+
+  for (var i = 0; i <= numPoints; i++) {
+    var t = i / numPoints;
+    var bx = x1 + t * dx;
+    var by = y1 + t * dy;
+
+    var bowFactor = 4 * t * (1 - t) * bowAmount;
+    var wobbleMag = roughness * Math.max(1, len * 0.008);
+    var wx = (rand() - 0.5) * 2 * wobbleMag;
+    var wy = (rand() - 0.5) * 2 * wobbleMag;
+
+    pts.push([
+      bx + perpX * bowFactor + wx,
+      by + perpY * bowFactor + wy,
+    ]);
+  }
+
+  return pts;
+}
+
+function _wobbleCircle(cx, cy, radius, roughness, numPoints, rand) {
+  var pts = [];
+  for (var i = 0; i <= numPoints; i++) {
+    var angle = (i / numPoints) * Math.PI * 2;
+    var wobbleMag = roughness * Math.max(1, radius * 0.04);
+    var r = radius + (rand() - 0.5) * 2 * wobbleMag;
+    pts.push([cx + Math.cos(angle) * r, cy + Math.sin(angle) * r]);
+  }
+  return pts;
+}
+
+// ── Internal: Animated Point Rendering ───────────────────────────────────────
+
+function _animatePoints(ctx, allPoints, baseWidth, color, pressureOpts, rand, alphaJitter, duration, lineDash, lineCap) {
+  lineDash = lineDash || [];
+  lineCap = lineCap || 'round';
+
+  return new Promise(function (resolve) {
+    var total = allPoints.length;
+    if (total < 2) { resolve(); return; }
+
+    var startTime = performance.now();
+    var drawnUpTo = 0;
+
+    function frame() {
+      var elapsed = performance.now() - startTime;
+      var progress = Math.min(elapsed / duration, 1);
+      var targetIndex = Math.floor(progress * (total - 1)) + 1;
+
+      if (targetIndex > drawnUpTo) {
+        var segStart = Math.max(0, drawnUpTo - 1);
+        var segPoints = allPoints.slice(segStart, targetIndex + 1);
+
+        ctx.save();
+        ctx.setLineDash(lineDash);
+        ctx.lineCap = lineCap;
+
+        for (var i = 0; i < segPoints.length - 1; i++) {
+          var globalT = (segStart + i) / Math.max(total - 2, 1);
+          var globalTNext = (segStart + i + 1) / Math.max(total - 2, 1);
+          var widthMid = strokePressure((globalT + globalTNext) / 2, pressureOpts) * baseWidth;
+          var alpha = jitteredAlpha(1, globalT, rand, alphaJitter);
+
+          ctx.globalAlpha = alpha;
+          ctx.lineWidth = widthMid;
+          ctx.strokeStyle = color;
+          ctx.lineCap = lineCap;
+          ctx.lineJoin = 'round';
+          ctx.beginPath();
+          ctx.moveTo(segPoints[i][0], segPoints[i][1]);
+          ctx.lineTo(segPoints[i + 1][0], segPoints[i + 1][1]);
+          ctx.stroke();
+        }
+
+        ctx.restore();
+        drawnUpTo = targetIndex;
+      }
+
+      if (progress < 1) {
+        requestAnimationFrame(frame);
+      } else {
+        resolve();
+      }
+    }
+
+    requestAnimationFrame(frame);
+  });
+}
+
+// ── Simple Delay ──────────────────────────────────────────────────────────────
+
+function wait(ms) {
+  return new Promise(function (resolve) { setTimeout(resolve, ms); });
+}
+
+// ── Drawing Primitives ────────────────────────────────────────────────────────
+
+function animateRoughLine(ctx, x1, y1, x2, y2, opts, duration) {
+  opts = opts || {};
+  duration = duration !== undefined ? duration : 600;
+
+  var resolved = applyTool(opts);
+  var rand = mulberry32(resolved.seed);
+  var len = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+  var numPoints = Math.max(8, Math.floor(len / 6));
+
+  var points = _wobbleLine(x1, y1, x2, y2, resolved.roughness, resolved.toolConfig.bowing, numPoints, rand);
+
+  if (resolved.smooth && resolved.smoothIterations > 0) {
+    points = chaikinSmooth(points, resolved.smoothIterations);
+  }
+
+  return _animatePoints(
+    ctx, points, resolved.width, resolved.color,
+    resolved.pressureOpts, rand,
+    resolved.toolConfig.alphaJitter,
+    duration,
+    resolved.toolConfig.lineDash,
+    resolved.toolConfig.lineCap
+  );
+}
+
+function animateRoughCircle(ctx, cx, cy, diameter, opts, duration) {
+  opts = opts || {};
+  duration = duration !== undefined ? duration : 800;
+
+  var resolved = applyTool(opts);
+  var rand = mulberry32(resolved.seed);
+  var radius = diameter / 2;
+  var numPoints = Math.max(32, Math.floor(radius * 0.5));
+
+  var points = _wobbleCircle(cx, cy, radius, resolved.roughness, numPoints, rand);
+
+  if (resolved.smooth && resolved.smoothIterations > 0) {
+    points = chaikinSmooth(points, resolved.smoothIterations, 0.25, true);
+  }
+
+  if (resolved.fill) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(points[0][0], points[0][1]);
+    for (var i = 1; i < points.length; i++) {
+      ctx.lineTo(points[i][0], points[i][1]);
+    }
+    ctx.closePath();
+    ctx.fillStyle = resolved.fill;
+    ctx.globalAlpha = resolved.fillAlpha;
+    ctx.fill();
+    ctx.restore();
+  }
+
+  return _animatePoints(
+    ctx, points, resolved.width, resolved.color,
+    resolved.pressureOpts, rand,
+    resolved.toolConfig.alphaJitter,
+    duration,
+    resolved.toolConfig.lineDash,
+    resolved.toolConfig.lineCap
+  );
+}
+
+function animateRoughRect(ctx, x, y, w, h, opts, duration) {
+  opts = opts || {};
+  duration = duration !== undefined ? duration : 700;
+
+  var resolved = applyTool(opts);
+  var rand = mulberry32(resolved.seed);
+
+  var corners = [
+    [x, y],
+    [x + w, y],
+    [x + w, y + h],
+    [x, y + h],
+    [x, y],
+  ];
+
+  var allPoints = [];
+  var edgeSeed = mulberry32(resolved.seed + 1);
+
+  for (var i = 0; i < corners.length - 1; i++) {
+    var ax = corners[i][0], ay = corners[i][1];
+    var bx = corners[i + 1][0], by = corners[i + 1][1];
+    var edgeLen = Math.sqrt(Math.pow(bx - ax, 2) + Math.pow(by - ay, 2));
+    var numPoints = Math.max(4, Math.floor(edgeLen / 8));
+
+    var edgePoints = _wobbleLine(ax, ay, bx, by, resolved.roughness, resolved.toolConfig.bowing * 0.4, numPoints, edgeSeed);
+
+    if (allPoints.length > 0) {
+      allPoints = allPoints.concat(edgePoints.slice(1));
+    } else {
+      allPoints = edgePoints;
+    }
+  }
+
+  if (resolved.smooth && resolved.smoothIterations > 0) {
+    allPoints = chaikinSmooth(allPoints, Math.max(1, resolved.smoothIterations - 1));
+  }
+
+  if (resolved.fill) {
+    ctx.save();
+    ctx.fillStyle = resolved.fill;
+    ctx.globalAlpha = resolved.fillAlpha;
+    ctx.fillRect(x, y, w, h);
+    ctx.restore();
+  }
+
+  return _animatePoints(
+    ctx, allPoints, resolved.width, resolved.color,
+    resolved.pressureOpts, rand,
+    resolved.toolConfig.alphaJitter,
+    duration,
+    resolved.toolConfig.lineDash,
+    resolved.toolConfig.lineCap
+  );
+}
+
+function animateRoughPolygon(ctx, points, opts, duration) {
+  opts = opts || {};
+  duration = duration !== undefined ? duration : 900;
+
+  if (points.length < 3) return Promise.resolve();
+
+  var resolved = applyTool(opts);
+  var rand = mulberry32(resolved.seed);
+
+  var closed = points.concat([points[0]]);
+  var allPoints = [];
+  var edgeSeed = mulberry32(resolved.seed + 7);
+
+  for (var i = 0; i < closed.length - 1; i++) {
+    var ax = closed[i][0], ay = closed[i][1];
+    var bx = closed[i + 1][0], by = closed[i + 1][1];
+    var edgeLen = Math.sqrt(Math.pow(bx - ax, 2) + Math.pow(by - ay, 2));
+    var numPts = Math.max(3, Math.floor(edgeLen / 8));
+
+    var edgePoints = _wobbleLine(ax, ay, bx, by, resolved.roughness, resolved.toolConfig.bowing * 0.3, numPts, edgeSeed);
+
+    if (allPoints.length > 0) {
+      allPoints = allPoints.concat(edgePoints.slice(1));
+    } else {
+      allPoints = edgePoints;
+    }
+  }
+
+  if (resolved.smooth && resolved.smoothIterations > 0) {
+    allPoints = chaikinSmooth(allPoints, resolved.smoothIterations, 0.25, true);
+  }
+
+  if (resolved.fill) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(points[0][0], points[0][1]);
+    for (var j = 1; j < points.length; j++) {
+      ctx.lineTo(points[j][0], points[j][1]);
+    }
+    ctx.closePath();
+    ctx.fillStyle = resolved.fill;
+    ctx.globalAlpha = resolved.fillAlpha;
+    ctx.fill();
+    ctx.restore();
+  }
+
+  return _animatePoints(
+    ctx, allPoints, resolved.width, resolved.color,
+    resolved.pressureOpts, rand,
+    resolved.toolConfig.alphaJitter,
+    duration,
+    resolved.toolConfig.lineDash,
+    resolved.toolConfig.lineCap
+  );
+}
+
+function animateRoughCurve(ctx, points, opts, duration) {
+  opts = opts || {};
+  duration = duration !== undefined ? duration : 700;
+
+  if (points.length < 2) return Promise.resolve();
+
+  var resolved = applyTool(opts);
+  var rand = mulberry32(resolved.seed);
+
+  var iterations = Math.max(2, resolved.smoothIterations + 1);
+  var smoothed = chaikinSmooth(points, iterations);
+
+  var wobbled = smoothed.map(function (p) {
+    var wobbleMag = resolved.roughness * 3;
+    return [
+      p[0] + (rand() - 0.5) * wobbleMag,
+      p[1] + (rand() - 0.5) * wobbleMag,
+    ];
+  });
+
+  return _animatePoints(
+    ctx, wobbled, resolved.width, resolved.color,
+    resolved.pressureOpts, rand,
+    resolved.toolConfig.alphaJitter,
+    duration,
+    resolved.toolConfig.lineDash,
+    resolved.toolConfig.lineCap
+  );
+}
+
+function animateRoughArrow(ctx, x1, y1, x2, y2, opts, duration) {
+  opts = opts || {};
+  duration = duration !== undefined ? duration : 700;
+
+  var resolved = applyTool(opts);
+  var rand = mulberry32(resolved.seed);
+
+  var shaftDuration = duration * 0.8;
+  var headDuration = duration * 0.2;
+
+  var len = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+  var numPoints = Math.max(8, Math.floor(len / 6));
+
+  var shaftPoints = _wobbleLine(x1, y1, x2, y2, resolved.roughness, resolved.toolConfig.bowing, numPoints, rand);
+
+  if (resolved.smooth && resolved.smoothIterations > 0) {
+    shaftPoints = chaikinSmooth(shaftPoints, resolved.smoothIterations);
+  }
+
+  return _animatePoints(
+    ctx, shaftPoints, resolved.width, resolved.color,
+    resolved.pressureOpts, rand,
+    resolved.toolConfig.alphaJitter,
+    shaftDuration,
+    resolved.toolConfig.lineDash,
+    resolved.toolConfig.lineCap
+  ).then(function () {
+    var headRand = mulberry32(resolved.seed + 100);
+    var angle = Math.atan2(y2 - y1, x2 - x1);
+    var headSize = Math.max(12, resolved.width * 3.5);
+    var spread = Math.PI / 6;
+
+    var leftX = x2 - Math.cos(angle - spread) * headSize;
+    var leftY = y2 - Math.sin(angle - spread) * headSize;
+    var rightX = x2 - Math.cos(angle + spread) * headSize;
+    var rightY = y2 - Math.sin(angle + spread) * headSize;
+
+    var leftPoints = _wobbleLine(x2, y2, leftX, leftY, resolved.roughness * 0.8, 0, 4, headRand);
+    var rightPoints = _wobbleLine(x2, y2, rightX, rightY, resolved.roughness * 0.8, 0, 4, headRand);
+    var headPoints = leftPoints.concat(rightPoints.slice(1));
+
+    var headPressure = Object.assign({}, resolved.pressureOpts, { minWidth: 0.5 });
+
+    return _animatePoints(
+      ctx, headPoints, resolved.width, resolved.color,
+      headPressure, headRand,
+      resolved.toolConfig.alphaJitter,
+      headDuration,
+      [],
+      'round'
+    );
+  });
+}
+
+function animateLine(ctx, x1, y1, x2, y2, opts, duration) {
+  opts = opts || {};
+  duration = duration !== undefined ? duration : 500;
+
+  var resolved = applyTool(opts);
+  var rand = mulberry32(resolved.seed);
+  var len = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+  var numPoints = Math.max(8, Math.floor(len / 4));
+
+  var points = [];
+  for (var i = 0; i <= numPoints; i++) {
+    var t = i / numPoints;
+    points.push([x1 + t * (x2 - x1), y1 + t * (y2 - y1)]);
+  }
+
+  return _animatePoints(ctx, points, resolved.width, resolved.color, resolved.pressureOpts, rand, 0, duration, [], 'round');
+}
+
+function animateCircle(ctx, cx, cy, r, opts, duration) {
+  opts = opts || {};
+  duration = duration !== undefined ? duration : 600;
+
+  var resolved = applyTool(opts);
+  var rand = mulberry32(resolved.seed);
+  var numPoints = Math.max(32, Math.floor(r * 0.5));
+
+  var points = [];
+  for (var i = 0; i <= numPoints; i++) {
+    var angle = (i / numPoints) * Math.PI * 2;
+    points.push([cx + Math.cos(angle) * r, cy + Math.sin(angle) * r]);
+  }
+
+  if (resolved.fill) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fillStyle = resolved.fill;
+    ctx.globalAlpha = resolved.fillAlpha;
+    ctx.fill();
+    ctx.restore();
+  }
+
+  return _animatePoints(ctx, points, resolved.width, resolved.color, resolved.pressureOpts, rand, 0, duration, [], 'round');
+}
+
+function animateArrow(ctx, x1, y1, x2, y2, opts, duration) {
+  opts = opts || {};
+  duration = duration !== undefined ? duration : 500;
+
+  var resolved = applyTool(opts);
+  var rand = mulberry32(resolved.seed);
+
+  var shaftDuration = duration * 0.8;
+  var headDuration = duration * 0.2;
+
+  var len = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+  var numPoints = Math.max(8, Math.floor(len / 4));
+
+  var shaftPoints = [];
+  for (var i = 0; i <= numPoints; i++) {
+    var t = i / numPoints;
+    shaftPoints.push([x1 + t * (x2 - x1), y1 + t * (y2 - y1)]);
+  }
+
+  return _animatePoints(
+    ctx, shaftPoints, resolved.width, resolved.color,
+    resolved.pressureOpts, rand,
+    0,
+    shaftDuration,
+    [],
+    'round'
+  ).then(function () {
+    var angle = Math.atan2(y2 - y1, x2 - x1);
+    var headSize = Math.max(12, resolved.width * 3.5);
+    var spread = Math.PI / 6;
+
+    ctx.save();
+    ctx.strokeStyle = resolved.color;
+    ctx.lineWidth = resolved.width;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x2 - Math.cos(angle - spread) * headSize, y2 - Math.sin(angle - spread) * headSize);
+    ctx.lineTo(x2, y2);
+    ctx.lineTo(x2 - Math.cos(angle + spread) * headSize, y2 - Math.sin(angle + spread) * headSize);
+    ctx.stroke();
+    ctx.restore();
+
+    return wait(headDuration);
+  });
+}
+
+// ── Text Rendering ────────────────────────────────────────────────────────────
+// Text ALWAYS appears instantly as a complete unit. Never character by character.
+
+function drawText(ctx, text, x, y, opts) {
+  opts = opts || {};
+  var size = opts.size !== undefined ? opts.size : 32;
+  var color = opts.color || '#000000';
+  var weight = opts.weight || 'normal';
+  var align = opts.align || 'left';
+  var fontFamily = opts.font || 'sans-serif';
+  var delay = opts.delay || 0;
+
+  function render() {
+    ctx.save();
+    ctx.font = weight + ' ' + size + 'px ' + fontFamily;
+    ctx.fillStyle = color;
+    ctx.textAlign = align;
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, x, y);
+    ctx.restore();
+  }
+
+  if (delay > 0) {
+    setTimeout(render, delay);
+  } else {
+    render();
+  }
+}
+
+// ── Fade-in Fill ──────────────────────────────────────────────────────────────
+
+function fadeInFill(ctx, drawFn, color, alpha, duration) {
+  return new Promise(function (resolve) {
+    var startTime = performance.now();
+
+    function frame() {
+      var elapsed = performance.now() - startTime;
+      var progress = Math.min(elapsed / duration, 1);
+      var eased = 1 - Math.pow(1 - progress, 3);
+
+      ctx.save();
+      ctx.fillStyle = color;
+      ctx.globalAlpha = eased * alpha;
+      drawFn(ctx);
+      ctx.restore();
+
+      if (progress < 1) {
+        requestAnimationFrame(frame);
+      } else {
+        resolve();
+      }
+    }
+
+    requestAnimationFrame(frame);
+  });
+}
+
+// ── Asset Drawing ─────────────────────────────────────────────────────────────
+
+function drawAsset(ctx, assetId, opts) {
+  opts = opts || {};
+  var x = opts.x !== undefined ? opts.x : 0;
+  var y = opts.y !== undefined ? opts.y : 0;
+  var width = opts.width !== undefined ? opts.width : 100;
+  var height = opts.height !== undefined ? opts.height : 100;
+  var opacity = opts.opacity !== undefined ? opts.opacity : 1;
+
+  var assets = (window.__cenchAssets) || {};
+  var img = assets[assetId];
+
+  if (img && img instanceof HTMLImageElement && img.complete) {
+    ctx.save();
+    ctx.globalAlpha = opacity;
+    ctx.drawImage(img, x, y, width, height);
+    ctx.restore();
+    return Promise.resolve();
+  }
+
+  ctx.save();
+  ctx.globalAlpha = opacity * 0.3;
+  ctx.fillStyle = '#888888';
+  ctx.fillRect(x, y, width, height);
+  ctx.strokeStyle = '#555555';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x, y, width, height);
+  ctx.fillStyle = '#ffffff';
+  ctx.globalAlpha = opacity * 0.6;
+  ctx.font = '16px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('asset:' + assetId, x + width / 2, y + height / 2);
+  ctx.restore();
+
+  return Promise.resolve();
+}
+// ── Progress-Based Drawing (for GSAP proxy pattern) ─────────────────────────
+// These draw a stroke at 0-1 completion. Used with GSAP timeline:
+//   const proxy = { p: 0 };
+//   window.__tl.to(proxy, { p: 1, duration: 0.8, onUpdate: draw }, 0);
+//   function draw() { drawRoughLineAtProgress(ctx, ...proxy.p, opts); }
+
+function _renderPointsAtProgress(ctx, allPoints, progress, baseWidth, color, pressureOpts, rand, alphaJitter, lineDash, lineCap) {
+  lineDash = lineDash || [];
+  lineCap = lineCap || 'round';
+  var total = allPoints.length;
+  if (total < 2 || progress <= 0) return;
+  var p = Math.min(1, progress);
+  var targetIndex = Math.floor(p * (total - 1)) + 1;
+
+  ctx.save();
+  ctx.setLineDash(lineDash);
+  ctx.lineCap = lineCap;
+
+  for (var i = 0; i < targetIndex - 1 && i < total - 1; i++) {
+    var globalT = i / Math.max(total - 2, 1);
+    var globalTNext = (i + 1) / Math.max(total - 2, 1);
+    var widthMid = strokePressure((globalT + globalTNext) / 2, pressureOpts) * baseWidth;
+    var alpha = jitteredAlpha(1, globalT, rand, alphaJitter);
+
+    ctx.globalAlpha = alpha;
+    ctx.lineWidth = widthMid;
+    ctx.strokeStyle = color;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(allPoints[i][0], allPoints[i][1]);
+    ctx.lineTo(allPoints[i + 1][0], allPoints[i + 1][1]);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+function drawRoughLineAtProgress(ctx, x1, y1, x2, y2, progress, opts) {
+  if (progress <= 0) return;
+  opts = opts || {};
+  var resolved = applyTool(opts);
+  var rand = mulberry32(opts.seed || 1);
+  var numPts = Math.max(8, Math.floor(Math.sqrt((x2-x1)*(x2-x1) + (y2-y1)*(y2-y1)) / 6));
+  var pts = _wobbleLine(x1, y1, x2, y2, resolved.roughness, resolved.bowing, numPts, rand);
+  if (resolved.smooth) pts = chaikinSmooth(pts, resolved.smoothIterations, 0.25, false);
+  _renderPointsAtProgress(ctx, pts, progress, resolved.width, resolved.color, resolved.pressureOpts, rand, resolved.alphaJitter, resolved.lineDash, resolved.lineCap);
+
+  if (opts.fill && progress >= 1) {
+    ctx.save();
+    ctx.globalAlpha = opts.fillAlpha || 0.15;
+    ctx.fillStyle = opts.fill;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function drawRoughCircleAtProgress(ctx, cx, cy, diameter, progress, opts) {
+  if (progress <= 0) return;
+  opts = opts || {};
+  var resolved = applyTool(opts);
+  var rand = mulberry32(opts.seed || 1);
+  var radius = diameter / 2;
+  var numPts = Math.max(24, Math.floor(radius * 0.8));
+  var pts = _wobbleCircle(cx, cy, radius, resolved.roughness, numPts, rand);
+  if (resolved.smooth) pts = chaikinSmooth(pts, resolved.smoothIterations, 0.25, true);
+  _renderPointsAtProgress(ctx, pts, progress, resolved.width, resolved.color, resolved.pressureOpts, rand, resolved.alphaJitter, resolved.lineDash, resolved.lineCap);
+
+  if (opts.fill && progress >= 1) {
+    ctx.save();
+    ctx.globalAlpha = opts.fillAlpha || 0.15;
+    ctx.fillStyle = opts.fill;
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+function drawRoughRectAtProgress(ctx, x, y, w, h, progress, opts) {
+  if (progress <= 0) return;
+  opts = opts || {};
+  var resolved = applyTool(opts);
+  var rand = mulberry32(opts.seed || 1);
+  var corners = [[x,y],[x+w,y],[x+w,y+h],[x,y+h],[x,y]];
+  var allPts = [];
+  for (var i = 0; i < corners.length - 1; i++) {
+    var seg = _wobbleLine(corners[i][0], corners[i][1], corners[i+1][0], corners[i+1][1], resolved.roughness, resolved.bowing, 8, rand);
+    allPts = allPts.concat(seg);
+  }
+  if (resolved.smooth) allPts = chaikinSmooth(allPts, resolved.smoothIterations, 0.25, false);
+  _renderPointsAtProgress(ctx, allPts, progress, resolved.width, resolved.color, resolved.pressureOpts, rand, resolved.alphaJitter, resolved.lineDash, resolved.lineCap);
+
+  if (opts.fill && progress >= 1) {
+    ctx.save();
+    ctx.globalAlpha = opts.fillAlpha || 0.15;
+    ctx.fillStyle = opts.fill;
+    ctx.fillRect(x, y, w, h);
+    ctx.restore();
+  }
+}
+
+function drawRoughArrowAtProgress(ctx, x1, y1, x2, y2, progress, opts) {
+  if (progress <= 0) return;
+  // Draw shaft at full progress, head appears at end
+  var shaftProgress = Math.min(1, progress / 0.85);
+  drawRoughLineAtProgress(ctx, x1, y1, x2, y2, shaftProgress, opts);
+
+  if (progress > 0.85) {
+    opts = opts || {};
+    var resolved = applyTool(opts);
+    var angle = Math.atan2(y2 - y1, x2 - x1);
+    var headLen = Math.min(30, Math.sqrt((x2-x1)*(x2-x1)+(y2-y1)*(y2-y1)) * 0.15);
+    var headProgress = (progress - 0.85) / 0.15;
+    var a1x = x2 - headLen * Math.cos(angle - 0.4) * headProgress;
+    var a1y = y2 - headLen * Math.sin(angle - 0.4) * headProgress;
+    var a2x = x2 - headLen * Math.cos(angle + 0.4) * headProgress;
+    var a2y = y2 - headLen * Math.sin(angle + 0.4) * headProgress;
+
+    ctx.save();
+    ctx.strokeStyle = resolved.color;
+    ctx.lineWidth = resolved.width;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(a1x, a1y); ctx.lineTo(x2, y2); ctx.lineTo(a2x, a2y);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function drawTextAtProgress(ctx, text, x, y, progress, opts) {
+  if (progress <= 0) return;
+  opts = opts || {};
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, progress);
+  ctx.font = (opts.weight || 'bold') + ' ' + (opts.size || 48) + 'px ' + (opts.font || FONT || 'Caveat');
+  ctx.fillStyle = opts.color || STROKE_COLOR || '#1a1a2e';
+  ctx.textAlign = opts.align || 'center';
+  ctx.textBaseline = opts.baseline || 'middle';
+  ctx.fillText(text, x, y);
+  ctx.restore();
+}
+
+// ── End Cench Studio Canvas2D Drawing Engine ──────────────────────────────────
+
+  </script>
+
+  <script>
+(function() {
+  // ── performance.now() interception ──────────────────────
+  // Canvas2D scenes compute animation time via:
+  //   getT() = (performance.now() - startWall) / 1000
+  // When RAF is blocked (paused), elapsed wall-clock time
+  // shouldn't count toward animation time. We subtract
+  // cumulative paused duration from performance.now().
+  var _perfNow = performance.now.bind(performance);
+  var _pauseOffset = 0;
+  var _pauseStart = _perfNow(); // starts paused
+
+  performance.now = function() {
+    return _perfNow() - _pauseOffset;
+  };
+
+  // ── RAF interception ─────────────────────────────────────
+  // Prevent old canvas2d/three.js scenes from auto-starting
+  // their requestAnimationFrame loops. We capture the callback
+  // and only start it when the parent sends 'play'.
+  var _realRAF = window.requestAnimationFrame.bind(window);
+  var _realCAF = window.cancelAnimationFrame.bind(window);
+  var _realSetTimeout = window.setTimeout.bind(window);
+  var _realClearTimeout = window.clearTimeout.bind(window);
+  var _realSetInterval = window.setInterval.bind(window);
+  var _realClearInterval = window.clearInterval.bind(window);
+  // Expose native RAF so overlay widgets (TalkingHead) can bypass interception.
+  // When __rafUnlocked is set, _blockRAF skips re-intercepting RAF so
+  // TalkingHead's Three.js animation loop keeps running during pause.
+  window.__nativeRAF = _realRAF;
+  window.__nativeCAF = _realCAF;
+  window.__rafUnlocked = false;
+  var _pendingRAFCallbacks = [];
+  var _rafBlocked = true;  // starts blocked
+  var _currentRAFId = null;
+  var _timersBlocked = true; // starts blocked (playback paused)
+  var _nextQueuedTimerId = 1;
+  var _queuedTimeouts = [];
+  var _queuedTimeoutMap = {};
+  var _activeTimeouts = {};
+  var _activeIntervals = {};
+
+  function _flushQueuedTimeouts() {
+    if (_timersBlocked || _queuedTimeouts.length === 0) return;
+    var queue = _queuedTimeouts.slice();
+    _queuedTimeouts = [];
+    queue.forEach(function(item) {
+      if (!item || !_queuedTimeoutMap[item.id]) return;
+      delete _queuedTimeoutMap[item.id];
+      var realId = _realSetTimeout(function() {
+        delete _activeTimeouts[item.id];
+        if (_timersBlocked) {
+          _queuedTimeoutMap[item.id] = item;
+          _queuedTimeouts.push(item);
+          return;
+        }
+        try { item.cb(); } catch(e) {}
+      }, Math.max(0, item.delay || 0));
+      _activeTimeouts[item.id] = realId;
+    });
+  }
+
+  window.setTimeout = function(cb, delay) {
+    if (typeof cb !== 'function') {
+      return _realSetTimeout(cb, delay);
+    }
+    var id = _nextQueuedTimerId++;
+    var item = { id: id, cb: cb, delay: Number(delay) || 0 };
+    if (_timersBlocked) {
+      _queuedTimeoutMap[id] = item;
+      _queuedTimeouts.push(item);
+      return -id;
+    }
+    var realId = _realSetTimeout(function() {
+      delete _activeTimeouts[id];
+      if (_timersBlocked) {
+        _queuedTimeoutMap[id] = item;
+        _queuedTimeouts.push(item);
+        return;
+      }
+      try { cb(); } catch(e) {}
+    }, Math.max(0, item.delay));
+    _activeTimeouts[id] = realId;
+    return id;
+  };
+
+  window.clearTimeout = function(id) {
+    var absId = Math.abs(Number(id));
+    if (!absId) {
+      _realClearTimeout(id);
+      return;
+    }
+    if (_queuedTimeoutMap[absId]) {
+      delete _queuedTimeoutMap[absId];
+      _queuedTimeouts = _queuedTimeouts.filter(function(item) { return item.id !== absId; });
+      return;
+    }
+    if (_activeTimeouts[absId]) {
+      _realClearTimeout(_activeTimeouts[absId]);
+      delete _activeTimeouts[absId];
+      return;
+    }
+    _realClearTimeout(id);
+  };
+
+  window.setInterval = function(cb, delay) {
+    if (typeof cb !== 'function') {
+      return _realSetInterval(cb, delay);
+    }
+    var id = _nextQueuedTimerId++;
+    var realId = _realSetInterval(function() {
+      if (_timersBlocked) return;
+      try { cb(); } catch(e) {}
+    }, Math.max(1, Number(delay) || 0));
+    _activeIntervals[id] = realId;
+    return id;
+  };
+
+  window.clearInterval = function(id) {
+    var absId = Math.abs(Number(id));
+    if (absId && _activeIntervals[absId]) {
+      _realClearInterval(_activeIntervals[absId]);
+      delete _activeIntervals[absId];
+      return;
+    }
+    _realClearInterval(id);
+  };
+
+  window.requestAnimationFrame = function(cb) {
+    if (_rafBlocked) {
+      // Queue the callback — multiple consumers (scene code + TalkingHead) may register
+      var queueId = -(_pendingRAFCallbacks.length + 1);
+      _pendingRAFCallbacks.push(cb);
+      return queueId;
+    }
+    _currentRAFId = _realRAF(cb);
+    return _currentRAFId;
+  };
+  window.cancelAnimationFrame = function(id) {
+    if (id < 0) {
+      // Remove from pending queue
+      var idx = (-id) - 1;
+      if (idx < _pendingRAFCallbacks.length) _pendingRAFCallbacks[idx] = null;
+      return;
+    }
+    _currentRAFId = null;
+    _realCAF(id);
+  };
+
+  function _unblockRAF() {
+    // Accumulate paused duration so performance.now() skips it
+    if (_pauseStart !== null) {
+      _pauseOffset += _perfNow() - _pauseStart;
+      _pauseStart = null;
+    }
+    _rafBlocked = false;
+    _timersBlocked = false;
+    // Restore native RAF for GSAP and future calls
+    window.requestAnimationFrame = _realRAF;
+    window.cancelAnimationFrame = _realCAF;
+    // Reset the time origin for old canvas2d code that uses
+    // window.startWall. (Local const startWall is handled by
+    // the performance.now() interception above.)
+    if (typeof window.startWall !== 'undefined') {
+      window.startWall = performance.now();
+    }
+    // Also reset _startTime (used by some old Zdog/Three scenes)
+    if (typeof window._startTime !== 'undefined') {
+      window._startTime = performance.now();
+    }
+    _flushQueuedTimeouts();
+    // Kick off all queued callbacks (scene code + TalkingHead, etc.)
+    var queued = _pendingRAFCallbacks.slice();
+    _pendingRAFCallbacks = [];
+    queued.forEach(function(cb) { if (cb) _realRAF(cb); });
+    // Also call legacy __resume if scene code defined it
+    if (window.__resume && window.__resume !== _legacyResume) {
+      try { window.__resume(); } catch(e) {}
+    }
+  }
+
+  function _blockRAF() {
+    // Record pause start for performance.now() offset tracking
+    if (_pauseStart === null) {
+      _pauseStart = _perfNow();
+    }
+    _timersBlocked = true;
+    // If RAF was permanently unlocked (TalkingHead present), skip blocking
+    // so the 3D avatar animation loop keeps running during pause
+    if (window.__rafUnlocked) {
+      // Still call legacy pause handlers
+      if (window.__pause && window.__pause !== _legacyPause) {
+        try { window.__pause(); } catch(e) {}
+      }
+      return;
+    }
+    _rafBlocked = true;
+    // Cancel any in-flight RAF
+    if (_currentRAFId) { _realCAF(_currentRAFId); _currentRAFId = null; }
+    // Override RAF again to block new calls
+    _pendingRAFCallbacks = [];
+    window.requestAnimationFrame = function(cb) {
+      var queueId = -(_pendingRAFCallbacks.length + 1);
+      _pendingRAFCallbacks.push(cb);
+      return queueId;
+    };
+    // Also call legacy __pause if scene code defined it
+    if (window.__pause && window.__pause !== _legacyPause) {
+      try { window.__pause(); } catch(e) {}
+    }
+  }
+
+  // ── Master timeline ──────────────────────────────────────
+  // Starts paused. Nothing plays until parent sends 'play'.
+  var masterTL = gsap.timeline({
+    paused: true,
+    onComplete: function() {
+      postToParent({ type: 'ended' });
+    },
+    onUpdate: function() {
+      postToParent({
+        type: 'timeupdate',
+        currentTime: masterTL.time(),
+      });
+    },
+  });
+
+  // Guarantee timeline duration matches scene duration.
+  // Scene code may not fill the full duration, but the timeline
+  // should always report the correct total length.
+  // Avatar / edge cases: if DURATION is missing or NaN, seek/play/scrub all break (duration 0).
+  var _rawDur =
+    typeof DURATION === 'number' && !isNaN(DURATION) && DURATION > 0
+      ? DURATION
+      : typeof window.DURATION === 'number' && !isNaN(window.DURATION) && window.DURATION > 0
+        ? window.DURATION
+        : 8;
+  var _cenchDuration = Math.max(0.1, _rawDur);
+  masterTL.to({}, { duration: _cenchDuration }, 0);
+
+  // Public API for scene code
+  window.__tl = masterTL;
+
+  // ── Multi-track audio integration ───────────────────────
+  var ttsAudio = null;
+  var sfxElements = [];
+  var musicAudio = null;
+  var legacyAudio = [];
+
+  window.addEventListener('load', function() {
+    ttsAudio = document.getElementById('scene-tts') || document.getElementById('scene-audio');
+    sfxElements = Array.from(document.querySelectorAll('[data-track="sfx"]'));
+    musicAudio = document.getElementById('scene-music');
+    legacyAudio = Array.from(document.querySelectorAll('audio')).filter(function(a) {
+      return !a.dataset.track && a.id !== 'scene-tts' && a.id !== 'scene-audio' && a.id !== 'scene-music';
+    });
+
+    // Set initial volumes (Layers panel / audioLayer.volume on TTS + legacy track)
+    if (ttsAudio) {
+      var ttsVol = parseFloat(ttsAudio.dataset.volume || '1');
+      ttsAudio.volume = Number.isFinite(ttsVol) ? Math.min(1, Math.max(0, ttsVol)) : 1;
+      var ttsOff = parseFloat(ttsAudio.dataset.startOffset || '0');
+      if (Number.isFinite(ttsOff) && ttsOff > 0) {
+        try { ttsAudio.currentTime = ttsOff; } catch(e) {}
+      }
+    }
+    if (musicAudio) {
+      musicAudio.volume = parseFloat(musicAudio.dataset.volume || '0.12');
+    }
+    sfxElements.forEach(function(el) {
+      el.volume = parseFloat(el.dataset.volume || '0.8');
+    });
+
+    // Schedule SFX triggers on the GSAP timeline
+    if (window.__tl) {
+      sfxElements.forEach(function(el) {
+        var triggerAt = parseFloat(el.dataset.triggerAt || '0');
+        window.__tl.call(function() {
+          el.currentTime = 0;
+          el.play().catch(function(){});
+        }, null, triggerAt);
+      });
+    }
+
+    // Music ducking: reduce music volume during TTS playback
+    if (musicAudio && ttsAudio && musicAudio.dataset.duck === 'true') {
+      var normalVol = parseFloat(musicAudio.dataset.volume || '0.12');
+      var duckLevel = parseFloat(musicAudio.dataset.duckLevel || '0.2');
+      var duckVol = normalVol * duckLevel;
+      ttsAudio.addEventListener('play', function() { musicAudio.volume = duckVol; });
+      ttsAudio.addEventListener('pause', function() { musicAudio.volume = normalVol; });
+      ttsAudio.addEventListener('ended', function() { musicAudio.volume = normalVol; });
+    }
+
+    // Web Speech API fallback
+    var ttsConfig = document.getElementById('scene-tts-config');
+    if (ttsConfig && !ttsAudio) {
+      window.__webSpeechConfig = {
+        provider: ttsConfig.dataset.provider,
+        text: ttsConfig.dataset.text,
+        voice: ttsConfig.dataset.voice,
+      };
+    }
+
+    // Initial sync: refs exist now; timeline starts paused — keep media paused too
+    try { syncMedia(false); } catch(e) {}
+  });
+
+  function syncMedia(playing) {
+    // TTS
+    if (ttsAudio) {
+      try {
+        if (playing) {
+          ttsAudio.play().catch(function(err) {
+            console.warn('[cench-playback] TTS play() failed (sandbox/autoplay?):', err);
+          });
+        } else {
+          ttsAudio.pause();
+        }
+      } catch(e) {}
+    }
+
+    // Web Speech API fallback
+    if (!ttsAudio && window.__webSpeechConfig && window.speechSynthesis) {
+      if (playing) {
+        if (!window.__webSpeechActive) {
+          var u = new SpeechSynthesisUtterance(window.__webSpeechConfig.text);
+          if (window.__webSpeechConfig.voice) {
+            var voices = speechSynthesis.getVoices();
+            var match = voices.find(function(v) { return v.name === window.__webSpeechConfig.voice; });
+            if (match) u.voice = match;
+          }
+          speechSynthesis.speak(u);
+          window.__webSpeechActive = true;
+          u.onend = function() { window.__webSpeechActive = false; };
+        }
+      } else {
+        speechSynthesis.cancel();
+        window.__webSpeechActive = false;
+      }
+    }
+
+    // Puter.js fallback
+    if (!ttsAudio && window.__webSpeechConfig && window.__webSpeechConfig.provider === 'puter' && window.puter) {
+      if (playing && !window.__puterAudioPlaying) {
+        window.puter.ai.txt2speech(window.__webSpeechConfig.text, {
+          provider: 'openai',
+          voice: window.__webSpeechConfig.voice || 'nova',
+        }).then(function(audioEl) {
+          audioEl.play();
+          window.__puterAudioPlaying = true;
+          audioEl.onended = function() { window.__puterAudioPlaying = false; };
+        }).catch(function(){});
+      }
+    }
+
+    // Music
+    if (musicAudio) {
+      try {
+        if (playing) musicAudio.play().catch(function(){});
+        else musicAudio.pause();
+      } catch(e) {}
+    }
+
+    // SFX are triggered by GSAP timeline callbacks, not play/pause
+    // But stop them on pause
+    if (!playing) {
+      sfxElements.forEach(function(el) {
+        try { el.pause(); } catch(e) {}
+      });
+    }
+
+    // Legacy audio elements
+    legacyAudio.forEach(function(a) {
+      try {
+        if (playing) a.play().catch(function(){});
+        else a.pause();
+      } catch(e) {}
+    });
+
+    // Videos (avatar, veo3 layers)
+    var videos = document.querySelectorAll('video');
+    videos.forEach(function(v) {
+      try {
+        if (playing) v.play().catch(function(){});
+        else v.pause();
+      } catch(e) {}
+    });
+
+    // CSS animations (legacy SVG scenes)
+    var cssCtrl = document.getElementById('__gsap_css_ctrl');
+    if (!cssCtrl) {
+      cssCtrl = document.createElement('style');
+      cssCtrl.id = '__gsap_css_ctrl';
+      document.head.appendChild(cssCtrl);
+    }
+    cssCtrl.textContent = playing
+      ? '*, *::before, *::after { animation-play-state: running !important; }'
+      : '*, *::before, *::after { animation-play-state: paused !important; }';
+    // After play(), WAAPI owns playback — CSS paused alone does not freeze animations.
+    if (!playing) {
+      _pauseCSSAnimations();
+    }
+  }
+
+  // ── CSS animation control via Web Animations API ─────────
+  // SVG scenes use CSS @keyframes which can't be seeked by GSAP.
+  // The Web Animations API gives us seekable Animation objects.
+  // After seeking (which calls anim.pause()), we MUST call anim.play()
+  // to resume — CSS animation-play-state alone can't override API pause.
+  function _pauseCSSAnimations() {
+    if (!document.getAnimations) return;
+    function pauseEach(list) {
+      list.forEach(function(anim) {
+        try {
+          anim.pause();
+        } catch(e) {}
+      });
+    }
+    var anims = document.getAnimations();
+    pauseEach(anims);
+    if (anims.length === 0) {
+      _realRAF(function() {
+        pauseEach(document.getAnimations ? document.getAnimations() : []);
+      });
+    }
+  }
+
+  function _seekCSSAnimations(timeMs) {
+    if (!document.getAnimations) return;
+    var anims = document.getAnimations();
+    if (anims.length > 0) {
+      anims.forEach(function(anim) {
+        try {
+          anim.currentTime = timeMs;
+          anim.pause();
+        } catch(e) {}
+      });
+    } else {
+      // Animations may not exist yet (iframe just became visible).
+      // Retry after the browser renders a frame.
+      _realRAF(function() {
+        var retryAnims = document.getAnimations ? document.getAnimations() : [];
+        retryAnims.forEach(function(anim) {
+          try {
+            anim.currentTime = timeMs;
+            anim.pause();
+          } catch(e) {}
+        });
+      });
+    }
+  }
+
+  function _resumeCSSAnimations() {
+    if (!document.getAnimations) return;
+    var anims = document.getAnimations();
+    if (anims.length > 0) {
+      anims.forEach(function(anim) {
+        try { anim.play(); } catch(e) {}
+      });
+    } else {
+      _realRAF(function() {
+        var retryAnims = document.getAnimations ? document.getAnimations() : [];
+        retryAnims.forEach(function(anim) {
+          try { anim.play(); } catch(e) {}
+        });
+      });
+    }
+  }
+
+  // ── postMessage bridge ───────────────────────────────────
+  function postToParent(msg) {
+    try {
+      window.parent.postMessage(
+        Object.assign({
+          source: 'cench-scene',
+          sceneId: typeof SCENE_ID !== 'undefined' ? SCENE_ID : null,
+        }, msg),
+        '*'
+      );
+    } catch(e) {}
+  }
+
+  function refreshMediaRefs() {
+    if (!ttsAudio) {
+      ttsAudio = document.getElementById('scene-tts') || document.getElementById('scene-audio');
+      if (ttsAudio) {
+        var rv = parseFloat(ttsAudio.dataset.volume || '1');
+        ttsAudio.volume = Number.isFinite(rv) ? Math.min(1, Math.max(0, rv)) : 1;
+        var ro = parseFloat(ttsAudio.dataset.startOffset || '0');
+        if (Number.isFinite(ro) && ro > 0) { try { ttsAudio.currentTime = ro; } catch(e) {} }
+      }
+    }
+    if (!musicAudio) {
+      musicAudio = document.getElementById('scene-music');
+      if (musicAudio) {
+        musicAudio.volume = parseFloat(musicAudio.dataset.volume || '0.12');
+      }
+    }
+  }
+
+  window.addEventListener('message', function(event) {
+    if (!event.data || event.data.target !== 'cench-scene') return;
+    // Ignore messages for other scenes
+    if (
+      event.data.sceneId &&
+      typeof SCENE_ID !== 'undefined' &&
+      event.data.sceneId !== SCENE_ID
+    ) return;
+
+    refreshMediaRefs();
+
+    var cmd = event.data;
+
+    switch (cmd.type) {
+
+      case 'play':
+        if (masterTL.time() >= masterTL.duration()) {
+          masterTL.seek(0);
+          _seekCSSAnimations(0);
+          if (ttsAudio) {
+            var rOff = parseFloat(ttsAudio.dataset.startOffset || '0');
+            try { ttsAudio.currentTime = Number.isFinite(rOff) ? rOff : 0; } catch(e) {}
+          }
+        }
+        _unblockRAF();   // let legacy RAF loops run
+        gsap.ticker.wake();  // ensure ticker is active after pause
+        masterTL.play();
+        syncMedia(true);
+        _resumeCSSAnimations();  // Must call anim.play() via API — CSS rule alone can't override API pause
+        // Avatar sync — restore active mood + start speech on first play
+        if (window.__avatarHead) {
+          try {
+            window.__avatarHead.setMood(window.__avatarMood || 'happy');
+            if (!window.__avatarSpeechStarted && window.__avatarStartSpeech) {
+              window.__avatarStartSpeech();
+              window.__avatarSpeechStarted = true;
+            }
+          } catch(e) {}
+        }
+        postToParent({ type: 'playing' });
+        break;
+
+      case 'pause':
+        _blockRAF();     // stop legacy RAF loops
+        masterTL.pause();
+        syncMedia(false);  // CSS animation-play-state: paused handles SVG scenes
+        // Avatar sync — go idle (still breathes/blinks, stops speaking)
+        if (window.__avatarHead) {
+          try {
+            if (window.__avatarHead.stopSpeaking) window.__avatarHead.stopSpeaking();
+            window.__avatarHead.setMood('neutral');
+            // Allow speech to restart on next play (stopSpeaking clears the queue)
+            window.__avatarSpeechStarted = false;
+          } catch(e) {}
+        }
+        postToParent({
+          type: 'paused',
+          currentTime: masterTL.time(),
+        });
+        break;
+
+      case 'seek':
+        var seekTime = Math.max(0, Math.min(cmd.time, masterTL.duration()));
+        masterTL.seek(seekTime);
+        // Force GSAP to re-evaluate all tweens and fire onUpdate
+        masterTL.progress(masterTL.progress());
+        // Belt-and-suspenders: call draw() directly for canvas2d scenes
+        if (typeof window.draw === 'function') {
+          try { window.draw(seekTime); } catch(e) {}
+        }
+        // Three.js / 3d_world / void / studio: RAF is blocked while paused, so one shot per seek
+        if (typeof window.__updateScene === 'function') {
+          try { window.__updateScene(seekTime); } catch(e) {}
+        }
+        // Sync all audio to seek position (optional startOffset skips into the file)
+        if (ttsAudio) {
+          var sOff = parseFloat(ttsAudio.dataset.startOffset || '0');
+          var ttsT = seekTime + (Number.isFinite(sOff) ? sOff : 0);
+          try { ttsAudio.currentTime = Math.max(0, ttsT); } catch(e) {}
+        }
+        if (musicAudio) { try { musicAudio.currentTime = seekTime; } catch(e) {} }
+        sfxElements.forEach(function(el) {
+          try { el.pause(); el.currentTime = 0; } catch(e) {}
+        });
+        legacyAudio.forEach(function(a) {
+          try { a.currentTime = seekTime; } catch(e) {}
+        });
+        document.querySelectorAll('video').forEach(function(v) {
+          try { v.currentTime = seekTime; } catch(e) {}
+        });
+        // Seek CSS animations (SVG scenes with @keyframes)
+        _seekCSSAnimations(seekTime * 1000);
+        // Pause after seeking (parent can send 'play' after if desired)
+        if (!masterTL.isActive()) {
+          masterTL.pause();
+        }
+        syncMedia(false);
+        postToParent({
+          type: 'seeked',
+          currentTime: masterTL.time(),
+        });
+        break;
+
+      case 'reset':
+        _blockRAF();
+        masterTL.seek(0).pause();
+        _seekCSSAnimations(0);
+        if (ttsAudio) {
+          var zOff = parseFloat(ttsAudio.dataset.startOffset || '0');
+          try { ttsAudio.currentTime = Number.isFinite(zOff) ? zOff : 0; } catch(e) {}
+        }
+        if (musicAudio) { try { musicAudio.currentTime = 0; } catch(e) {} }
+        legacyAudio.forEach(function(a) {
+          var lo = parseFloat(a.dataset.startOffset || '0');
+          try { a.currentTime = Number.isFinite(lo) ? lo : 0; } catch(e) {}
+        });
+        syncMedia(false);
+        // Avatar sync — reset to idle, allow speech restart
+        if (window.__avatarHead) {
+          try {
+            if (window.__avatarHead.stopSpeaking) window.__avatarHead.stopSpeaking();
+            window.__avatarHead.setMood('neutral');
+            window.__avatarSpeechStarted = false;
+          } catch(e) {}
+        }
+        postToParent({ type: 'reset' });
+        break;
+
+      // ── Avatar live control (from settings panel) ──────────
+      case 'avatar_command':
+        if (window.__avatarHead) {
+          try {
+            var h = window.__avatarHead;
+            switch (cmd.command) {
+              case 'setMood':
+                h.setMood(cmd.mood);
+                window.__avatarMood = cmd.mood;
+                break;
+              case 'playGesture':
+                h.playGesture(cmd.gesture, cmd.duration || 2, cmd.mirror);
+                break;
+              case 'setView':
+                if (h.setView) h.setView(cmd.view);
+                break;
+              case 'playAnimation':
+                if (h.playAnimation) h.playAnimation(cmd.url, null, cmd.duration || 10, cmd.index || 0);
+                break;
+              case 'stopAnimation':
+                if (h.stopAnimation) h.stopAnimation();
+                break;
+              case 'lookAt':
+                if (h.lookAt) h.lookAt(cmd.x, cmd.y, cmd.duration || 1000);
+                break;
+            }
+          } catch(e) { console.warn('[Playback] avatar_command error:', e); }
+        }
+        break;
+
+      case 'get_state':
+        postToParent({
+          type: 'state',
+          currentTime: masterTL.time(),
+          duration: masterTL.duration(),
+          status: masterTL.isActive()
+            ? 'playing'
+            : masterTL.time() >= masterTL.duration()
+            ? 'ended'
+            : 'paused',
+        });
+        break;
+    }
+  });
+
+  // ── Signal ready after all scripts execute ───────────────
+  window.addEventListener('load', function() {
+    _realSetTimeout(function() {
+      postToParent({
+        type: 'ready',
+        duration: masterTL.duration(),
+        sceneId: typeof SCENE_ID !== 'undefined' ? SCENE_ID : null,
+      });
+    }, 50);
+  });
+
+  // ── Legacy compatibility ─────────────────────────────────
+  // Old code may call __pause/__resume directly.
+  // Store refs so _blockRAF/_unblockRAF can detect our own functions.
+  var _legacyPause = function() { _blockRAF(); masterTL.pause(); syncMedia(false); };
+  var _legacyResume = function() { _unblockRAF(); masterTL.play(); syncMedia(true); };
+  window.__pause = _legacyPause;
+  window.__resume = _legacyResume;
+
+  // SVG (and other CSS @keyframes) scenes: each rule uses the animation shorthand,
+  // which sets animation-play-state back to running and wins over the scene's
+  // weak universal paused rule. Without this, animations run at load while the
+  // GSAP master timeline is still paused. Match initial state to paused timeline
+  // until parent sends play.
+  syncMedia(false);
+
+})();
+</script>
+<script>
+(function() {
+  // ── Element registry ────────────────────────────────────
+  window.__elements = {};
+  window.__selected = null;
+
+  window.__register = function(element) {
+    window.__elements[element.id] = element;
+  };
+
+  // ── Hit detection ───────────────────────────────────────
+  window.__hitTest = function(x, y) {
+    var elements = Object.values(window.__elements);
+    for (var i = elements.length - 1; i >= 0; i--) {
+      var el = elements[i];
+      if (!el.bbox || el.visible === false) continue;
+      if (
+        x >= el.bbox.x && x <= el.bbox.x + el.bbox.w &&
+        y >= el.bbox.y && y <= el.bbox.y + el.bbox.h
+      ) {
+        return el;
+      }
+    }
+    return null;
+  };
+
+  function __physicsCardBodyScale() {
+    var bodyStyle = document.body.style.transform || '';
+    var m = bodyStyle.match(/scale\(([^)]+)\)/);
+    if (m) return parseFloat(m[1]);
+    return Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+  }
+
+  var __PHYSICS_CARD_PRESETS = {
+    glass_dark: { bg: 'rgba(8,12,22,0.72)', border: 'rgba(255,255,255,0.18)', shadow: '0 14px 45px rgba(0,0,0,0.28)', text: '#ffffff', blur: 3 },
+    glass_light: { bg: 'rgba(255,255,255,0.78)', border: 'rgba(0,0,0,0.12)', shadow: '0 14px 45px rgba(0,0,0,0.2)', text: '#0f172a', blur: 3 },
+    neon: { bg: 'rgba(5,10,30,0.8)', border: 'rgba(56,189,248,0.55)', shadow: '0 0 0 1px rgba(56,189,248,0.4), 0 14px 45px rgba(56,189,248,0.24)', text: '#dbeafe', blur: 2 },
+    chalk: { bg: 'rgba(22,25,35,0.86)', border: 'rgba(203,213,225,0.35)', shadow: '0 10px 30px rgba(0,0,0,0.35)', text: '#e2e8f0', blur: 1 },
+  };
+
+  function __setCardVar(root, name, val) {
+    if (val === null || val === undefined || val === 'none' || val === '') root.style.removeProperty(name);
+    else root.style.setProperty(name, String(val));
+  }
+
+  function __patchPhysicsCardDOM(element, property, value) {
+    var root = document.getElementById('physics-explain-card-root');
+    var canvas = element.canvasId ? document.getElementById(element.canvasId) : null;
+    if (property === 'simScale' && canvas) {
+      canvas.style.setProperty('--sim-scale', String(value));
+      return;
+    }
+    if (property === 'visible') {
+      if (root) root.style.display = value ? '' : 'none';
+      return;
+    }
+    if (property === 'opacity') {
+      if (root) root.style.setProperty('--card-opacity', String(value));
+      return;
+    }
+    if (!root) return;
+    if (property === 'cardPreset') {
+      var pr = __PHYSICS_CARD_PRESETS[value] || __PHYSICS_CARD_PRESETS.glass_dark;
+      root.style.setProperty('--card-bg', pr.bg);
+      root.style.setProperty('--card-border', pr.border);
+      root.style.setProperty('--card-shadow', pr.shadow);
+      root.style.setProperty('--card-text', pr.text);
+      root.style.setProperty('--card-blur', pr.blur + 'px');
+      return;
+    }
+    if (property === 'cardX') root.style.left = value + '%';
+    else if (property === 'cardY') root.style.top = value + '%';
+    else if (property === 'cardWidth') root.style.width = value + '%';
+    else if (property === 'cardBg') __setCardVar(root, '--card-bg', value);
+    else if (property === 'cardBorder') __setCardVar(root, '--card-border', value);
+    else if (property === 'cardShadow') __setCardVar(root, '--card-shadow', value);
+    else if (property === 'cardText') __setCardVar(root, '--card-text', value);
+    else if (property === 'cardBlur') root.style.setProperty('--card-blur', value + 'px');
+    else if (property === 'cardRadius') root.style.setProperty('--card-radius', value + 'px');
+    else if (property === 'cardPadding') root.style.setProperty('--card-padding', value + 'px');
+    else if (property === 'titleSize') root.style.setProperty('--card-title-size', value + 'px');
+    else if (property === 'bodySize') root.style.setProperty('--card-body-size', value + 'px');
+    else if (property === 'equationSize') root.style.setProperty('--card-equation-size', value + 'px');
+    else if (property === 'textAlign') root.style.setProperty('--card-text-align', String(value));
+    else if (property === 'titleColor') {
+      var t = document.querySelector('.scene-title');
+      if (t) {
+        if (value === null || value === 'none' || value === '') t.style.removeProperty('color');
+        else t.style.color = String(value);
+      }
+    }
+    else if (property === 'bodyColor') {
+      var n = document.querySelector('.narration-text');
+      if (n) {
+        if (value === null || value === 'none' || value === '') n.style.removeProperty('color');
+        else n.style.color = String(value);
+      }
+    }
+  }
+
+  // ── Click handler ───────────────────────────────────────
+  document.addEventListener('click', function(e) {
+    // The scene body uses transform:scale(s) via fitToViewport().
+    // e.clientX/Y are in the *scaled* viewport, so we need to
+    // convert back to 1920x1080 scene coordinates.
+    // Use the body's current CSS transform scale factor.
+    var body = document.body;
+    var bodyStyle = body.style.transform || '';
+    var scaleMatch = bodyStyle.match(/scale\(([^)]+)\)/);
+    var bodyScale = scaleMatch ? parseFloat(scaleMatch[1]) : 1;
+    // If no body transform, fall back to viewport ratio
+    if (!bodyScale || isNaN(bodyScale)) {
+      bodyScale = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+    }
+    var x = e.clientX / bodyScale;
+    var y = e.clientY / bodyScale;
+
+    var hit = window.__hitTest(x, y);
+
+    if (hit) {
+      window.__selected = hit.id;
+      showSelectionHighlight(hit);
+      window.parent.postMessage({
+        source: 'cench-scene',
+        type: 'element_selected',
+        elementId: hit.id,
+        element: JSON.parse(JSON.stringify(hit)),
+      }, '*');
+    } else {
+      window.__selected = null;
+      clearSelectionHighlight();
+      window.parent.postMessage({
+        source: 'cench-scene',
+        type: 'element_deselected',
+      }, '*');
+    }
+  });
+
+  // ── Selection highlight overlay ─────────────────────────
+  var highlightCanvas = null;
+
+  function showSelectionHighlight(element) {
+    if (!element.bbox) return;
+
+    if (!highlightCanvas) {
+      highlightCanvas = document.createElement('canvas');
+      highlightCanvas.width = 1920;
+      highlightCanvas.height = 1080;
+      highlightCanvas.style.cssText =
+        'position:absolute;inset:0;pointer-events:none;z-index:9999;';
+      // Scale with the body
+      var bodyTransform = document.body.style.transform;
+      if (bodyTransform) {
+        highlightCanvas.style.transformOrigin = 'top left';
+      }
+      document.body.appendChild(highlightCanvas);
+    }
+
+    var ctx = highlightCanvas.getContext('2d');
+    ctx.clearRect(0, 0, 1920, 1080);
+
+    var bx = element.bbox.x;
+    var by = element.bbox.y;
+    var bw = element.bbox.w;
+    var bh = element.bbox.h;
+    var pad = 8;
+
+    // Dashed selection box
+    ctx.strokeStyle = '#e84545';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 3]);
+    ctx.strokeRect(bx - pad, by - pad, bw + pad * 2, bh + pad * 2);
+
+    // Corner handles
+    ctx.fillStyle = '#e84545';
+    ctx.setLineDash([]);
+    var corners = [
+      [bx - pad, by - pad],
+      [bx + bw + pad, by - pad],
+      [bx - pad, by + bh + pad],
+      [bx + bw + pad, by + bh + pad],
+    ];
+    corners.forEach(function(c) {
+      ctx.fillRect(c[0] - 4, c[1] - 4, 8, 8);
+    });
+
+    // Element label
+    ctx.fillStyle = '#e84545';
+    ctx.font = '20px DM Mono, monospace';
+    ctx.fillText(element.label || element.id, bx - pad, by - pad - 8);
+  }
+
+  function clearSelectionHighlight() {
+    if (highlightCanvas) {
+      var ctx = highlightCanvas.getContext('2d');
+      ctx.clearRect(0, 0, 1920, 1080);
+    }
+  }
+
+  // ── Highlight from parent (when selecting in layers panel) ──
+  window.__highlightElement = function(elementId) {
+    var el = window.__elements[elementId];
+    if (el) {
+      window.__selected = elementId;
+      showSelectionHighlight(el);
+    }
+  };
+
+  window.__clearHighlight = function() {
+    window.__selected = null;
+    clearSelectionHighlight();
+  };
+
+  // ── Property patching from parent ──────────────────────
+  window.addEventListener('message', function(e) {
+    if (!e.data || e.data.target !== 'cench-scene') return;
+
+    if (e.data.type === 'patch_element') {
+      var elementId = e.data.elementId;
+      var property = e.data.property;
+      var value = e.data.value;
+      var element = window.__elements[elementId];
+      if (!element) return;
+
+      element[property] = value;
+
+      if (element.type === 'physics-card') {
+        __patchPhysicsCardDOM(element, property, value);
+        var root = document.getElementById('physics-explain-card-root');
+        if (root && window.__selected === elementId) {
+          var r = root.getBoundingClientRect();
+          var s = __physicsCardBodyScale();
+          element.bbox = { x: r.left / s, y: r.top / s, w: r.width / s, h: r.height / s };
+          showSelectionHighlight(element);
+        }
+        if (window.__tl && !window.__tl.isActive()) {
+          try { window.__tl.seek(window.__tl.time()); } catch(ignore) {}
+        }
+        return;
+      }
+
+      // Re-render: for canvas2d, call redrawAll if it exists
+      if (window.__redrawAll) {
+        window.__redrawAll();
+      }
+      // For SVG, apply attribute directly to the DOM node
+      var domEl = document.getElementById(elementId);
+      if (domEl) {
+        // Map element properties to DOM attributes
+        if (property === 'fill' || property === 'stroke') {
+          domEl.setAttribute(property, value || 'none');
+        } else if (property === 'strokeWidth') {
+          domEl.setAttribute('stroke-width', value);
+        } else if (property === 'fillOpacity') {
+          domEl.setAttribute('fill-opacity', value);
+        } else if (property === 'opacity') {
+          domEl.setAttribute('opacity', value);
+        } else if (property === 'visible') {
+          domEl.style.display = value ? '' : 'none';
+        } else if (property === 'text') {
+          domEl.textContent = value;
+        } else if (property === 'fontSize') {
+          domEl.setAttribute('font-size', value);
+        } else if (property === 'fontFamily') {
+          domEl.setAttribute('font-family', value);
+        } else if (property === 'fontWeight') {
+          domEl.setAttribute('font-weight', value);
+        } else if (property === 'textAnchor') {
+          domEl.setAttribute('text-anchor', value);
+        } else if (['x','y','cx','cy','r','rx','ry','width','height','x1','y1','x2','y2'].indexOf(property) !== -1) {
+          domEl.setAttribute(property, value);
+          // Update bbox for selection highlight
+          try {
+            var nb = domEl.getBBox();
+            element.bbox = { x: nb.x, y: nb.y, w: nb.width, h: nb.height };
+          } catch(ignored) {}
+        }
+      }
+
+      // Update selection highlight if this element is selected
+      if (window.__selected === elementId && element.bbox) {
+        showSelectionHighlight(element);
+      }
+
+      // Re-seek timeline to current time to show the change
+      if (window.__tl && !window.__tl.isActive()) {
+        window.__tl.seek(window.__tl.time());
+      }
+    }
+
+    if (e.data.type === 'highlight_element') {
+      if (e.data.elementId) {
+        window.__highlightElement(e.data.elementId);
+      } else {
+        window.__clearHighlight();
+      }
+    }
+
+    if (e.data.type === 'get_elements') {
+      window.parent.postMessage({
+        source: 'cench-scene',
+        type: 'elements_list',
+        elements: JSON.parse(JSON.stringify(window.__elements)),
+      }, '*');
+    }
+  });
+
+  // ── Auto-register SVG elements on load ──────────────────
+  var SVG_SCAN_TAGS = 'rect,circle,ellipse,line,polyline,polygon,path,text,g,image,use';
+
+  window.addEventListener('load', function() {
+    // Scan ALL visible SVG elements (not just those with id)
+    var autoIdx = 0;
+    document.querySelectorAll('svg').forEach(function(svg) {
+      svg.querySelectorAll(SVG_SCAN_TAGS).forEach(function(el) {
+        // Assign stable id if missing
+        if (!el.id) {
+          el.id = 'auto-' + el.tagName.toLowerCase() + '-' + (autoIdx++);
+        }
+        // Skip if already registered by scene code
+        if (window.__elements[el.id]) return;
+
+        // Skip invisible or tiny elements
+        var bbox;
+        try {
+          var b = el.getBBox();
+          bbox = { x: b.x, y: b.y, w: b.width, h: b.height };
+          // Skip zero-size elements (markers, defs, clip-paths)
+          if (bbox.w < 2 && bbox.h < 2) return;
+        } catch(e) {
+          return; // Can't measure = not renderable
+        }
+
+        // Skip elements inside <defs>, <clipPath>, <mask>, <pattern>
+        var skip = false;
+        var parent = el.parentElement;
+        while (parent && parent !== svg) {
+          var pTag = parent.tagName.toLowerCase();
+          if (pTag === 'defs' || pTag === 'clippath' || pTag === 'mask' || pTag === 'pattern' || pTag === 'marker') { skip = true; break; }
+          parent = parent.parentElement;
+        }
+        if (skip) return;
+
+        var tagName = el.tagName.toLowerCase();
+        var type = 'svg-shape';
+        if (tagName === 'text' || tagName === 'tspan') type = 'svg-text';
+        else if (tagName === 'path') type = 'svg-path';
+        else if (tagName === 'rect') type = 'svg-shape';
+        else if (tagName === 'circle' || tagName === 'ellipse') type = 'svg-shape';
+        else if (tagName === 'line' || tagName === 'polyline' || tagName === 'polygon') type = 'svg-shape';
+        else if (tagName === 'image') type = 'svg-shape';
+        else if (tagName === 'g') type = 'svg-shape';
+
+        // Build readable label
+        var autoLabel = el.dataset ? el.dataset.label : null;
+        if (!autoLabel) {
+          if (type === 'svg-text') {
+            autoLabel = (el.textContent || '').trim().slice(0, 30) || 'Text';
+          } else {
+            autoLabel = tagName + (el.id && !el.id.startsWith('auto-') ? '#' + el.id : ' ' + (autoIdx));
+          }
+        }
+
+        // Extract computed style for inherited properties
+        var cs = window.getComputedStyle(el);
+
+        window.__register({
+          id: el.id,
+          type: type,
+          label: autoLabel,
+          bbox: bbox,
+          stroke: el.getAttribute('stroke') || cs.stroke || 'none',
+          strokeWidth: parseFloat(el.getAttribute('stroke-width') || cs.strokeWidth || '0'),
+          fill: el.getAttribute('fill') || cs.fill || 'none',
+          fillOpacity: parseFloat(el.getAttribute('fill-opacity') || '1'),
+          opacity: parseFloat(el.getAttribute('opacity') || cs.opacity || '1'),
+          visible: el.style.display !== 'none' && cs.display !== 'none',
+          animStartTime: 0,
+          animDuration: 0,
+          text: (type === 'svg-text') ? (el.textContent || '') : '',
+          fontSize: parseFloat(el.getAttribute('font-size') || cs.fontSize || '16'),
+          fontFamily: el.getAttribute('font-family') || cs.fontFamily || '',
+          x: parseFloat(el.getAttribute('x') || el.getAttribute('cx') || '0'),
+          y: parseFloat(el.getAttribute('y') || el.getAttribute('cy') || '0'),
+        });
+      });
+    });
+
+    // Report all registered elements to parent
+    setTimeout(function() {
+      window.parent.postMessage({
+        source: 'cench-scene',
+        type: 'elements_list',
+        elements: JSON.parse(JSON.stringify(window.__elements)),
+      }, '*');
+    }, 100);
+  });
+})();
+</script>
+
+  <script>
+
+  </script>
+
+  <script>
+    // ── Automatic texture overlay ─────────────────────────
+    
+    (function applyTextureOverlay() {
+      const textureCanvas = document.getElementById('texture-canvas');
+      if (!textureCanvas) return;
+      const ctx = textureCanvas.getContext('2d');
+      function mulberry32(seed) {
+        return function() {
+          seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+          let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+          t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+          return ((t ^ t >>> 14) >>> 0) / 4294967296;
+        }
+      }
+      const rand = mulberry32(977363310);
+
+      
+        const imageData = ctx.createImageData(1920, 1080);
+        for (let i = 0; i < imageData.data.length; i += 4) {
+          const noise = rand() * 255;
+          imageData.data[i]   = noise;
+          imageData.data[i+1] = noise;
+          imageData.data[i+2] = noise;
+          imageData.data[i+3] = rand() * 255;
+        }
+        ctx.putImageData(imageData, 0, 0);
+      
+
+      
+
+      
+
+      
+    })();
+    
+  </script>
+</body>
+</html>

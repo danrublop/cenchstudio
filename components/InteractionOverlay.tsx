@@ -3,6 +3,11 @@
 import { useCallback, useRef, useState } from 'react'
 import { useVideoStore } from '@/lib/store'
 import type { Scene, InteractionElement } from '@/lib/types'
+import { DEFAULT_INTERACTION_STYLE } from '@/lib/types'
+import { cssBorderRadiusForTooltipTrigger } from '@/lib/interactions/tooltip-trigger-css'
+import { snapToGrid } from '@/lib/grid'
+import { InteractionRenderer, InteractionStyles } from '@/components/interactions/InteractionRenderer'
+import type { InteractionCallbacks } from '@/components/interactions/InteractionRenderer'
 
 interface InteractionOverlayProps {
   scene: Scene
@@ -10,6 +15,8 @@ interface InteractionOverlayProps {
   currentTime: number
   onElementClick?: (elementId: string) => void
   onElementMove?: (elementId: string, x: number, y: number) => void
+  /** Preview mode callbacks */
+  interactionCallbacks?: InteractionCallbacks
 }
 
 const TYPE_COLORS: Record<string, string> = {
@@ -45,18 +52,24 @@ export default function InteractionOverlay({
   currentTime,
   onElementClick,
   onElementMove,
+  interactionCallbacks,
 }: InteractionOverlayProps) {
-  const { updateInteraction } = useVideoStore()
+  const { updateInteraction, gridConfig } = useVideoStore()
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<DragState | null>(null)
+  // Track which interactions have appeared for entrance animations
+  const appearedRef = useRef<Set<string>>(new Set())
 
-  const interactions: InteractionElement[] = scene.interactions ?? []
+  const hiddenIx = new Set(scene.layerHiddenIds ?? [])
+  const interactions: InteractionElement[] = (scene.interactions ?? []).filter(
+    (el) => !hiddenIx.has(`interaction:${el.id}`),
+  )
 
   const isVisible = (el: InteractionElement) => {
     if (mode === 'edit') return true
     if (currentTime < el.appearsAt) return false
-    if (el.hidesAt !== null && currentTime > el.hidesAt) return false
+    if (el.hidesAt !== null && currentTime >= el.hidesAt) return false
     return true
   }
 
@@ -78,7 +91,7 @@ export default function InteractionOverlay({
       setSelectedId(el.id)
       ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
     },
-    [mode]
+    [mode],
   )
 
   const handlePointerMove = useCallback(
@@ -87,18 +100,50 @@ export default function InteractionOverlay({
       if (!d) return
       const dx = ((e.clientX - d.startX) / d.containerRect.width) * 100
       const dy = ((e.clientY - d.startY) / d.containerRect.height) * 100
-      const newX = Math.max(0, Math.min(100, d.origX + dx))
-      const newY = Math.max(0, Math.min(100, d.origY + dy))
+      let newX = Math.max(0, Math.min(100, d.origX + dx))
+      let newY = Math.max(0, Math.min(100, d.origY + dy))
+      if (gridConfig.enabled && !e.shiftKey) {
+        const pxX = (newX / 100) * 1920
+        const pxY = (newY / 100) * 1080
+        const snappedX = snapToGrid(pxX, gridConfig.size, gridConfig.snapThreshold)
+        const snappedY = snapToGrid(pxY, gridConfig.size, gridConfig.snapThreshold)
+        newX = (snappedX / 1920) * 100
+        newY = (snappedY / 1080) * 100
+      }
       updateInteraction(scene.id, d.elementId, { x: newX, y: newY } as any)
       onElementMove?.(d.elementId, newX, newY)
     },
-    [scene.id, updateInteraction, onElementMove]
+    [scene.id, updateInteraction, onElementMove, gridConfig],
   )
 
   const handlePointerUp = useCallback(() => {
     dragRef.current = null
   }, [])
 
+  const visibleInteractions = interactions.filter(isVisible)
+
+  // ── Preview mode: render real interactive UI ──
+  if (mode === 'preview' && interactionCallbacks) {
+    return (
+      <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 20 }}>
+        <InteractionStyles />
+        {visibleInteractions.map((el) => {
+          const firstAppearance = !appearedRef.current.has(el.id)
+          if (firstAppearance) appearedRef.current.add(el.id)
+          return (
+            <InteractionRenderer
+              key={el.id}
+              element={el}
+              callbacks={interactionCallbacks}
+              firstAppearance={firstAppearance}
+            />
+          )
+        })}
+      </div>
+    )
+  }
+
+  // ── Edit mode: render bounding boxes with drag handles ──
   return (
     <div
       ref={containerRef}
@@ -107,9 +152,9 @@ export default function InteractionOverlay({
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
     >
-      {interactions.filter(isVisible).map((el) => {
+      {visibleInteractions.map((el) => {
         const color = TYPE_COLORS[el.type] ?? '#e84545'
-        const isSelected = mode === 'edit' && selectedId === el.id
+        const isSelected = selectedId === el.id
 
         return (
           <div
@@ -121,27 +166,35 @@ export default function InteractionOverlay({
               width: `${el.width}%`,
               height: `${el.height}%`,
               border: `2px solid ${color}`,
-              borderRadius: el.type === 'hotspot' ? (
-                (el as any).shape === 'circle' ? '50%' : (el as any).shape === 'pill' ? '999px' : '6px'
-              ) : '6px',
+              borderRadius:
+                el.type === 'hotspot'
+                  ? (el as any).shape === 'circle'
+                    ? '50%'
+                    : (el as any).shape === 'pill'
+                      ? '999px'
+                      : '6px'
+                  : el.type === 'tooltip'
+                    ? cssBorderRadiusForTooltipTrigger(
+                        (el as InteractionElement & { type: 'tooltip' }).triggerShape,
+                        (el as InteractionElement & { type: 'tooltip' }).visualStyle?.borderRadius ??
+                          DEFAULT_INTERACTION_STYLE.borderRadius,
+                      )
+                    : '6px',
               background: `${color}22`,
-              cursor: mode === 'edit' ? 'move' : 'pointer',
+              cursor: 'move',
               pointerEvents: 'auto',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               boxSizing: 'border-box',
               boxShadow: isSelected ? `0 0 0 2px white, 0 0 0 4px ${color}` : undefined,
-              animation: el.type === 'hotspot' && (el as any).style === 'pulse'
-                ? 'cench-studio-pulse 2s infinite'
-                : undefined,
+              animation:
+                el.type === 'hotspot' && (el as any).style === 'pulse' ? 'cench-studio-pulse 2s infinite' : undefined,
             }}
             onPointerDown={(e) => handlePointerDown(e, el)}
             onClick={() => {
-              if (mode === 'edit') {
-                onElementClick?.(el.id)
-                setSelectedId(el.id)
-              }
+              onElementClick?.(el.id)
+              setSelectedId(el.id)
             }}
           >
             {/* Type badge */}
@@ -157,7 +210,6 @@ export default function InteractionOverlay({
                 padding: '1px 5px',
                 borderRadius: 3,
                 whiteSpace: 'nowrap',
-                display: mode === 'edit' ? 'block' : 'none',
               }}
             >
               {TYPE_LABELS[el.type] ?? el.type}
@@ -165,15 +217,12 @@ export default function InteractionOverlay({
 
             {/* Label for hotspot */}
             {el.type === 'hotspot' && (el as any).label && (
-              <span style={{ color: 'white', fontSize: 11, fontWeight: 600 }}>
-                {(el as any).label}
-              </span>
+              <span style={{ color: 'white', fontSize: 11, fontWeight: 600 }}>{(el as any).label}</span>
             )}
 
-            {/* Resize handle (edit mode, selected) */}
+            {/* Resize handles (selected) */}
             {isSelected && (
               <>
-                {/* Corner resize handles */}
                 {['nw', 'ne', 'sw', 'se'].map((corner) => (
                   <div
                     key={corner}
@@ -196,7 +245,6 @@ export default function InteractionOverlay({
         )
       })}
 
-      {/* Pulse animation style */}
       <style>{`
         @keyframes cench-studio-pulse {
           0%, 100% { opacity: 1; transform: scale(1); }

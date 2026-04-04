@@ -1,0 +1,543 @@
+{
+  "id": "a9903378-1b6e-496d-8d75-060146726a32",
+  "version": 1,
+  "name": "Untitled Project",
+  "playerOptions": {
+    "theme": "dark",
+    "showProgressBar": true,
+    "showSceneNav": true,
+    "allowFullscreen": true,
+    "brandColor": "#e84545",
+    "autoplay": true
+  },
+  "sceneGraph": {
+    "nodes": [
+      {
+        "id": "554affc8-4a14-430f-9468-88a028c1a3f5",
+        "position": {
+          "x": 100,
+          "y": 100
+        }
+      },
+      {
+        "id": "636ee72f-2566-4cf0-ac6c-df69d52d5423",
+        "position": {
+          "x": 360,
+          "y": 100
+        }
+      },
+      {
+        "id": "d89bd408-27db-460d-8f29-0f091386ff65",
+        "position": {
+          "x": 620,
+          "y": 100
+        }
+      },
+      {
+        "id": "2327394a-bca3-4209-b6b9-576de68d31a5",
+        "position": {
+          "x": 100,
+          "y": 300
+        }
+      },
+      {
+        "id": "e1bb6952-8575-4916-adf3-a1ca4ad70cf8",
+        "position": {
+          "x": 360,
+          "y": 300
+        }
+      },
+      {
+        "id": "26d24ec7-6d1b-4026-b17e-eced1c4abc3a",
+        "position": {
+          "x": 620,
+          "y": 300
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "92c41be1-df52-4efc-88a2-4d0c135a42e1",
+        "fromSceneId": "554affc8-4a14-430f-9468-88a028c1a3f5",
+        "toSceneId": "636ee72f-2566-4cf0-ac6c-df69d52d5423",
+        "condition": {
+          "type": "auto",
+          "interactionId": null,
+          "variableName": null,
+          "variableValue": null
+        }
+      },
+      {
+        "id": "452e72d3-a784-45d9-a15c-82483fe7b977",
+        "fromSceneId": "636ee72f-2566-4cf0-ac6c-df69d52d5423",
+        "toSceneId": "d89bd408-27db-460d-8f29-0f091386ff65",
+        "condition": {
+          "type": "auto",
+          "interactionId": null,
+          "variableName": null,
+          "variableValue": null
+        }
+      },
+      {
+        "id": "edf7d8a6-8a52-4b11-8f15-90f724524297",
+        "fromSceneId": "d89bd408-27db-460d-8f29-0f091386ff65",
+        "toSceneId": "2327394a-bca3-4209-b6b9-576de68d31a5",
+        "condition": {
+          "type": "auto",
+          "interactionId": null,
+          "variableName": null,
+          "variableValue": null
+        }
+      },
+      {
+        "id": "b6445719-9d44-4938-be6d-558b08a9a629",
+        "fromSceneId": "2327394a-bca3-4209-b6b9-576de68d31a5",
+        "toSceneId": "e1bb6952-8575-4916-adf3-a1ca4ad70cf8",
+        "condition": {
+          "type": "auto",
+          "interactionId": null,
+          "variableName": null,
+          "variableValue": null
+        }
+      },
+      {
+        "id": "d94ef161-5ae2-4b6a-b563-826474dff0c4",
+        "fromSceneId": "e1bb6952-8575-4916-adf3-a1ca4ad70cf8",
+        "toSceneId": "26d24ec7-6d1b-4026-b17e-eced1c4abc3a",
+        "condition": {
+          "type": "auto",
+          "interactionId": null,
+          "variableName": null,
+          "variableValue": null
+        }
+      }
+    ],
+    "startSceneId": "554affc8-4a14-430f-9468-88a028c1a3f5"
+  },
+  "scenes": [
+    {
+      "id": "554affc8-4a14-430f-9468-88a028c1a3f5",
+      "type": "canvas2d",
+      "duration": 12,
+      "htmlUrl": "/published/a9903378-1b6e-496d-8d75-060146726a32/scenes/554affc8-4a14-430f-9468-88a028c1a3f5.html",
+      "htmlContent": null,
+      "interactions": [
+        {
+          "id": "6eddf756-a605-4fc3-8995-88344c6ce8b6",
+          "type": "hotspot",
+          "x": 38,
+          "y": 62,
+          "width": 24,
+          "height": 12,
+          "appearsAt": 0.8,
+          "hidesAt": null,
+          "entranceAnimation": "fade",
+          "label": "Next: Choice →",
+          "shape": "pill",
+          "style": "border",
+          "color": "#2563eb",
+          "triggersEdgeId": null,
+          "jumpsToSceneId": "636ee72f-2566-4cf0-ac6c-df69d52d5423",
+          "visualStyle": {
+            "preset": "professional",
+            "bgColor": "#f1f5f9",
+            "bgOpacity": 0.96,
+            "blur": 6,
+            "borderColor": "#94a3b8",
+            "borderOpacity": 0.55,
+            "borderWidth": 1,
+            "borderRadius": 10,
+            "shadowColor": "#0f172a",
+            "shadowOpacity": 0.1,
+            "shadowSpread": 18,
+            "innerGlow": 0,
+            "fontFamily": "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+            "fontSize": 15,
+            "fontWeight": 600,
+            "textColor": "#0f172a",
+            "textAlign": "center",
+            "letterSpacing": 0.01,
+            "paddingX": 22,
+            "paddingY": 18,
+            "gap": 10,
+            "hoverScale": 1.01,
+            "hoverBrightness": 1,
+            "transitionSpeed": 180,
+            "accentColor": "#2563eb"
+          }
+        }
+      ],
+      "variables": [],
+      "transition": "none"
+    },
+    {
+      "id": "636ee72f-2566-4cf0-ac6c-df69d52d5423",
+      "type": "canvas2d",
+      "duration": 14,
+      "htmlUrl": "/published/a9903378-1b6e-496d-8d75-060146726a32/scenes/636ee72f-2566-4cf0-ac6c-df69d52d5423.html",
+      "htmlContent": null,
+      "interactions": [
+        {
+          "id": "b9a0a6fc-347c-4c81-ba9a-aa681be63c9d",
+          "type": "choice",
+          "x": 20,
+          "y": 38,
+          "width": 60,
+          "height": 36,
+          "appearsAt": 1,
+          "hidesAt": null,
+          "entranceAnimation": "slide-up",
+          "question": "How should we continue?",
+          "layout": "vertical",
+          "options": [
+            {
+              "id": "7cd28e5a-b8ce-4e18-9022-129cde966bfa",
+              "label": "Continue to knowledge check",
+              "icon": null,
+              "jumpsToSceneId": "d89bd408-27db-460d-8f29-0f091386ff65",
+              "color": "#2563eb"
+            },
+            {
+              "id": "4aa8cf6c-5589-44d1-bcab-b4d88f99aae3",
+              "label": "Same destination",
+              "icon": null,
+              "jumpsToSceneId": "d89bd408-27db-460d-8f29-0f091386ff65",
+              "color": "#64748b"
+            }
+          ],
+          "visualStyle": {
+            "preset": "professional",
+            "bgColor": "#f1f5f9",
+            "bgOpacity": 0.96,
+            "blur": 6,
+            "borderColor": "#94a3b8",
+            "borderOpacity": 0.55,
+            "borderWidth": 1,
+            "borderRadius": 10,
+            "shadowColor": "#0f172a",
+            "shadowOpacity": 0.1,
+            "shadowSpread": 18,
+            "innerGlow": 0,
+            "fontFamily": "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+            "fontSize": 15,
+            "fontWeight": 600,
+            "textColor": "#0f172a",
+            "textAlign": "left",
+            "letterSpacing": 0.01,
+            "paddingX": 22,
+            "paddingY": 18,
+            "gap": 10,
+            "hoverScale": 1.01,
+            "hoverBrightness": 1,
+            "transitionSpeed": 180,
+            "accentColor": "#2563eb"
+          }
+        }
+      ],
+      "variables": [],
+      "transition": "none"
+    },
+    {
+      "id": "d89bd408-27db-460d-8f29-0f091386ff65",
+      "type": "canvas2d",
+      "duration": 18,
+      "htmlUrl": "/published/a9903378-1b6e-496d-8d75-060146726a32/scenes/d89bd408-27db-460d-8f29-0f091386ff65.html",
+      "htmlContent": null,
+      "interactions": [
+        {
+          "id": "a30b7323-46c2-45e6-bbac-0a6cd9ba31ab",
+          "type": "quiz",
+          "x": 16,
+          "y": 28,
+          "width": 68,
+          "height": 50,
+          "appearsAt": 0.8,
+          "hidesAt": null,
+          "entranceAnimation": "pop",
+          "question": "Which style best matches a clear B2B explainer?",
+          "options": [
+            {
+              "id": "6e863f39-3cfe-4280-87af-320cb89aa7ec",
+              "label": "Heavy neon glow and loud motion"
+            },
+            {
+              "id": "bcc1ff9e-d663-427b-9f9c-7248f53888f0",
+              "label": "Legible panels, calm blue accent"
+            },
+            {
+              "id": "affbc2c0-1b42-4ed6-b7b1-4003393cd7ff",
+              "label": "Maximum decorative chrome"
+            }
+          ],
+          "correctOptionId": "bcc1ff9e-d663-427b-9f9c-7248f53888f0",
+          "onCorrect": "jump",
+          "onCorrectSceneId": "2327394a-bca3-4209-b6b9-576de68d31a5",
+          "onWrong": "retry",
+          "onWrongSceneId": null,
+          "explanation": "The Professional preset uses high-contrast type and a restrained palette.",
+          "visualStyle": {
+            "preset": "professional",
+            "bgColor": "#f1f5f9",
+            "bgOpacity": 0.96,
+            "blur": 6,
+            "borderColor": "#94a3b8",
+            "borderOpacity": 0.55,
+            "borderWidth": 1,
+            "borderRadius": 10,
+            "shadowColor": "#0f172a",
+            "shadowOpacity": 0.1,
+            "shadowSpread": 18,
+            "innerGlow": 0,
+            "fontFamily": "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+            "fontSize": 15,
+            "fontWeight": 600,
+            "textColor": "#0f172a",
+            "textAlign": "left",
+            "letterSpacing": 0.01,
+            "paddingX": 22,
+            "paddingY": 18,
+            "gap": 10,
+            "hoverScale": 1.01,
+            "hoverBrightness": 1,
+            "transitionSpeed": 180,
+            "accentColor": "#2563eb"
+          }
+        }
+      ],
+      "variables": [],
+      "transition": "none"
+    },
+    {
+      "id": "2327394a-bca3-4209-b6b9-576de68d31a5",
+      "type": "canvas2d",
+      "duration": 14,
+      "htmlUrl": "/published/a9903378-1b6e-496d-8d75-060146726a32/scenes/2327394a-bca3-4209-b6b9-576de68d31a5.html",
+      "htmlContent": null,
+      "interactions": [
+        {
+          "id": "f4859243-7d4f-4dc6-8df3-d8c0136c496e",
+          "type": "gate",
+          "x": 42,
+          "y": 44,
+          "width": 16,
+          "height": 10,
+          "appearsAt": 2,
+          "hidesAt": null,
+          "entranceAnimation": "fade",
+          "buttonLabel": "Continue to tooltips",
+          "buttonStyle": "primary",
+          "minimumWatchTime": 0,
+          "visualStyle": {
+            "preset": "professional",
+            "bgColor": "#f1f5f9",
+            "bgOpacity": 0.96,
+            "blur": 6,
+            "borderColor": "#94a3b8",
+            "borderOpacity": 0.55,
+            "borderWidth": 1,
+            "borderRadius": 10,
+            "shadowColor": "#0f172a",
+            "shadowOpacity": 0.1,
+            "shadowSpread": 18,
+            "innerGlow": 0,
+            "fontFamily": "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+            "fontSize": 15,
+            "fontWeight": 600,
+            "textColor": "#0f172a",
+            "textAlign": "center",
+            "letterSpacing": 0.01,
+            "paddingX": 22,
+            "paddingY": 18,
+            "gap": 10,
+            "hoverScale": 1.01,
+            "hoverBrightness": 1,
+            "transitionSpeed": 180,
+            "accentColor": "#2563eb"
+          }
+        }
+      ],
+      "variables": [],
+      "transition": "none"
+    },
+    {
+      "id": "e1bb6952-8575-4916-adf3-a1ca4ad70cf8",
+      "type": "canvas2d",
+      "duration": 12,
+      "htmlUrl": "/published/a9903378-1b6e-496d-8d75-060146726a32/scenes/e1bb6952-8575-4916-adf3-a1ca4ad70cf8.html",
+      "htmlContent": null,
+      "interactions": [
+        {
+          "id": "c43f2e67-9dff-46fa-a50c-136b3c2ab9fe",
+          "type": "tooltip",
+          "x": 22,
+          "y": 42,
+          "width": 5,
+          "height": 5,
+          "appearsAt": 0.6,
+          "hidesAt": null,
+          "entranceAnimation": "fade",
+          "triggerShape": "circle",
+          "triggerColor": "#2563eb",
+          "triggerLabel": "i",
+          "tooltipTitle": "Definition",
+          "tooltipBody": "Tooltips use the same Professional glass panel as quizzes and forms.",
+          "tooltipPosition": "right",
+          "tooltipMaxWidth": 280,
+          "visualStyle": {
+            "preset": "professional",
+            "bgColor": "#f1f5f9",
+            "bgOpacity": 0.96,
+            "blur": 6,
+            "borderColor": "#94a3b8",
+            "borderOpacity": 0.55,
+            "borderWidth": 1,
+            "borderRadius": 10,
+            "shadowColor": "#0f172a",
+            "shadowOpacity": 0.1,
+            "shadowSpread": 18,
+            "innerGlow": 0,
+            "fontFamily": "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+            "fontSize": 14,
+            "fontWeight": 600,
+            "textColor": "#0f172a",
+            "textAlign": "left",
+            "letterSpacing": 0.01,
+            "paddingX": 22,
+            "paddingY": 18,
+            "gap": 10,
+            "hoverScale": 1.01,
+            "hoverBrightness": 1,
+            "transitionSpeed": 180,
+            "accentColor": "#2563eb"
+          }
+        },
+        {
+          "id": "cfa6ce1d-c3cf-4d39-ad30-3fbdc38fd709",
+          "type": "tooltip",
+          "x": 70,
+          "y": 38,
+          "width": 6,
+          "height": 5,
+          "appearsAt": 1.2,
+          "hidesAt": null,
+          "entranceAnimation": "fade",
+          "triggerShape": "circle",
+          "triggerColor": "#0f172a",
+          "triggerLabel": "?",
+          "tooltipTitle": "Tip",
+          "tooltipBody": "Hover each marker to read copy in the preset style.",
+          "tooltipPosition": "left",
+          "tooltipMaxWidth": 260,
+          "visualStyle": {
+            "preset": "professional",
+            "bgColor": "#f1f5f9",
+            "bgOpacity": 0.96,
+            "blur": 6,
+            "borderColor": "#94a3b8",
+            "borderOpacity": 0.55,
+            "borderWidth": 1,
+            "borderRadius": 10,
+            "shadowColor": "#0f172a",
+            "shadowOpacity": 0.1,
+            "shadowSpread": 18,
+            "innerGlow": 0,
+            "fontFamily": "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+            "fontSize": 14,
+            "fontWeight": 600,
+            "textColor": "#0f172a",
+            "textAlign": "left",
+            "letterSpacing": 0.01,
+            "paddingX": 22,
+            "paddingY": 18,
+            "gap": 10,
+            "hoverScale": 1.01,
+            "hoverBrightness": 1,
+            "transitionSpeed": 180,
+            "accentColor": "#2563eb"
+          }
+        }
+      ],
+      "variables": [],
+      "transition": "none"
+    },
+    {
+      "id": "26d24ec7-6d1b-4026-b17e-eced1c4abc3a",
+      "type": "canvas2d",
+      "duration": 20,
+      "htmlUrl": "/published/a9903378-1b6e-496d-8d75-060146726a32/scenes/26d24ec7-6d1b-4026-b17e-eced1c4abc3a.html",
+      "htmlContent": null,
+      "interactions": [
+        {
+          "id": "e101e6b1-4ea6-4b59-8112-4e6c54e7424e",
+          "type": "form",
+          "x": 22,
+          "y": 22,
+          "width": 56,
+          "height": 58,
+          "appearsAt": 0.8,
+          "hidesAt": null,
+          "entranceAnimation": "slide-up",
+          "fields": [
+            {
+              "id": "fld_name",
+              "label": "Name",
+              "type": "text",
+              "placeholder": "Jane Doe",
+              "options": [],
+              "required": true
+            },
+            {
+              "id": "fld_role",
+              "label": "Role",
+              "type": "select",
+              "placeholder": null,
+              "options": ["Marketing", "Product", "Learning", "Other"],
+              "required": false
+            }
+          ],
+          "submitLabel": "Submit & restart tour",
+          "setsVariables": [
+            {
+              "fieldId": "fld_name",
+              "variableName": "visitorName"
+            }
+          ],
+          "jumpsToSceneId": "554affc8-4a14-430f-9468-88a028c1a3f5",
+          "visualStyle": {
+            "preset": "professional",
+            "bgColor": "#f1f5f9",
+            "bgOpacity": 0.96,
+            "blur": 6,
+            "borderColor": "#94a3b8",
+            "borderOpacity": 0.55,
+            "borderWidth": 1,
+            "borderRadius": 10,
+            "shadowColor": "#0f172a",
+            "shadowOpacity": 0.1,
+            "shadowSpread": 18,
+            "innerGlow": 0,
+            "fontFamily": "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+            "fontSize": 15,
+            "fontWeight": 600,
+            "textColor": "#0f172a",
+            "textAlign": "left",
+            "letterSpacing": 0.01,
+            "paddingX": 22,
+            "paddingY": 18,
+            "gap": 10,
+            "hoverScale": 1.01,
+            "hoverBrightness": 1,
+            "transitionSpeed": 180,
+            "accentColor": "#2563eb"
+          }
+        }
+      ],
+      "variables": [
+        {
+          "name": "visitorName"
+        }
+      ],
+      "transition": "none"
+    }
+  ]
+}

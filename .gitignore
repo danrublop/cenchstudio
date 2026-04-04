@@ -14,13 +14,21 @@ dist
 .env
 .env.local
 .env.*.local
+.cench.local.json
 
 # Generated files
 public/scenes/*.html
 public/uploads/*
+public/avatars/*.vrm
+public/avatars/*.glb
 !public/uploads/.gitkeep
 renders/*
 !renders/.gitkeep
+render-server/tmp/
+render-server/.bin/
+
+# Reference repos
+reference/
 
 # Misc
 .DS_Store

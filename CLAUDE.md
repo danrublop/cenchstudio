@@ -3,6 +3,7 @@
 AI-powered animated explainer video creator. Users type prompts, an agent generates animated scenes using Canvas2D, SVG, D3, Three.js, or HTML/Anime.js. Scenes export as MP4 or publish as interactive hosted embeds.
 
 ## Stack
+
 - Frontend: Next.js App Router + TypeScript + Tailwind
 - Database: PostgreSQL via Drizzle ORM (`lib/db/`)
 - Render server: Node.js Express in `render-server/` (Puppeteer + FFmpeg)
@@ -49,20 +50,20 @@ render-server/              — Express server for MP4 export
 
 ## APIs (app runs at localhost:3000)
 
-| Method | Path | Body / Params | Response |
-|---|---|---|---|
-| GET | `/api/scene?projectId=X` | — | `{ scenes: [...] }` (layer summaries, no code) |
-| GET | `/api/scene?projectId=X&sceneId=Y` | — | `{ scene: {...} }` (full layers with code) |
-| POST | `/api/scene` | `{ id, html }` | `{ success, path }` — writes HTML file to disk |
-| PATCH | `/api/scene` | `{ sceneId, layerId, generatedCode, prompt? }` | `{ success, scene: { id, previewUrl } }` — updates DB + regenerates HTML |
-| GET | `/api/projects` | — | Array of projects |
-| POST | `/api/projects` | `{ name, outputMode, ... }` | Project object |
-| POST | `/api/generate` | `{ prompt, palette?, ... }` | `{ result (SVG), usage }` |
-| POST | `/api/generate-canvas` | `{ prompt, palette?, ... }` | `{ result (JS), usage }` |
-| POST | `/api/generate-d3` | `{ prompt, palette?, ... }` | `{ result: { sceneCode, styles, suggestedData } }` |
-| POST | `/api/generate-three` | `{ prompt, palette?, ... }` | `{ result: { sceneCode } }` |
-| POST | `/api/generate-motion` | `{ prompt, palette?, ... }` | `{ result: { sceneCode, styles, htmlContent } }` |
-| POST | `/api/export` | `{ scenes, settings }` | SSE stream of progress |
+| Method | Path                               | Body / Params                                  | Response                                                                 |
+| ------ | ---------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------ |
+| GET    | `/api/scene?projectId=X`           | —                                              | `{ scenes: [...] }` (layer summaries, no code)                           |
+| GET    | `/api/scene?projectId=X&sceneId=Y` | —                                              | `{ scene: {...} }` (full layers with code)                               |
+| POST   | `/api/scene`                       | `{ id, html }`                                 | `{ success, path }` — writes HTML file to disk                           |
+| PATCH  | `/api/scene`                       | `{ sceneId, layerId, generatedCode, prompt? }` | `{ success, scene: { id, previewUrl } }` — updates DB + regenerates HTML |
+| GET    | `/api/projects`                    | —                                              | Array of projects                                                        |
+| POST   | `/api/projects`                    | `{ name, outputMode, ... }`                    | Project object                                                           |
+| POST   | `/api/generate`                    | `{ prompt, palette?, ... }`                    | `{ result (SVG), usage }`                                                |
+| POST   | `/api/generate-canvas`             | `{ prompt, palette?, ... }`                    | `{ result (JS), usage }`                                                 |
+| POST   | `/api/generate-d3`                 | `{ prompt, palette?, ... }`                    | `{ result: { sceneCode, styles, suggestedData } }`                       |
+| POST   | `/api/generate-three`              | `{ prompt, palette?, ... }`                    | `{ result: { sceneCode } }`                                              |
+| POST   | `/api/generate-motion`             | `{ prompt, palette?, ... }`                    | `{ result: { sceneCode, styles, htmlContent } }`                         |
+| POST   | `/api/export`                      | `{ scenes, settings }`                         | SSE stream of progress                                                   |
 
 ## Scene API details
 
@@ -77,22 +78,75 @@ Each scene is a self-contained HTML file at `/public/scenes/{id}.html`. Written 
 ## Globals available in every scene HTML
 
 - `WIDTH` = 1920, `HEIGHT` = 1080
-- `PALETTE` = `["#181818","#121212","#e84545","#151515","#f0ece0"]` (Three.js template only)
-- `DURATION` = seconds (Three.js template only)
+- `PALETTE` = 4-color array from style preset
+- `DURATION` = scene duration in seconds
+- `ROUGHNESS` = roughness level from style preset (0-3)
+- `FONT` = font family from style preset
+- `TOOL` = default drawing tool from style preset
+- `STROKE_COLOR` = primary stroke color from style preset
 - `DATA` = suggestedData object (D3 template only)
+- `AXIS_COLOR`, `GRID_COLOR` = chart styling (D3 template only)
 
 ## Scene types
 
-| Type | sceneType | Code format | Key element |
-|---|---|---|---|
-| SVG | `svg` | Raw `<svg>` element | `viewBox="0 0 1920 1080"` |
-| Canvas 2D | `canvas2d` | Raw JavaScript | `document.getElementById('c')` |
-| D3 | `d3` | JSON `{ styles, sceneCode, suggestedData }` | `d3.select('#chart')` |
-| Three.js | `three` | JSON `{ sceneCode }` | THREE global (r128) |
-| Motion | `motion` | JSON `{ styles, htmlContent, sceneCode }` | anime + Motion v11 |
-| Lottie | `lottie` | Lottie JSON | lottie.loadAnimation |
+| Type      | sceneType  | Code format                                 | Key element                    |
+| --------- | ---------- | ------------------------------------------- | ------------------------------ |
+| SVG       | `svg`      | Raw `<svg>` element                         | `viewBox="0 0 1920 1080"`      |
+| Canvas 2D | `canvas2d` | Raw JavaScript                              | `document.getElementById('c')` |
+| D3        | `d3`       | JSON `{ styles, sceneCode, suggestedData }` | `d3.select('#chart')`          |
+| Three.js  | `three`    | JSON `{ sceneCode }`                        | THREE global (r128)            |
+| Motion    | `motion`   | JSON `{ styles, htmlContent, sceneCode }`   | anime + Motion v11             |
+| Lottie    | `lottie`   | Lottie JSON                                 | lottie.loadAnimation           |
 
 All scenes render at **1920x1080** and must complete within their specified duration.
+
+## Style System
+
+Projects use a style preset that automatically configures:
+
+- Renderer preference (Motion default; canvas2d for expressive drawing; SVG rare)
+- Roughness level (0-3)
+- Default drawing tool
+- Stroke color defaults
+- Background texture
+
+When generating scenes, read the style guidance in the system prompt.
+The globals ROUGHNESS, TOOL, STROKE_COLOR are injected automatically
+by writeSceneHTML — do not hardcode these values in scene code.
+
+**Renderer preference:** Motion is the default for explainer-style scenes (layouts, type, cards). Canvas2d is for expressive hand-drawn or procedural work. SVG is rarely chosen.
+
+Available presets: whiteboard, chalkboard, blueprint, clean,
+data-story, newspaper, neon, kraft
+
+Texture overlays are applied automatically after render —
+do not add generateTextureCanvas() calls in scene code.
+
+## UI Panel Layout
+
+The editor has two distinct panel areas with different purposes:
+
+**Layers Tab** (right panel, scene-focused):
+
+- Style preset picker and palette/background/font overrides
+- Scene settings (name, duration, background color, transitions)
+- Video layer, audio layer, SVG objects, text overlays
+- AI generated layers
+- All scene design controls live here
+
+**Settings Panel** (gear icon sidebar, system-focused):
+
+- Editor theme (dark/light) — global preference, not per-project
+- Usage stats
+- Agents configuration
+- Models & API keys
+- Permissions
+- Dev tools
+
+Scene palette and style controls must NOT be in the Settings panel.
+The Settings panel is for system/app configuration only.
+Editor theme (dark/light) is a global preference — it does not
+change when switching projects or when the agent updates globalStyle.
 
 ## When generating scenes with /cench
 

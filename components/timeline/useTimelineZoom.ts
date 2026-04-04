@@ -9,11 +9,10 @@ function clamp(v: number, min: number, max: number) {
 export function useTimelineZoom(
   containerRef: React.RefObject<HTMLDivElement | null>,
   totalDuration: number,
+  /** Pixels reserved for non-scrollable UI (e.g. track headers) */
+  reservedWidth: number = 0,
 ) {
-  const {
-    timelineZoom, timelineScrollX,
-    setTimelineZoom, setTimelineScrollX,
-  } = useVideoStore()
+  const { timelineZoom, timelineScrollX, setTimelineZoom, setTimelineScrollX } = useVideoStore()
 
   const [containerWidth, setContainerWidth] = useState(1)
 
@@ -21,7 +20,7 @@ export function useTimelineZoom(
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
-    const ro = new ResizeObserver(entries => {
+    const ro = new ResizeObserver((entries) => {
       for (const entry of entries) {
         setContainerWidth(entry.contentRect.width || 1)
       }
@@ -31,11 +30,13 @@ export function useTimelineZoom(
     return () => ro.disconnect()
   }, [containerRef])
 
+  // Usable width for timeline content (subtract track headers etc.)
+  const usableWidth = Math.max(1, containerWidth - reservedWidth)
   const safeDuration = Math.max(totalDuration, 0.1)
-  const minPPS = containerWidth / safeDuration
+  const minPPS = usableWidth / safeDuration
   const pps = timelineZoom === 0 ? minPPS : clamp(timelineZoom, minPPS, MAX_PPS)
   const totalWidth = safeDuration * pps
-  const maxScrollX = Math.max(0, totalWidth - containerWidth)
+  const maxScrollX = Math.max(0, totalWidth - usableWidth)
 
   // Clamp scroll when it exceeds max
   useEffect(() => {
@@ -44,18 +45,31 @@ export function useTimelineZoom(
     }
   }, [maxScrollX, timelineScrollX, setTimelineScrollX])
 
-  const zoomAtCursor = useCallback((newPPS: number, cursorClientX: number) => {
-    const el = containerRef.current
-    if (!el) return
-    const rect = el.getBoundingClientRect()
-    const cursorOffset = cursorClientX - rect.left
-    const timeAtCursor = (timelineScrollX + cursorOffset) / pps
-    const clamped = clamp(newPPS, minPPS, MAX_PPS)
-    setTimelineZoom(clamped)
-    const newScroll = timeAtCursor * clamped - cursorOffset
-    const newMax = Math.max(0, safeDuration * clamped - containerWidth)
-    setTimelineScrollX(clamp(newScroll, 0, newMax))
-  }, [containerRef, pps, minPPS, timelineScrollX, safeDuration, containerWidth, setTimelineZoom, setTimelineScrollX])
+  const zoomAtCursor = useCallback(
+    (newPPS: number, cursorClientX: number) => {
+      const el = containerRef.current
+      if (!el) return
+      const rect = el.getBoundingClientRect()
+      const cursorOffset = cursorClientX - rect.left - reservedWidth
+      const timeAtCursor = (timelineScrollX + cursorOffset) / pps
+      const clamped = clamp(newPPS, minPPS, MAX_PPS)
+      setTimelineZoom(clamped)
+      const newScroll = timeAtCursor * clamped - cursorOffset
+      const newMax = Math.max(0, safeDuration * clamped - usableWidth)
+      setTimelineScrollX(clamp(newScroll, 0, newMax))
+    },
+    [
+      containerRef,
+      pps,
+      minPPS,
+      timelineScrollX,
+      safeDuration,
+      usableWidth,
+      reservedWidth,
+      setTimelineZoom,
+      setTimelineScrollX,
+    ],
+  )
 
   const zoomIn = useCallback(() => {
     const el = containerRef.current
@@ -96,5 +110,5 @@ export function useTimelineZoom(
     return () => el.removeEventListener('wheel', onWheel)
   }, [containerRef, pps, timelineScrollX, maxScrollX, zoomAtCursor, setTimelineScrollX])
 
-  return { pps, totalWidth, maxScrollX, containerWidth, minPPS, zoomAtCursor, zoomIn, zoomOut, fitAll }
+  return { pps, totalWidth, maxScrollX, containerWidth, usableWidth, minPPS, zoomAtCursor, zoomIn, zoomOut, fitAll }
 }

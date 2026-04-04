@@ -1,5 +1,21 @@
 import type { TooltipElement } from '../types'
 
+function triggerBorderRadius(shape: TooltipElement['triggerShape'] | undefined): string {
+  switch (shape) {
+    case 'circle':
+      return '50%'
+    case 'pill':
+      return '9999px'
+    case 'rounded':
+      return '12px'
+    case 'square':
+      return '0'
+    case 'rectangle':
+    default:
+      return '6px'
+  }
+}
+
 export function renderTooltip(el: TooltipElement): HTMLElement {
   const wrapper = document.createElement('div')
   wrapper.style.cssText = `
@@ -13,7 +29,7 @@ export function renderTooltip(el: TooltipElement): HTMLElement {
   const trigger = document.createElement('div')
   trigger.style.cssText = `
     width: 100%; height: 100%;
-    border-radius: ${el.triggerShape === 'circle' ? '50%' : '6px'};
+    border-radius: ${triggerBorderRadius(el.triggerShape)};
     background: ${el.triggerColor}33;
     border: 2px solid ${el.triggerColor};
     display: flex; align-items: center; justify-content: center;
@@ -62,8 +78,12 @@ export function renderTooltip(el: TooltipElement): HTMLElement {
 
   trigger.appendChild(card)
 
-  trigger.addEventListener('mouseenter', () => { card.style.display = 'block' })
-  trigger.addEventListener('mouseleave', () => { card.style.display = 'none' })
+  trigger.addEventListener('mouseenter', () => {
+    card.style.display = 'block'
+  })
+  trigger.addEventListener('mouseleave', () => {
+    card.style.display = 'none'
+  })
 
   wrapper.appendChild(trigger)
   return wrapper

@@ -5,7 +5,7 @@
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-export type ModelProvider = 'anthropic' | 'openai' | 'local' | 'heygen' | 'elevenlabs' | 'veo3'
+export type ModelProvider = 'anthropic' | 'openai' | 'google' | 'local' | 'heygen' | 'elevenlabs' | 'fal'
 export type ModelTierName = 'budget' | 'balanced' | 'performance' | 'custom'
 
 /**
@@ -64,36 +64,50 @@ export const DEFAULT_MODELS: ModelConfig[] = [
     tier: 'budget',
     enabled: true,
     isDefault: true,
-    costPer1MInput: 0.80,
-    costPer1MOutput: 4.00,
+    costPer1MInput: 0.8,
+    costPer1MOutput: 4.0,
     maxTokens: 200000,
     supportsTools: true,
     supportsStreaming: true,
   },
   {
-    id: 'claude-sonnet-4-5',
+    id: 'claude-sonnet-4-6',
     provider: 'anthropic',
-    modelId: 'claude-sonnet-4-5-20250514',
-    displayName: 'Sonnet 4.5',
+    modelId: 'claude-sonnet-4-6',
+    displayName: 'Sonnet 4.6',
     tier: 'balanced',
     enabled: true,
     isDefault: true,
-    costPer1MInput: 3.00,
-    costPer1MOutput: 15.00,
+    costPer1MInput: 3.0,
+    costPer1MOutput: 15.0,
     maxTokens: 200000,
     supportsTools: true,
     supportsStreaming: true,
   },
   {
-    id: 'claude-opus-4-5',
+    id: 'claude-opus-4-6',
     provider: 'anthropic',
-    modelId: 'claude-opus-4-5-20250514',
-    displayName: 'Opus 4.5',
+    modelId: 'claude-opus-4-6',
+    displayName: 'Opus 4.6',
     tier: 'performance',
     enabled: true,
     isDefault: true,
-    costPer1MInput: 15.00,
-    costPer1MOutput: 75.00,
+    costPer1MInput: 15.0,
+    costPer1MOutput: 75.0,
+    maxTokens: 200000,
+    supportsTools: true,
+    supportsStreaming: true,
+  },
+  {
+    id: 'claude-sonnet-3-5-v2',
+    provider: 'anthropic',
+    modelId: 'claude-3-5-sonnet-20241022',
+    displayName: 'Sonnet 3.5 v2',
+    tier: 'balanced',
+    enabled: false,
+    isDefault: true,
+    costPer1MInput: 3.0,
+    costPer1MOutput: 15.0,
     maxTokens: 200000,
     supportsTools: true,
     supportsStreaming: true,
@@ -109,7 +123,7 @@ export const DEFAULT_MODELS: ModelConfig[] = [
     enabled: false,
     isDefault: true,
     costPer1MInput: 0.15,
-    costPer1MOutput: 0.60,
+    costPer1MOutput: 0.6,
     maxTokens: 128000,
     supportsTools: true,
     supportsStreaming: true,
@@ -122,9 +136,51 @@ export const DEFAULT_MODELS: ModelConfig[] = [
     tier: 'balanced',
     enabled: false,
     isDefault: true,
-    costPer1MInput: 2.50,
-    costPer1MOutput: 10.00,
+    costPer1MInput: 2.5,
+    costPer1MOutput: 10.0,
     maxTokens: 128000,
+    supportsTools: true,
+    supportsStreaming: true,
+  },
+  {
+    id: 'gpt-4.1-nano',
+    provider: 'openai',
+    modelId: 'gpt-4.1-nano',
+    displayName: 'GPT-4.1 nano',
+    tier: 'budget',
+    enabled: false,
+    isDefault: true,
+    costPer1MInput: 0.1,
+    costPer1MOutput: 0.4,
+    maxTokens: 1047576,
+    supportsTools: true,
+    supportsStreaming: true,
+  },
+  {
+    id: 'gpt-4.1-mini',
+    provider: 'openai',
+    modelId: 'gpt-4.1-mini',
+    displayName: 'GPT-4.1 mini',
+    tier: 'budget',
+    enabled: false,
+    isDefault: true,
+    costPer1MInput: 0.4,
+    costPer1MOutput: 1.6,
+    maxTokens: 1047576,
+    supportsTools: true,
+    supportsStreaming: true,
+  },
+  {
+    id: 'gpt-4.1',
+    provider: 'openai',
+    modelId: 'gpt-4.1',
+    displayName: 'GPT-4.1',
+    tier: 'balanced',
+    enabled: false,
+    isDefault: true,
+    costPer1MInput: 2.0,
+    costPer1MOutput: 8.0,
+    maxTokens: 1047576,
     supportsTools: true,
     supportsStreaming: true,
   },
@@ -136,11 +192,55 @@ export const DEFAULT_MODELS: ModelConfig[] = [
     tier: 'performance',
     enabled: false,
     isDefault: true,
-    costPer1MInput: 15.00,
-    costPer1MOutput: 60.00,
+    costPer1MInput: 15.0,
+    costPer1MOutput: 60.0,
     maxTokens: 200000,
     supportsTools: false,
     supportsStreaming: false,
+  },
+  {
+    id: 'o3-mini',
+    provider: 'openai',
+    modelId: 'o3-mini',
+    displayName: 'o3-mini',
+    tier: 'balanced',
+    enabled: false,
+    isDefault: true,
+    costPer1MInput: 1.1,
+    costPer1MOutput: 4.4,
+    maxTokens: 200000,
+    supportsTools: true,
+    supportsStreaming: true,
+  },
+
+  // ── Google Gemini ────────────────────────────────────────────────────────────
+  {
+    id: 'gemini-2.5-flash',
+    provider: 'google',
+    modelId: 'gemini-2.5-flash-preview-05-20',
+    displayName: 'Gemini 2.5 Flash',
+    tier: 'budget',
+    enabled: false,
+    isDefault: true,
+    costPer1MInput: 0.15,
+    costPer1MOutput: 0.6,
+    maxTokens: 1000000,
+    supportsTools: true,
+    supportsStreaming: true,
+  },
+  {
+    id: 'gemini-2.5-pro',
+    provider: 'google',
+    modelId: 'gemini-2.5-pro-preview-05-06',
+    displayName: 'Gemini 2.5 Pro',
+    tier: 'performance',
+    enabled: false,
+    isDefault: true,
+    costPer1MInput: 1.25,
+    costPer1MOutput: 10.0,
+    maxTokens: 1000000,
+    supportsTools: true,
+    supportsStreaming: true,
   },
 
   // ── Local / Ollama placeholder ─────────────────────────────────────────────
@@ -165,10 +265,11 @@ export const DEFAULT_MODELS: ModelConfig[] = [
 export const DEFAULT_PROVIDER_CONFIGS: ProviderConfig[] = [
   { provider: 'anthropic', apiKey: '', enabled: true },
   { provider: 'openai', apiKey: '', enabled: false },
+  { provider: 'google', apiKey: '', enabled: false },
   { provider: 'local', apiKey: '', enabled: false, baseUrl: 'http://localhost:11434' },
   { provider: 'heygen', apiKey: '', enabled: true },
   { provider: 'elevenlabs', apiKey: '', enabled: true },
-  { provider: 'veo3', apiKey: '', enabled: true },
+  { provider: 'fal', apiKey: '', enabled: true },
 ]
 
 // ── Query Helpers ──────────────────────────────────────────────────────────────
@@ -193,7 +294,7 @@ export function getModelsByTier(tier: ModelTierName, models: ModelConfig[] = DEF
  */
 export function getDefaultModelForTier(
   tier: ModelTierName,
-  models: ModelConfig[] = DEFAULT_MODELS
+  models: ModelConfig[] = DEFAULT_MODELS,
 ): ModelConfig | undefined {
   const tiered = models.filter((m) => m.tier === tier)
   return tiered.find((m) => m.enabled) ?? tiered[0]
@@ -202,16 +303,15 @@ export function getDefaultModelForTier(
 /**
  * Returns models grouped by provider.
  */
-export function getModelsByProvider(
-  models: ModelConfig[] = DEFAULT_MODELS
-): Record<ModelProvider, ModelConfig[]> {
+export function getModelsByProvider(models: ModelConfig[] = DEFAULT_MODELS): Record<ModelProvider, ModelConfig[]> {
   const result: Record<ModelProvider, ModelConfig[]> = {
     anthropic: [],
     openai: [],
+    google: [],
     local: [],
     heygen: [],
     elevenlabs: [],
-    veo3: [],
+    fal: [],
   }
   for (const model of models) {
     result[model.provider].push(model)

@@ -1,0 +1,953 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base href="http://localhost:3000/">
+  <!-- GSAP (free, commercial use — all plugins free as of 3.13) -->
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14/dist/gsap.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14/dist/DrawSVGPlugin.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14/dist/MorphSVGPlugin.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14/dist/MotionPathPlugin.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14/dist/SplitText.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14/dist/TextPlugin.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14/dist/CustomEase.min.js"></script>
+  <script>gsap.registerPlugin(DrawSVGPlugin, MorphSVGPlugin, MotionPathPlugin, SplitText, TextPlugin, CustomEase);</script>
+  <!-- Lottie-web for LottieFiles animations -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/bodymovin/5.12.2/lottie.min.js"></script>
+  <!-- CenchMotion component library -->
+  <script src="/sdk/cench-motion.js"></script>
+  <!-- CenchCamera cinematic camera motion -->
+  <script src="/sdk/cench-camera.js"></script>
+  <!-- CenchInteract interaction components -->
+  <script src="/sdk/interaction-components.js"></script>
+
+  <meta charset="UTF-8">
+  <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100vh; overflow: hidden; background: #fffef9;
+      
+    }
+    #chart { width: 100%; height: 100%; }
+    
+  </style>
+</head>
+<body>
+  <div id="scene-camera" style="position:absolute;inset:0;transform-origin:center center;will-change:transform,filter;">
+  <div id="chart"></div>
+  
+  
+  </div><!-- /scene-camera -->
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+  <script src="/sdk/cench-charts.js"></script>
+  <script>
+    var SCENE_ID     = 'cc13937f-c269-486d-9624-eca2b084b34d';
+    var DATA = [{"label":"Troponin I/T","value":94},{"label":"CMR (Lake Louise)","value":91},{"label":"BNP/NT-proBNP","value":85},{"label":"CRP","value":78},{"label":"ESR","value":72}];
+    var WIDTH = 1920, HEIGHT = 1080;
+    var PALETTE      = ["#1a1a2e","#e84545","#16a34a","#2563eb"];
+    var DURATION     = 20;
+    var FONT         = 'Caveat';
+    var STROKE_COLOR = '#1a1a2e';
+    var AXIS_COLOR   = '#4a4a52';
+    var GRID_COLOR   = '#e5e5e8';
+
+    // Audio volume is handled by the playback controller
+  </script>
+
+  <script>
+(function() {
+  // ── performance.now() interception ──────────────────────
+  // Canvas2D scenes compute animation time via:
+  //   getT() = (performance.now() - startWall) / 1000
+  // When RAF is blocked (paused), elapsed wall-clock time
+  // shouldn't count toward animation time. We subtract
+  // cumulative paused duration from performance.now().
+  var _perfNow = performance.now.bind(performance);
+  var _pauseOffset = 0;
+  var _pauseStart = _perfNow(); // starts paused
+
+  performance.now = function() {
+    return _perfNow() - _pauseOffset;
+  };
+
+  // ── RAF interception ─────────────────────────────────────
+  // Prevent old canvas2d/three.js scenes from auto-starting
+  // their requestAnimationFrame loops. We capture the callback
+  // and only start it when the parent sends 'play'.
+  var _realRAF = window.requestAnimationFrame.bind(window);
+  var _realCAF = window.cancelAnimationFrame.bind(window);
+  // Expose native RAF so overlay widgets (TalkingHead) can bypass interception.
+  // When __rafUnlocked is set, _blockRAF skips re-intercepting RAF so
+  // TalkingHead's Three.js animation loop keeps running during pause.
+  window.__nativeRAF = _realRAF;
+  window.__nativeCAF = _realCAF;
+  window.__rafUnlocked = false;
+  var _pendingRAFCallbacks = [];
+  var _rafBlocked = true;  // starts blocked
+  var _currentRAFId = null;
+
+  window.requestAnimationFrame = function(cb) {
+    if (_rafBlocked) {
+      // Queue the callback — multiple consumers (scene code + TalkingHead) may register
+      var queueId = -(_pendingRAFCallbacks.length + 1);
+      _pendingRAFCallbacks.push(cb);
+      return queueId;
+    }
+    _currentRAFId = _realRAF(cb);
+    return _currentRAFId;
+  };
+  window.cancelAnimationFrame = function(id) {
+    if (id < 0) {
+      // Remove from pending queue
+      var idx = (-id) - 1;
+      if (idx < _pendingRAFCallbacks.length) _pendingRAFCallbacks[idx] = null;
+      return;
+    }
+    _currentRAFId = null;
+    _realCAF(id);
+  };
+
+  function _unblockRAF() {
+    // Accumulate paused duration so performance.now() skips it
+    if (_pauseStart !== null) {
+      _pauseOffset += _perfNow() - _pauseStart;
+      _pauseStart = null;
+    }
+    _rafBlocked = false;
+    // Restore native RAF for GSAP and future calls
+    window.requestAnimationFrame = _realRAF;
+    window.cancelAnimationFrame = _realCAF;
+    // Reset the time origin for old canvas2d code that uses
+    // window.startWall. (Local const startWall is handled by
+    // the performance.now() interception above.)
+    if (typeof window.startWall !== 'undefined') {
+      window.startWall = performance.now();
+    }
+    // Also reset _startTime (used by some old Zdog/Three scenes)
+    if (typeof window._startTime !== 'undefined') {
+      window._startTime = performance.now();
+    }
+    // Kick off all queued callbacks (scene code + TalkingHead, etc.)
+    var queued = _pendingRAFCallbacks.slice();
+    _pendingRAFCallbacks = [];
+    queued.forEach(function(cb) { if (cb) _realRAF(cb); });
+    // Also call legacy __resume if scene code defined it
+    if (window.__resume && window.__resume !== _legacyResume) {
+      try { window.__resume(); } catch(e) {}
+    }
+  }
+
+  function _blockRAF() {
+    // Record pause start for performance.now() offset tracking
+    if (_pauseStart === null) {
+      _pauseStart = _perfNow();
+    }
+    // If RAF was permanently unlocked (TalkingHead present), skip blocking
+    // so the 3D avatar animation loop keeps running during pause
+    if (window.__rafUnlocked) {
+      // Still call legacy pause handlers
+      if (window.__pause && window.__pause !== _legacyPause) {
+        try { window.__pause(); } catch(e) {}
+      }
+      return;
+    }
+    _rafBlocked = true;
+    // Cancel any in-flight RAF
+    if (_currentRAFId) { _realCAF(_currentRAFId); _currentRAFId = null; }
+    // Override RAF again to block new calls
+    _pendingRAFCallbacks = [];
+    window.requestAnimationFrame = function(cb) {
+      var queueId = -(_pendingRAFCallbacks.length + 1);
+      _pendingRAFCallbacks.push(cb);
+      return queueId;
+    };
+    // Also call legacy __pause if scene code defined it
+    if (window.__pause && window.__pause !== _legacyPause) {
+      try { window.__pause(); } catch(e) {}
+    }
+  }
+
+  // ── Master timeline ──────────────────────────────────────
+  // Starts paused. Nothing plays until parent sends 'play'.
+  var masterTL = gsap.timeline({
+    paused: true,
+    onComplete: function() {
+      postToParent({ type: 'ended' });
+    },
+    onUpdate: function() {
+      postToParent({
+        type: 'timeupdate',
+        currentTime: masterTL.time(),
+      });
+    },
+  });
+
+  // Guarantee timeline duration matches scene duration.
+  // Scene code may not fill the full duration, but the timeline
+  // should always report the correct total length.
+  if (typeof DURATION === 'number' && DURATION > 0) {
+    masterTL.to({}, { duration: DURATION }, 0);
+  }
+
+  // Public API for scene code
+  window.__tl = masterTL;
+
+  // ── Multi-track audio integration ───────────────────────
+  var ttsAudio = null;
+  var sfxElements = [];
+  var musicAudio = null;
+  var legacyAudio = [];
+
+  window.addEventListener('load', function() {
+    ttsAudio = document.getElementById('scene-tts') || document.getElementById('scene-audio');
+    sfxElements = Array.from(document.querySelectorAll('[data-track="sfx"]'));
+    musicAudio = document.getElementById('scene-music');
+    legacyAudio = Array.from(document.querySelectorAll('audio')).filter(function(a) {
+      return !a.dataset.track && a.id !== 'scene-tts' && a.id !== 'scene-audio' && a.id !== 'scene-music';
+    });
+
+    // Set initial volumes
+    if (ttsAudio) ttsAudio.volume = 1;
+    if (musicAudio) {
+      musicAudio.volume = parseFloat(musicAudio.dataset.volume || '0.12');
+    }
+    sfxElements.forEach(function(el) {
+      el.volume = parseFloat(el.dataset.volume || '0.8');
+    });
+
+    // Schedule SFX triggers on the GSAP timeline
+    if (window.__tl) {
+      sfxElements.forEach(function(el) {
+        var triggerAt = parseFloat(el.dataset.triggerAt || '0');
+        window.__tl.call(function() {
+          el.currentTime = 0;
+          el.play().catch(function(){});
+        }, null, triggerAt);
+      });
+    }
+
+    // Music ducking: reduce music volume during TTS playback
+    if (musicAudio && ttsAudio && musicAudio.dataset.duck === 'true') {
+      var normalVol = parseFloat(musicAudio.dataset.volume || '0.12');
+      var duckLevel = parseFloat(musicAudio.dataset.duckLevel || '0.2');
+      var duckVol = normalVol * duckLevel;
+      ttsAudio.addEventListener('play', function() { musicAudio.volume = duckVol; });
+      ttsAudio.addEventListener('pause', function() { musicAudio.volume = normalVol; });
+      ttsAudio.addEventListener('ended', function() { musicAudio.volume = normalVol; });
+    }
+
+    // Web Speech API fallback
+    var ttsConfig = document.getElementById('scene-tts-config');
+    if (ttsConfig && !ttsAudio) {
+      window.__webSpeechConfig = {
+        provider: ttsConfig.dataset.provider,
+        text: ttsConfig.dataset.text,
+        voice: ttsConfig.dataset.voice,
+      };
+    }
+  });
+
+  function syncMedia(playing) {
+    // TTS
+    if (ttsAudio) {
+      try {
+        if (playing) ttsAudio.play().catch(function(){});
+        else ttsAudio.pause();
+      } catch(e) {}
+    }
+
+    // Web Speech API fallback
+    if (!ttsAudio && window.__webSpeechConfig && window.speechSynthesis) {
+      if (playing) {
+        if (!window.__webSpeechActive) {
+          var u = new SpeechSynthesisUtterance(window.__webSpeechConfig.text);
+          if (window.__webSpeechConfig.voice) {
+            var voices = speechSynthesis.getVoices();
+            var match = voices.find(function(v) { return v.name === window.__webSpeechConfig.voice; });
+            if (match) u.voice = match;
+          }
+          speechSynthesis.speak(u);
+          window.__webSpeechActive = true;
+          u.onend = function() { window.__webSpeechActive = false; };
+        }
+      } else {
+        speechSynthesis.cancel();
+        window.__webSpeechActive = false;
+      }
+    }
+
+    // Puter.js fallback
+    if (!ttsAudio && window.__webSpeechConfig && window.__webSpeechConfig.provider === 'puter' && window.puter) {
+      if (playing && !window.__puterAudioPlaying) {
+        window.puter.ai.txt2speech(window.__webSpeechConfig.text, {
+          provider: 'openai',
+          voice: window.__webSpeechConfig.voice || 'nova',
+        }).then(function(audioEl) {
+          audioEl.play();
+          window.__puterAudioPlaying = true;
+          audioEl.onended = function() { window.__puterAudioPlaying = false; };
+        }).catch(function(){});
+      }
+    }
+
+    // Music
+    if (musicAudio) {
+      try {
+        if (playing) musicAudio.play().catch(function(){});
+        else musicAudio.pause();
+      } catch(e) {}
+    }
+
+    // SFX are triggered by GSAP timeline callbacks, not play/pause
+    // But stop them on pause
+    if (!playing) {
+      sfxElements.forEach(function(el) {
+        try { el.pause(); } catch(e) {}
+      });
+    }
+
+    // Legacy audio elements
+    legacyAudio.forEach(function(a) {
+      try {
+        if (playing) a.play().catch(function(){});
+        else a.pause();
+      } catch(e) {}
+    });
+
+    // Videos (avatar, veo3 layers)
+    var videos = document.querySelectorAll('video');
+    videos.forEach(function(v) {
+      try {
+        if (playing) v.play().catch(function(){});
+        else v.pause();
+      } catch(e) {}
+    });
+
+    // CSS animations (legacy SVG scenes)
+    var cssCtrl = document.getElementById('__gsap_css_ctrl');
+    if (!cssCtrl) {
+      cssCtrl = document.createElement('style');
+      cssCtrl.id = '__gsap_css_ctrl';
+      document.head.appendChild(cssCtrl);
+    }
+    cssCtrl.textContent = playing
+      ? '*, *::before, *::after { animation-play-state: running !important; }'
+      : '*, *::before, *::after { animation-play-state: paused !important; }';
+  }
+
+  // ── CSS animation control via Web Animations API ─────────
+  // SVG scenes use CSS @keyframes which can't be seeked by GSAP.
+  // The Web Animations API gives us seekable Animation objects.
+  // After seeking (which calls anim.pause()), we MUST call anim.play()
+  // to resume — CSS animation-play-state alone can't override API pause.
+  function _seekCSSAnimations(timeMs) {
+    if (!document.getAnimations) return;
+    var anims = document.getAnimations();
+    if (anims.length > 0) {
+      anims.forEach(function(anim) {
+        try {
+          anim.currentTime = timeMs;
+          anim.pause();
+        } catch(e) {}
+      });
+    } else {
+      // Animations may not exist yet (iframe just became visible).
+      // Retry after the browser renders a frame.
+      _realRAF(function() {
+        var retryAnims = document.getAnimations ? document.getAnimations() : [];
+        retryAnims.forEach(function(anim) {
+          try {
+            anim.currentTime = timeMs;
+            anim.pause();
+          } catch(e) {}
+        });
+      });
+    }
+  }
+
+  function _resumeCSSAnimations() {
+    if (!document.getAnimations) return;
+    var anims = document.getAnimations();
+    if (anims.length > 0) {
+      anims.forEach(function(anim) {
+        try { anim.play(); } catch(e) {}
+      });
+    } else {
+      _realRAF(function() {
+        var retryAnims = document.getAnimations ? document.getAnimations() : [];
+        retryAnims.forEach(function(anim) {
+          try { anim.play(); } catch(e) {}
+        });
+      });
+    }
+  }
+
+  // ── postMessage bridge ───────────────────────────────────
+  function postToParent(msg) {
+    try {
+      window.parent.postMessage(
+        Object.assign({
+          source: 'cench-scene',
+          sceneId: typeof SCENE_ID !== 'undefined' ? SCENE_ID : null,
+        }, msg),
+        '*'
+      );
+    } catch(e) {}
+  }
+
+  window.addEventListener('message', function(event) {
+    if (!event.data || event.data.target !== 'cench-scene') return;
+    // Ignore messages for other scenes
+    if (
+      event.data.sceneId &&
+      typeof SCENE_ID !== 'undefined' &&
+      event.data.sceneId !== SCENE_ID
+    ) return;
+
+    var cmd = event.data;
+
+    switch (cmd.type) {
+
+      case 'play':
+        if (masterTL.time() >= masterTL.duration()) {
+          masterTL.seek(0);
+          _seekCSSAnimations(0);
+        }
+        _unblockRAF();   // let legacy RAF loops run
+        gsap.ticker.wake();  // ensure ticker is active after pause
+        masterTL.play();
+        syncMedia(true);
+        _resumeCSSAnimations();  // Must call anim.play() via API — CSS rule alone can't override API pause
+        // Avatar sync — restore active mood + start speech on first play
+        if (window.__avatarHead) {
+          try {
+            window.__avatarHead.setMood(window.__avatarMood || 'happy');
+            if (!window.__avatarSpeechStarted && window.__avatarStartSpeech) {
+              window.__avatarStartSpeech();
+              window.__avatarSpeechStarted = true;
+            }
+          } catch(e) {}
+        }
+        postToParent({ type: 'playing' });
+        break;
+
+      case 'pause':
+        _blockRAF();     // stop legacy RAF loops
+        masterTL.pause();
+        syncMedia(false);  // CSS animation-play-state: paused handles SVG scenes
+        // Avatar sync — go idle (still breathes/blinks, stops speaking)
+        if (window.__avatarHead) {
+          try {
+            if (window.__avatarHead.stopSpeaking) window.__avatarHead.stopSpeaking();
+            window.__avatarHead.setMood('neutral');
+          } catch(e) {}
+        }
+        postToParent({
+          type: 'paused',
+          currentTime: masterTL.time(),
+        });
+        break;
+
+      case 'seek':
+        var seekTime = Math.max(0, Math.min(cmd.time, masterTL.duration()));
+        masterTL.seek(seekTime);
+        // Force GSAP to re-evaluate all tweens and fire onUpdate
+        masterTL.progress(masterTL.progress());
+        // Belt-and-suspenders: call draw() directly for canvas2d scenes
+        if (typeof window.draw === 'function') {
+          try { window.draw(seekTime); } catch(e) {}
+        }
+        // Sync all audio to seek position
+        if (ttsAudio) { try { ttsAudio.currentTime = seekTime; } catch(e) {} }
+        if (musicAudio) { try { musicAudio.currentTime = seekTime; } catch(e) {} }
+        sfxElements.forEach(function(el) {
+          try { el.pause(); el.currentTime = 0; } catch(e) {}
+        });
+        legacyAudio.forEach(function(a) {
+          try { a.currentTime = seekTime; } catch(e) {}
+        });
+        document.querySelectorAll('video').forEach(function(v) {
+          try { v.currentTime = seekTime; } catch(e) {}
+        });
+        // Seek CSS animations (SVG scenes with @keyframes)
+        _seekCSSAnimations(seekTime * 1000);
+        // Pause after seeking (parent can send 'play' after if desired)
+        if (!masterTL.isActive()) {
+          masterTL.pause();
+        }
+        syncMedia(false);
+        postToParent({
+          type: 'seeked',
+          currentTime: masterTL.time(),
+        });
+        break;
+
+      case 'reset':
+        _blockRAF();
+        masterTL.seek(0).pause();
+        _seekCSSAnimations(0);
+        syncMedia(false);
+        // Avatar sync — reset to idle, allow speech restart
+        if (window.__avatarHead) {
+          try {
+            if (window.__avatarHead.stopSpeaking) window.__avatarHead.stopSpeaking();
+            window.__avatarHead.setMood('neutral');
+            window.__avatarSpeechStarted = false;
+          } catch(e) {}
+        }
+        postToParent({ type: 'reset' });
+        break;
+
+      // ── Avatar live control (from settings panel) ──────────
+      case 'avatar_command':
+        if (window.__avatarHead) {
+          try {
+            var h = window.__avatarHead;
+            switch (cmd.command) {
+              case 'setMood':
+                h.setMood(cmd.mood);
+                window.__avatarMood = cmd.mood;
+                break;
+              case 'playGesture':
+                h.playGesture(cmd.gesture, cmd.duration || 2, cmd.mirror);
+                break;
+              case 'setView':
+                if (h.setView) h.setView(cmd.view);
+                break;
+              case 'playAnimation':
+                if (h.playAnimation) h.playAnimation(cmd.url, null, cmd.duration || 10, cmd.index || 0);
+                break;
+              case 'stopAnimation':
+                if (h.stopAnimation) h.stopAnimation();
+                break;
+              case 'lookAt':
+                if (h.lookAt) h.lookAt(cmd.x, cmd.y, cmd.duration || 1000);
+                break;
+            }
+          } catch(e) { console.warn('[Playback] avatar_command error:', e); }
+        }
+        break;
+
+      case 'get_state':
+        postToParent({
+          type: 'state',
+          currentTime: masterTL.time(),
+          duration: masterTL.duration(),
+          status: masterTL.isActive()
+            ? 'playing'
+            : masterTL.time() >= masterTL.duration()
+            ? 'ended'
+            : 'paused',
+        });
+        break;
+    }
+  });
+
+  // ── Signal ready after all scripts execute ───────────────
+  window.addEventListener('load', function() {
+    setTimeout(function() {
+      postToParent({
+        type: 'ready',
+        duration: masterTL.duration(),
+        sceneId: typeof SCENE_ID !== 'undefined' ? SCENE_ID : null,
+      });
+    }, 50);
+  });
+
+  // ── Legacy compatibility ─────────────────────────────────
+  // Old code may call __pause/__resume directly.
+  // Store refs so _blockRAF/_unblockRAF can detect our own functions.
+  var _legacyPause = function() { _blockRAF(); masterTL.pause(); syncMedia(false); };
+  var _legacyResume = function() { _unblockRAF(); masterTL.play(); syncMedia(true); };
+  window.__pause = _legacyPause;
+  window.__resume = _legacyResume;
+
+})();
+</script>
+<script>
+(function() {
+  // ── Element registry ────────────────────────────────────
+  window.__elements = {};
+  window.__selected = null;
+
+  window.__register = function(element) {
+    window.__elements[element.id] = element;
+  };
+
+  // ── Hit detection ───────────────────────────────────────
+  window.__hitTest = function(x, y) {
+    var elements = Object.values(window.__elements);
+    for (var i = elements.length - 1; i >= 0; i--) {
+      var el = elements[i];
+      if (!el.bbox || !el.visible) continue;
+      if (
+        x >= el.bbox.x && x <= el.bbox.x + el.bbox.w &&
+        y >= el.bbox.y && y <= el.bbox.y + el.bbox.h
+      ) {
+        return el;
+      }
+    }
+    return null;
+  };
+
+  // ── Click handler ───────────────────────────────────────
+  document.addEventListener('click', function(e) {
+    // The scene body uses transform:scale(s) via fitToViewport().
+    // e.clientX/Y are in the *scaled* viewport, so we need to
+    // convert back to 1920x1080 scene coordinates.
+    // Use the body's current CSS transform scale factor.
+    var body = document.body;
+    var bodyStyle = body.style.transform || '';
+    var scaleMatch = bodyStyle.match(/scale\(([^)]+)\)/);
+    var bodyScale = scaleMatch ? parseFloat(scaleMatch[1]) : 1;
+    // If no body transform, fall back to viewport ratio
+    if (!bodyScale || isNaN(bodyScale)) {
+      bodyScale = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+    }
+    var x = e.clientX / bodyScale;
+    var y = e.clientY / bodyScale;
+
+    var hit = window.__hitTest(x, y);
+
+    if (hit) {
+      window.__selected = hit.id;
+      showSelectionHighlight(hit);
+      window.parent.postMessage({
+        source: 'cench-scene',
+        type: 'element_selected',
+        elementId: hit.id,
+        element: JSON.parse(JSON.stringify(hit)),
+      }, '*');
+    } else {
+      window.__selected = null;
+      clearSelectionHighlight();
+      window.parent.postMessage({
+        source: 'cench-scene',
+        type: 'element_deselected',
+      }, '*');
+    }
+  });
+
+  // ── Selection highlight overlay ─────────────────────────
+  var highlightCanvas = null;
+
+  function showSelectionHighlight(element) {
+    if (!element.bbox) return;
+
+    if (!highlightCanvas) {
+      highlightCanvas = document.createElement('canvas');
+      highlightCanvas.width = 1920;
+      highlightCanvas.height = 1080;
+      highlightCanvas.style.cssText =
+        'position:absolute;inset:0;pointer-events:none;z-index:9999;';
+      // Scale with the body
+      var bodyTransform = document.body.style.transform;
+      if (bodyTransform) {
+        highlightCanvas.style.transformOrigin = 'top left';
+      }
+      document.body.appendChild(highlightCanvas);
+    }
+
+    var ctx = highlightCanvas.getContext('2d');
+    ctx.clearRect(0, 0, 1920, 1080);
+
+    var bx = element.bbox.x;
+    var by = element.bbox.y;
+    var bw = element.bbox.w;
+    var bh = element.bbox.h;
+    var pad = 8;
+
+    // Dashed selection box
+    ctx.strokeStyle = '#e84545';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 3]);
+    ctx.strokeRect(bx - pad, by - pad, bw + pad * 2, bh + pad * 2);
+
+    // Corner handles
+    ctx.fillStyle = '#e84545';
+    ctx.setLineDash([]);
+    var corners = [
+      [bx - pad, by - pad],
+      [bx + bw + pad, by - pad],
+      [bx - pad, by + bh + pad],
+      [bx + bw + pad, by + bh + pad],
+    ];
+    corners.forEach(function(c) {
+      ctx.fillRect(c[0] - 4, c[1] - 4, 8, 8);
+    });
+
+    // Element label
+    ctx.fillStyle = '#e84545';
+    ctx.font = '20px DM Mono, monospace';
+    ctx.fillText(element.label || element.id, bx - pad, by - pad - 8);
+  }
+
+  function clearSelectionHighlight() {
+    if (highlightCanvas) {
+      var ctx = highlightCanvas.getContext('2d');
+      ctx.clearRect(0, 0, 1920, 1080);
+    }
+  }
+
+  // ── Highlight from parent (when selecting in layers panel) ──
+  window.__highlightElement = function(elementId) {
+    var el = window.__elements[elementId];
+    if (el) {
+      window.__selected = elementId;
+      showSelectionHighlight(el);
+    }
+  };
+
+  window.__clearHighlight = function() {
+    window.__selected = null;
+    clearSelectionHighlight();
+  };
+
+  // ── Property patching from parent ──────────────────────
+  window.addEventListener('message', function(e) {
+    if (!e.data || e.data.target !== 'cench-scene') return;
+
+    if (e.data.type === 'patch_element') {
+      var elementId = e.data.elementId;
+      var property = e.data.property;
+      var value = e.data.value;
+      var element = window.__elements[elementId];
+      if (!element) return;
+
+      element[property] = value;
+
+      // Re-render: for canvas2d, call redrawAll if it exists
+      if (window.__redrawAll) {
+        window.__redrawAll();
+      }
+      // For SVG, apply attribute directly to the DOM node
+      var domEl = document.getElementById(elementId);
+      if (domEl) {
+        // Map element properties to DOM attributes
+        if (property === 'fill' || property === 'stroke') {
+          domEl.setAttribute(property, value || 'none');
+        } else if (property === 'strokeWidth') {
+          domEl.setAttribute('stroke-width', value);
+        } else if (property === 'fillOpacity') {
+          domEl.setAttribute('fill-opacity', value);
+        } else if (property === 'opacity') {
+          domEl.setAttribute('opacity', value);
+        } else if (property === 'visible') {
+          domEl.style.display = value ? '' : 'none';
+        } else if (property === 'text') {
+          domEl.textContent = value;
+        } else if (property === 'fontSize') {
+          domEl.setAttribute('font-size', value);
+        } else if (property === 'fontFamily') {
+          domEl.setAttribute('font-family', value);
+        } else if (property === 'fontWeight') {
+          domEl.setAttribute('font-weight', value);
+        } else if (property === 'textAnchor') {
+          domEl.setAttribute('text-anchor', value);
+        } else if (['x','y','cx','cy','r','rx','ry','width','height','x1','y1','x2','y2'].indexOf(property) !== -1) {
+          domEl.setAttribute(property, value);
+          // Update bbox for selection highlight
+          try {
+            var nb = domEl.getBBox();
+            element.bbox = { x: nb.x, y: nb.y, w: nb.width, h: nb.height };
+          } catch(ignored) {}
+        }
+      }
+
+      // Update selection highlight if this element is selected
+      if (window.__selected === elementId && element.bbox) {
+        showSelectionHighlight(element);
+      }
+
+      // Re-seek timeline to current time to show the change
+      if (window.__tl && !window.__tl.isActive()) {
+        window.__tl.seek(window.__tl.time());
+      }
+    }
+
+    if (e.data.type === 'highlight_element') {
+      if (e.data.elementId) {
+        window.__highlightElement(e.data.elementId);
+      } else {
+        window.__clearHighlight();
+      }
+    }
+
+    if (e.data.type === 'get_elements') {
+      window.parent.postMessage({
+        source: 'cench-scene',
+        type: 'elements_list',
+        elements: JSON.parse(JSON.stringify(window.__elements)),
+      }, '*');
+    }
+  });
+
+  // ── Auto-register SVG elements on load ──────────────────
+  var SVG_SCAN_TAGS = 'rect,circle,ellipse,line,polyline,polygon,path,text,g,image,use';
+
+  window.addEventListener('load', function() {
+    // Scan ALL visible SVG elements (not just those with id)
+    var autoIdx = 0;
+    document.querySelectorAll('svg').forEach(function(svg) {
+      svg.querySelectorAll(SVG_SCAN_TAGS).forEach(function(el) {
+        // Assign stable id if missing
+        if (!el.id) {
+          el.id = 'auto-' + el.tagName.toLowerCase() + '-' + (autoIdx++);
+        }
+        // Skip if already registered by scene code
+        if (window.__elements[el.id]) return;
+
+        // Skip invisible or tiny elements
+        var bbox;
+        try {
+          var b = el.getBBox();
+          bbox = { x: b.x, y: b.y, w: b.width, h: b.height };
+          // Skip zero-size elements (markers, defs, clip-paths)
+          if (bbox.w < 2 && bbox.h < 2) return;
+        } catch(e) {
+          return; // Can't measure = not renderable
+        }
+
+        // Skip elements inside <defs>, <clipPath>, <mask>, <pattern>
+        var skip = false;
+        var parent = el.parentElement;
+        while (parent && parent !== svg) {
+          var pTag = parent.tagName.toLowerCase();
+          if (pTag === 'defs' || pTag === 'clippath' || pTag === 'mask' || pTag === 'pattern' || pTag === 'marker') { skip = true; break; }
+          parent = parent.parentElement;
+        }
+        if (skip) return;
+
+        var tagName = el.tagName.toLowerCase();
+        var type = 'svg-shape';
+        if (tagName === 'text' || tagName === 'tspan') type = 'svg-text';
+        else if (tagName === 'path') type = 'svg-path';
+        else if (tagName === 'rect') type = 'svg-shape';
+        else if (tagName === 'circle' || tagName === 'ellipse') type = 'svg-shape';
+        else if (tagName === 'line' || tagName === 'polyline' || tagName === 'polygon') type = 'svg-shape';
+        else if (tagName === 'image') type = 'svg-shape';
+        else if (tagName === 'g') type = 'svg-shape';
+
+        // Build readable label
+        var autoLabel = el.dataset ? el.dataset.label : null;
+        if (!autoLabel) {
+          if (type === 'svg-text') {
+            autoLabel = (el.textContent || '').trim().slice(0, 30) || 'Text';
+          } else {
+            autoLabel = tagName + (el.id && !el.id.startsWith('auto-') ? '#' + el.id : ' ' + (autoIdx));
+          }
+        }
+
+        // Extract computed style for inherited properties
+        var cs = window.getComputedStyle(el);
+
+        window.__register({
+          id: el.id,
+          type: type,
+          label: autoLabel,
+          bbox: bbox,
+          stroke: el.getAttribute('stroke') || cs.stroke || 'none',
+          strokeWidth: parseFloat(el.getAttribute('stroke-width') || cs.strokeWidth || '0'),
+          fill: el.getAttribute('fill') || cs.fill || 'none',
+          fillOpacity: parseFloat(el.getAttribute('fill-opacity') || '1'),
+          opacity: parseFloat(el.getAttribute('opacity') || cs.opacity || '1'),
+          visible: el.style.display !== 'none' && cs.display !== 'none',
+          animStartTime: 0,
+          animDuration: 0,
+          text: (type === 'svg-text') ? (el.textContent || '') : '',
+          fontSize: parseFloat(el.getAttribute('font-size') || cs.fontSize || '16'),
+          fontFamily: el.getAttribute('font-family') || cs.fontFamily || '',
+          x: parseFloat(el.getAttribute('x') || el.getAttribute('cx') || '0'),
+          y: parseFloat(el.getAttribute('y') || el.getAttribute('cy') || '0'),
+        });
+      });
+    });
+
+    // Report all registered elements to parent
+    setTimeout(function() {
+      window.parent.postMessage({
+        source: 'cench-scene',
+        type: 'elements_list',
+        elements: JSON.parse(JSON.stringify(window.__elements)),
+      }, '*');
+    }, 100);
+  });
+})();
+</script>
+
+  <script>
+    
+const margin = { top: 120, right: 80, bottom: 100, left: 200 };
+const w = WIDTH - margin.left - margin.right;
+const h = HEIGHT - margin.top - margin.bottom;
+
+const svg = d3.select('#chart')
+  .append('svg').attr('width', WIDTH).attr('height', HEIGHT)
+  .append('g').attr('transform', 'translate(' + margin.left + ',' + margin.top + ')');
+
+const y = d3.scaleBand().domain(DATA.map(d => d.label)).range([0, h]).padding(0.35);
+const x = d3.scaleLinear().domain([0, 100]).range([0, w]);
+
+// Axes
+svg.append('g')
+  .call(d3.axisLeft(y).tickSize(0))
+  .attr('font-family', 'Georgia, serif').attr('font-size', 20).attr('color', '#1a1a2e')
+  .select('.domain').remove();
+
+svg.append('g')
+  .attr('transform', 'translate(0,' + h + ')')
+  .call(d3.axisBottom(x).ticks(5).tickFormat(d => d + '%'))
+  .attr('font-family', 'Inter, sans-serif').attr('font-size', 16).attr('color', '#888888');
+
+// Grid lines
+svg.selectAll('.grid-line')
+  .data(x.ticks(5)).enter()
+  .append('line')
+  .attr('x1', d => x(d)).attr('x2', d => x(d))
+  .attr('y1', 0).attr('y2', h)
+  .attr('stroke', '#e5e5e5').attr('stroke-dasharray', '4,4');
+
+// Bars with animation
+const bars = svg.selectAll('.bar')
+  .data(DATA).enter()
+  .append('rect')
+  .attr('y', d => y(d.label))
+  .attr('height', y.bandwidth())
+  .attr('x', 0).attr('width', 0)
+  .attr('fill', (d, i) => i < 2 ? '#e94560' : '#1a1a2e')
+  .attr('rx', 4);
+
+bars.transition().duration(1200).delay((d, i) => i * 200 + 500)
+  .attr('width', d => x(d.value));
+
+// Value labels
+svg.selectAll('.val')
+  .data(DATA).enter()
+  .append('text')
+  .attr('y', d => y(d.label) + y.bandwidth() / 2 + 6)
+  .attr('x', d => x(d.value) + 12)
+  .attr('font-family', 'Inter, sans-serif').attr('font-size', 18).attr('font-weight', 600)
+  .attr('fill', '#1a1a2e')
+  .attr('opacity', 0)
+  .text(d => d.value + '%')
+  .transition().delay((d, i) => i * 200 + 1200).duration(400)
+  .attr('opacity', 1);
+
+// Title
+d3.select('#chart svg').append('text')
+  .attr('x', WIDTH / 2).attr('y', 60)
+  .attr('text-anchor', 'middle')
+  .attr('font-family', 'Georgia, serif').attr('font-size', 42).attr('font-weight', 700)
+  .attr('fill', '#1a1a2e')
+  .text('Diagnostic Sensitivity in Acute Myocarditis');
+
+// Fig caption
+d3.select('#chart svg').append('text')
+  .attr('x', 60).attr('y', HEIGHT - 30)
+  .attr('font-family', 'Georgia, serif').attr('font-size', 13).attr('font-style', 'italic')
+  .attr('fill', '#888888')
+  .text('Fig. 5 | Sensitivity of key diagnostic modalities in acute myocarditis (%)');
+
+  </script>
+</body>
+</html>

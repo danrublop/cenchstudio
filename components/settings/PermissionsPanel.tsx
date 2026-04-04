@@ -8,14 +8,27 @@ import type { APIName, PermissionMode, PermissionConfig } from '@/lib/types'
 export default function PermissionsPanel() {
   const { modelConfigs, project, updateAPIPermissions } = useVideoStore()
   const permissions = project.apiPermissions ?? {}
-  const externalApis: APIName[] = ['heygen', 'veo3', 'imageGen', 'backgroundRemoval', 'elevenLabs', 'unsplash']
+  const externalApis: APIName[] = [
+    'heygen',
+    'veo3',
+    'imageGen',
+    'backgroundRemoval',
+    'elevenLabs',
+    'unsplash',
+    'googleTts',
+    'googleImageGen',
+    'openaiTts',
+    'geminiTts',
+    'freesound',
+    'pixabay',
+  ]
 
-  const activeApis = externalApis.filter(api => permissions[api]?.mode !== 'always_deny')
-  const activeModels = modelConfigs.filter(m => m.enabled)
+  const activeApis = externalApis.filter((api) => permissions[api]?.mode !== 'always_deny')
+  const activeModels = modelConfigs.filter((m) => m.enabled)
 
   return (
     <div className="space-y-4">
-      {(activeApis.length === 0 && activeModels.length === 0) ? (
+      {activeApis.length === 0 && activeModels.length === 0 ? (
         <div className="text-center py-8 text-[#6b6b7a] flex flex-col items-center gap-2">
           <ShieldCheck size={24} className="opacity-20" />
           <p className="text-[11px]">No active modules or models enabled.</p>
@@ -34,7 +47,15 @@ export default function PermissionsPanel() {
   )
 }
 
-function PermissionConfigRow({ type, name, displayName }: { type: 'api' | 'model', name: string, displayName?: string }) {
+function PermissionConfigRow({
+  type,
+  name,
+  displayName,
+}: {
+  type: 'api' | 'model'
+  name: string
+  displayName?: string
+}) {
   const { project, updateAPIPermissions } = useVideoStore()
   const permissions = project.apiPermissions ?? {}
   const label = type === 'api' ? API_DISPLAY_NAMES[name as APIName] : (displayName ?? name)
@@ -48,7 +69,9 @@ function PermissionConfigRow({ type, name, displayName }: { type: 'api' | 'model
 
   const updateLimit = (val: string) => {
     if (type === 'api') {
-      updateAPIPermissions({ [name as APIName]: { ...(config ?? {}), monthlyLimit: val ? parseFloat(val) : null } } as any)
+      updateAPIPermissions({
+        [name as APIName]: { ...(config ?? {}), monthlyLimit: val ? parseFloat(val) : null },
+      } as any)
     }
   }
 

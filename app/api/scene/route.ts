@@ -3,8 +3,11 @@ import fs from 'fs/promises'
 import path from 'path'
 import { db } from '@/lib/db'
 import * as schema from '@/lib/db/schema'
-import { eq, and, asc } from 'drizzle-orm'
+import { eq, and, asc, sql } from 'drizzle-orm'
 import { v4 as uuidv4 } from 'uuid'
+import { normalizeTransition } from '@/lib/transitions'
+import { readProjectSceneBlob, writeProjectSceneBlob } from '@/lib/db/project-scene-storage'
+import { readProjectScenesFromTables, writeProjectScenesToTables } from '@/lib/db/project-scene-table'
 
 // ── GET /api/scene ────────────────────────────────────────────────────────────
 // ?projectId=X           → list scenes from the project's JSONB blob
@@ -29,13 +32,8 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Project not found' }, { status: 404 })
     }
 
-    let scenes: any[] = []
-    if (project.description) {
-      try {
-        const parsed = JSON.parse(project.description)
-        scenes = parsed.scenes || []
-      } catch {}
-    }
+    const tableBacked = await readProjectScenesFromTables(projectId)
+    const scenes = tableBacked?.scenes ?? readProjectSceneBlob(project.description).scenes
 
     if (sceneId) {
       const scene = scenes.find((s: any) => s.id === sceneId)
@@ -65,8 +63,9 @@ export async function GET(req: NextRequest) {
 // ── POST /api/scene ───────────────────────────────────────────────────────────
 // Creates a scene by appending to the project's JSONB blob + writing HTML.
 //
-// Mode 1 (SDK): { projectId, name, type, prompt, generatedCode|svgContent, duration?, bgColor? }
+// Mode 1 (SDK): { projectId, name, type, prompt, generatedCode|svgContent, duration?, bgColor?, transition? }
 //   → Appends scene to project JSONB, generates + writes HTML
+//   D3 + chartLayers: { type: 'd3', chartLayers: D3ChartLayer[] } compiles via CenchCharts (structured path); generatedCode optional
 // Mode 2 (legacy): { id, html }
 //   → Writes raw HTML to public/scenes/{id}.html (no DB record)
 
@@ -80,9 +79,21 @@ export async function POST(req: NextRequest) {
       if (!/^[a-zA-Z0-9\-]+$/.test(id)) {
         return NextResponse.json({ error: 'invalid id' }, { status: 400 })
       }
+      if (typeof html !== 'string') {
+        return NextResponse.json({ error: 'html must be a string' }, { status: 400 })
+      }
+      // Reject excessively large HTML (5MB limit)
+      if (html.length > 5 * 1024 * 1024) {
+        return NextResponse.json({ error: 'HTML body exceeds 5MB limit' }, { status: 413 })
+      }
+      // In production, block raw script tags for legacy mode.
+      if (process.env.NODE_ENV === 'production' && /<script\b/i.test(html)) {
+        return NextResponse.json({ error: 'legacy raw HTML cannot include <script> in production' }, { status: 400 })
+      }
       const scenesDir = path.join(process.cwd(), 'public', 'scenes')
       await fs.mkdir(scenesDir, { recursive: true })
       await fs.writeFile(path.join(scenesDir, `${id}.html`), html, 'utf-8')
+      console.log(`[POST /api/scene] Legacy write: id=${id} htmlLen=${html.length}`)
       return NextResponse.json({ success: true, path: `/scenes/${id}.html` })
     }
 
@@ -96,6 +107,11 @@ export async function POST(req: NextRequest) {
       svgContent,
       duration = 8,
       bgColor = '#181818',
+      chartLayers: bodyChartLayers,
+      sceneStyles: bodySceneStyles,
+      aiLayers: bodyAiLayers,
+      audioLayer: bodyAudioLayer,
+      transition: bodyTransition,
     } = body
 
     if (!projectId) {
@@ -103,26 +119,46 @@ export async function POST(req: NextRequest) {
     }
 
     // Load existing project
-    const [project] = await db
-      .select()
-      .from(schema.projects)
-      .where(eq(schema.projects.id, projectId))
-      .limit(1)
+    const [project] = await db.select().from(schema.projects).where(eq(schema.projects.id, projectId)).limit(1)
 
     if (!project) {
       return NextResponse.json({ error: 'Project not found' }, { status: 404 })
     }
 
     // Parse existing scenes from JSONB
-    let existingData: any = { scenes: [], sceneGraph: null }
-    if (project.description) {
-      try { existingData = JSON.parse(project.description) } catch {}
-    }
+    const existingData = readProjectSceneBlob(project.description)
     const scenes: any[] = existingData.scenes || []
 
     // Build scene object matching the Zustand Scene interface
     const code = svgContent ?? generatedCode ?? ''
     const sceneId = uuidv4()
+
+    // For motion/d3/zdog, generatedCode may be JSON {styles, htmlContent, sceneCode}
+    let parsedSceneCode = ''
+    let parsedSceneHTML = ''
+    let parsedSceneStyles = typeof bodySceneStyles === 'string' ? bodySceneStyles : ''
+    const structuredTypes = ['motion', 'd3', 'zdog', 'physics']
+    if (structuredTypes.includes(type) && code) {
+      try {
+        const parsed = JSON.parse(code)
+        if (parsed && typeof parsed === 'object' && (parsed.sceneCode || parsed.htmlContent || parsed.styles)) {
+          parsedSceneCode = parsed.sceneCode ?? ''
+          parsedSceneHTML = parsed.htmlContent ?? ''
+          if (!parsedSceneStyles && parsed.styles) parsedSceneStyles = parsed.styles
+        } else {
+          parsedSceneCode = code
+        }
+      } catch {
+        parsedSceneCode = code
+      }
+    } else if (['three', '3d_world'].includes(type) && code) {
+      try {
+        const parsed = JSON.parse(code)
+        parsedSceneCode = parsed?.sceneCode ?? code
+      } catch {
+        parsedSceneCode = code
+      }
+    }
 
     const newScene: Record<string, any> = {
       id: sceneId,
@@ -131,11 +167,13 @@ export async function POST(req: NextRequest) {
       summary: '',
       svgContent: type === 'svg' ? code : '',
       canvasCode: type === 'canvas2d' ? code : '',
-      sceneCode: ['d3', 'three', 'motion', 'zdog'].includes(type) ? code : '',
-      sceneHTML: '',
-      sceneStyles: '',
+      canvasBackgroundCode: '',
+      sceneCode: ['d3', 'three', 'motion', 'zdog', 'physics', '3d_world'].includes(type) ? parsedSceneCode : '',
+      sceneHTML: parsedSceneHTML,
+      sceneStyles: parsedSceneStyles,
       lottieSource: type === 'lottie' ? code : '',
       d3Data: null,
+      chartLayers: [],
       usage: null,
       duration,
       bgColor,
@@ -147,12 +185,24 @@ export async function POST(req: NextRequest) {
       primaryObjectId: null,
       svgBranches: [],
       activeBranchId: null,
-      transition: 'none',
+      transition: normalizeTransition(typeof bodyTransition === 'string' ? bodyTransition : undefined),
       sceneType: type,
       interactions: [],
       variables: [],
-      aiLayers: [],
+      aiLayers: Array.isArray(bodyAiLayers) ? bodyAiLayers : [],
       messages: [],
+    }
+
+    if (bodyAudioLayer && typeof bodyAudioLayer === 'object' && !Array.isArray(bodyAudioLayer)) {
+      newScene.audioLayer = { ...newScene.audioLayer, ...bodyAudioLayer }
+    }
+
+    if (type === 'd3' && Array.isArray(bodyChartLayers) && bodyChartLayers.length > 0) {
+      const { compileD3SceneFromLayers } = await import('@/lib/charts/compile')
+      const compiled = compileD3SceneFromLayers(bodyChartLayers)
+      newScene.chartLayers = bodyChartLayers
+      newScene.sceneCode = compiled.sceneCode
+      newScene.d3Data = compiled.d3Data
     }
 
     // Append to scenes array
@@ -169,22 +219,46 @@ export async function POST(req: NextRequest) {
       sceneGraph.startSceneId = sceneId
     }
 
-    // Save back to project JSONB
-    await db
+    // Generate and write HTML first (idempotent — safe to retry if DB step fails)
+    const { generateSceneHTML } = await import('@/lib/sceneTemplate')
+    const html = generateSceneHTML(
+      newScene as any,
+      project.globalStyle ?? undefined,
+      undefined,
+      project.audioSettings ?? undefined,
+    )
+    const scenesDir = path.join(process.cwd(), 'public', 'scenes')
+    try {
+      await fs.mkdir(scenesDir, { recursive: true })
+      await fs.writeFile(path.join(scenesDir, `${sceneId}.html`), html, 'utf-8')
+    } catch (e) {
+      console.error(`[POST /api/scene] Failed to write HTML for scene ${sceneId}:`, e)
+      return NextResponse.json({ error: `Failed to write scene HTML: ${(e as Error).message}` }, { status: 500 })
+    }
+
+    // Save to project JSONB with optimistic locking
+    const currentVersion = project.version ?? 1
+    const [updated] = await db
       .update(schema.projects)
       .set({
-        description: JSON.stringify({ scenes, sceneGraph }),
+        description: writeProjectSceneBlob(project.description, { scenes, sceneGraph }),
+        version: currentVersion + 1,
         updatedAt: new Date(),
       })
-      .where(eq(schema.projects.id, projectId))
+      .where(and(eq(schema.projects.id, projectId), eq(schema.projects.version, currentVersion)))
+      .returning({ id: schema.projects.id })
 
-    // Generate and write HTML
-    const { generateSceneHTML } = await import('@/lib/sceneTemplate')
-    const html = generateSceneHTML(newScene as any)
-    const scenesDir = path.join(process.cwd(), 'public', 'scenes')
-    await fs.mkdir(scenesDir, { recursive: true })
-    await fs.writeFile(path.join(scenesDir, `${sceneId}.html`), html, 'utf-8')
+    if (!updated) {
+      return NextResponse.json({ error: 'Conflict: project was modified concurrently. Please retry.' }, { status: 409 })
+    }
 
+    try {
+      await writeProjectScenesToTables(projectId, scenes as any, sceneGraph as any)
+    } catch (e) {
+      console.error('[POST /api/scene] table sync failed:', e)
+    }
+
+    console.log(`[POST /api/scene] Created: sceneId=${sceneId} type=${type} name="${name}" htmlLen=${html.length}`)
     return NextResponse.json({
       success: true,
       scene: {
@@ -208,32 +282,53 @@ export async function POST(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   try {
     const body = await req.json()
-    const { projectId, sceneId, generatedCode, svgContent, prompt } = body
+    const {
+      projectId,
+      sceneId,
+      generatedCode,
+      svgContent,
+      prompt,
+      cameraMotion,
+      transition,
+      textOverlays,
+      svgObjects,
+      bgColor,
+      duration,
+      name: sceneName,
+      audioLayer: bodyAudioLayer,
+      aiLayers: bodyAiLayers,
+    } = body
 
     if (!projectId || !sceneId) {
       return NextResponse.json({ error: 'projectId and sceneId are required' }, { status: 400 })
     }
 
     const code = svgContent ?? generatedCode
-    if (!code) {
-      return NextResponse.json({ error: 'generatedCode or svgContent is required' }, { status: 400 })
+    const hasPropertyUpdate =
+      cameraMotion !== undefined ||
+      transition !== undefined ||
+      textOverlays !== undefined ||
+      svgObjects !== undefined ||
+      bgColor !== undefined ||
+      duration !== undefined ||
+      sceneName !== undefined ||
+      bodyAudioLayer !== undefined ||
+      bodyAiLayers !== undefined
+    if (!code && !hasPropertyUpdate) {
+      return NextResponse.json(
+        { error: 'generatedCode, svgContent, or a scene property update is required' },
+        { status: 400 },
+      )
     }
 
     // Load project
-    const [project] = await db
-      .select()
-      .from(schema.projects)
-      .where(eq(schema.projects.id, projectId))
-      .limit(1)
+    const [project] = await db.select().from(schema.projects).where(eq(schema.projects.id, projectId)).limit(1)
 
     if (!project) {
       return NextResponse.json({ error: 'Project not found' }, { status: 404 })
     }
 
-    let existingData: any = { scenes: [], sceneGraph: null }
-    if (project.description) {
-      try { existingData = JSON.parse(project.description) } catch {}
-    }
+    const existingData = readProjectSceneBlob(project.description)
 
     const scenes: any[] = existingData.scenes || []
     const sceneIdx = scenes.findIndex((s: any) => s.id === sceneId)
@@ -245,31 +340,97 @@ export async function PATCH(req: NextRequest) {
     const scene = scenes[sceneIdx]
     const sceneType = scene.sceneType || 'svg'
 
-    if (sceneType === 'svg') scene.svgContent = code
-    else if (sceneType === 'canvas2d') scene.canvasCode = code
-    else if (['d3', 'three', 'motion'].includes(sceneType)) scene.sceneCode = code
-    else if (sceneType === 'lottie') scene.lottieSource = code
+    if (code) {
+      if (sceneType === 'svg') {
+        scene.svgContent = code
+      } else if (sceneType === 'canvas2d') {
+        scene.canvasCode = code
+      } else if (['d3', 'three', 'motion', 'zdog', 'physics', '3d_world'].includes(sceneType)) {
+        // Motion/d3/zdog code may be JSON {styles, htmlContent, sceneCode}
+        try {
+          const parsed = JSON.parse(code)
+          if (parsed && typeof parsed === 'object' && (parsed.sceneCode || parsed.htmlContent || parsed.styles)) {
+            scene.sceneCode = parsed.sceneCode ?? ''
+            scene.sceneHTML = parsed.htmlContent ?? ''
+            if (parsed.styles) scene.sceneStyles = parsed.styles
+          } else {
+            scene.sceneCode = code
+          }
+        } catch {
+          scene.sceneCode = code
+        }
+      } else if (sceneType === 'lottie') {
+        scene.lottieSource = code
+      }
+    }
 
     if (prompt) scene.prompt = prompt
+    if (cameraMotion !== undefined) scene.cameraMotion = cameraMotion
+    if (transition !== undefined) scene.transition = transition
+    if (textOverlays !== undefined) scene.textOverlays = textOverlays
+    if (svgObjects !== undefined) scene.svgObjects = svgObjects
+    if (bgColor !== undefined) scene.bgColor = bgColor
+    if (duration !== undefined) scene.duration = duration
+    if (sceneName !== undefined) scene.name = sceneName
+    if (bodyAudioLayer !== undefined) scene.audioLayer = { ...scene.audioLayer, ...bodyAudioLayer }
+    if (bodyAiLayers !== undefined) scene.aiLayers = bodyAiLayers
 
     scenes[sceneIdx] = scene
 
-    // Save back
-    await db
+    // Regenerate HTML first (idempotent — safe to retry if DB step fails)
+    const { generateSceneHTML } = await import('@/lib/sceneTemplate')
+    let html: string
+    try {
+      html = generateSceneHTML(
+        scene as any,
+        project.globalStyle ?? undefined,
+        undefined,
+        project.audioSettings ?? undefined,
+      )
+    } catch (genErr) {
+      console.error(`[PATCH /api/scene] generateSceneHTML failed:`, genErr)
+      return NextResponse.json(
+        {
+          error: `HTML generation failed: ${(genErr as Error).message}`,
+          stack: (genErr as Error).stack?.split('\n').slice(0, 5),
+        },
+        { status: 500 },
+      )
+    }
+    const scenesDir = path.join(process.cwd(), 'public', 'scenes')
+    try {
+      await fs.mkdir(scenesDir, { recursive: true })
+      await fs.writeFile(path.join(scenesDir, `${sceneId}.html`), html, 'utf-8')
+    } catch (e) {
+      console.error(`[PATCH /api/scene] Failed to write HTML for scene ${sceneId}:`, e)
+      return NextResponse.json({ error: `Failed to write scene HTML: ${(e as Error).message}` }, { status: 500 })
+    }
+
+    // Save to DB with optimistic locking
+    const currentVersion = project.version ?? 1
+    const [updated] = await db
       .update(schema.projects)
       .set({
-        description: JSON.stringify({ ...existingData, scenes }),
+        description: writeProjectSceneBlob(project.description, { scenes }),
+        version: currentVersion + 1,
         updatedAt: new Date(),
       })
-      .where(eq(schema.projects.id, projectId))
+      .where(and(eq(schema.projects.id, projectId), eq(schema.projects.version, currentVersion)))
+      .returning({ id: schema.projects.id })
 
-    // Regenerate HTML
-    const { generateSceneHTML } = await import('@/lib/sceneTemplate')
-    const html = generateSceneHTML(scene as any)
-    const scenesDir = path.join(process.cwd(), 'public', 'scenes')
-    await fs.mkdir(scenesDir, { recursive: true })
-    await fs.writeFile(path.join(scenesDir, `${sceneId}.html`), html, 'utf-8')
+    if (!updated) {
+      return NextResponse.json({ error: 'Conflict: project was modified concurrently. Please retry.' }, { status: 409 })
+    }
 
+    try {
+      await writeProjectScenesToTables(projectId, scenes as any, existingData.sceneGraph as any)
+    } catch (e) {
+      console.error('[PATCH /api/scene] table sync failed:', e)
+    }
+
+    console.log(
+      `[PATCH /api/scene] Updated: sceneId=${sceneId} type=${sceneType} codeLen=${code?.length ?? 0} htmlLen=${html.length}`,
+    )
     return NextResponse.json({
       success: true,
       scene: { id: sceneId, previewUrl: `/scenes/${sceneId}.html` },

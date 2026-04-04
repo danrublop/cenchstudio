@@ -1,222 +1,158 @@
 'use client'
 
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { Send, ChevronUp, ChevronDown, ChevronRight, Bot, X, Loader2 } from 'lucide-react'
+import {
+  Send,
+  ChevronUp,
+  ChevronDown,
+  ChevronRight,
+  Bot,
+  X,
+  Loader2,
+  Lightbulb,
+  ThumbsUp,
+  ThumbsDown,
+  CheckCircle2,
+  XCircle,
+  Wrench,
+  Plus,
+  Pin,
+  Trash2,
+  History,
+  ShieldAlert,
+} from 'lucide-react'
 import { v4 as uuidv4 } from 'uuid'
 import { useVideoStore } from '@/lib/store'
-import type { ChatMessage, AgentType, ModelId, SSEEvent, ToolCallRecord, UsageStats } from '@/lib/agents/types'
+import type {
+  ChatMessage,
+  AgentType,
+  ModelId,
+  ThinkingMode,
+  SSEEvent,
+  ToolCallRecord,
+  UsageStats,
+  ImageAttachment,
+  ModelTier,
+} from '@/lib/agents/types'
+import { messageContentToText } from '@/lib/agents/types'
 import { AGENT_COLORS, AGENT_LABELS } from '@/lib/agents/prompts'
-import type { ModelTier } from '@/lib/agents/types'
+import type { Scene } from '@/lib/types'
+import { syncSceneGraphWithScenes } from '@/lib/scene-graph-sync'
 
-// ── Constants ──────────────────────────────────────────────────────────────────
+import { MessageBubble } from './chat/MessageBubble'
+import { ConversationContextMenu } from './chat/ConversationContextMenu'
+import { ThinkingBubble } from './chat/ThinkingBubble'
 
-const AGENT_BORDER_COLORS: Record<AgentType, string> = {
-  router: '#6b7280',
-  director: '#a855f7',
-  'scene-maker': '#3b82f6',
-  editor: '#22c55e',
-  dop: '#f97316',
-}
-
-// ── Tool Call Display ──────────────────────────────────────────────────────────
-
-function ToolCallItem({ call }: { call: ToolCallRecord }) {
-  const [open, setOpen] = useState(false)
-
-  return (
-    <div className="mt-1.5 rounded border border-[var(--color-border)] bg-[var(--color-bg)] overflow-hidden text-[11px]">
-      <button
-        onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center gap-1.5 px-2 py-1.5 text-left hover:bg-[var(--color-border)]/30 transition-colors"
-      >
-        {open ? (
-          <ChevronDown size={10} className="flex-shrink-0 text-[var(--color-text-muted)]" />
-        ) : (
-          <ChevronRight size={10} className="flex-shrink-0 text-[var(--color-text-muted)]" />
-        )}
-        <span className="font-mono text-[var(--color-accent)]">{call.toolName}</span>
-        {call.output && (
-          <span className={`ml-auto text-[10px] font-medium ${call.output.success ? 'text-green-400' : 'text-red-400'}`}>
-            {call.output.success ? 'OK' : 'ERR'}
-          </span>
-        )}
-        {call.durationMs !== undefined && (
-          <span className="text-[var(--color-text-muted)] text-[10px] ml-1">{call.durationMs}ms</span>
-        )}
-      </button>
-
-      {open && (
-        <div className="px-2 pb-2 space-y-1.5 border-t border-[var(--color-border)]">
-          <div>
-            <div className="text-[var(--color-text-muted)] text-[10px] mb-0.5 mt-1.5">Input</div>
-            <pre className="text-[10px] text-[var(--color-text-muted)] whitespace-pre-wrap font-mono overflow-x-auto max-h-32">
-              {JSON.stringify(call.input, null, 2)}
-            </pre>
-          </div>
-          {call.output && (
-            <div>
-              <div className="text-[var(--color-text-muted)] text-[10px] mb-0.5">Output</div>
-              <pre className={`text-[10px] whitespace-pre-wrap font-mono overflow-x-auto max-h-32 ${
-                call.output.success ? 'text-green-400/80' : 'text-red-400/80'
-              }`}>
-                {call.output.error
-                  ? call.output.error
-                  : JSON.stringify({ success: call.output.success, changes: call.output.changes }, null, 2)}
-              </pre>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── Usage Display ─────────────────────────────────────────────────────────────
-
-function UsageBadge({ usage }: { usage: UsageStats }) {
-  const formatCost = (cost: number) => {
-    if (cost < 0.001) return `$${(cost * 1000).toFixed(2)}m`
-    if (cost < 0.01) return `$${cost.toFixed(4)}`
-    return `$${cost.toFixed(3)}`
-  }
-
-  return (
-    <div className="flex items-center gap-2 px-3 py-1 border-t border-[var(--color-border)] text-[10px] text-[var(--color-text-muted)] font-mono">
-      <span title="Input tokens">{usage.inputTokens.toLocaleString()} in</span>
-      <span className="opacity-40">/</span>
-      <span title="Output tokens">{usage.outputTokens.toLocaleString()} out</span>
-      <span className="opacity-40">|</span>
-      <span title="Estimated cost" className="text-[var(--color-accent)]">{formatCost(usage.costUsd)}</span>
-      {usage.apiCalls > 1 && (
-        <>
-          <span className="opacity-40">|</span>
-          <span title="API calls">{usage.apiCalls} calls</span>
-        </>
-      )}
-      <span className="opacity-40">|</span>
-      <span title="Duration">{(usage.totalDurationMs / 1000).toFixed(1)}s</span>
-    </div>
-  )
-}
-
-// ── Message Bubble ─────────────────────────────────────────────────────────────
-
-function MessageBubble({ msg, isStreaming }: { msg: ChatMessage; isStreaming?: boolean }) {
-  const isUser = msg.role === 'user'
-
-  const borderColor = msg.agentType ? AGENT_BORDER_COLORS[msg.agentType] : '#4b5563'
-  const agentLabel = msg.agentType ? AGENT_LABELS[msg.agentType] : 'Agent'
-
-  if (isUser) {
-    return (
-      <div className="flex justify-end mb-3">
-        <div className="max-w-[85%] bg-[var(--color-accent)] rounded-xl rounded-tr-sm px-3 py-2">
-          <p className="text-sm text-white leading-relaxed whitespace-pre-wrap">{msg.content}</p>
-        </div>
-      </div>
+function parseChatPanelSseEvent(jsonStr: string, label: string): SSEEvent | null {
+  try {
+    return JSON.parse(jsonStr) as SSEEvent
+  } catch (e) {
+    console.warn(
+      `[ChatPanel] SSE JSON parse failed (${label}):`,
+      (e as Error).message,
+      `len=${jsonStr.length}`,
+      jsonStr.slice(0, 160),
     )
+    return null
   }
-
-  return (
-    <div className="flex justify-start mb-3">
-      <div
-        className="max-w-[92%] rounded-xl rounded-tl-sm bg-[var(--color-panel)] overflow-hidden"
-        style={{ borderLeft: `2px solid ${borderColor}` }}
-      >
-        {/* Agent badge bar */}
-        <div className="flex items-center gap-2 px-3 py-1.5 border-b border-[var(--color-border)]">
-          <Bot size={11} style={{ color: borderColor }} />
-          <span className="text-[11px] font-semibold" style={{ color: borderColor }}>
-            {agentLabel}
-          </span>
-          {msg.modelId && (
-            <span className="text-[10px] text-[var(--color-text-muted)] bg-[var(--color-bg)] px-1.5 py-0.5 rounded font-mono">
-              {msg.modelId.replace('claude-', '')}
-            </span>
-          )}
-          {isStreaming && (
-            <Loader2 size={10} className="ml-auto animate-spin text-[var(--color-text-muted)]" />
-          )}
-        </div>
-
-        {/* Message text */}
-        <div className="px-3 py-2">
-          {msg.content ? (
-            <p className="text-sm text-[var(--color-text-primary)] leading-relaxed whitespace-pre-wrap">
-              {msg.content}
-            </p>
-          ) : isStreaming ? (
-            <div className="flex items-center gap-1.5 text-[var(--color-text-muted)] text-sm">
-              <span className="animate-pulse">thinking</span>
-              <span className="flex gap-0.5">
-                {[0, 1, 2].map(i => (
-                  <span
-                    key={i}
-                    className="w-1 h-1 bg-current rounded-full animate-bounce"
-                    style={{ animationDelay: `${i * 150}ms` }}
-                  />
-                ))}
-              </span>
-            </div>
-          ) : null}
-        </div>
-
-        {/* Tool calls */}
-        {msg.toolCalls && msg.toolCalls.length > 0 && (
-          <div className="px-3 pb-2">
-            <div className="text-[10px] text-[var(--color-text-muted)] mb-1 uppercase tracking-wide">
-              {msg.toolCalls.length} tool call{msg.toolCalls.length > 1 ? 's' : ''}
-            </div>
-            {msg.toolCalls.map(call => (
-              <ToolCallItem key={call.id} call={call} />
-            ))}
-          </div>
-        )}
-
-        {/* Usage stats */}
-        {msg.usage && !isStreaming && <UsageBadge usage={msg.usage} />}
-      </div>
-    </div>
-  )
 }
 
-// ── Typing indicator placeholder ───────────────────────────────────────────────
-
-function ThinkingBubble() {
-  return (
-    <div className="flex justify-start mb-3">
-      <div className="bg-[var(--color-panel)] border border-[var(--color-border)] rounded-xl rounded-tl-sm px-3 py-2">
-        <div className="flex items-center gap-1.5 text-[var(--color-text-muted)]">
-          <Loader2 size={11} className="animate-spin" />
-          <span className="text-xs">routing</span>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ── Main ChatPanel ─────────────────────────────────────────────────────────────
+// ── Main ChatPanel ────────────────────────────────────────────────────────────
 
 export default function ChatPanel() {
   const {
-    chatMessages, addChatMessage, updateChatMessage, clearChat,
-    isAgentRunning, setAgentRunning, setAgentType, setAgentModelId,
-    agentOverride, setAgentOverride,
-    modelOverride, setModelOverride,
-    modelTier, setModelTier,
-    sceneContext, activeTools,
-    scenes, globalStyle, project, selectedSceneId,
-    syncScenesFromAgent, sceneHtmlVersion,
-    chatInputValue, setChatInputValue,
+    chatMessages,
+    addChatMessage,
+    updateChatMessage,
+    persistChatMessage,
+    clearChat,
+    sessionPermissions,
+    setSessionPermission,
+    isAgentRunning,
+    setAgentRunning,
+    setAgentType,
+    setAgentModelId,
+    agentOverride,
+    setAgentOverride,
+    modelOverride,
+    setModelOverride,
+    modelTier,
+    setModelTier,
+    thinkingMode,
+    setThinkingMode,
+    sceneContext,
+    activeTools,
+    scenes,
+    globalStyle,
+    project,
+    selectedSceneId,
+    modelConfigs,
+    syncScenesFromAgent,
+    updateSceneGraph,
+    sceneHtmlVersion,
+    chatInputValue,
+    setChatInputValue,
     isChatOpen,
+    conversations,
+    activeConversationId,
+    conversationsLoading,
+    loadConversations,
+    newConversation,
+    switchConversation,
+    renameConversation,
+    pinConversation,
+    deleteConversation,
   } = useVideoStore()
 
   const [isThinking, setIsThinking] = useState(false)
   const [streamingMsgId, setStreamingMsgId] = useState<string | null>(null)
   const [showModelMenu, setShowModelMenu] = useState(false)
+  const [showThinkingMenu, setShowThinkingMenu] = useState(false)
   const [showAgentMenu, setShowAgentMenu] = useState(false)
+  const [activeToolName, setActiveToolName] = useState<string | null>(null)
+  const [renamingId, setRenamingId] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
+  const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null)
+  const [showHistory, setShowHistory] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const sendingRef = useRef(false)
+
+  // Handle thumbs up/down feedback
+  const handleRate = useCallback(
+    (msgId: string, rating: number) => {
+      const msg = chatMessages.find((m) => m.id === msgId)
+      if (!msg) return
+
+      // Update local state immediately
+      const effectiveRating = rating === 0 ? undefined : rating
+      updateChatMessage(msgId, { userRating: effectiveRating })
+
+      // Send to backend if we have a generation log ID
+      if (msg.generationLogId && rating > 0) {
+        fetch('/api/generation-log', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            logId: msg.generationLogId,
+            userRating: rating,
+          }),
+        }).catch((err) => console.error('[Chat] Failed to send feedback:', err))
+      }
+    },
+    [chatMessages, updateChatMessage],
+  )
+
+  const handlePermission = useCallback(
+    (msgId: string, api: string, decision: 'allow' | 'deny') => {
+      setSessionPermission(api, decision)
+      const msg = chatMessages.find((m) => m.id === msgId)
+      if (!msg?.pendingPermissions) return
+      const updated = msg.pendingPermissions.map((p) => (p.api === api ? { ...p, resolved: decision } : p))
+      updateChatMessage(msgId, { pendingPermissions: updated })
+    },
+    [chatMessages, setSessionPermission, updateChatMessage],
+  )
 
   // Auto-scroll on new messages
   useEffect(() => {
@@ -227,7 +163,8 @@ export default function ChatPanel() {
 
   const sendMessage = useCallback(async () => {
     const text = chatInputValue.trim()
-    if (!text || isAgentRunning) return
+    if (!text || isAgentRunning || sendingRef.current) return
+    sendingRef.current = true
 
     setChatInputValue('')
     setShowModelMenu(false)
@@ -241,6 +178,12 @@ export default function ChatPanel() {
       timestamp: Date.now(),
     }
     addChatMessage(userMsg)
+
+    // Auto-title conversation from first message
+    if (chatMessages.length === 0 && activeConversationId) {
+      const autoTitle = text.slice(0, 40) + (text.length > 40 ? '...' : '')
+      renameConversation(activeConversationId, autoTitle)
+    }
 
     // Add pending assistant message
     const assistantMsgId = uuidv4()
@@ -264,21 +207,25 @@ export default function ChatPanel() {
       agentOverride: agentOverride ?? undefined,
       modelOverride: modelOverride ?? undefined,
       modelTier,
+      thinkingMode,
       sceneContext,
       activeTools,
       history: historyMsgs,
       projectId: project.id,
+      conversationId: activeConversationId,
       scenes,
       globalStyle,
       projectName: project.name,
       outputMode: project.outputMode,
       selectedSceneId,
+      enabledModelIds: modelConfigs.filter((m) => m.enabled).map((m) => m.modelId),
     }
 
     const controller = new AbortController()
     abortRef.current = controller
 
     let accumulatedText = ''
+    let accumulatedThinking = ''
     const toolCalls: ToolCallRecord[] = []
     let currentToolCall: Partial<ToolCallRecord> | null = null
 
@@ -298,9 +245,122 @@ export default function ChatPanel() {
       const decoder = new TextDecoder()
       let buffer = ''
 
+      const processSSEEvent = (event: SSEEvent) => {
+        switch (event.type) {
+          case 'thinking':
+            setIsThinking(true)
+            break
+
+          case 'thinking_start':
+            setIsThinking(true)
+            updateChatMessage(assistantMsgId, { isThinkingStreaming: true, thinking: '' })
+            break
+
+          case 'thinking_token':
+            if (event.token) {
+              accumulatedThinking += event.token
+              updateChatMessage(assistantMsgId, { thinking: accumulatedThinking })
+            }
+            break
+
+          case 'thinking_complete':
+            setIsThinking(false)
+            updateChatMessage(assistantMsgId, {
+              thinking: event.fullThinking ?? '',
+              isThinkingStreaming: false,
+            })
+            break
+
+          case 'token':
+            if (event.token) {
+              setIsThinking(false)
+              accumulatedText += event.token
+              updateChatMessage(assistantMsgId, { content: accumulatedText })
+            }
+            break
+
+          case 'tool_start':
+            if (event.toolName) {
+              currentToolCall = {
+                id: uuidv4(),
+                toolName: event.toolName,
+                input: event.toolInput ?? {},
+              }
+              setActiveToolName(event.toolName)
+            }
+            break
+
+          case 'tool_complete':
+            if (currentToolCall && event.toolResult) {
+              const completed: ToolCallRecord = {
+                ...(currentToolCall as ToolCallRecord),
+                output: event.toolResult,
+              }
+              toolCalls.push(completed)
+              updateChatMessage(assistantMsgId, { toolCalls: [...toolCalls] })
+              currentToolCall = null
+            }
+            setActiveToolName(null)
+            break
+
+          case 'state_change': {
+            console.log('[Chat] State change:', event.changes?.[0]?.description)
+            if (event.updatedScenes && event.updatedGlobalStyle) {
+              const scenes = event.updatedScenes as any[]
+              console.log(`[Chat] Final state sync: ${scenes.length} scenes`)
+              for (const s of scenes) {
+                console.log(
+                  `[Chat]   ${s.id?.slice(0, 8)}… "${s.name}" type=${s.sceneType} html=${s.sceneHTML?.length ?? 0} canvas=${s.canvasCode?.length ?? 0} code=${s.sceneCode?.length ?? 0}`,
+                )
+              }
+              syncScenesFromAgent(event.updatedScenes as typeof scenes, event.updatedGlobalStyle as typeof globalStyle)
+              const mergedGraph = syncSceneGraphWithScenes(
+                event.updatedScenes as Scene[],
+                event.updatedSceneGraph ?? useVideoStore.getState().project.sceneGraph,
+              )
+              updateSceneGraph(mergedGraph)
+            }
+            if (event.generationLogId) {
+              updateChatMessage(assistantMsgId, { generationLogId: event.generationLogId })
+            }
+            break
+          }
+
+          case 'done': {
+            console.log(
+              '[Chat] Done event:',
+              event.agentType,
+              event.modelId,
+              event.usage ? `$${event.usage.costUsd}` : 'no usage',
+            )
+            if (event.agentType) {
+              setAgentType(event.agentType)
+              updateChatMessage(assistantMsgId, {
+                agentType: event.agentType,
+                modelId: event.modelId,
+                content: event.fullText ?? accumulatedText,
+                toolCalls: event.toolCalls ?? toolCalls,
+                usage: event.usage,
+              })
+            }
+            break
+          }
+
+          case 'error':
+            console.error('[Chat] Agent error:', event.error)
+            updateChatMessage(assistantMsgId, {
+              content: event.error ? `Error: ${event.error}` : 'An error occurred.',
+            })
+            break
+        }
+      }
+
       while (true) {
         const { done, value } = await reader.read()
-        if (done) break
+        if (done) {
+          console.log('[Chat] Stream ended')
+          break
+        }
 
         buffer += decoder.decode(value, { stream: true })
         const lines = buffer.split('\n')
@@ -310,84 +370,27 @@ export default function ChatPanel() {
           if (!line.startsWith('data: ')) continue
           const jsonStr = line.slice(6).trim()
           if (!jsonStr) continue
+          const ev = parseChatPanelSseEvent(jsonStr, 'chunk')
+          if (ev) processSSEEvent(ev)
+        }
+      }
 
-          let event: SSEEvent
-          try {
-            event = JSON.parse(jsonStr)
-          } catch {
-            continue
-          }
-
-          switch (event.type) {
-            case 'thinking':
-              setIsThinking(true)
-              break
-
-            case 'token':
-              if (event.token) {
-                setIsThinking(false)
-                accumulatedText += event.token
-                updateChatMessage(assistantMsgId, { content: accumulatedText })
-              }
-              break
-
-            case 'tool_start':
-              if (event.toolName) {
-                currentToolCall = {
-                  id: uuidv4(),
-                  toolName: event.toolName,
-                  input: event.toolInput ?? {},
-                }
-              }
-              break
-
-            case 'tool_complete':
-              if (currentToolCall && event.toolResult) {
-                const completed: ToolCallRecord = {
-                  ...currentToolCall as ToolCallRecord,
-                  output: event.toolResult,
-                }
-                toolCalls.push(completed)
-                updateChatMessage(assistantMsgId, { toolCalls: [...toolCalls] })
-                currentToolCall = null
-              }
-              break
-
-            case 'state_change': {
-              // Check for __final_state__ signal with updated scenes
-              const ext = event as SSEEvent & { updatedScenes?: unknown; updatedGlobalStyle?: unknown }
-              if (ext.updatedScenes && ext.updatedGlobalStyle) {
-                syncScenesFromAgent(
-                  ext.updatedScenes as typeof scenes,
-                  ext.updatedGlobalStyle as typeof globalStyle,
-                )
-              }
-              break
-            }
-
-            case 'done':
-              if (event.agentType) {
-                setAgentType(event.agentType)
-                updateChatMessage(assistantMsgId, {
-                  agentType: event.agentType,
-                  modelId: event.modelId,
-                  content: event.fullText ?? accumulatedText,
-                  toolCalls: event.toolCalls ?? toolCalls,
-                  usage: event.usage,
-                })
-              }
-              break
-
-            case 'error':
-              updateChatMessage(assistantMsgId, {
-                content: event.error ? `Error: ${event.error}` : 'An error occurred.',
-              })
-              break
-          }
+      // Flush any remaining buffered event after stream ends
+      const remaining = buffer.trim()
+      if (remaining.startsWith('data: ')) {
+        const jsonStr = remaining.slice(6).trim()
+        if (jsonStr) {
+          const evRem = parseChatPanelSseEvent(jsonStr, 'flush')
+          if (evRem) processSSEEvent(evRem)
         }
       }
     } catch (err) {
-      if ((err as Error).name !== 'AbortError') {
+      if ((err as Error).name === 'AbortError') {
+        // If aborted before any content arrived, remove the empty message
+        if (!accumulatedText) {
+          updateChatMessage(assistantMsgId, { content: '*(cancelled)*' })
+        }
+      } else {
         updateChatMessage(assistantMsgId, {
           content: `Failed to connect to agent: ${(err as Error).message}`,
         })
@@ -395,14 +398,41 @@ export default function ChatPanel() {
     } finally {
       setIsThinking(false)
       setStreamingMsgId(null)
+      setActiveToolName(null)
       setAgentRunning(false)
       abortRef.current = null
+      sendingRef.current = false
+      // Persist the finalized assistant message to DB
+      persistChatMessage(assistantMsgId)
+      void useVideoStore.getState().refreshProjectFromServer()
+      setTimeout(() => {
+        void useVideoStore.getState().refreshProjectFromServer()
+      }, 2500)
     }
   }, [
-    chatInputValue, isAgentRunning, agentOverride, modelOverride, modelTier, sceneContext,
-    activeTools, chatMessages, scenes, globalStyle, project, selectedSceneId,
-    addChatMessage, updateChatMessage, syncScenesFromAgent,
-    setChatInputValue, setAgentRunning, setAgentType,
+    chatInputValue,
+    isAgentRunning,
+    agentOverride,
+    modelOverride,
+    modelTier,
+    thinkingMode,
+    sceneContext,
+    activeTools,
+    chatMessages,
+    scenes,
+    globalStyle,
+    project,
+    selectedSceneId,
+    modelConfigs,
+    addChatMessage,
+    updateChatMessage,
+    persistChatMessage,
+    syncScenesFromAgent,
+    updateSceneGraph,
+    setChatInputValue,
+    setAgentRunning,
+    setAgentType,
+    activeConversationId,
   ])
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -418,32 +448,192 @@ export default function ChatPanel() {
     }
     setIsThinking(false)
     setStreamingMsgId(null)
+    setActiveToolName(null)
     setAgentRunning(false)
   }
 
   return (
-    <div className="flex flex-col h-full bg-[var(--color-panel)]">
-      {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-2 flex-shrink-0 border-b border-[var(--color-border)]">
-        <Bot size={14} className="text-[var(--color-text-primary)] opacity-70" />
-        <span className="text-[10px] font-bold text-[var(--color-text-primary)] uppercase tracking-widest">Assistant</span>
-        <div className="ml-auto flex items-center gap-1">
-          <button
-            onClick={clearChat}
-            disabled={chatMessages.length === 0 || isAgentRunning}
-            className="no-style p-1 text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-all disabled:opacity-30"
-            title="Clear chat"
+    <div className="flex flex-col h-full bg-[var(--color-panel)] relative">
+      {/* Conversation tabs header */}
+      <div className="flex items-center flex-shrink-0 border-b border-[var(--color-border)]">
+        <div
+          className="flex-1 flex items-center gap-0.5 overflow-x-auto px-1.5 py-1.5"
+          style={{ scrollbarWidth: 'none' }}
+        >
+          {conversations.map((conv) => (
+            <span
+              key={conv.id}
+              onClick={() => conv.id !== activeConversationId && switchConversation(conv.id)}
+              onDoubleClick={() => {
+                setRenamingId(conv.id)
+                setRenameValue(conv.title)
+              }}
+              onContextMenu={(e) => {
+                e.preventDefault()
+                setContextMenu({ id: conv.id, x: e.clientX, y: e.clientY })
+              }}
+              className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] whitespace-nowrap cursor-pointer select-none transition-all flex-shrink-0 ${
+                conv.id === activeConversationId
+                  ? 'bg-[var(--color-bg)] text-[var(--color-text-primary)] border border-[var(--color-border)]'
+                  : 'text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg)]/50'
+              }`}
+            >
+              {conv.isPinned && <Pin size={8} className="opacity-40 flex-shrink-0" />}
+              {renamingId === conv.id ? (
+                <input
+                  autoFocus
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  onBlur={() => {
+                    renameConversation(conv.id, renameValue)
+                    setRenamingId(null)
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      renameConversation(conv.id, renameValue)
+                      setRenamingId(null)
+                    }
+                    if (e.key === 'Escape') setRenamingId(null)
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                  className="bg-transparent border-b border-[var(--color-accent)] outline-none text-[11px] text-[var(--color-text-primary)] w-24"
+                />
+              ) : (
+                <span
+                  className="overflow-hidden whitespace-nowrap max-w-[120px]"
+                  style={{
+                    WebkitMaskImage: 'linear-gradient(to right, black 85px, transparent 115px)',
+                    maskImage: 'linear-gradient(to right, black 85px, transparent 115px)',
+                  }}
+                >
+                  {conv.title}
+                </span>
+              )}
+            </span>
+          ))}
+          <span
+            onClick={() => project?.id && newConversation(project.id)}
+            className="flex items-center justify-center w-6 h-6 rounded text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg)]/50 cursor-pointer transition-all flex-shrink-0"
+            title="New conversation"
           >
-            <X size={15} />
-          </button>
+            <Plus size={13} />
+          </span>
         </div>
+        <span
+          onClick={() => setShowHistory(true)}
+          className="flex items-center justify-center w-7 h-7 mr-1 rounded text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg)]/50 cursor-pointer transition-all flex-shrink-0"
+          title="Chat history"
+        >
+          <History size={13} />
+        </span>
       </div>
 
+      {/* Context menu */}
+      {contextMenu && (
+        <ConversationContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={() => setContextMenu(null)}
+          onRename={() => {
+            const conv = conversations.find((c) => c.id === contextMenu.id)
+            setRenamingId(contextMenu.id)
+            setRenameValue(conv?.title ?? '')
+            setContextMenu(null)
+          }}
+          onPin={() => {
+            const conv = conversations.find((c) => c.id === contextMenu.id)
+            pinConversation(contextMenu.id, !conv?.isPinned)
+            setContextMenu(null)
+          }}
+          onClear={() => {
+            if (contextMenu.id === activeConversationId) clearChat()
+            setContextMenu(null)
+          }}
+          onDelete={() => {
+            deleteConversation(contextMenu.id)
+            setContextMenu(null)
+          }}
+        />
+      )}
+
+      {/* History modal */}
+      {showHistory && (
+        <div className="absolute inset-0 z-50 flex flex-col bg-[var(--color-panel)]">
+          <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--color-border)] flex-shrink-0">
+            <History size={13} className="text-[var(--color-text-muted)]" />
+            <span className="text-[11px] font-medium text-[var(--color-text-primary)] flex-1">Chat History</span>
+            <span
+              onClick={() => project?.id && newConversation(project.id).then(() => setShowHistory(false))}
+              className="text-[10px] px-2 py-0.5 rounded cursor-pointer bg-[var(--kbd-bg)] border border-[var(--kbd-border)] text-[var(--kbd-text)] hover:brightness-110 transition-all"
+            >
+              New Chat
+            </span>
+            <span
+              onClick={() => setShowHistory(false)}
+              className="flex items-center justify-center w-6 h-6 rounded text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] cursor-pointer transition-all"
+            >
+              <X size={14} />
+            </span>
+          </div>
+          <div className="flex-1 overflow-y-auto p-2 space-y-1">
+            {conversations.length === 0 && (
+              <div className="flex items-center justify-center h-20 text-xs text-[var(--color-text-muted)]">
+                No conversations yet
+              </div>
+            )}
+            {conversations.map((conv) => {
+              const preview = conv.messages?.[0]
+              const isActive = conv.id === activeConversationId
+              return (
+                <div
+                  key={conv.id}
+                  onClick={() => {
+                    switchConversation(conv.id)
+                    setShowHistory(false)
+                  }}
+                  className={`rounded-lg px-3 py-2.5 cursor-pointer transition-all border ${
+                    isActive
+                      ? 'bg-[var(--color-bg)] border-[var(--color-border)]'
+                      : 'border-transparent hover:bg-[var(--color-bg)]/50'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    {conv.isPinned && (
+                      <Pin size={9} className="text-[var(--color-text-muted)] opacity-50 flex-shrink-0" />
+                    )}
+                    <span
+                      className={`text-xs overflow-hidden whitespace-nowrap flex-1 ${isActive ? 'text-[var(--color-text-primary)] font-medium' : 'text-[var(--color-text-muted)]'}`}
+                      style={{
+                        WebkitMaskImage: 'linear-gradient(to right, black calc(100% - 20px), transparent 100%)',
+                        maskImage: 'linear-gradient(to right, black calc(100% - 20px), transparent 100%)',
+                      }}
+                    >
+                      {conv.title}
+                    </span>
+                    {conv.totalCostUsd > 0 && (
+                      <span className="text-[9px] text-[var(--color-text-muted)] font-mono flex-shrink-0">
+                        ${conv.totalCostUsd.toFixed(4)}
+                      </span>
+                    )}
+                  </div>
+                  {preview && (
+                    <div className="text-[10px] text-[var(--color-text-muted)] mt-1 truncate opacity-60">
+                      {preview.role === 'assistant' ? 'Agent: ' : ''}
+                      {(typeof preview.content === 'string'
+                        ? preview.content
+                        : messageContentToText(preview.content)
+                      ).slice(0, 60)}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Messages */}
-      <div
-        ref={scrollRef}
-        className="flex-1 overflow-y-auto px-3 py-3 space-y-0 min-h-0"
-      >
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-3 space-y-0 min-h-0">
         {chatMessages.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full text-center text-[var(--color-text-muted)] select-none">
             <Bot size={32} className="mb-3 opacity-30" />
@@ -454,11 +644,14 @@ export default function ChatPanel() {
           </div>
         )}
 
-        {chatMessages.map(msg => (
+        {chatMessages.map((msg) => (
           <MessageBubble
             key={msg.id}
             msg={msg}
             isStreaming={streamingMsgId === msg.id}
+            activeToolName={streamingMsgId === msg.id ? activeToolName : null}
+            onRate={handleRate}
+            onPermission={handlePermission}
           />
         ))}
 
@@ -471,7 +664,7 @@ export default function ChatPanel() {
           {/* Textarea */}
           <textarea
             value={chatInputValue}
-            onChange={e => setChatInputValue(e.target.value)}
+            onChange={(e) => setChatInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Talk to Agent..."
             disabled={isAgentRunning}
@@ -484,26 +677,35 @@ export default function ChatPanel() {
             {/* Model selector */}
             <div className="relative">
               <button
-                onClick={() => { setShowModelMenu(o => !o); setShowAgentMenu(false) }}
+                onClick={() => {
+                  setShowModelMenu((o) => !o)
+                  setShowThinkingMenu(false)
+                  setShowAgentMenu(false)
+                }}
                 className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors"
               >
                 <span className="font-medium">
-                  {modelTier === 'auto' ? 'Auto' : modelTier === 'performance' ? 'Perf' : modelTier === 'fast' ? 'Fast' : 'Balanced'}
+                  {modelTier === 'auto' ? 'Auto' : modelTier === 'premium' ? 'Premium' : 'Budget'}
                 </span>
                 <ChevronUp size={10} className="opacity-50" />
               </button>
 
               {showModelMenu && (
                 <div className="absolute bottom-full left-0 mb-1 w-44 rounded-lg border border-[var(--color-border)] bg-[var(--color-panel)] shadow-xl z-50 py-1 overflow-hidden">
-                  {([
-                    { id: 'auto' as ModelTier, label: 'Auto', sub: 'Default per agent' },
-                    { id: 'fast' as ModelTier, label: 'Fast', sub: 'Haiku — cheapest' },
-                    { id: 'balanced' as ModelTier, label: 'Balanced', sub: 'Sonnet — good quality' },
-                    { id: 'performance' as ModelTier, label: 'Performance', sub: 'Opus + Sonnet — best' },
-                  ] as const).map(opt => (
+                  {(
+                    [
+                      { id: 'auto' as ModelTier, label: 'Auto', sub: 'Balanced — good for most things' },
+                      { id: 'premium' as ModelTier, label: 'Premium', sub: 'Most capable models' },
+                      { id: 'budget' as ModelTier, label: 'Budget', sub: 'Cheapest models' },
+                    ] as const
+                  ).map((opt) => (
                     <button
                       key={opt.id}
-                      onClick={() => { setModelTier(opt.id); setModelOverride(null); setShowModelMenu(false) }}
+                      onClick={() => {
+                        setModelTier(opt.id)
+                        setModelOverride(null)
+                        setShowModelMenu(false)
+                      }}
                       className={`w-full text-left px-3 py-1.5 text-[11px] hover:bg-[var(--color-border)]/30 transition-colors ${
                         modelTier === opt.id ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-primary)]'
                       }`}
@@ -513,16 +715,21 @@ export default function ChatPanel() {
                     </button>
                   ))}
                   <div className="border-t border-[var(--color-border)] my-1" />
-                  <div className="px-3 py-1 text-[10px] text-[var(--color-text-muted)] uppercase tracking-wide">Override</div>
-                  {([
-                    { id: null, label: 'None' },
-                    { id: 'claude-haiku-4-5-20251001' as ModelId, label: 'Haiku 4.5' },
-                    { id: 'claude-sonnet-4-5-20250514' as ModelId, label: 'Sonnet 4.5' },
-                    { id: 'claude-opus-4-5-20250514' as ModelId, label: 'Opus 4.5' },
-                  ] as const).map(opt => (
+                  <div className="px-3 py-1 text-[10px] text-[var(--color-text-muted)] uppercase tracking-wide">
+                    Override
+                  </div>
+                  {[
+                    { id: null as ModelId | null, label: 'None' },
+                    ...modelConfigs
+                      .filter((m) => m.enabled && m.supportsTools !== false)
+                      .map((m) => ({ id: m.modelId as ModelId | null, label: m.displayName })),
+                  ].map((opt) => (
                     <button
                       key={opt.id ?? 'none'}
-                      onClick={() => { setModelOverride(opt.id); setShowModelMenu(false) }}
+                      onClick={() => {
+                        setModelOverride(opt.id as ModelId | null)
+                        setShowModelMenu(false)
+                      }}
                       className={`w-full text-left px-3 py-1 text-[11px] hover:bg-[var(--color-border)]/30 transition-colors ${
                         modelOverride === opt.id ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-primary)]'
                       }`}
@@ -534,10 +741,80 @@ export default function ChatPanel() {
               )}
             </div>
 
+            {/* Thinking mode selector */}
+            <div className="relative">
+              <button
+                onClick={() => {
+                  setShowThinkingMenu((o) => !o)
+                  setShowModelMenu(false)
+                  setShowAgentMenu(false)
+                }}
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors"
+              >
+                <span className="font-medium" style={thinkingMode === 'deep' ? { color: '#f59e0b' } : {}}>
+                  {thinkingMode === 'off' ? 'Think Off' : thinkingMode === 'adaptive' ? 'Think Auto' : 'Think Deep'}
+                </span>
+                <ChevronUp size={10} className="opacity-50" />
+              </button>
+
+              {showThinkingMenu && (
+                <div className="absolute bottom-full left-0 mb-1 w-48 rounded-lg border border-[var(--color-border)] bg-[var(--color-panel)] shadow-xl z-50 py-1 overflow-hidden">
+                  {(
+                    [
+                      { id: 'off' as ThinkingMode, label: 'Off', sub: 'Fastest — no reasoning', color: '#6b7280' },
+                      {
+                        id: 'adaptive' as ThinkingMode,
+                        label: 'Auto',
+                        sub: 'Claude decides when to think',
+                        color: '#f59e0b',
+                      },
+                      {
+                        id: 'deep' as ThinkingMode,
+                        label: 'Deep',
+                        sub: 'Always thinks — best for complex',
+                        color: '#f59e0b',
+                      },
+                    ] as const
+                  ).map((opt) => (
+                    <button
+                      key={opt.id}
+                      onClick={() => {
+                        setThinkingMode(opt.id)
+                        setShowThinkingMenu(false)
+                      }}
+                      className={`w-full text-left px-3 py-1.5 text-[11px] hover:bg-[var(--color-border)]/30 transition-colors ${
+                        thinkingMode === opt.id ? 'font-semibold' : ''
+                      }`}
+                    >
+                      <div className="font-medium flex items-center gap-1.5">
+                        <Lightbulb
+                          size={9}
+                          className="flex-shrink-0"
+                          style={{ color: opt.color, width: 9, height: 9, strokeWidth: 2.5 }}
+                        />
+                        <span
+                          style={
+                            thinkingMode === opt.id ? { color: opt.color } : { color: 'var(--color-text-primary)' }
+                          }
+                        >
+                          {opt.label}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-[var(--color-text-muted)] mt-0.5 ml-[16.5px]">{opt.sub}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {/* Agent mode selector */}
             <div className="relative">
               <button
-                onClick={() => { setShowAgentMenu(o => !o); setShowModelMenu(false) }}
+                onClick={() => {
+                  setShowAgentMenu((o) => !o)
+                  setShowModelMenu(false)
+                  setShowThinkingMenu(false)
+                }}
                 className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors"
               >
                 <span className="font-medium" style={agentOverride ? { color: AGENT_COLORS[agentOverride] } : {}}>
@@ -548,23 +825,58 @@ export default function ChatPanel() {
 
               {showAgentMenu && (
                 <div className="absolute bottom-full left-0 mb-1 w-48 rounded-lg border border-[var(--color-border)] bg-[var(--color-panel)] shadow-xl z-50 py-1 overflow-hidden">
-                  {([
-                    { id: null, label: 'Agent', sub: 'Auto-routes to the right agent', color: '#6b7280' },
-                    { id: 'director' as AgentType, label: 'Director', sub: 'Plans multi-scene videos', color: AGENT_COLORS['director'] },
-                    { id: 'scene-maker' as AgentType, label: 'Scene Maker', sub: 'Generates scene content', color: AGENT_COLORS['scene-maker'] },
-                    { id: 'editor' as AgentType, label: 'Editor', sub: 'Surgical edits to elements', color: AGENT_COLORS['editor'] },
-                    { id: 'dop' as AgentType, label: 'DoP', sub: 'Global style & transitions', color: AGENT_COLORS['dop'] },
-                  ] as const).map(opt => (
+                  {(
+                    [
+                      { id: null, label: 'Agent', sub: 'Auto-routes to the right agent', color: '#6b7280' },
+                      {
+                        id: 'planner' as AgentType,
+                        label: 'Planner',
+                        sub: 'Storyboard only — review before build',
+                        color: AGENT_COLORS['planner'],
+                      },
+                      {
+                        id: 'director' as AgentType,
+                        label: 'Director',
+                        sub: 'Plans multi-scene videos',
+                        color: AGENT_COLORS['director'],
+                      },
+                      {
+                        id: 'scene-maker' as AgentType,
+                        label: 'Scene Maker',
+                        sub: 'Generates scene content',
+                        color: AGENT_COLORS['scene-maker'],
+                      },
+                      {
+                        id: 'editor' as AgentType,
+                        label: 'Editor',
+                        sub: 'Surgical edits to elements',
+                        color: AGENT_COLORS['editor'],
+                      },
+                      {
+                        id: 'dop' as AgentType,
+                        label: 'DoP',
+                        sub: 'Global style & transitions',
+                        color: AGENT_COLORS['dop'],
+                      },
+                    ] as const
+                  ).map((opt) => (
                     <button
                       key={opt.id ?? 'auto'}
-                      onClick={() => { setAgentOverride(opt.id); setShowAgentMenu(false) }}
+                      onClick={() => {
+                        setAgentOverride(opt.id)
+                        setShowAgentMenu(false)
+                      }}
                       className={`w-full text-left px-3 py-1.5 text-[11px] hover:bg-[var(--color-border)]/30 transition-colors ${
                         agentOverride === opt.id ? 'font-semibold' : ''
                       }`}
                     >
                       <div className="font-medium flex items-center gap-1.5">
                         <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: opt.color }} />
-                        <span style={agentOverride === opt.id ? { color: opt.color } : { color: 'var(--color-text-primary)' }}>
+                        <span
+                          style={
+                            agentOverride === opt.id ? { color: opt.color } : { color: 'var(--color-text-primary)' }
+                          }
+                        >
                           {opt.label}
                         </span>
                       </div>

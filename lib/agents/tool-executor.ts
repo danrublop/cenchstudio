@@ -12,10 +12,33 @@
  */
 
 import { v4 as uuidv4 } from 'uuid'
-import type { Scene, GlobalStyle, TextOverlay, TransitionType, SceneType, APIPermissions } from '../types'
-import type { ToolResult, StateChange, StateSnapshot } from './types'
+import fs from 'fs/promises'
+import path from 'path'
+import type { Scene, GlobalStyle, SceneType, APIPermissions, SceneGraph, ZdogPersonAsset } from '../types'
+import type { ToolResult, StateSnapshot } from './types'
+import type { AgentLogger } from './logger'
+import { toolRegistry } from './tool-registry'
 import { generateSceneHTML } from '../sceneTemplate'
+import { resolveStyle } from '../styles/presets'
+import { API_COST_ESTIMATES, API_DISPLAY_NAMES, checkPermission } from '../permissions'
 import { generateCode } from '../generation/generate'
+import { ALL_TOOLS } from './tools'
+import { createSceneToolHandler, SCENE_TOOL_NAMES } from './tool-handlers/scene-tools'
+import { createStyleToolHandler, STYLE_TOOL_NAMES } from './tool-handlers/style-tools'
+import { createInteractionToolHandler, INTERACTION_TOOL_NAMES } from './tool-handlers/interaction-tools'
+import { AUDIO_TOOL_NAMES, createAudioToolHandler } from './tool-handlers/audio-tools'
+import { createImageVideoToolHandler, IMAGE_VIDEO_TOOL_NAMES } from './tool-handlers/image-video-tools'
+import { AVATAR_TOOL_NAMES, createAvatarToolHandler } from './tool-handlers/avatar-tools'
+import { createLayerToolHandler, LAYER_TOOL_NAMES } from './tool-handlers/layer-tools'
+import { createChartToolHandler, CHART_TOOL_NAMES } from './tool-handlers/chart-tools'
+import { createElementToolHandler, ELEMENT_TOOL_NAMES } from './tool-handlers/element-tools'
+import { createAILayerToolHandler, AI_LAYER_TOOL_NAMES } from './tool-handlers/ai-layer-tools'
+import { createParentingToolHandler, PARENTING_TOOL_NAMES } from './tool-handlers/parenting-tools'
+import { createAssetMediaToolHandler, ASSET_MEDIA_TOOL_NAMES } from './tool-handlers/asset-media-tools'
+import { createTemplateToolHandler, TEMPLATE_TOOL_NAMES } from './tool-handlers/template-tools'
+import { createPlanningExportToolHandler, PLANNING_EXPORT_TOOL_NAMES } from './tool-handlers/planning-export-tools'
+import { createThreeWorldToolHandler, THREE_WORLD_TOOL_NAMES } from './tool-handlers/three-world-tools'
+import { createPhysicsToolHandler, PHYSICS_TOOL_NAMES } from './tool-handlers/physics-tools'
 
 // ── Snapshot System ───────────────────────────────────────────────────────────
 
@@ -52,41 +75,192 @@ export interface WorldStateMutable {
   scenes: Scene[]
   globalStyle: GlobalStyle
   projectName: string
+  projectId?: string
   outputMode: 'mp4' | 'interactive'
+  sceneGraph: SceneGraph
+  activeTools?: string[]
   apiPermissions?: APIPermissions
+  audioProviderEnabled?: Record<string, boolean>
+  mediaGenEnabled?: Record<string, boolean>
+  sessionPermissions?: Record<string, string>
+  generationOverrides?: Record<string, { provider?: string; prompt?: string; config?: Record<string, any> }>
+  autoChooseDefaults?: Record<string, { provider: string; config: Record<string, any> }>
+  /** Model ID used by the agent — forwarded to generateCode so it respects the user's model choice */
+  modelId?: string
+  /** Model tier — forwarded to generateCode so it respects the user's tier choice */
+  modelTier?: 'auto' | 'premium' | 'budget'
+  /** Storyboard set by plan_scenes — provides narrative context for downstream generation */
+  storyboard?: import('./types').Storyboard
+  zdogLibrary?: ZdogPersonAsset[]
+  zdogStudioLibrary?: import('@/lib/types/zdog-studio').ZdogStudioAsset[]
+  /** NLE timeline with clips on tracks */
+  timeline?: import('../types').Timeline | null
+}
+
+// ── Tool Hook Pipeline ───────────────────────────────────────────────────────
+//
+// Pre-tool hooks run before execution and can deny or modify tool inputs.
+// Post-tool hooks run after execution and can augment or flag results.
+// Hooks are registered globally and matched by tool name or wildcard '*'.
+
+export interface PreToolHookContext {
+  toolName: string
+  args: Record<string, unknown>
+  world: WorldStateMutable
+}
+
+export interface PreToolHookResult {
+  /** If true, tool execution is blocked with the provided reason */
+  deny?: boolean
+  reason?: string
+  /** Optionally modify tool args before execution */
+  modifiedArgs?: Record<string, unknown>
+}
+
+export interface PostToolHookContext {
+  toolName: string
+  args: Record<string, unknown>
+  result: ToolResult
+  world: WorldStateMutable
+  durationMs: number
+}
+
+export interface PostToolHookResult {
+  /** Optionally override or augment the tool result */
+  modifiedResult?: ToolResult
+  /** Warning message appended to result data */
+  warning?: string
+}
+
+export type PreToolHook = (ctx: PreToolHookContext) => PreToolHookResult | Promise<PreToolHookResult>
+export type PostToolHook = (ctx: PostToolHookContext) => PostToolHookResult | Promise<PostToolHookResult>
+
+interface RegisteredHook<T> {
+  /** Tool name pattern: exact name or '*' for all tools */
+  pattern: string
+  name: string
+  hook: T
+}
+
+const preToolHooks: RegisteredHook<PreToolHook>[] = []
+const postToolHooks: RegisteredHook<PostToolHook>[] = []
+
+/** Register a pre-tool hook. Pattern can be an exact tool name or '*' for all. */
+export function registerPreToolHook(pattern: string, name: string, hook: PreToolHook): void {
+  preToolHooks.push({ pattern, name, hook })
+}
+
+/** Register a post-tool hook. Pattern can be an exact tool name or '*' for all. */
+export function registerPostToolHook(pattern: string, name: string, hook: PostToolHook): void {
+  postToolHooks.push({ pattern, name, hook })
+}
+
+/** Remove all hooks (useful for testing). */
+export function clearToolHooks(): void {
+  preToolHooks.length = 0
+  postToolHooks.length = 0
+}
+
+/** Remove hooks by name. Used by loadProjectHooks cleanup to remove
+ *  only user-configured hooks without affecting built-in hooks. */
+export function removeHooksByName(names: string[]): void {
+  const nameSet = new Set(names)
+  for (let i = preToolHooks.length - 1; i >= 0; i--) {
+    if (nameSet.has(preToolHooks[i].name)) preToolHooks.splice(i, 1)
+  }
+  for (let i = postToolHooks.length - 1; i >= 0; i--) {
+    if (nameSet.has(postToolHooks[i].name)) postToolHooks.splice(i, 1)
+  }
+}
+
+function matchesPattern(pattern: string, toolName: string): boolean {
+  return pattern === '*' || pattern === toolName
+}
+
+async function runPreToolHooks(ctx: PreToolHookContext, logger?: AgentLogger): Promise<PreToolHookResult> {
+  let currentArgs = ctx.args
+  for (const { pattern, name, hook } of preToolHooks) {
+    if (!matchesPattern(pattern, ctx.toolName)) continue
+    try {
+      const result = await hook({ ...ctx, args: currentArgs })
+      if (result.deny) {
+        logger?.log('hook', `Pre-tool hook "${name}" denied ${ctx.toolName}: ${result.reason}`)
+        return result
+      }
+      if (result.modifiedArgs) {
+        currentArgs = result.modifiedArgs
+      }
+    } catch (err) {
+      logger?.warn('hook', `Pre-tool hook "${name}" threw: ${(err as Error).message}`)
+      // Hook errors don't block execution
+    }
+  }
+  return { modifiedArgs: currentArgs }
+}
+
+async function runPostToolHooks(ctx: PostToolHookContext, logger?: AgentLogger): Promise<ToolResult> {
+  let currentResult = ctx.result
+  for (const { pattern, name, hook } of postToolHooks) {
+    if (!matchesPattern(pattern, ctx.toolName)) continue
+    try {
+      const hookResult = await hook({ ...ctx, result: currentResult })
+      if (hookResult.modifiedResult) {
+        currentResult = hookResult.modifiedResult
+      }
+      if (hookResult.warning) {
+        currentResult = {
+          ...currentResult,
+          data: {
+            ...(typeof currentResult.data === 'object' && currentResult.data ? currentResult.data : {}),
+            _hookWarning: hookResult.warning,
+          },
+        }
+        logger?.log('hook', `Post-tool hook "${name}" warning on ${ctx.toolName}: ${hookResult.warning}`)
+      }
+    } catch (err) {
+      logger?.warn('hook', `Post-tool hook "${name}" threw: ${(err as Error).message}`)
+    }
+  }
+  return currentResult
 }
 
 // ── Helper Functions ──────────────────────────────────────────────────────────
 
 function findScene(world: WorldStateMutable, sceneId: string): Scene | undefined {
-  return world.scenes.find(s => s.id === sceneId)
+  return world.scenes.find((s) => s.id === sceneId)
 }
 
 function updateScene(world: WorldStateMutable, sceneId: string, updates: Partial<Scene>): Scene | null {
-  const idx = world.scenes.findIndex(s => s.id === sceneId)
+  const idx = world.scenes.findIndex((s) => s.id === sceneId)
   if (idx === -1) return null
   const updated = { ...world.scenes[idx], ...updates }
+  // Keep D3 structured data coherent when scene type changes.
+  if (updates.sceneType && updates.sceneType !== 'd3') {
+    updated.chartLayers = []
+    updated.d3Data = null
+  }
   world.scenes[idx] = updated
   return updated
 }
 
-function ok(
-  affectedSceneId: string | null,
-  description: string,
-  data?: unknown,
-): ToolResult {
-  return {
-    success: true,
-    affectedSceneId,
-    changes: [
-      {
-        type: affectedSceneId ? 'scene_updated' : 'global_updated',
-        sceneId: affectedSceneId ?? undefined,
-        description,
-      },
-    ],
-    data,
+/** Clear code fields that don't belong to the given scene type */
+export function clearStaleCodeFields(sceneType: SceneType): Partial<Scene> {
+  const clear: Partial<Scene> = {}
+  if (sceneType !== 'svg') {
+    clear.svgContent = ''
+    clear.svgObjects = []
   }
+  if (sceneType !== 'canvas2d') clear.canvasCode = ''
+  if (sceneType !== 'lottie') clear.lottieSource = ''
+  if (sceneType !== 'd3') {
+    clear.d3Data = null
+    clear.chartLayers = [] as any
+  }
+  if (!['d3', 'three', 'motion', 'zdog', 'physics'].includes(sceneType)) clear.sceneCode = ''
+  if (sceneType === 'canvas2d' || !['motion', 'd3', 'svg'].includes(sceneType)) {
+    clear.canvasBackgroundCode = ''
+  }
+  return clear
 }
 
 function err(message: string): ToolResult {
@@ -102,748 +276,950 @@ type APIName = keyof APIPermissions
  * APIPermissions config. Returns an error ToolResult when the call should be
  * blocked, or null when execution should proceed.
  *
- * We intentionally do NOT handle the ask_once / always_ask flow here — those
- * modes require a UI round-trip that can't happen inside a server-side tool
- * executor. Instead we surface an actionable message asking the user to grant
- * permission via Settings > API Permissions.
+ * For always_ask / ask_once modes: returns a structured result with
+ * `permissionNeeded` so the chat UI can render approve/deny buttons.
+ * For ask_once: checks sessionPermissions first — if already approved this
+ * session, allows the call without prompting.
  */
-function checkApiPermission(world: WorldStateMutable, api: APIName): ToolResult | null {
+function checkApiPermission(
+  world: WorldStateMutable,
+  api: APIName,
+  context?: {
+    reason?: string
+    details?: {
+      prompt?: string
+      duration?: number
+      model?: string
+      resolution?: string
+    }
+  },
+): ToolResult | null {
   if (!world.apiPermissions) return null
   const config = world.apiPermissions[api]
   if (!config) return null
 
-  switch (config.mode) {
-    case 'always_allow':
-      return null
-    case 'always_deny':
-      return err(`${api} is disabled in project settings. Enable it under Settings > API Permissions.`)
-    case 'always_ask':
-    case 'ask_once':
-      return err(`Permission required: ${api} usage needs approval. Enable it under Settings > API Permissions.`)
-    default:
-      return null
+  const sessionPermissionsMap = new Map<string, string>(Object.entries(world.sessionPermissions ?? {}))
+  const sessionDecision = world.sessionPermissions?.[api]
+
+  // Preserve current UX behavior: once approved in session, skip repeated prompts.
+  if (config.mode === 'always_ask' && sessionDecision === 'allow') {
+    return null
+  }
+
+  const permission = checkPermission(
+    world.apiPermissions,
+    api,
+    API_COST_ESTIMATES[api] ?? 'unknown',
+    context?.reason ?? `Agent requested ${API_DISPLAY_NAMES[api]}`,
+    context?.details ?? {},
+    sessionPermissionsMap,
+  )
+
+  if (permission.action === 'allow') return null
+  if (permission.action === 'deny') return err(permission.reason)
+
+  return {
+    success: false,
+    error: `Permission required: ${api} usage needs approval.`,
+    permissionNeeded: {
+      api,
+      estimatedCost: API_COST_ESTIMATES[api] ?? 'unknown',
+      reason: context?.reason ?? `Agent requested ${API_DISPLAY_NAMES[api]}`,
+      details: context?.details ?? {},
+    },
   }
 }
 
-// ── Tool Implementations ──────────────────────────────────────────────────────
+/** Check if a media gen provider is enabled. Returns error ToolResult if disabled, null if ok. */
+function checkMediaEnabled(world: WorldStateMutable, providerId: string, label: string): ToolResult | null {
+  if (world.mediaGenEnabled && world.mediaGenEnabled[providerId] === false) {
+    return err(`${label} is disabled in media settings`)
+  }
+  return null
+}
+
+/** Enrich a permission-blocked ToolResult with generation context for the universal confirmation card */
+function enrichPermission(
+  result: ToolResult,
+  context: {
+    generationType: import('../types').GenerationType
+    prompt?: string
+    provider?: string
+    availableProviders?: import('../types').GenerationProviderOption[]
+    config?: Record<string, any>
+    toolArgs?: Record<string, any>
+  },
+): ToolResult {
+  if (result.permissionNeeded) {
+    result.permissionNeeded = {
+      ...result.permissionNeeded,
+      ...context,
+    }
+  }
+  return result
+}
+
+// ── Registration & Coverage ──────────────────────────────────────────────────
+// All tool implementations are now in explicit handler files under ./tool-handlers/
+
+let registryCoverageChecked = false
+const CANONICAL_TOOL_NAMES = new Set(ALL_TOOLS.map((t) => t.name))
+let registryCoverageLogged = false
+let handlersRegistered = false
+
+export function getToolRegistryStatus(): {
+  canonicalCount: number
+  explicitCount: number
+  defaultBackedCount: number
+  explicitTools: string[]
+  defaultBackedTools: string[]
+  hasDefaultHandler: boolean
+} {
+  ensureAllHandlersRegistered()
+  const canonical = [...CANONICAL_TOOL_NAMES]
+  const explicitTools = canonical.filter((name) => toolRegistry.hasExplicit(name))
+  const defaultBackedTools = canonical.filter((name) => !toolRegistry.hasExplicit(name))
+  return {
+    canonicalCount: canonical.length,
+    explicitCount: explicitTools.length,
+    defaultBackedCount: defaultBackedTools.length,
+    explicitTools,
+    defaultBackedTools,
+    hasDefaultHandler: toolRegistry.hasDefault(),
+  }
+}
+
+// ── Unified Handler Registration ──────────────────────────────────────────────
+// All tool families are now explicitly registered. No legacy fallback needed.
+
+function ensureAllHandlersRegistered(): void {
+  if (handlersRegistered) return
+
+  // ── Scene tools ──
+  const sceneHandler = createSceneToolHandler({ regenerateHTML })
+  toolRegistry.registerMany([...SCENE_TOOL_NAMES], (toolName, args, world, logger) =>
+    sceneHandler(toolName, args, world as WorldStateMutable, logger),
+  )
+
+  // ── Style tools ──
+  const styleHandler = createStyleToolHandler({ regenerateHTML })
+  toolRegistry.registerMany([...STYLE_TOOL_NAMES], (toolName, args, world, logger) =>
+    styleHandler(toolName, args, world as WorldStateMutable, logger),
+  )
+
+  // ── Interaction tools ──
+  const interactionHandler = createInteractionToolHandler()
+  toolRegistry.registerMany([...INTERACTION_TOOL_NAMES], (toolName, args, world) =>
+    interactionHandler(toolName, args, world as WorldStateMutable),
+  )
+
+  // ── Audio tools ──
+  const audioHandler = createAudioToolHandler({
+    checkApiPermission,
+    enrichPermission,
+  })
+  toolRegistry.registerMany([...AUDIO_TOOL_NAMES], (toolName, args, world) =>
+    audioHandler(toolName, args, world as WorldStateMutable),
+  )
+
+  // ── Image/Video tools ──
+  const imageVideoHandler = createImageVideoToolHandler({
+    checkMediaEnabled,
+    checkApiPermission,
+    enrichPermission,
+    regenerateHTML,
+  })
+  toolRegistry.registerMany([...IMAGE_VIDEO_TOOL_NAMES], (toolName, args, world, logger) =>
+    imageVideoHandler(toolName, args, world as WorldStateMutable, logger),
+  )
+
+  // ── Avatar tools ──
+  const avatarHandler = createAvatarToolHandler({
+    checkMediaEnabled,
+    checkApiPermission,
+    enrichPermission,
+  })
+  toolRegistry.registerMany([...AVATAR_TOOL_NAMES], (toolName, args, world) =>
+    avatarHandler(toolName, args, world as WorldStateMutable),
+  )
+
+  // ── Layer tools ──
+  const layerHandler = createLayerToolHandler({ regenerateHTML })
+  toolRegistry.registerMany([...LAYER_TOOL_NAMES], (toolName, args, world, logger) =>
+    layerHandler(toolName, args, world as WorldStateMutable, logger),
+  )
+
+  // ── Chart tools ──
+  const chartHandler = createChartToolHandler({ regenerateHTML })
+  toolRegistry.registerMany([...CHART_TOOL_NAMES], (toolName, args, world, logger) =>
+    chartHandler(toolName, args, world as WorldStateMutable, logger),
+  )
+
+  // ── Element tools ──
+  const elementHandler = createElementToolHandler({ regenerateHTML })
+  toolRegistry.registerMany([...ELEMENT_TOOL_NAMES], (toolName, args, world, logger) =>
+    elementHandler(toolName, args, world as WorldStateMutable, logger),
+  )
+
+  // ── AI Layer tools ──
+  const aiLayerHandler = createAILayerToolHandler({ regenerateHTML })
+  toolRegistry.registerMany([...AI_LAYER_TOOL_NAMES], (toolName, args, world, logger) =>
+    aiLayerHandler(toolName, args, world as WorldStateMutable, logger),
+  )
+
+  // ── Parenting tools ──
+  const parentingHandler = createParentingToolHandler()
+  toolRegistry.registerMany([...PARENTING_TOOL_NAMES], (toolName, args, world) =>
+    parentingHandler(toolName, args, world as WorldStateMutable),
+  )
+
+  // ── Asset/Media tools ──
+  const assetMediaHandler = createAssetMediaToolHandler({
+    checkApiPermission: checkApiPermission as (
+      world: WorldStateMutable,
+      api: string,
+      context?: { reason?: string; details?: Record<string, any> },
+    ) => ToolResult | null,
+    regenerateHTML,
+  })
+  toolRegistry.registerMany([...ASSET_MEDIA_TOOL_NAMES], (toolName, args, world, logger) =>
+    assetMediaHandler(toolName, args, world as WorldStateMutable, logger),
+  )
+
+  // ── Template tools ──
+  const templateHandler = createTemplateToolHandler()
+  toolRegistry.registerMany([...TEMPLATE_TOOL_NAMES], (toolName, args, world) =>
+    templateHandler(toolName, args, world as WorldStateMutable),
+  )
+
+  // ── Planning & Export tools ──
+  const planningExportHandler = createPlanningExportToolHandler()
+  toolRegistry.registerMany([...PLANNING_EXPORT_TOOL_NAMES], (toolName, args, world) =>
+    planningExportHandler(toolName, args, world as WorldStateMutable),
+  )
+
+  // ── Three.js / World / Model Library / Lottie tools ──
+  const threeWorldHandler = createThreeWorldToolHandler({ regenerateHTML })
+  toolRegistry.registerMany([...THREE_WORLD_TOOL_NAMES], (toolName, args, world, logger) =>
+    threeWorldHandler(toolName, args, world as WorldStateMutable, logger),
+  )
+
+  // ── Physics tools ──
+  const physicsHandler = createPhysicsToolHandler({ regenerateHTML })
+  toolRegistry.registerMany([...PHYSICS_TOOL_NAMES], (toolName, args, world, logger) =>
+    physicsHandler(toolName, args, world as WorldStateMutable, logger),
+  )
+
+  // ── Visual feedback tools ──
+  toolRegistry.register('capture_frame', async (_toolName, args, w) => {
+    const world = w as WorldStateMutable
+    const { sceneId, time } = args as { sceneId: string; time?: number }
+    const scene = world.scenes.find((s) => s.id === sceneId)
+    if (!scene) return { success: false, error: `Scene ${sceneId} not found` }
+
+    // Build a structured description of the scene's visual state
+    const layers: string[] = []
+    const t = Math.max(0, time ?? 1)
+
+    // Main renderer
+    if (scene.sceneType) layers.push(`Main renderer: ${scene.sceneType}`)
+    if (scene.svgContent) layers.push(`SVG content: ${scene.svgContent.length} chars`)
+    if (scene.canvasCode) layers.push(`Canvas2D code: ${scene.canvasCode.length} chars`)
+    if (scene.sceneCode) layers.push(`Scene code (${scene.sceneType}): ${scene.sceneCode.length} chars`)
+
+    // Text overlays
+    for (const t of scene.textOverlays ?? []) {
+      layers.push(
+        `Text overlay "${t.content?.slice(0, 40) ?? ''}" at (${t.x ?? 0}%, ${t.y ?? 0}%) size=${t.size ?? 24}px color=${t.color ?? '#fff'} animation=${t.animation ?? 'none'}`,
+      )
+    }
+
+    // SVG objects
+    for (const obj of scene.svgObjects ?? []) {
+      layers.push(
+        `SVG object at (${obj.x ?? 0}%, ${obj.y ?? 0}%) width=${obj.width ?? 10}% opacity=${obj.opacity ?? 1}`,
+      )
+    }
+
+    // AI layers
+    for (const ai of scene.aiLayers ?? []) {
+      layers.push(
+        `AI layer "${ai.type}" at (${Math.round(ai.x ?? 0)}, ${Math.round(ai.y ?? 0)}) ${Math.round(ai.width ?? 0)}x${Math.round(ai.height ?? 0)} opacity=${ai.opacity ?? 1} startAt=${ai.startAt ?? 0}s`,
+      )
+    }
+
+    // Chart layers
+    for (const ch of (scene as any).chartLayers ?? []) {
+      layers.push(`Chart "${ch.chartType ?? 'unknown'}" title="${ch.title ?? ''}"`)
+    }
+
+    // Video layer
+    if (scene.videoLayer?.enabled && scene.videoLayer.src) {
+      layers.push(
+        `Video layer: ${scene.videoLayer.src.slice(0, 60)} opacity=${scene.videoLayer.opacity ?? 1} trim=${scene.videoLayer.trimStart ?? 0}-${scene.videoLayer.trimEnd ?? 'end'}`,
+      )
+    }
+
+    // Audio
+    if (scene.audioLayer?.enabled) {
+      const al = scene.audioLayer
+      const parts: string[] = []
+      if (al.src) parts.push(`audio: ${al.src.slice(0, 40)}`)
+      if ((al as any).tts?.src) parts.push(`TTS narration`)
+      if ((al as any).music?.src) parts.push(`background music`)
+      if ((al as any).sfx?.length) parts.push(`${(al as any).sfx.length} SFX`)
+      if (parts.length) layers.push(`Audio: ${parts.join(', ')}`)
+    }
+
+    // Camera motion
+    if (scene.cameraMotion?.length) {
+      layers.push(`Camera: ${scene.cameraMotion.map((m: any) => m.type).join(' → ')}`)
+    }
+
+    const description = [
+      `Scene "${scene.name}" (${scene.id.slice(0, 8)}…)`,
+      `Type: ${scene.sceneType ?? 'svg'} | Duration: ${scene.duration}s | BG: ${scene.bgColor}`,
+      `Capture time: ${t}s`,
+      `Dimensions: 1920×1080`,
+      '',
+      `Layers (${layers.length}):`,
+      ...layers.map((l) => `  • ${l}`),
+    ].join('\n')
+
+    return {
+      success: true,
+      affectedSceneId: sceneId,
+      data: {
+        clientAction: 'capture_frame',
+        sceneId,
+        time: t,
+        description,
+      },
+    }
+  })
+
+  // ── Verify scene tool (self-verification loop) ──
+  toolRegistry.register('verify_scene', async (_toolName, args, w) => {
+    const world = w as WorldStateMutable
+    const { sceneId, time, expectedElements } = args as {
+      sceneId: string
+      time?: number
+      expectedElements?: string[]
+    }
+    const scene = world.scenes.find((s) => s.id === sceneId)
+    if (!scene) return { success: false, error: `Scene ${sceneId} not found` }
+
+    const t = Math.max(0, time ?? 1)
+    const issues: string[] = []
+    const checks: Record<string, 'pass' | 'warn' | 'fail'> = {}
+
+    // 1. Check scene has content
+    const hasMainContent = !!(scene.svgContent || scene.canvasCode || scene.sceneCode || scene.lottieSource)
+    const layerCount =
+      (scene.svgObjects?.length ?? 0) + (scene.aiLayers?.length ?? 0) + ((scene as any).chartLayers?.length ?? 0)
+    const hasLayers = layerCount > 0
+    const hasContent = hasMainContent || hasLayers
+
+    if (!hasContent) {
+      checks.content = 'fail'
+      issues.push('EMPTY: Scene has no content — no code, no layers, no charts. Call add_layer or generate_chart.')
+    } else {
+      checks.content = 'pass'
+    }
+
+    // 2. Check text overlays for potential issues
+    const overlays = scene.textOverlays ?? []
+    if (overlays.length > 0) {
+      const overlapping = overlays.filter((a, i) =>
+        overlays.some(
+          (b, j) => i !== j && Math.abs((a.y ?? 0) - (b.y ?? 0)) < 5 && Math.abs((a.x ?? 0) - (b.x ?? 0)) < 20,
+        ),
+      )
+      if (overlapping.length > 0) {
+        checks.text_layout = 'warn'
+        issues.push(`OVERLAP: ${overlapping.length} text overlays may overlap — check positions.`)
+      } else {
+        checks.text_layout = 'pass'
+      }
+    }
+
+    // 3. Check palette adherence (if global style has palette)
+    const palette = world.globalStyle?.palette
+    if (palette && palette.length > 0 && scene.bgColor) {
+      const bgInPalette = palette.some((c) => c.toLowerCase() === scene.bgColor.toLowerCase())
+      // Background doesn't need to be in palette, but note if it's very different
+      checks.palette = bgInPalette ? 'pass' : 'pass' // bg can differ from palette
+    }
+
+    // 4. Check audio presence (for Director builds with narration expected)
+    const hasAudio = scene.audioLayer?.enabled ?? false
+    const hasTTS = !!(scene.audioLayer as any)?.tts?.src
+    checks.audio = hasAudio ? 'pass' : 'warn'
+
+    // 5. Check duration sanity
+    if (scene.duration < 3) {
+      checks.duration = 'warn'
+      issues.push(`SHORT: Duration is ${scene.duration}s — minimum recommended is 6s for content scenes.`)
+    } else if (scene.duration > 30) {
+      checks.duration = 'warn'
+      issues.push(`LONG: Duration is ${scene.duration}s — consider splitting into multiple scenes.`)
+    } else {
+      checks.duration = 'pass'
+    }
+
+    // 6. Check expected elements if provided
+    if (expectedElements && expectedElements.length > 0) {
+      // Build a searchable text from all scene content
+      const contentText = [
+        scene.name,
+        scene.prompt,
+        scene.svgContent ?? '',
+        scene.canvasCode ?? '',
+        scene.sceneCode ?? '',
+        ...overlays.map((o) => o.content ?? ''),
+        ...(scene.svgObjects ?? []).map((o) => o.prompt ?? ''),
+        ...(scene.aiLayers ?? []).map((l) => l.label ?? ''),
+        ...((scene as any).chartLayers ?? []).map((c: any) => `${c.name ?? ''} ${c.chartType ?? ''}`),
+      ]
+        .join(' ')
+        .toLowerCase()
+
+      const missing = expectedElements.filter((el) => !contentText.includes(el.toLowerCase()))
+      if (missing.length > 0) {
+        checks.completeness = 'warn'
+        issues.push(
+          `MISSING: Expected elements not found in scene content: ${missing.join(', ')}. They may be in generated code — verify visually.`,
+        )
+      } else {
+        checks.completeness = 'pass'
+      }
+    }
+
+    // Build description of scene state for context
+    const layers: string[] = []
+    if (scene.sceneType) layers.push(`Main renderer: ${scene.sceneType}`)
+    if (scene.svgContent) layers.push(`SVG content: ${scene.svgContent.length} chars`)
+    if (scene.canvasCode) layers.push(`Canvas2D code: ${scene.canvasCode.length} chars`)
+    if (scene.sceneCode) layers.push(`Scene code (${scene.sceneType}): ${scene.sceneCode.length} chars`)
+    for (const overlay of overlays) {
+      layers.push(`Text: "${overlay.content?.slice(0, 40) ?? ''}" at (${overlay.x ?? 0}%, ${overlay.y ?? 0}%)`)
+    }
+    for (const obj of scene.svgObjects ?? []) {
+      layers.push(`SVG object at (${obj.x ?? 0}%, ${obj.y ?? 0}%) w:${obj.width ?? 10}%`)
+    }
+    for (const ai of scene.aiLayers ?? []) {
+      layers.push(`AI layer "${ai.type}" "${ai.label}" at (${Math.round(ai.x ?? 0)}, ${Math.round(ai.y ?? 0)})`)
+    }
+    for (const ch of (scene as any).chartLayers ?? []) {
+      layers.push(`Chart "${ch.chartType ?? 'unknown'}" title="${ch.title ?? ''}"`)
+    }
+    if (hasAudio) layers.push(`Audio: ${hasTTS ? 'TTS narration' : 'audio layer'}`)
+
+    const allPassed = issues.length === 0
+    const verdict = allPassed
+      ? 'PASS — Scene looks good. Proceed to next scene.'
+      : `ISSUES FOUND (${issues.length}) — Fix these before moving on:`
+
+    const report = [
+      `── VERIFY: "${scene.name}" (${scene.id.slice(0, 8)}…) at t=${t}s ──`,
+      `Type: ${scene.sceneType ?? 'svg'} | Duration: ${scene.duration}s | BG: ${scene.bgColor}`,
+      '',
+      `Checks: ${Object.entries(checks)
+        .map(([k, v]) => `${k}:${v}`)
+        .join(' | ')}`,
+      '',
+      verdict,
+      ...issues.map((i) => `  ⚠ ${i}`),
+      '',
+      `Layers (${layers.length}):`,
+      ...layers.map((l) => `  • ${l}`),
+    ].join('\n')
+
+    return {
+      success: allPassed,
+      affectedSceneId: sceneId,
+      data: {
+        report,
+        checks,
+        issues,
+        layerCount: layers.length,
+        hasAudio,
+        hasTTS,
+        sceneType: scene.sceneType,
+        duration: scene.duration,
+      },
+    }
+  })
+
+  // ── Timeline / Clip tools ──
+  const TIMELINE_TOOL_NAMES = [
+    'init_timeline',
+    'add_track',
+    'place_clip',
+    'move_clip',
+    'trim_clip',
+    'split_clip',
+    'remove_clip',
+    'set_clip_speed',
+    'set_keyframe',
+    'remove_keyframe',
+    'slip_edit',
+    'set_clip_filter',
+    'remove_clip_filter',
+    'set_clip_blend_mode',
+  ] as const
+
+  toolRegistry.registerMany([...TIMELINE_TOOL_NAMES], async (toolName, args, w) => {
+    const world = w as WorldStateMutable
+    type TL = import('../types').Timeline
+    type TK = import('../types').Track
+    type CL = import('../types').Clip
+    const tl = (): TL | null => world.timeline ?? null
+    const ok = (desc: string, data?: unknown): ToolResult => ({
+      success: true,
+      changes: [{ type: 'project_updated', description: desc }],
+      data,
+    })
+    const fail = (msg: string): ToolResult => ({ success: false, error: msg })
+
+    const setTimeline = (timeline: import('../types').Timeline) => {
+      world.timeline = timeline
+    }
+
+    switch (toolName) {
+      case 'init_timeline': {
+        if (tl()) return ok('Timeline already exists', { trackCount: tl()!.tracks.length })
+        const tracks: import('../types').Track[] = [
+          {
+            id: uuidv4(),
+            name: 'Main',
+            type: 'video',
+            clips: [],
+            muted: false,
+            locked: false,
+            position: 0,
+          },
+        ]
+        let acc = 0
+        for (const scene of world.scenes) {
+          tracks[0].clips.push({
+            id: uuidv4(),
+            trackId: tracks[0].id,
+            sourceType: 'scene',
+            sourceId: scene.id,
+            label: scene.name || 'Untitled',
+            startTime: acc,
+            duration: scene.duration,
+            trimStart: 0,
+            trimEnd: null,
+            speed: 1,
+            opacity: 1,
+            position: { x: 0, y: 0 },
+            scale: { x: 1, y: 1 },
+            rotation: 0,
+            filters: [],
+            keyframes: [],
+            transition: null,
+          })
+          acc += scene.duration
+        }
+        setTimeline({ tracks })
+        return ok(`Timeline initialized with ${tracks[0].clips.length} clips on 1 track`, {
+          trackId: tracks[0].id,
+          clipCount: tracks[0].clips.length,
+        })
+      }
+
+      case 'add_track': {
+        if (!tl()) return fail('Timeline not initialized. Call init_timeline first.')
+        const { type, name } = args as { type: 'video' | 'audio' | 'overlay'; name?: string }
+        const id = uuidv4()
+        const maxPos = tl()!.tracks.reduce((m: number, t: TK) => Math.max(m, t.position), -1)
+        const newTrack: import('../types').Track = {
+          id,
+          name: name ?? `Track ${tl()!.tracks.length + 1}`,
+          type,
+          clips: [],
+          muted: false,
+          locked: false,
+          position: maxPos + 1,
+        }
+        setTimeline({ tracks: [...tl()!.tracks, newTrack] })
+        return ok(`Added ${type} track "${newTrack.name}"`, { trackId: id })
+      }
+
+      case 'place_clip': {
+        if (!tl()) return fail('Timeline not initialized. Call init_timeline first.')
+        const { trackId, sourceType, sourceId, label, startTime, duration, trimStart, trimEnd, opacity } = args as any
+        const track = tl()!.tracks.find((t) => t.id === trackId)
+        if (!track) return fail(`Track ${trackId} not found`)
+        if (sourceType === 'scene' && !world.scenes.find((s) => s.id === sourceId)) {
+          return fail(`Scene ${sourceId} not found`)
+        }
+        const id = uuidv4()
+        const clip: import('../types').Clip = {
+          id,
+          trackId,
+          sourceType,
+          sourceId,
+          label: label ?? '',
+          startTime: Math.max(0, startTime),
+          duration: Math.max(0.1, duration),
+          trimStart: trimStart ?? 0,
+          trimEnd: trimEnd ?? null,
+          speed: 1,
+          opacity: opacity ?? 1,
+          position: { x: 0, y: 0 },
+          scale: { x: 1, y: 1 },
+          rotation: 0,
+          filters: [],
+          keyframes: [],
+          transition: null,
+        }
+        setTimeline({
+          tracks: tl()!.tracks.map((t) => (t.id === trackId ? { ...t, clips: [...t.clips, clip] } : t)),
+        })
+        return ok(`Placed ${sourceType} clip at ${startTime}s (${duration}s)`, { clipId: id })
+      }
+
+      case 'move_clip': {
+        if (!tl()) return fail('No timeline')
+        const { clipId, toTrackId, startTime } = args as { clipId: string; toTrackId: string; startTime: number }
+        let moved: CL | null = null
+        const after = tl()!.tracks.map((t) => ({
+          ...t,
+          clips: t.clips.filter((c) => {
+            if (c.id === clipId) {
+              moved = c
+              return false
+            }
+            return true
+          }),
+        }))
+        if (!moved) return fail(`Clip ${clipId} not found`)
+        const updated: CL = { ...(moved as CL), trackId: toTrackId, startTime }
+        setTimeline({
+          tracks: after.map((t) => (t.id === toTrackId ? { ...t, clips: [...t.clips, updated] } : t)),
+        })
+        return ok(`Moved clip to track ${toTrackId} at ${startTime}s`)
+      }
+
+      case 'trim_clip': {
+        if (!tl()) return fail('No timeline')
+        const { clipId, trimStart: ts, trimEnd: te, duration: dur } = args as any
+        const updates: Partial<import('../types').Clip> = {}
+        if (ts != null) updates.trimStart = ts
+        if (te !== undefined) updates.trimEnd = te
+        if (dur != null) updates.duration = Math.max(0.1, dur)
+        setTimeline({
+          tracks: tl()!.tracks.map((t) => ({
+            ...t,
+            clips: t.clips.map((c) => (c.id === clipId ? { ...c, ...updates } : c)),
+          })),
+        })
+        return ok(`Trimmed clip ${clipId}`)
+      }
+
+      case 'split_clip': {
+        if (!tl()) return fail('No timeline')
+        const { clipId, atTime } = args as { clipId: string; atTime: number }
+        let clip: import('../types').Clip | null = null
+        for (const t of tl()!.tracks) {
+          const c = t.clips.find((c) => c.id === clipId)
+          if (c) {
+            clip = c
+            break
+          }
+        }
+        if (!clip) return fail(`Clip ${clipId} not found`)
+        if (atTime <= 0 || atTime >= clip.duration)
+          return fail(`Split time ${atTime}s out of range (0–${clip.duration}s)`)
+        const leftId = uuidv4(),
+          rightId = uuidv4()
+        const left: import('../types').Clip = {
+          ...clip,
+          id: leftId,
+          duration: atTime,
+          trimEnd: clip.trimStart + atTime * clip.speed,
+          keyframes: clip.keyframes.filter((k) => k.time < atTime),
+        }
+        const right: import('../types').Clip = {
+          ...clip,
+          id: rightId,
+          startTime: clip.startTime + atTime,
+          duration: clip.duration - atTime,
+          trimStart: clip.trimStart + atTime * clip.speed,
+          keyframes: clip.keyframes.filter((k) => k.time >= atTime).map((k) => ({ ...k, time: k.time - atTime })),
+        }
+        setTimeline({
+          tracks: tl()!.tracks.map((t) => ({
+            ...t,
+            clips: t.clips.flatMap((c) => (c.id === clipId ? [left, right] : [c])),
+          })),
+        })
+        return ok(`Split clip into two at ${atTime}s`, { leftId, rightId })
+      }
+
+      case 'remove_clip': {
+        if (!tl()) return fail('No timeline')
+        const { clipId } = args as { clipId: string }
+        setTimeline({
+          tracks: tl()!.tracks.map((t) => ({ ...t, clips: t.clips.filter((c) => c.id !== clipId) })),
+        })
+        return ok(`Removed clip ${clipId}`)
+      }
+
+      case 'set_clip_speed': {
+        if (!tl()) return fail('No timeline')
+        const { clipId, speed } = args as { clipId: string; speed: number }
+        const s = Math.max(0.25, Math.min(4, speed))
+        // Find current clip to recalculate duration
+        let foundClip: CL | null = null
+        for (const t of tl()!.tracks) {
+          const c = t.clips.find((c) => c.id === clipId)
+          if (c) {
+            foundClip = c
+            break
+          }
+        }
+        if (!foundClip) return fail(`Clip ${clipId} not found`)
+        // Auto-adjust duration: if source span is known, recalculate
+        const oldSpeed = foundClip.speed || 1
+        const newDuration = foundClip.duration * (oldSpeed / s)
+        setTimeline({
+          tracks: tl()!.tracks.map((t) => ({
+            ...t,
+            clips: t.clips.map((c) => (c.id === clipId ? { ...c, speed: s, duration: newDuration } : c)),
+          })),
+        })
+        return ok(`Set clip speed to ${s}x (duration adjusted to ${newDuration.toFixed(1)}s)`)
+      }
+
+      case 'set_keyframe': {
+        if (!tl()) return fail('No timeline')
+        const {
+          clipId,
+          property,
+          time: kfTime,
+          value,
+          easing,
+        } = args as {
+          clipId: string
+          property: string
+          time: number
+          value: number
+          easing?: string
+        }
+        const kf: import('../types').Keyframe = {
+          time: Math.max(0, kfTime),
+          property,
+          value,
+          easing: easing ?? 'linear',
+        }
+        setTimeline({
+          tracks: tl()!.tracks.map((t) => ({
+            ...t,
+            clips: t.clips.map((c) => {
+              if (c.id !== clipId) return c
+              // Remove existing keyframe at same property+time, then add new one
+              const filtered = c.keyframes.filter(
+                (k) => !(k.property === property && Math.abs(k.time - kfTime) < 0.001),
+              )
+              return { ...c, keyframes: [...filtered, kf] }
+            }),
+          })),
+        })
+        return ok(`Set keyframe: ${property}=${value} at ${kfTime}s (${easing ?? 'linear'})`)
+      }
+
+      case 'remove_keyframe': {
+        if (!tl()) return fail('No timeline')
+        const { clipId, property, time: kfTime } = args as { clipId: string; property: string; time: number }
+        setTimeline({
+          tracks: tl()!.tracks.map((t) => ({
+            ...t,
+            clips: t.clips.map((c) => {
+              if (c.id !== clipId) return c
+              return {
+                ...c,
+                keyframes: c.keyframes.filter((k) => !(k.property === property && Math.abs(k.time - kfTime) < 0.001)),
+              }
+            }),
+          })),
+        })
+        return ok(`Removed keyframe: ${property} at ${kfTime}s`)
+      }
+
+      case 'slip_edit': {
+        if (!tl()) return fail('No timeline')
+        const { clipId, offsetSeconds } = args as { clipId: string; offsetSeconds: number }
+        let found: CL | null = null
+        for (const t of tl()!.tracks) {
+          const c = t.clips.find((c) => c.id === clipId)
+          if (c) {
+            found = c
+            break
+          }
+        }
+        if (!found) return fail(`Clip ${clipId} not found`)
+        const newTrimStart = Math.max(0, found.trimStart + offsetSeconds)
+        const newTrimEnd = found.trimEnd != null ? found.trimEnd + offsetSeconds : null
+        setTimeline({
+          tracks: tl()!.tracks.map((t) => ({
+            ...t,
+            clips: t.clips.map((c) => (c.id === clipId ? { ...c, trimStart: newTrimStart, trimEnd: newTrimEnd } : c)),
+          })),
+        })
+        return ok(
+          `Slip edit: shifted source window by ${offsetSeconds > 0 ? '+' : ''}${offsetSeconds}s (trimStart=${newTrimStart.toFixed(1)}s)`,
+        )
+      }
+
+      case 'set_clip_filter': {
+        if (!tl()) return fail('No timeline')
+        const { clipId, filterType, value } = args as { clipId: string; filterType: string; value: number }
+        setTimeline({
+          tracks: tl()!.tracks.map((t) => ({
+            ...t,
+            clips: t.clips.map((c) => {
+              if (c.id !== clipId) return c
+              // Replace existing filter of same type, or add new
+              const filters = c.filters.filter((f) => f.type !== filterType)
+              filters.push({ type: filterType as any, value })
+              return { ...c, filters }
+            }),
+          })),
+        })
+        return ok(`Set ${filterType} filter to ${value} on clip`)
+      }
+
+      case 'remove_clip_filter': {
+        if (!tl()) return fail('No timeline')
+        const { clipId, filterType } = args as { clipId: string; filterType: string }
+        setTimeline({
+          tracks: tl()!.tracks.map((t) => ({
+            ...t,
+            clips: t.clips.map((c) =>
+              c.id === clipId ? { ...c, filters: c.filters.filter((f) => f.type !== filterType) } : c,
+            ),
+          })),
+        })
+        return ok(`Removed ${filterType} filter from clip`)
+      }
+
+      case 'set_clip_blend_mode': {
+        if (!tl()) return fail('No timeline')
+        const { clipId, blendMode } = args as { clipId: string; blendMode: string }
+        setTimeline({
+          tracks: tl()!.tracks.map((t) => ({
+            ...t,
+            clips: t.clips.map((c) => (c.id === clipId ? { ...c, blendMode } : c)),
+          })),
+        })
+        return ok(`Set blend mode to "${blendMode}"`)
+      }
+
+      default:
+        return fail(`Unknown timeline tool: ${toolName}`)
+    }
+  })
+
+  handlersRegistered = true
+}
+
+function ensureRegistryCoverage(): void {
+  if (registryCoverageChecked) return
+  const unresolved = [...CANONICAL_TOOL_NAMES].filter((name) => !toolRegistry.hasExplicit(name))
+  if (unresolved.length > 0) {
+    throw new Error(`Tool registry missing explicit handlers for canonical tools: ${unresolved.join(', ')}`)
+  }
+  if (process.env.NODE_ENV !== 'production' && !registryCoverageLogged) {
+    console.info(`[ToolRegistry] All ${CANONICAL_TOOL_NAMES.size} canonical tools are explicitly registered.`)
+    registryCoverageLogged = true
+  }
+  registryCoverageChecked = true
+}
+
+export function registerToolHandler(
+  toolName: string,
+  handler: (
+    toolName: string,
+    args: Record<string, unknown>,
+    world: WorldStateMutable,
+    logger?: AgentLogger,
+  ) => Promise<ToolResult>,
+): void {
+  ensureAllHandlersRegistered()
+  toolRegistry.register(toolName, (name, args, world, logger) =>
+    handler(name, args, world as WorldStateMutable, logger),
+  )
+}
 
 export async function executeTool(
   toolName: string,
   args: Record<string, unknown>,
   world: WorldStateMutable,
+  logger?: AgentLogger,
 ): Promise<ToolResult> {
-  // Snapshot before every execution
+  ensureAllHandlersRegistered()
+  ensureRegistryCoverage()
+  if (!CANONICAL_TOOL_NAMES.has(toolName)) {
+    return err(`Unknown tool: ${toolName}`)
+  }
+
+  // Log tool inputs (truncate large string values like code/prompt)
+  const inputSummary: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(args)) {
+    if (typeof v === 'string' && v.length > 150) {
+      inputSummary[k] = `${v.slice(0, 150)}… [${v.length} chars]`
+    } else {
+      inputSummary[k] = v
+    }
+  }
+  logger?.log('tool_exec', `executeTool(${toolName})`, inputSummary)
+
+  // Run pre-tool hooks (can deny or modify args)
+  const preResult = await runPreToolHooks({ toolName, args, world }, logger)
+  if (preResult.deny) {
+    return err(`Hook denied: ${preResult.reason ?? 'blocked by pre-tool hook'}`)
+  }
+  const finalArgs = preResult.modifiedArgs ?? args
+
+  // Snapshot before every execution for undo/recovery
   createSnapshot(world.scenes, world.globalStyle, `before:${toolName}`)
 
-  switch (toolName) {
-    // ── Scene Tools ──────────────────────────────────────────────────────────
-
-    case 'create_scene': {
-      const { name, prompt, duration, bgColor, position } = args as {
-        name: string; prompt: string; duration: number; bgColor?: string; position?: number;
-      }
-      const newScene: Scene = {
-        id: uuidv4(),
-        name: name || '',
-        prompt: prompt || '',
-        summary: '',
-        svgContent: '',
-        duration: Math.max(3, Math.min(30, duration || 8)),
-        bgColor: bgColor || '#181818',
-        thumbnail: null,
-        videoLayer: { enabled: false, src: null, opacity: 1, trimStart: 0, trimEnd: null },
-        audioLayer: { enabled: false, src: null, volume: 1, fadeIn: false, fadeOut: false, startOffset: 0 },
-        textOverlays: [],
-        svgObjects: [],
-        primaryObjectId: null,
-        svgBranches: [],
-        activeBranchId: null,
-        transition: 'none',
-        usage: null,
-        sceneType: 'svg',
-        canvasCode: '',
-        sceneCode: '',
-        sceneHTML: '',
-        sceneStyles: '',
-        lottieSource: '',
-        d3Data: null,
-        interactions: [],
-        variables: [],
-        aiLayers: [],
-        messages: [],
-      }
-
-      if (typeof position === 'number' && position >= 0 && position <= world.scenes.length) {
-        world.scenes.splice(position, 0, newScene)
-      } else {
-        world.scenes.push(newScene)
-      }
-
-      return {
-        success: true,
-        affectedSceneId: newScene.id,
-        changes: [{
-          type: 'scene_created',
-          sceneId: newScene.id,
-          description: `Created scene "${name}" (${newScene.id})`,
-        }],
-        data: { sceneId: newScene.id },
-      }
-    }
-
-    case 'delete_scene': {
-      const { sceneId } = args as { sceneId: string }
-      const idx = world.scenes.findIndex(s => s.id === sceneId)
-      if (idx === -1) return err(`Scene ${sceneId} not found`)
-      const sceneName = world.scenes[idx].name
-      world.scenes.splice(idx, 1)
-      return {
-        success: true,
-        affectedSceneId: sceneId,
-        changes: [{ type: 'scene_deleted', sceneId, description: `Deleted scene "${sceneName}"` }],
-      }
-    }
-
-    case 'duplicate_scene': {
-      const { sceneId } = args as { sceneId: string }
-      const scene = findScene(world, sceneId)
-      if (!scene) return err(`Scene ${sceneId} not found`)
-      const newScene: Scene = {
-        ...JSON.parse(JSON.stringify(scene)),
-        id: uuidv4(),
-        name: scene.name ? `${scene.name} (copy)` : '(copy)',
-        thumbnail: null,
-        interactions: scene.interactions.map(el => ({ ...el, id: uuidv4() })),
-      }
-      const idx = world.scenes.findIndex(s => s.id === sceneId)
-      world.scenes.splice(idx + 1, 0, newScene)
-      return {
-        success: true,
-        affectedSceneId: newScene.id,
-        changes: [{ type: 'scene_created', sceneId: newScene.id, description: `Duplicated scene as "${newScene.name}"` }],
-        data: { sceneId: newScene.id },
-      }
-    }
-
-    case 'reorder_scenes': {
-      const { fromIndex, toIndex } = args as { fromIndex: number; toIndex: number }
-      if (fromIndex < 0 || fromIndex >= world.scenes.length) return err(`fromIndex ${fromIndex} out of range`)
-      if (toIndex < 0 || toIndex >= world.scenes.length) return err(`toIndex ${toIndex} out of range`)
-      const [removed] = world.scenes.splice(fromIndex, 1)
-      world.scenes.splice(toIndex, 0, removed)
-      return ok(null, `Moved scene from position ${fromIndex} to ${toIndex}`)
-    }
-
-    case 'set_scene_duration': {
-      const { sceneId, duration } = args as { sceneId: string; duration: number }
-      const scene = findScene(world, sceneId)
-      if (!scene) return err(`Scene ${sceneId} not found`)
-      const clamped = Math.max(3, Math.min(30, duration))
-      updateScene(world, sceneId, { duration: clamped })
-      return ok(sceneId, `Set duration to ${clamped}s`)
-    }
-
-    case 'set_scene_background': {
-      const { sceneId, bgColor } = args as { sceneId: string; bgColor: string }
-      const scene = findScene(world, sceneId)
-      if (!scene) return err(`Scene ${sceneId} not found`)
-      updateScene(world, sceneId, { bgColor })
-      await regenerateHTML(world, sceneId)
-      return ok(sceneId, `Set background to ${bgColor}`)
-    }
-
-    case 'set_transition': {
-      const { sceneId, transition } = args as { sceneId: string; transition: TransitionType }
-      const scene = findScene(world, sceneId)
-      if (!scene) return err(`Scene ${sceneId} not found`)
-      updateScene(world, sceneId, { transition })
-      return ok(sceneId, `Set transition to "${transition}"`)
-    }
-
-    // ── Layer Tools ──────────────────────────────────────────────────────────
-
-    case 'add_layer': {
-      const { sceneId, layerType, prompt, zIndex, opacity, startAt } = args as {
-        sceneId: string; layerType: SceneType; prompt: string;
-        zIndex?: number; opacity?: number; startAt?: number;
-      }
-      const scene = findScene(world, sceneId)
-      if (!scene) return err(`Scene ${sceneId} not found`)
-
-      // Generate content via direct SDK call
-      const result = await generateLayerContent(layerType, prompt, scene, world.globalStyle)
-      if (!result.success) return err(result.error || 'Layer generation failed')
-
-      const layerId = uuidv4()
-
-      if (layerType === 'svg') {
-        const newObj = {
-          id: layerId,
-          prompt,
-          svgContent: result.code || '',
-          x: 0,
-          y: 0,
-          width: 100,
-          opacity: opacity ?? 1,
-          zIndex: zIndex ?? 2,
-        }
-        const existing = scene.svgObjects || []
-        updateScene(world, sceneId, {
-          sceneType: 'svg',
-          svgObjects: [...existing, newObj],
-          svgContent: result.code || '',
-        })
-      } else {
-        // For canvas2d, d3, three, motion, lottie — update sceneCode/canvasCode
-        const updates: Partial<Scene> = { sceneType: layerType }
-        if (layerType === 'canvas2d') updates.canvasCode = result.code || ''
-        else if (layerType === 'lottie') updates.lottieSource = result.code || ''
-        else updates.sceneCode = result.code || ''
-        updateScene(world, sceneId, updates)
-      }
-
-      await regenerateHTML(world, sceneId)
-      return {
-        success: true,
-        affectedSceneId: sceneId,
-        changes: [{ type: 'scene_updated', sceneId, description: `Added ${layerType} layer: "${prompt}"` }],
-        data: { layerId },
-      }
-    }
-
-    case 'remove_layer': {
-      const { sceneId, layerId } = args as { sceneId: string; layerId: string }
-      const scene = findScene(world, sceneId)
-      if (!scene) return err(`Scene ${sceneId} not found`)
-
-      // Try to remove from svgObjects
-      const svgIdx = (scene.svgObjects || []).findIndex(o => o.id === layerId)
-      if (svgIdx !== -1) {
-        const newObjects = scene.svgObjects.filter(o => o.id !== layerId)
-        updateScene(world, sceneId, { svgObjects: newObjects })
-        await regenerateHTML(world, sceneId)
-        return ok(sceneId, `Removed SVG layer ${layerId}`)
-      }
-
-      // Try AI layers
-      const aiIdx = (scene.aiLayers || []).findIndex(l => l.id === layerId)
-      if (aiIdx !== -1) {
-        const newLayers = scene.aiLayers.filter(l => l.id !== layerId)
-        updateScene(world, sceneId, { aiLayers: newLayers })
-        await regenerateHTML(world, sceneId)
-        return ok(sceneId, `Removed AI layer ${layerId}`)
-      }
-
-      return err(`Layer ${layerId} not found in scene ${sceneId}`)
-    }
-
-    case 'reorder_layer': {
-      const { sceneId, layerId, zIndex } = args as { sceneId: string; layerId: string; zIndex: number }
-      const scene = findScene(world, sceneId)
-      if (!scene) return err(`Scene ${sceneId} not found`)
-
-      const svgObj = (scene.svgObjects || []).find(o => o.id === layerId)
-      if (svgObj) {
-        const updated = scene.svgObjects.map(o => o.id === layerId ? { ...o, zIndex } : o)
-        updateScene(world, sceneId, { svgObjects: updated })
-        await regenerateHTML(world, sceneId)
-        return ok(sceneId, `Set layer ${layerId} z-index to ${zIndex}`)
-      }
-      return err(`Layer ${layerId} not found`)
-    }
-
-    case 'set_layer_opacity': {
-      const { sceneId, layerId, opacity } = args as { sceneId: string; layerId: string; opacity: number }
-      const scene = findScene(world, sceneId)
-      if (!scene) return err(`Scene ${sceneId} not found`)
-
-      const clamped = Math.max(0, Math.min(1, opacity))
-      const svgObj = (scene.svgObjects || []).find(o => o.id === layerId)
-      if (svgObj) {
-        const updated = scene.svgObjects.map(o => o.id === layerId ? { ...o, opacity: clamped } : o)
-        updateScene(world, sceneId, { svgObjects: updated })
-        await regenerateHTML(world, sceneId)
-        return ok(sceneId, `Set layer ${layerId} opacity to ${clamped}`)
-      }
-
-      // Try AI layers
-      const aiLayer = (scene.aiLayers || []).find(l => l.id === layerId)
-      if (aiLayer) {
-        const updated = scene.aiLayers.map(l => l.id === layerId ? { ...l, opacity: clamped } : l)
-        updateScene(world, sceneId, { aiLayers: updated })
-        await regenerateHTML(world, sceneId)
-        return ok(sceneId, `Set AI layer opacity to ${clamped}`)
-      }
-      return err(`Layer ${layerId} not found`)
-    }
-
-    case 'set_layer_visibility': {
-      const { sceneId, layerId, visible } = args as { sceneId: string; layerId: string; visible: boolean }
-      const scene = findScene(world, sceneId)
-      if (!scene) return err(`Scene ${sceneId} not found`)
-      // Visibility is handled via opacity (0 = hidden, 1 = visible for SVG objects)
-      const svgObj = (scene.svgObjects || []).find(o => o.id === layerId)
-      if (svgObj) {
-        const updated = scene.svgObjects.map(o => o.id === layerId ? { ...o, opacity: visible ? 1 : 0 } : o)
-        updateScene(world, sceneId, { svgObjects: updated })
-        await regenerateHTML(world, sceneId)
-        return ok(sceneId, `Set layer ${layerId} visibility to ${visible}`)
-      }
-      return err(`Layer ${layerId} not found`)
-    }
-
-    case 'set_layer_timing': {
-      const { sceneId, layerId, startAt } = args as { sceneId: string; layerId: string; startAt: number }
-      const scene = findScene(world, sceneId)
-      if (!scene) return err(`Scene ${sceneId} not found`)
-      // startAt is stored in aiLayers
-      const aiLayer = (scene.aiLayers || []).find(l => l.id === layerId)
-      if (aiLayer) {
-        const updated = scene.aiLayers.map(l => l.id === layerId ? { ...l, startAt } : l)
-        updateScene(world, sceneId, { aiLayers: updated })
-        await regenerateHTML(world, sceneId)
-        return ok(sceneId, `Set layer startAt to ${startAt}s`)
-      }
-      return err(`Layer ${layerId} not found in aiLayers`)
-    }
-
-    case 'regenerate_layer': {
-      const { sceneId, layerId, prompt } = args as { sceneId: string; layerId: string; prompt: string }
-      const scene = findScene(world, sceneId)
-      if (!scene) return err(`Scene ${sceneId} not found`)
-
-      const svgObj = (scene.svgObjects || []).find(o => o.id === layerId)
-      if (svgObj) {
-        const result = await generateLayerContent('svg', prompt, scene, world.globalStyle)
-        if (!result.success) return err(result.error || 'Regeneration failed')
-        const updated = scene.svgObjects.map(o => o.id === layerId
-          ? { ...o, prompt, svgContent: result.code || '' }
-          : o)
-        updateScene(world, sceneId, { svgObjects: updated, svgContent: result.code || '' })
-        await regenerateHTML(world, sceneId)
-        return ok(sceneId, `Regenerated layer ${layerId}`)
-      }
-
-      // For non-SVG scenes, regenerate the scene code
-      const layerType = scene.sceneType
-      const result = await generateLayerContent(layerType, prompt, scene, world.globalStyle)
-      if (!result.success) return err(result.error || 'Regeneration failed')
-
-      const updates: Partial<Scene> = { prompt }
-      if (layerType === 'canvas2d') updates.canvasCode = result.code || ''
-      else if (layerType === 'lottie') updates.lottieSource = result.code || ''
-      else updates.sceneCode = result.code || ''
-      updateScene(world, sceneId, updates)
-      await regenerateHTML(world, sceneId)
-      return ok(sceneId, `Regenerated ${layerType} scene code`)
-    }
-
-    case 'patch_layer_code': {
-      const { sceneId, layerId, oldCode, newCode } = args as {
-        sceneId: string; layerId: string; oldCode: string; newCode: string;
-      }
-      const scene = findScene(world, sceneId)
-      if (!scene) return err(`Scene ${sceneId} not found`)
-
-      // Try SVG object
-      const svgObj = (scene.svgObjects || []).find(o => o.id === layerId)
-      if (svgObj) {
-        if (!svgObj.svgContent.includes(oldCode)) {
-          return err(`oldCode not found in layer ${layerId} SVG content. Make sure it's an exact substring.`)
-        }
-        const patchedSvg = svgObj.svgContent.replace(oldCode, newCode)
-        const updated = scene.svgObjects.map(o => o.id === layerId ? { ...o, svgContent: patchedSvg } : o)
-        // Also update top-level svgContent if this is the primary object
-        const updates: Partial<Scene> = { svgObjects: updated }
-        if (scene.primaryObjectId === layerId) updates.svgContent = patchedSvg
-        updateScene(world, sceneId, updates)
-        await regenerateHTML(world, sceneId)
-        return ok(sceneId, `Patched SVG layer ${layerId}`)
-      }
-
-      // Try patching sceneCode/canvasCode
-      const codeField = scene.sceneType === 'canvas2d' ? 'canvasCode' : 'sceneCode'
-      const code: string = scene[codeField as keyof Scene] as string || ''
-      if (!code.includes(oldCode)) {
-        return err(`oldCode not found in ${codeField}. Make sure it's an exact substring match.`)
-      }
-      const patched = code.replace(oldCode, newCode)
-      updateScene(world, sceneId, { [codeField]: patched })
-      await regenerateHTML(world, sceneId)
-      return ok(sceneId, `Patched ${codeField} in scene ${sceneId}`)
-    }
-
-    // ── Element (Text Overlay) Tools ─────────────────────────────────────────
-
-    case 'add_element': {
-      const { sceneId, content, font, size, color, x, y, animation, duration, delay } = args as {
-        sceneId: string; content: string; font?: string; size?: number; color?: string;
-        x: number; y: number; animation?: string; duration?: number; delay?: number;
-      }
-      const scene = findScene(world, sceneId)
-      if (!scene) return err(`Scene ${sceneId} not found`)
-
-      const validAnimations: TextOverlay['animation'][] = ['fade-in', 'slide-up', 'typewriter']
-      const animValue = (animation as string) || 'fade-in'
-      const overlay: TextOverlay = {
-        id: uuidv4(),
-        content: content || 'Text',
-        font: font || 'Caveat',
-        size: size || 48,
-        color: color || '#ffffff',
-        x,
-        y,
-        animation: validAnimations.includes(animValue as TextOverlay['animation'])
-          ? (animValue as TextOverlay['animation'])
-          : 'fade-in',
-        duration: duration ?? 0.6,
-        delay: delay ?? 0,
-      }
-      const updated = [...(scene.textOverlays || []), overlay]
-      updateScene(world, sceneId, { textOverlays: updated })
-      await regenerateHTML(world, sceneId)
-      return {
-        success: true,
-        affectedSceneId: sceneId,
-        changes: [{ type: 'scene_updated', sceneId, description: `Added text overlay "${content}"` }],
-        data: { elementId: overlay.id },
-      }
-    }
-
-    case 'edit_element': {
-      const { sceneId, elementId, ...updates } = args as {
-        sceneId: string; elementId: string;
-        content?: string; font?: string; size?: number; color?: string;
-        animation?: string; duration?: number; delay?: number;
-      }
-      const scene = findScene(world, sceneId)
-      if (!scene) return err(`Scene ${sceneId} not found`)
-      const el = (scene.textOverlays || []).find(o => o.id === elementId)
-      if (!el) return err(`Element ${elementId} not found`)
-
-      const validAnimations: TextOverlay['animation'][] = ['fade-in', 'slide-up', 'typewriter']
-      const updatedOverlays: TextOverlay[] = scene.textOverlays.map(o => {
-        if (o.id !== elementId) return o
-        const merged = { ...o, ...updates }
-        if (merged.animation && !validAnimations.includes(merged.animation as TextOverlay['animation'])) {
-          merged.animation = 'fade-in'
-        }
-        return merged as TextOverlay
-      })
-      updateScene(world, sceneId, { textOverlays: updatedOverlays })
-      await regenerateHTML(world, sceneId)
-      return ok(sceneId, `Updated text overlay ${elementId}`)
-    }
-
-    case 'delete_element': {
-      const { sceneId, elementId } = args as { sceneId: string; elementId: string }
-      const scene = findScene(world, sceneId)
-      if (!scene) return err(`Scene ${sceneId} not found`)
-      const updated = (scene.textOverlays || []).filter(o => o.id !== elementId)
-      updateScene(world, sceneId, { textOverlays: updated })
-      await regenerateHTML(world, sceneId)
-      return ok(sceneId, `Deleted text overlay ${elementId}`)
-    }
-
-    case 'move_element': {
-      const { sceneId, elementId, x, y } = args as { sceneId: string; elementId: string; x: number; y: number }
-      const scene = findScene(world, sceneId)
-      if (!scene) return err(`Scene ${sceneId} not found`)
-      const updated = (scene.textOverlays || []).map(o => o.id === elementId ? { ...o, x, y } : o)
-      updateScene(world, sceneId, { textOverlays: updated })
-      await regenerateHTML(world, sceneId)
-      return ok(sceneId, `Moved text overlay ${elementId} to (${x}%, ${y}%)`)
-    }
-
-    case 'resize_element': {
-      const { sceneId, elementId, size } = args as { sceneId: string; elementId: string; size: number }
-      const scene = findScene(world, sceneId)
-      if (!scene) return err(`Scene ${sceneId} not found`)
-      const updated = (scene.textOverlays || []).map(o => o.id === elementId ? { ...o, size } : o)
-      updateScene(world, sceneId, { textOverlays: updated })
-      await regenerateHTML(world, sceneId)
-      return ok(sceneId, `Resized text overlay ${elementId} to ${size}px`)
-    }
-
-    case 'reorder_element': {
-      // TextOverlays don't have zIndex — we reorder by array position
-      // Higher zIndex = later in array (rendered on top)
-      const { sceneId, elementId } = args as { sceneId: string; elementId: string; zIndex: number }
-      const scene = findScene(world, sceneId)
-      if (!scene) return err(`Scene ${sceneId} not found`)
-      return ok(sceneId, `Noted reorder for ${elementId} (position-based)`)
-    }
-
-    case 'adjust_element_timing': {
-      const { sceneId, elementId, delay, duration } = args as {
-        sceneId: string; elementId: string; delay?: number; duration?: number;
-      }
-      const scene = findScene(world, sceneId)
-      if (!scene) return err(`Scene ${sceneId} not found`)
-      const updated = (scene.textOverlays || []).map(o =>
-        o.id === elementId ? {
-          ...o,
-          ...(delay !== undefined ? { delay } : {}),
-          ...(duration !== undefined ? { duration } : {}),
-        } : o
-      )
-      updateScene(world, sceneId, { textOverlays: updated })
-      await regenerateHTML(world, sceneId)
-      return ok(sceneId, `Adjusted timing for overlay ${elementId}`)
-    }
-
-    // ── Asset / Media Tools ──────────────────────────────────────────────────
-
-    case 'search_images': {
-      const permErr = checkApiPermission(world, 'unsplash')
-      if (permErr) return permErr
-      const { query, count } = args as { query: string; count?: number }
-      try {
-        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-        const response = await fetch(`${baseUrl}/api/search-images?query=${encodeURIComponent(query)}&count=${count || 5}`)
-        if (!response.ok) {
-          return { success: false, error: `Image search failed: ${response.statusText}` }
-        }
-        const data = await response.json()
-        return { success: true, affectedSceneId: null, data }
-      } catch (e) {
-        return { success: false, error: `Image search error: ${String(e)}` }
-      }
-    }
-
-    case 'place_image': {
-      const permErr = checkApiPermission(world, 'imageGen')
-      if (permErr) return permErr
-      const { sceneId, imageUrl, x, y, width, height, opacity, zIndex } = args as {
-        sceneId: string; imageUrl: string; x: number; y: number;
-        width: number; height: number; opacity?: number; zIndex?: number;
-      }
-      const scene = findScene(world, sceneId)
-      if (!scene) return err(`Scene ${sceneId} not found`)
-
-      const newLayer = {
-        id: uuidv4(),
-        type: 'image' as const,
-        prompt: `Placed image: ${imageUrl}`,
-        model: 'flux-1.1-pro' as const,
-        style: null,
-        imageUrl,
-        x, y, width, height,
-        rotation: 0,
-        opacity: opacity ?? 1,
-        zIndex: zIndex ?? 1,
-        status: 'ready' as const,
-        label: 'Placed Image',
-      }
-      updateScene(world, sceneId, { aiLayers: [...(scene.aiLayers || []), newLayer] })
-      await regenerateHTML(world, sceneId)
-      return ok(sceneId, `Placed image from ${imageUrl}`)
-    }
-
-    case 'set_audio_layer': {
-      const { sceneId, src, volume, fadeIn, fadeOut, startOffset } = args as {
-        sceneId: string; src?: string | null; volume?: number;
-        fadeIn?: boolean; fadeOut?: boolean; startOffset?: number;
-      }
-      // Only check ElevenLabs permission when setting a new audio source
-      if (src != null) {
-        const permErr = checkApiPermission(world, 'elevenLabs')
-        if (permErr) return permErr
-      }
-      const scene = findScene(world, sceneId)
-      if (!scene) return err(`Scene ${sceneId} not found`)
-
-      const audioLayer = {
-        ...scene.audioLayer,
-        enabled: src != null,
-        src: src ?? null,
-        volume: volume ?? scene.audioLayer?.volume ?? 1,
-        fadeIn: fadeIn ?? scene.audioLayer?.fadeIn ?? false,
-        fadeOut: fadeOut ?? scene.audioLayer?.fadeOut ?? false,
-        startOffset: startOffset ?? scene.audioLayer?.startOffset ?? 0,
-      }
-      updateScene(world, sceneId, { audioLayer })
-      await regenerateHTML(world, sceneId)
-      return ok(sceneId, `Updated audio layer`)
-    }
-
-    case 'set_video_layer': {
-      const { sceneId, src, opacity, trimStart, trimEnd } = args as {
-        sceneId: string; src?: string | null; opacity?: number;
-        trimStart?: number; trimEnd?: number | null;
-      }
-      const scene = findScene(world, sceneId)
-      if (!scene) return err(`Scene ${sceneId} not found`)
-
-      const videoLayer = {
-        ...scene.videoLayer,
-        enabled: src != null,
-        src: src ?? null,
-        opacity: opacity ?? scene.videoLayer?.opacity ?? 1,
-        trimStart: trimStart ?? scene.videoLayer?.trimStart ?? 0,
-        trimEnd: trimEnd !== undefined ? trimEnd : scene.videoLayer?.trimEnd ?? null,
-      }
-      updateScene(world, sceneId, { videoLayer })
-      await regenerateHTML(world, sceneId)
-      return ok(sceneId, `Updated video layer`)
-    }
-
-    // ── Global Style Tools ───────────────────────────────────────────────────
-
-    case 'set_global_style': {
-      const { palette, font, strokeWidth, theme, duration } = args as {
-        palette?: string[]; font?: string; strokeWidth?: number;
-        theme?: 'dark' | 'light'; duration?: number;
-      }
-      if (palette) world.globalStyle.palette = palette as GlobalStyle['palette']
-      if (font) world.globalStyle.font = font
-      if (strokeWidth !== undefined) world.globalStyle.strokeWidth = Math.max(1, Math.min(5, strokeWidth))
-      if (theme) world.globalStyle.theme = theme
-      if (duration) world.globalStyle.duration = duration
-
-      return {
-        success: true,
-        affectedSceneId: null,
-        changes: [{ type: 'global_updated', description: 'Updated global style' }],
-      }
-    }
-
-    case 'set_all_transitions': {
-      const { transition } = args as { transition: TransitionType }
-      world.scenes.forEach((scene, idx) => {
-        world.scenes[idx] = { ...scene, transition }
-      })
-      return ok(null, `Set all transitions to "${transition}"`)
-    }
-
-    case 'set_roughness_all': {
-      const { strokeWidth } = args as { strokeWidth: number }
-      world.globalStyle.strokeWidth = Math.max(1, Math.min(5, strokeWidth))
-      return ok(null, `Set global stroke width to ${strokeWidth}`)
-    }
-
-    case 'plan_scenes': {
-      const { title, scenes: plannedScenes, totalDuration, styleNotes } = args as {
-        title: string;
-        scenes: Array<{ name: string; purpose: string; sceneType: string; duration: number; transition?: string }>;
-        totalDuration: number;
-        styleNotes?: string;
-      }
-      // This is a "thinking" tool — just acknowledge the plan
-      return {
-        success: true,
-        affectedSceneId: null,
-        changes: [],
-        data: {
-          message: `Acknowledged plan for "${title}": ${plannedScenes.length} scenes, ${totalDuration}s total.`,
-          styleNotes,
-        },
-      }
-    }
-
-    // ── Interaction Tools ────────────────────────────────────────────────────
-
-    case 'add_interaction': {
-      const { sceneId, type, x, y, width, height, appearsAt, config } = args as {
-        sceneId: string; type: string; x: number; y: number;
-        width: number; height: number; appearsAt: number; config: Record<string, unknown>;
-      }
-      const scene = findScene(world, sceneId)
-      if (!scene) return err(`Scene ${sceneId} not found`)
-
-      const element = {
-        id: uuidv4(),
-        type,
-        x, y, width, height,
-        appearsAt,
-        hidesAt: null,
-        entranceAnimation: 'fade' as const,
-        ...config,
-      }
-      updateScene(world, sceneId, { interactions: [...(scene.interactions || []), element as any] })
-      return {
-        success: true,
-        affectedSceneId: sceneId,
-        changes: [{ type: 'scene_updated', sceneId, description: `Added ${type} interaction` }],
-        data: { elementId: element.id },
-      }
-    }
-
-    case 'edit_interaction': {
-      const { sceneId, elementId, updates } = args as {
-        sceneId: string; elementId: string; updates: Record<string, unknown>;
-      }
-      const scene = findScene(world, sceneId)
-      if (!scene) return err(`Scene ${sceneId} not found`)
-      const el = (scene.interactions || []).find(e => e.id === elementId)
-      if (!el) return err(`Interaction ${elementId} not found`)
-
-      const updated = scene.interactions.map(e => e.id === elementId ? { ...e, ...updates } : e)
-      updateScene(world, sceneId, { interactions: updated })
-      return ok(sceneId, `Updated interaction ${elementId}`)
-    }
-
-    case 'connect_scenes': {
-      // Scene graph connections are managed client-side via updateSceneGraph
-      // We return the data needed for the client to create the edge
-      const { fromSceneId, toSceneId, conditionType, interactionId } = args as {
-        fromSceneId: string; toSceneId: string; conditionType: string; interactionId?: string;
-      }
-      return {
-        success: true,
-        affectedSceneId: null,
-        changes: [{ type: 'project_updated', description: `Connected scene ${fromSceneId} → ${toSceneId}` }],
-        data: {
-          edge: {
-            id: uuidv4(),
-            fromSceneId,
-            toSceneId,
-            condition: {
-              type: conditionType,
-              interactionId: interactionId ?? null,
-              variableName: null,
-              variableValue: null,
-            },
-          },
-        },
-      }
-    }
-
-    // ── Export Tools ─────────────────────────────────────────────────────────
-
-    case 'export_mp4': {
-      return {
-        success: true,
-        affectedSceneId: null,
-        changes: [{ type: 'project_updated', description: 'Triggered MP4 export' }],
-        data: { action: 'open_export_modal' },
-      }
-    }
-
-    case 'publish_interactive': {
-      return {
-        success: true,
-        affectedSceneId: null,
-        changes: [{ type: 'project_updated', description: 'Triggered interactive publish' }],
-        data: { action: 'publish' },
-      }
-    }
-
-    default:
-      return err(`Unknown tool: ${toolName}`)
-  }
+  const startMs = Date.now()
+  const result = await toolRegistry.execute(toolName, finalArgs, world, logger)
+  const durationMs = Date.now() - startMs
+
+  // Run post-tool hooks (can augment or flag results)
+  return runPostToolHooks({ toolName, args: finalArgs, result, world, durationMs }, logger)
 }
 
 // ── HTML Regeneration ─────────────────────────────────────────────────────────
 
-async function regenerateHTML(world: WorldStateMutable, sceneId: string): Promise<void> {
+async function regenerateHTML(
+  world: WorldStateMutable,
+  sceneId: string,
+  logger?: AgentLogger,
+): Promise<{ htmlWritten: boolean }> {
   const scene = findScene(world, sceneId)
-  if (!scene) return
+  if (!scene) return { htmlWritten: false }
   try {
-    const html = generateSceneHTML(scene)
+    const start = Date.now()
+    const html = generateSceneHTML(scene, world.globalStyle)
     updateScene(world, sceneId, { sceneHTML: html })
+    // Write to disk immediately so preview iframes can load the latest content
+    const scenesDir = path.join(process.cwd(), 'public', 'scenes')
+    await fs.mkdir(scenesDir, { recursive: true })
+    await fs.writeFile(path.join(scenesDir, `${sceneId}.html`), html, 'utf-8')
+    const durationMs = Date.now() - start
+    logger?.log('html', `Wrote ${sceneId}.html`, { sceneId, htmlLength: html.length, durationMs })
+    return { htmlWritten: true }
   } catch (e) {
+    logger?.error('html', `HTML regeneration failed for ${sceneId}: ${(e as Error).message}`)
     console.error('[ToolExecutor] HTML regeneration failed:', e)
+    return { htmlWritten: false }
   }
 }
 
@@ -855,23 +1231,61 @@ interface GenerationResult {
   error?: string
 }
 
-async function generateLayerContent(
+export async function generateLayerContent(
   layerType: SceneType,
   prompt: string,
   scene: Scene,
   globalStyle: GlobalStyle,
+  modelId?: string,
+  modelTier?: 'auto' | 'premium' | 'budget',
+  logger?: AgentLogger,
 ): Promise<GenerationResult> {
   try {
+    const resolved = resolveStyle(globalStyle.presetId, globalStyle)
+    logger?.log('generation', `Generating ${layerType} code`, { layerType, promptLength: prompt.length, modelId })
+    const genStart = Date.now()
     const result = await generateCode(layerType, prompt, {
-      palette: globalStyle.palette,
+      palette: resolved.palette,
       bgColor: scene.bgColor,
       duration: scene.duration,
-      font: globalStyle.font,
-      strokeWidth: globalStyle.strokeWidth,
+      font: resolved.font,
+      strokeWidth: globalStyle.strokeWidth ?? 2,
       d3Data: scene.d3Data ?? undefined,
+      modelId,
+      modelTier,
     })
-    return { success: true, code: result.code }
+    const genMs = Date.now() - genStart
+
+    // Basic validation: ensure we got non-trivial code
+    const code = result.code?.trim() ?? ''
+    logger?.log('generation', `Generation complete`, {
+      layerType,
+      durationMs: genMs,
+      codeLength: code.length,
+      inputTokens: result.usage?.input_tokens,
+      outputTokens: result.usage?.output_tokens,
+    })
+    if (!code) {
+      logger?.warn('generation', 'Generation returned empty code')
+      return { success: false, error: 'Generation returned empty code — please retry' }
+    }
+    if (result.truncated) {
+      logger?.warn(
+        'generation',
+        `Generation was truncated (${result.usage?.output_tokens} tokens) — code is incomplete`,
+      )
+      return {
+        success: false,
+        error: 'Scene code was too long and got cut off — try a simpler prompt or break into multiple scenes',
+      }
+    }
+    if (layerType === 'svg' && !code.includes('<svg')) {
+      logger?.warn('generation', `SVG generation missing <svg> tag (length=${code.length})`)
+    }
+
+    return { success: true, code }
   } catch (e) {
+    logger?.error('generation', `Generation failed: ${String(e)}`)
     return { success: false, error: `Generation failed: ${String(e)}` }
   }
 }

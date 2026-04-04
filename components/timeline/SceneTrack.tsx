@@ -4,13 +4,18 @@ import { useCallback } from 'react'
 import { useVideoStore } from '@/lib/store'
 import type { SceneType } from '@/lib/types'
 
-const TYPE_BADGE_COLORS: Record<SceneType, string> = {
+/** Shared with OverlayTracks for GEN lane */
+export const TYPE_BADGE_COLORS: Record<SceneType, string> = {
   svg: '#e84545',
   canvas2d: '#f97316',
   motion: '#3b82f6',
   d3: '#22c55e',
   three: '#a855f7',
   lottie: '#f59e0b',
+  zdog: '#14b8a6',
+  physics: '#06b6d4',
+  avatar_scene: '#ec4899',
+  '3d_world': '#8b5cf6',
 }
 
 interface Props {
@@ -24,9 +29,12 @@ interface Props {
 export default function SceneTrack({ pps, scrollX, containerWidth, trackHeight, onZoomToScene }: Props) {
   const { scenes, selectedSceneId, selectScene } = useVideoStore()
 
-  const handleDoubleClick = useCallback((idx: number) => {
-    onZoomToScene(idx)
-  }, [onZoomToScene])
+  const handleDoubleClick = useCallback(
+    (idx: number) => {
+      onZoomToScene(idx)
+    },
+    [onZoomToScene],
+  )
 
   let accumulated = 0
   const blocks = scenes.map((scene, i) => {

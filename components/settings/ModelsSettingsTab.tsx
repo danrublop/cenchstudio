@@ -1,9 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import {
-  Plus, Trash2, Check, Loader2,
-} from 'lucide-react'
+import { Plus, Trash2, Check, Loader2 } from 'lucide-react'
 import { useVideoStore } from '@/lib/store'
 import type { ModelConfig, ModelProvider, ModelTierName } from '@/lib/agents/model-config'
 
@@ -17,11 +15,7 @@ const TIER_COLORS: Record<ModelTierName, string> = {
 }
 
 function TierBadge({ tier }: { tier: ModelTierName }) {
-  return (
-    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${TIER_COLORS[tier]}`}>
-      {tier}
-    </span>
-  )
+  return <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${TIER_COLORS[tier]}`}>{tier}</span>
 }
 
 // ── Model row ──────────────────────────────────────────────────────────────────
@@ -31,11 +25,7 @@ function ModelRow({ model, onToggle }: { model: ModelConfig; onToggle: () => voi
 
   return (
     <div className="flex items-center gap-3 px-4 py-2.5 border-t border-[var(--color-border)] first:border-0 hover:bg-[var(--color-bg)]/40 transition-colors">
-      <button
-        onClick={onToggle}
-        className="flex-shrink-0"
-        title={model.enabled ? 'Disable model' : 'Enable model'}
-      >
+      <button onClick={onToggle} className="flex-shrink-0" title={model.enabled ? 'Disable model' : 'Enable model'}>
         {model.enabled ? (
           <div className="w-4 h-4 rounded bg-[var(--color-accent)] flex items-center justify-center">
             <Check size={10} className="text-white" />
@@ -47,21 +37,16 @@ function ModelRow({ model, onToggle }: { model: ModelConfig; onToggle: () => voi
 
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <span className="text-sm text-[var(--color-text-primary)] font-medium">
-            {model.displayName}
-          </span>
+          <span className="text-sm text-[var(--color-text-primary)] font-medium">{model.displayName}</span>
           <TierBadge tier={model.tier} />
         </div>
-        <p className="text-[10px] text-[var(--color-text-muted)] font-mono mt-0.5">
-          {model.modelId}
-        </p>
+        <p className="text-[10px] text-[var(--color-text-muted)] font-mono mt-0.5">{model.modelId}</p>
       </div>
 
       <div className="text-right flex-shrink-0">
         <p className="text-[10px] text-[var(--color-text-muted)]">
           ${model.costPer1MInput}
-          <span className="opacity-50"> / </span>
-          ${model.costPer1MOutput}
+          <span className="opacity-50"> / </span>${model.costPer1MOutput}
         </p>
         <p className="text-[9px] text-[var(--color-text-muted)]/60">per 1M in/out</p>
       </div>
@@ -137,7 +122,8 @@ function AddCustomModelForm({ onClose }: { onClose: () => void }) {
           >
             <option value="anthropic">Anthropic</option>
             <option value="openai">OpenAI</option>
-            <option value="local">Local</option>
+            <option value="google">Google</option>
+            <option value="local">Local / Ollama</option>
           </select>
         </div>
 
@@ -197,7 +183,7 @@ export default function ModelsSettingsTab() {
   const handleDetectOllama = async () => {
     setDetectingModels(true)
     try {
-      const localCfg = providerConfigs.find(p => p.provider === 'local')
+      const localCfg = providerConfigs.find((p) => p.provider === 'local')
       const endpoint = localCfg?.baseUrl ?? 'http://localhost:11434'
       const res = await fetch(`${endpoint}/api/tags`)
       if (!res.ok) throw new Error('Ollama not reachable')
@@ -216,19 +202,13 @@ export default function ModelsSettingsTab() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">Models</h2>
-          <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
-            Enable or disable individual models
-          </p>
+          <p className="text-xs text-[var(--color-text-muted)] mt-0.5">Enable or disable individual models</p>
         </div>
       </div>
 
       <div className="border border-[var(--color-border)] rounded-lg bg-[var(--color-panel)] divide-y divide-[var(--color-border)] max-h-[400px] overflow-y-auto">
         {modelConfigs.map((model) => (
-          <ModelRow
-            key={model.id}
-            model={model}
-            onToggle={() => toggleModelEnabled(model.id)}
-          />
+          <ModelRow key={model.id} model={model} onToggle={() => toggleModelEnabled(model.id)} />
         ))}
       </div>
 
@@ -252,12 +232,13 @@ export default function ModelsSettingsTab() {
 
       {detectedModels.length > 0 && (
         <div className="mt-3 p-3 bg-[var(--color-panel)] border border-[var(--color-border)] rounded-lg">
-          <p className="text-xs text-[var(--color-text-muted)] mb-1.5">
-            Detected ({detectedModels.length})
-          </p>
+          <p className="text-xs text-[var(--color-text-muted)] mb-1.5">Detected ({detectedModels.length})</p>
           <div className="space-y-1 max-h-32 overflow-y-auto">
             {detectedModels.map((name) => (
-              <label key={name} className="flex items-center gap-2 text-xs text-[var(--color-text-primary)] cursor-pointer hover:bg-[var(--color-bg)]/40 p-1 rounded">
+              <label
+                key={name}
+                className="flex items-center gap-2 text-xs text-[var(--color-text-primary)] cursor-pointer hover:bg-[var(--color-bg)]/40 p-1 rounded"
+              >
                 <input type="checkbox" className="rounded accent-[var(--color-accent)]" />
                 <span className="font-mono">{name}</span>
               </label>

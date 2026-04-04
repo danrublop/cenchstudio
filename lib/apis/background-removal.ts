@@ -1,38 +1,60 @@
+import * as fal from '@fal-ai/serverless-client'
+import fs from 'fs/promises'
+import path from 'path'
 import { checkCache, saveToCache, downloadToBuffer } from './media-cache'
 
 const FAL_KEY = () => process.env.FAL_KEY
 
+function configureFal() {
+  const key = FAL_KEY()
+  if (key) {
+    fal.config({ credentials: key })
+  }
+}
+
 export const BG_REMOVAL_COST = 0.01
 
-export async function removeImageBackground(imageUrl: string): Promise<{ resultUrl: string; cost: number }> {
+export async function removeImageBackground(
+  imageUrl: string,
+  skipCache = false,
+): Promise<{ resultUrl: string; cost: number }> {
   // Check cache
   const cacheParams = { imageUrl, operation: 'rmbg' }
-  const cached = await checkCache('backgroundRemoval', cacheParams)
-  if (cached) {
-    return { resultUrl: cached, cost: 0 }
+  if (!skipCache) {
+    const cached = await checkCache('backgroundRemoval', cacheParams)
+    if (cached) {
+      return { resultUrl: cached.filePath, cost: 0 }
+    }
   }
 
-  // If imageUrl is a local path, convert to absolute URL for fal.ai
-  const inputUrl = imageUrl.startsWith('/')
-    ? `${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}${imageUrl}`
-    : imageUrl
+  configureFal()
 
-  const response = await fetch('https://queue.fal.run/fal-ai/bria-rmbg', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Key ${FAL_KEY()}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      image_url: inputUrl,
-      sync_mode: true,
-    }),
-  })
+  let input: Record<string, unknown>
 
-  const data = await response.json()
-  if (!response.ok) throw new Error(data.detail ?? 'Background removal failed')
+  if (imageUrl.startsWith('/')) {
+    // Local file — read and send as data URI so FAL doesn't need to reach
+    // our server (which may be localhost / unreachable in production)
+    const absPath = path.join(process.cwd(), 'public', imageUrl)
+    const fileBuffer = await fs.readFile(absPath)
+    if (fileBuffer.length > 10 * 1024 * 1024) {
+      throw new Error('Image too large for background removal (max 10MB)')
+    }
+    const base64 = fileBuffer.toString('base64')
+    const mime = imageUrl.endsWith('.png')
+      ? 'image/png'
+      : imageUrl.endsWith('.webp')
+        ? 'image/webp'
+        : imageUrl.endsWith('.gif')
+          ? 'image/gif'
+          : 'image/jpeg'
+    input = { image_url: `data:${mime};base64,${base64}` }
+  } else {
+    input = { image_url: imageUrl }
+  }
 
-  const resultUrl = data.image?.url
+  const result = (await fal.subscribe('fal-ai/bria-rmbg', { input })) as any
+
+  const resultUrl = result.image?.url
   if (!resultUrl) throw new Error('No result from background removal')
 
   const buffer = await downloadToBuffer(resultUrl)

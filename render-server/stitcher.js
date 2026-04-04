@@ -24,7 +24,7 @@ function toConcatPath(p) {
  * Stitch multiple scene MP4s into one final video.
  *
  * @param {string[]} videoPaths
- * @param {Array<{type:'none'|'crossfade'|'wipe-left'|'wipe-right', duration:number}>} transitions
+ * @param {Array<{type:string, duration:number}>} transitions — type ids from lib/transitions.ts (FFmpeg xfade)
  * @param {string} outputPath
  */
 export async function stitchScenes(videoPaths, transitions, outputPath) {
@@ -49,12 +49,55 @@ export async function stitchScenes(videoPaths, transitions, outputPath) {
 
 /**
  * Simple concat via concat demuxer (no transitions).
+ * Handles mixed scenes where some have audio and some don't by
+ * adding a silent audio track to scenes that lack one.
  */
 async function simpleConcatVideos(videoPaths, outputPath) {
+  // Check which videos have audio streams so we can normalize
+  const hasAudio = await Promise.all(videoPaths.map(async (p) => {
+    try {
+      const meta = await new Promise((resolve, reject) => {
+        ffmpeg.ffprobe(p, (err, m) => err ? reject(err) : resolve(m))
+      })
+      return meta.streams.some((s) => s.codec_type === 'audio')
+    } catch {
+      return false
+    }
+  }))
+
+  const anyHasAudio = hasAudio.some(Boolean)
+
+  let finalPaths = videoPaths
+  if (anyHasAudio) {
+    // Normalize: add silent audio to videos that don't have it
+    const { execFile: execFileCb } = await import('child_process')
+    const { promisify } = await import('util')
+    const execFileP = promisify(execFileCb)
+    const ffmpegBin = ffmpegStatic || 'ffmpeg'
+
+    finalPaths = await Promise.all(videoPaths.map(async (p, i) => {
+      if (hasAudio[i]) return p
+      // Add silent audio stream using anullsrc
+      const withAudio = p.replace(/\.mp4$/, '-silent-audio.mp4')
+      try {
+        await execFileP(ffmpegBin, [
+          '-i', p,
+          '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo',
+          '-c:v', 'copy', '-c:a', 'aac', '-shortest', '-y',
+          withAudio,
+        ])
+        return withAudio
+      } catch {
+        // If adding silent audio fails, use original (concat may still work)
+        return p
+      }
+    }))
+  }
+
   // Write a concat list file
   const tmpDir = os.tmpdir()
   const listFile = path.join(tmpDir, `cench-studio-concat-${uuidv4()}.txt`)
-  const listContent = videoPaths.map((p) => `file '${toConcatPath(p)}'`).join('\n')
+  const listContent = finalPaths.map((p) => `file '${toConcatPath(p)}'`).join('\n')
   await fs.writeFile(listFile, listContent)
 
   return new Promise((resolve, reject) => {
@@ -88,6 +131,47 @@ async function xfadeConcatVideos(videoPaths, transitions, outputPath) {
   // First, probe durations of all clips
   const durations = await Promise.all(videoPaths.map(probeDuration))
 
+  // Probe audio presence so we can either concat audio or run video-only.
+  const hasAudio = await Promise.all(videoPaths.map(async (p) => {
+    try {
+      const meta = await new Promise((resolve, reject) => {
+        ffmpeg.ffprobe(p, (err, m) => err ? reject(err) : resolve(m))
+      })
+      return meta.streams.some((s) => s.codec_type === 'audio')
+    } catch {
+      return false
+    }
+  }))
+
+  const anyHasAudio = hasAudio.some(Boolean)
+  let finalVideoPaths = videoPaths
+
+  // If some scenes have audio and some don't, add silent audio to missing ones
+  // so the audio concat filter has consistent streams.
+  if (anyHasAudio && hasAudio.some((h) => !h)) {
+    const { execFile: execFileCb } = await import('child_process')
+    const { promisify } = await import('util')
+    const execFileP = promisify(execFileCb)
+    const ffmpegBin = ffmpegStatic || 'ffmpeg'
+
+    finalVideoPaths = await Promise.all(videoPaths.map(async (p, i) => {
+      if (hasAudio[i]) return p
+      const withAudio = p.replace(/\.mp4$/, '-silent-audio.mp4')
+      try {
+        await execFileP(ffmpegBin, [
+          '-i', p,
+          '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo',
+          '-c:v', 'copy', '-c:a', 'aac', '-shortest', '-y',
+          withAudio,
+        ])
+        return withAudio
+      } catch {
+        // If adding silent audio fails, keep original; we'll likely run video-only.
+        return p
+      }
+    }))
+  }
+
   // Build xfade filter chain
   // [0][1]xfade=transition=fade:duration=0.5:offset=D0-0.25[v01];
   // [v01][2]xfade=transition=fade:duration=0.5:offset=D0+D1-0.5[v012]; etc.
@@ -98,7 +182,10 @@ async function xfadeConcatVideos(videoPaths, transitions, outputPath) {
 
   for (let i = 0; i < videoPaths.length - 1; i++) {
     const transition = transitions[i] || { type: 'none', duration: 0.5 }
-    const transDur = transition.duration || 0.5
+    const requestedDur = transition.duration || 0.5
+    const isCut = transition.type === 'none'
+    // When the xfade path is used (any scene has a blend), "none" must be a near-instant cut, not a half-second fade.
+    const transDur = isCut ? 0.04 : requestedDur
     const xfadeType = getXfadeType(transition.type)
 
     accumulatedDuration += durations[i]
@@ -112,16 +199,28 @@ async function xfadeConcatVideos(videoPaths, transitions, outputPath) {
     )
   }
 
+  // Also concat audio streams: [0:a][1:a]...[N:a]concat=n=N:v=0:a=1[aout]
+  if (anyHasAudio) {
+    const audioInputs = finalVideoPaths.map((_, i) => `[${i}:a]`).join('')
+    filterParts.push(
+      `${audioInputs}concat=n=${finalVideoPaths.length}:v=0:a=1[aout]`
+    )
+  }
+
   const complexFilter = filterParts.join(';')
 
   return new Promise((resolve, reject) => {
     const cmd = ffmpeg()
 
-    videoPaths.forEach((p) => cmd.input(p))
+    finalVideoPaths.forEach((p) => cmd.input(p))
 
     cmd
       .complexFilter(complexFilter)
-      .outputOptions(['-map [vout]', '-c:v libx264', '-pix_fmt yuv420p', '-preset fast'])
+      .outputOptions(
+        anyHasAudio
+          ? ['-map [vout]', '-map [aout]', '-c:v libx264', '-c:a aac', '-pix_fmt yuv420p', '-preset fast']
+          : ['-map [vout]', '-c:v libx264', '-pix_fmt yuv420p', '-preset fast']
+      )
       .output(outputPath)
       .on('start', (c) => console.log('[stitcher] FFmpeg xfade command:', c))
       .on('progress', (p) => {
@@ -140,12 +239,45 @@ async function xfadeConcatVideos(videoPaths, transitions, outputPath) {
   })
 }
 
+/** Keep in sync with lib/transitions.ts TRANSITION_CATALOG xfade values */
 function getXfadeType(transition) {
   const map = {
+    none: 'fade',
     crossfade: 'fade',
+    dissolve: 'dissolve',
+    'fade-black': 'fadeblack',
+    'fade-white': 'fadewhite',
     'wipe-left': 'wipeleft',
     'wipe-right': 'wiperight',
-    none: 'fade',
+    'wipe-up': 'wipeup',
+    'wipe-down': 'wipedown',
+    'wipe-tl': 'wipetl',
+    'wipe-tr': 'wipetr',
+    'wipe-bl': 'wipebl',
+    'wipe-br': 'wipebr',
+    'slide-left': 'slideleft',
+    'slide-right': 'slideright',
+    'slide-up': 'slideup',
+    'slide-down': 'slidedown',
+    'smooth-left': 'smoothleft',
+    'smooth-right': 'smoothright',
+    'smooth-up': 'smoothup',
+    'smooth-down': 'smoothdown',
+    'circle-open': 'circleopen',
+    'circle-close': 'circleclose',
+    radial: 'radial',
+    'vert-open': 'vertopen',
+    'horz-open': 'horzopen',
+    'cover-left': 'coverleft',
+    'cover-right': 'coverright',
+    'reveal-left': 'revealleft',
+    'reveal-right': 'revealright',
+    'diag-tl': 'diagtl',
+    'diag-tr': 'diagtr',
+    'diag-bl': 'diagbl',
+    'diag-br': 'diagbr',
+    'zoom-in': 'zoomin',
+    distance: 'distance',
   }
   return map[transition] || 'fade'
 }

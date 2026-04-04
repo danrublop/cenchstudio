@@ -8,7 +8,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json()
   const {
     prompt,
-    palette = ['#181818', '#121212', '#e84545', '#151515', '#f0ece0'],
+    palette = ['#1a1a2e', '#e84545', '#16a34a', '#2563eb'],
     font = 'Caveat',
     bgColor = '#fffef9',
     duration = 8,
@@ -27,25 +27,36 @@ export async function POST(req: NextRequest) {
     const systemPrompt = MOTION_SYSTEM_PROMPT(palette, font, bgColor, duration, previousSummary)
 
     const result = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: 8192,
       system: systemPrompt,
       messages: [{ role: 'user', content: prompt }],
     })
 
-    const raw = result.content[0].type === 'text' ? result.content[0].text : ''
-    const cleaned = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim()
+    const textBlock = result.content.find((b: any) => b.type === 'text')
+    const raw = textBlock?.type === 'text' ? textBlock.text : ''
+    const cleaned = raw
+      .replace(/^```json\s*/i, '')
+      .replace(/^```\s*/i, '')
+      .replace(/```\s*$/i, '')
+      .trim()
+
+    const usage = result.usage
+    const costUsd = (usage.input_tokens / 1_000_000) * 3 + (usage.output_tokens / 1_000_000) * 15
 
     let parsed
     try {
       parsed = JSON.parse(cleaned)
     } catch {
-      return NextResponse.json({ error: 'Failed to parse generated JSON', raw }, { status: 500 })
+      console.error('[Motion generate] JSON parse failed, raw length:', raw.length)
+      return NextResponse.json(
+        {
+          error: 'Failed to parse generated code — the model returned invalid JSON. Please try again.',
+          usage: { input_tokens: usage.input_tokens, output_tokens: usage.output_tokens, cost_usd: costUsd },
+        },
+        { status: 500 },
+      )
     }
-
-    const usage = result.usage
-    const costUsd = (usage.input_tokens / 1_000_000) * 3 + (usage.output_tokens / 1_000_000) * 15
-
     return NextResponse.json({
       result: parsed,
       usage: { input_tokens: usage.input_tokens, output_tokens: usage.output_tokens, cost_usd: costUsd },

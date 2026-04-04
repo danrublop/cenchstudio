@@ -16,13 +16,39 @@ Scenes are self-contained HTML files written to `public/scenes/{id}.html` and pr
 ## Before generating anything
 
 1. Verify the dev server is running: try `curl -s http://localhost:3000/api/projects` — if it fails, tell the user to run `npm run dev` and stop.
-2. Note: scenes are written as HTML files directly to `public/scenes/`. They do NOT require a database record — just write the file.
+2. Scenes must be created/updated through API routes so DB + HTML stay in sync.
+
+---
+
+## Planning (output before generating scenes)
+
+Before generating any scenes, output a `<planning>` block:
+
+```
+<planning>
+Topic: [what this explains]
+Audience: [who this is for, if inferable]
+Scene count: [N] — [why this many, not more or fewer]
+Renderer choices:
+  - Scene 1 "[name]": [type] — [one sentence why this type]
+  - Scene 2 "[name]": [type] — [one sentence why]
+  ...
+Narrative arc: [how scenes build on each other]
+Duration rationale: [why these durations]
+What I'm NOT doing: [notable alternatives considered and rejected]
+</planning>
+```
+
+Then generate scenes.
+The planning block is shown to the user so they can understand
+and redirect your choices before you do the work.
 
 ---
 
 ## Parse the user prompt
 
 Determine:
+
 - **How many scenes** (default: 1; "video about X" implies 3–5 scenes)
 - **Scene type** for each — see selection guide below
 - **Narrative arc** if multi-scene: opening → development → conclusion
@@ -35,22 +61,31 @@ Assign IDs: lowercase hyphenated slugs + timestamp suffix, e.g. `water-cycle-01-
 
 ## Scene type selection guide
 
-| Type | Best for |
-|---|---|
-| `svg` | Diagrams, infographics, data viz with draw-on effects, illustrations, concept maps |
-| `canvas2d` | Particle systems, procedural animation, generative art, physics, fluid motion |
-| `d3` | Charts, graphs, data visualization with real datasets |
-| `three` | 3D geometry, product visualization, spatial concepts, abstract 3D |
-| `motion` | Rich CSS layouts, card animations, UI mockups, text-heavy scenes |
-| `lottie` | Iconographic animations, micro-animations, looping decorative elements |
+| Type       | Best for                                                                                                                              |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `motion`   | **Default for most explainers** — HTML/CSS layouts, typography, cards, steps, UI-like scenes, DOM diagrams; GSAP timeline             |
+| `canvas2d` | Expressive hand-drawn strokes, particles, procedural/generative art, physics, fluid motion — **not** the default for clean explainers |
+| `svg`      | **Rare** — single-scene vector draw-on only when Motion is a poor fit                                                                 |
+| `d3`       | Charts, graphs, data visualization with real datasets                                                                                 |
+| `three`    | 3D geometry, product visualization, spatial concepts, abstract 3D                                                                     |
+| `lottie`   | Iconographic animations, micro-animations, looping decorative elements                                                                |
+| `zdog`     | Pseudo-3D illustrations, isometric views, flat-shaded 3D objects, stylized graphics                                                   |
+| `physics`  | Live, seekable physics simulations with equations (projectile, orbital, pendulum, oscillator, etc.)                                   |
 
-For multi-scene videos: vary types deliberately. Don't use the same type for every scene.
+For multi-scene videos: vary types deliberately when **content** demands (data vs 3D vs hand-drawn vs layout). Do **not** pick SVG just for variety — Motion can carry most explainer beats.
+
+Physics parameter hygiene (to prevent framing/position glitches):
+
+- Prefer angles in degrees in prompts/tool args (e.g. 35, 45, 60). Runtime normalizes units.
+- Start with stable parameter ranges before edge-case extremes.
+- Harmonic oscillator `x0`/`v0`: use either sim units (`0.5-4`) or pixel-like (`60-240`) — both are normalized.
 
 ---
 
 ## Planning scenes
 
 Before writing any code, plan the full set of scenes:
+
 - List each scene with: name, type, duration, background color, visual concept
 - Describe the narrative arc
 - Confirm the plan reads as a coherent video
@@ -60,6 +95,7 @@ For each scene, count all visible text elements (titles, labels, steps, annotati
 Calculate: `duration = max(6, (totalWords / 2.5) + 3)`
 
 Examples:
+
 - Title + subtitle + 1 sentence = ~15 words → max(6, 15/2.5 + 3) = 9s
 - 4 step-by-step lines + title = ~40 words → max(6, 40/2.5 + 3) = 19s → cap at 18s
 - Diagram with 8 labels + title = ~25 words → max(6, 25/2.5 + 3) = 13s
@@ -71,6 +107,8 @@ Scenes should never feel rushed. The viewer needs time to read everything AND un
 ## Generating code
 
 Read the rule file for the chosen scene type before generating:
+
+**D3 charts: use `generate_chart` tool** for standard chart types (bar, line, pie, donut, scatter, area, gauge, number, stacked/grouped bar). It calls the pre-built CenchCharts library — zero LLM tokens, consistent animation. Set `animated: true` for cinematic reveals. See `d3.md` for all chart types, data formats, and config options. Only use `add_layer` with `d3` for exotic/custom visualizations.
 
 - SVG: `.claude/skills/cench/rules/svg.md`
 - Canvas2D: `.claude/skills/cench/rules/canvas2d.md`
@@ -113,6 +151,8 @@ Content-Type: application/json
 
 For SVG scenes, use `"svgContent"` instead of `"generatedCode"`.
 
+For **structured D3** (CenchCharts, same as `generate_chart` / Layers editor), POST with `"type": "d3"` and **`chartLayers`**: an array of `{ id, name, chartType, data, config, layout, timing }`. The API compiles `sceneCode` + `d3Data` automatically. Optional `generatedCode: ""`. See `scripts/create-structured-d3-demo.ts`.
+
 The API creates the scene in Postgres, generates the HTML, and writes it to disk.
 The app will show the scene in the timeline automatically.
 
@@ -132,10 +172,16 @@ The app will show the scene in the timeline automatically.
 
 5. Send the update:
    `PATCH http://localhost:3000/api/scene`
-   Body: `{ "sceneId": "...", "layerId": "...", "generatedCode": "..." }`
+   Body: `{ "projectId": "...", "sceneId": "...", "generatedCode": "...", "prompt"?: "..." }`
    Updates Postgres AND regenerates HTML atomically.
 
 NEVER edit `public/scenes/*.html` directly — those are generated outputs.
+
+For D3 scenes with CenchCharts:
+
+- Prefer `generate_chart` for standard chart types.
+- Multiple charts in one scene are supported and should remain as structured chart layers (`scene.chartLayers`).
+- Keep chart defaults readable (title/labels/grid/legend/legible font) unless user explicitly requests a different visual style.
 
 ---
 

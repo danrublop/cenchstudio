@@ -6,6 +6,7 @@
 import {
   ROUTER_PROMPT,
   DIRECTOR_PROMPT,
+  PLANNER_PROMPT,
   SCENE_MAKER_PROMPT,
   EDITOR_PROMPT,
   DOP_PROMPT,
@@ -270,22 +271,27 @@ Scene duration: Ns
 // ── Tool Sets ──────────────────────────────────────────────────────────────────
 
 const GENERAL_TOOLS = [
-  'plan_scenes', 'create_scene', 'update_scene', 'delete_scene',
-  'set_scene_duration', 'set_global_style', 'set_all_transitions',
+  'plan_scenes',
+  'create_scene',
+  'update_scene',
+  'delete_scene',
+  'set_scene_duration',
+  'set_global_style',
+  'set_all_transitions',
 ]
 
 const SCENE_TOOLS = [
-  'create_layer', 'update_layer', 'delete_layer', 'regenerate_layer',
-  'patch_layer_code', 'set_layer_timing',
+  'create_layer',
+  'update_layer',
+  'delete_layer',
+  'regenerate_layer',
+  'patch_layer_code',
+  'set_layer_timing',
 ]
 
-const ELEMENT_TOOLS = [
-  'edit_element', 'move_element', 'resize_element', 'adjust_element_timing',
-]
+const ELEMENT_TOOLS = ['edit_element', 'move_element', 'resize_element', 'adjust_element_timing']
 
-const STYLE_TOOLS = [
-  'set_global_style', 'set_roughness_all', 'set_all_transitions',
-]
+const STYLE_TOOLS = ['set_global_style', 'set_roughness_all', 'set_all_transitions']
 
 // ── Default Agents ─────────────────────────────────────────────────────────────
 
@@ -313,6 +319,19 @@ export const DEFAULT_AGENTS: AgentConfig[] = [
     systemPrompt: DIRECTOR_PROMPT,
     defaultModelTier: 'balanced',
     toolAccess: [...GENERAL_TOOLS, ...SCENE_TOOLS],
+    isBuiltIn: true,
+    isEnabled: true,
+    category: 'general',
+  },
+  {
+    id: 'planner',
+    name: 'Planner',
+    description: 'Builds a storyboard only — you approve before the Director generates scenes',
+    icon: 'layout-list',
+    color: '#06b6d4',
+    systemPrompt: PLANNER_PROMPT,
+    defaultModelTier: 'balanced',
+    toolAccess: ['plan_scenes'],
     isBuiltIn: true,
     isEnabled: true,
     category: 'general',
@@ -411,6 +430,91 @@ export const DEFAULT_AGENTS: AgentConfig[] = [
     category: 'animation',
   },
 
+  {
+    id: 'zdog-artist',
+    name: 'Zdog Artist',
+    description: 'Creates pseudo-3D illustrations with flat-shaded shapes and isometric views',
+    icon: 'hexagon',
+    color: '#f97316',
+    systemPrompt: `You are the Zdog Artist agent for Cench Studio — a specialist in pseudo-3D illustrations using the Zdog library.
+
+## Core Expertise
+- Flat-shaded pseudo-3D shapes: ellipses, rects, boxes, cones, hemispheres, cylinders, polygons
+- Isometric diagrams and cute/stylized 3D objects
+- Smooth rotation and orbital animations
+- Group composition using Zdog Anchor for nested transforms
+
+## Zdog Rules (CRITICAL)
+- Canvas is always 1920×1080
+- Zdog is loaded via CDN as a global — NO imports
+- Create illustration with: new Zdog.Illustration({ element: '#zdog-canvas', ... })
+- Coordinate system: origin center, y-down, z toward camera
+- All randomness must use seeded mulberry32 PRNG — never Math.random()
+- Max 30 shapes for smooth 60fps performance
+
+## Scene Setup Template
+\`\`\`js
+const illo = new Zdog.Illustration({
+  element: '#zdog-canvas',
+  zoom: 4,
+  dragRotate: false,
+  rotate: { x: -0.3, y: 0.4 },
+});
+
+// Add shapes to illo...
+const box = new Zdog.Box({
+  addTo: illo,
+  width: 80, height: 80, depth: 80,
+  stroke: 2,
+  color: PALETTE[1],
+  leftFace: PALETTE[2],
+  rightFace: PALETTE[3],
+  topFace: PALETTE[4],
+  bottomFace: PALETTE[1],
+});
+
+const startTime = Date.now();
+function animate() {
+  const t = (Date.now() - startTime) / 1000;
+  illo.rotate.y = 0.4 + t * 0.5;
+  illo.updateRenderGraph();
+  requestAnimationFrame(animate);
+}
+animate();
+\`\`\`
+
+## Shape Types
+- Zdog.Shape — custom paths with moveTo/lineTo/bezierCurveTo
+- Zdog.Ellipse — circles/ellipses (diameter)
+- Zdog.Rect — rectangles (width, height)
+- Zdog.Box — 3D boxes (width, height, depth, per-face colors)
+- Zdog.Cone — cones (diameter, length)
+- Zdog.Hemisphere — half-spheres (diameter)
+- Zdog.Cylinder — cylinders (diameter, length)
+- Zdog.Polygon — regular polygons (radius, sides)
+
+## Color Usage
+- Use PALETTE array from globals for all colors
+- Each Box face can have a different color for rich pseudo-3D look
+- Use stroke for outlines, fill for solid shapes
+
+## Text Handling
+- Zdog has no native text support
+- Use HTML overlay divs positioned absolute for labels/titles
+- Style text with the global FONT variable
+
+## Animation Principles
+- Rotate illo or groups for orbital camera effects
+- Use sin/cos for bobbing, pulsing, oscillating motions
+- Stagger group rotations for mechanical/organic feel
+- Keep animations smooth — small increments per frame`,
+    defaultModelTier: 'balanced',
+    toolAccess: [...SCENE_TOOLS, ...ELEMENT_TOOLS],
+    isBuiltIn: true,
+    isEnabled: true,
+    category: 'animation',
+  },
+
   // ── Data Specialists ──────────────────────────────────────────────────────
   {
     id: 'd3-analyst',
@@ -439,9 +543,7 @@ export function getEnabledAgents(agents: AgentConfig[] = DEFAULT_AGENTS): AgentC
 /**
  * Returns agents grouped by category.
  */
-export function getAgentsByCategory(
-  agents: AgentConfig[] = DEFAULT_AGENTS
-): Record<AgentCategory, AgentConfig[]> {
+export function getAgentsByCategory(agents: AgentConfig[] = DEFAULT_AGENTS): Record<AgentCategory, AgentConfig[]> {
   const result: Record<AgentCategory, AgentConfig[]> = {
     general: [],
     animation: [],

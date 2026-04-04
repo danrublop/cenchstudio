@@ -23,7 +23,8 @@ If permission mode is always_deny, do not call the API.`,
 
 export const LIST_AVATARS_TOOL: ToolDefinition = {
   name: 'list_avatars',
-  description: 'List available HeyGen avatars. Call this when user asks to see avatar options or when you need to find an appropriate avatar for a scene.',
+  description:
+    'List available HeyGen avatars. Call this when user asks to see avatar options or when you need to find an appropriate avatar for a scene.',
   input_schema: {},
 }
 
@@ -111,14 +112,79 @@ MUST call request_permission('imageGen', estimatedCost, reason) first.`,
   },
 }
 
+export const GENERATE_AVATAR_NARRATION_TOOL: ToolDefinition = {
+  name: 'generate_avatar_narration',
+  description: `Generate a talking avatar video for a scene. The avatar speaks the provided text with synchronized lip movements.
+
+The project's configured avatar provider determines quality and cost:
+- talkinghead: Free 3D animated character, renders inside the scene
+- musetalk/fabric/aurora: Photorealistic talking head via fal.ai (~$0.04-0.15/scene)
+- heygen: Premium quality via HeyGen API
+
+The result is automatically composited into the scene as a picture-in-picture overlay or full-screen presenter.
+
+Use when the user asks for a presenter, host, narrator avatar, talking head, or person explaining something on screen.
+Do NOT add an avatar unless the user asks for one.`,
+  input_schema: {
+    sceneId: 'string',
+    text: 'string — what the avatar should say. Keep it natural and conversational.',
+    placement: 'string — pip_bottom_right | pip_bottom_left | fullscreen | pip_top_right (default: pip_bottom_right)',
+    avatarConfigId: 'string | null — specific avatar config to use. Omit for project default.',
+    sourceImageUrl: 'string | null — face image URL for fal.ai providers. Omit to use configured default.',
+  },
+}
+
+export const GENERATE_AVATAR_SCENE_TOOL: ToolDefinition = {
+  name: 'generate_avatar_scene',
+  description: `Create a full avatar presenter scene where the 3D character is the main focus.
+Use instead of generate_scene when the scene should feature a talking avatar as the primary visual — presenter mode, interview style, walkthrough narration.
+
+The avatar can: stand and talk, point at content panels, show emotions via mood, react with gestures.
+Content panels beside the avatar animate in synchronized with speech via markers.
+
+Use for: step-by-step explanations, data walkthroughs, educational content with a teacher, corporate spokesperson.
+Do NOT use for: data-heavy scenes where the chart IS the content (use PIP avatar instead), abstract scenes, scenes < 5 seconds.`,
+  input_schema: {
+    sceneId: 'string — target scene ID',
+    narration_script: `object — {
+      mood: 'neutral'|'happy'|'sad'|'angry'|'fear'|'surprise',
+      view: 'full'|'mid'|'upper'|'head',
+      lipsyncHeadMovement: boolean (default true),
+      eyeContact: number 0-1 (default 0.7),
+      position: 'fullscreen'|'fullscreen_left'|'fullscreen_right',
+      lines: [{ text, mood?, gesture?, gestureHand?, lookAt?, lookCamera?, pauseBefore?, animation? }]
+    }`,
+    content_panels: `array | null — content shown beside avatar. Each: { id, html, position, revealAt: 'start'|seconds, exitAt? }`,
+    backdrop: 'string | null — CSS background for the scene (default: style preset bg)',
+    avatar_position: 'string — left | right | center (default: left)',
+    avatar_size: 'number — percentage of viewport width (default: 40)',
+    avatar_config_id: 'string | null — specific avatar config. Omit for project default.',
+  },
+}
+
+export const ELEVENLABS_TTS_TOOL: ToolDefinition = {
+  name: 'elevenlabs_tts',
+  description: `Generate text-to-speech audio using ElevenLabs.
+The audio is saved to a file and can be used as narration for a scene.
+MUST call request_permission('elevenLabs', cost, reason) first.`,
+  input_schema: {
+    sceneId: 'string',
+    text: 'string — the text to speak',
+    voiceId: 'string | null — ElevenLabs voice ID (null = default Rachel voice)',
+  },
+}
+
 // All media generation tools
 export const MEDIA_TOOLS: ToolDefinition[] = [
   PERMISSION_TOOL,
   LIST_AVATARS_TOOL,
   GENERATE_AVATAR_TOOL,
+  GENERATE_AVATAR_NARRATION_TOOL,
+  GENERATE_AVATAR_SCENE_TOOL,
   GENERATE_VEO3_TOOL,
   GENERATE_IMAGE_TOOL,
   GENERATE_STICKER_TOOL,
+  ELEVENLABS_TTS_TOOL,
 ]
 
 // Tool filter presets
@@ -137,17 +203,64 @@ export const TOOL_PRESETS: ToolPreset[] = [
   {
     name: 'Full Production',
     description: 'All tools enabled',
-    enabledTools: ['canvas2d', 'svg', 'd3', 'three', 'lottie', 'assets', 'html', 'audio', 'video', 'avatars', 'ai-video', 'ai-images', 'stickers', 'interactions'],
+    enabledTools: [
+      'canvas2d',
+      'svg',
+      'd3',
+      'three',
+      'motion',
+      'lottie',
+      'zdog',
+      'assets',
+      'html',
+      'audio',
+      'video',
+      'avatars',
+      'ai-video',
+      'ai-images',
+      'stickers',
+      'interactions',
+      'physics',
+    ],
   },
   {
     name: 'Budget Mode',
     description: 'No Avatars, no Veo3, Images allowed',
-    enabledTools: ['canvas2d', 'svg', 'd3', 'three', 'lottie', 'assets', 'html', 'audio', 'video', 'ai-images', 'stickers', 'interactions'],
+    enabledTools: [
+      'canvas2d',
+      'svg',
+      'd3',
+      'three',
+      'motion',
+      'lottie',
+      'zdog',
+      'assets',
+      'html',
+      'audio',
+      'video',
+      'ai-images',
+      'stickers',
+      'interactions',
+    ],
   },
   {
     name: 'Offline',
     description: 'No media generation at all',
-    enabledTools: ['canvas2d', 'svg', 'd3', 'three', 'lottie', 'assets', 'html', 'audio', 'video', 'interactions'],
+    enabledTools: [
+      'canvas2d',
+      'svg',
+      'd3',
+      'three',
+      'motion',
+      'lottie',
+      'zdog',
+      'assets',
+      'html',
+      'audio',
+      'video',
+      'interactions',
+      'physics',
+    ],
   },
 ]
 
@@ -157,7 +270,9 @@ export const TOOL_FILTER_CHIPS = [
   { id: 'svg', label: 'SVG', default: true },
   { id: 'd3', label: 'D3', default: true },
   { id: 'three', label: 'Three.js', default: true },
+  { id: 'motion', label: 'Motion', default: true },
   { id: 'lottie', label: 'Lottie', default: true },
+  { id: 'zdog', label: 'Zdog', default: true },
   { id: 'assets', label: 'Assets', default: true },
   { id: 'html', label: 'HTML', default: true },
   { id: 'audio', label: 'Audio', default: true },
@@ -169,4 +284,5 @@ export const TOOL_FILTER_CHIPS = [
   { id: 'eleven-labs', label: 'ElevenLabs', default: true },
   { id: 'unsplash', label: 'Unsplash', default: true },
   { id: 'interactions', label: 'Interactions', default: true },
+  { id: 'physics', label: 'Physics', default: true },
 ]

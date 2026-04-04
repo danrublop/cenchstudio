@@ -49,7 +49,8 @@ function requireArg(name: string): string {
 }
 
 function printUsage() {
-  console.error(`
+  console.error(
+    `
 Usage: npx tsx scripts/inject-scene.ts \\
   --type <svg|canvas2d|d3|three|motion> \\
   --code <path-to-code-file> \\
@@ -58,15 +59,16 @@ Usage: npx tsx scripts/inject-scene.ts \\
   [--duration <seconds>] \\
   [--bg "<hex-color>"] \\
   [--d3data <path-to-json>]  # override D3 data (d3 type only)
-`.trim())
+`.trim(),
+  )
 }
 
 const sceneType = getArg('type') || 'svg'
-const codeFile  = requireArg('code')
-const id        = getArg('id') || `scene-${Date.now()}`
-const name      = getArg('name') || 'Untitled'
-const duration  = parseInt(getArg('duration') || '8', 10)
-const bgColor   = getArg('bg') || '#181818'
+const codeFile = requireArg('code')
+const id = getArg('id') || `scene-${Date.now()}`
+const name = getArg('name') || 'Untitled'
+const duration = parseInt(getArg('duration') || '8', 10)
+const bgColor = getArg('bg') || '#181818'
 const d3dataFile = getArg('d3data')
 
 // Validate ID (must be alphanumeric + hyphens, matching the API's validation)
@@ -76,8 +78,8 @@ if (!/^[a-zA-Z0-9\-]+$/.test(id)) {
 }
 
 // Validate type
-const VALID_TYPES = ['svg', 'canvas2d', 'd3', 'three', 'motion'] as const
-type SceneType = typeof VALID_TYPES[number]
+const VALID_TYPES = ['svg', 'canvas2d', 'd3', 'three', 'motion', 'zdog'] as const
+type SceneType = (typeof VALID_TYPES)[number]
 
 if (!VALID_TYPES.includes(sceneType as SceneType)) {
   console.error(`Error: --type must be one of: ${VALID_TYPES.join(', ')}. Got: "${sceneType}"`)
@@ -229,6 +231,7 @@ function buildD3HTML(sceneCode: string, styles: string, d3Data: unknown, bg: str
   <div id="chart"></div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+  <script src="/sdk/cench-charts.js"></script>
   <script>
     const DATA = ${JSON.stringify(d3Data, null, 2)};
     const WIDTH = 1920, HEIGHT = 1080;
@@ -384,12 +387,7 @@ switch (sceneType as SceneType) {
       d3Data = JSON.parse(fs.readFileSync(d3dataFile, 'utf-8'))
     }
 
-    html = buildD3HTML(
-      parsed.sceneCode ?? '',
-      parsed.styles ?? '',
-      d3Data,
-      bgColor
-    )
+    html = buildD3HTML(parsed.sceneCode ?? '', parsed.styles ?? '', d3Data, bgColor)
     break
   }
 
@@ -417,12 +415,7 @@ switch (sceneType as SceneType) {
       console.error((e as Error).message)
       process.exit(1)
     }
-    html = buildMotionHTML(
-      parsed.sceneCode ?? '',
-      parsed.styles ?? '',
-      parsed.htmlContent ?? '',
-      bgColor
-    )
+    html = buildMotionHTML(parsed.sceneCode ?? '', parsed.styles ?? '', parsed.htmlContent ?? '', bgColor)
     break
   }
 
@@ -434,7 +427,7 @@ switch (sceneType as SceneType) {
 
 // ── Write output ─────────────────────────────────────────────────────────────
 
-const outDir  = path.join(process.cwd(), 'public', 'scenes')
+const outDir = path.join(process.cwd(), 'public', 'scenes')
 fs.mkdirSync(outDir, { recursive: true })
 
 const outPath = path.join(outDir, `${id}.html`)

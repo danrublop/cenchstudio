@@ -1,9 +1,10 @@
 'use client'
 
 import { useVideoStore } from '@/lib/store'
-import type { Scene, AILayer } from '@/lib/types'
-import { Image, Video, User, Sparkles, Trash2, Loader2 } from 'lucide-react'
-import { useState } from 'react'
+import type { Scene, AILayer, AvatarLayer } from '@/lib/types'
+import { Image, Video, User, Sparkles, Trash2, Loader2, ChevronDown } from 'lucide-react'
+import { useCallback, useState } from 'react'
+import AvatarLayerSettings from '@/components/avatar/AvatarLayerSettings'
 
 interface Props {
   scene: Scene
@@ -25,14 +26,75 @@ const STATUS_COLORS: Record<string, string> = {
 }
 
 export default function AILayersPanel({ scene }: Props) {
-  const { removeAILayer, updateAILayer, saveSceneHTML, generateAIImage } = useVideoStore()
+  const { addAILayer, removeAILayer, updateAILayer, saveSceneHTML, generateAIImage } = useVideoStore()
   const aiLayers = scene.aiLayers ?? []
   const [showQuickAdd, setShowQuickAdd] = useState(false)
   const [quickPrompt, setQuickPrompt] = useState('')
-  const [quickType, setQuickType] = useState<'image' | 'sticker'>('sticker')
+  const [quickType, setQuickType] = useState<'image' | 'sticker' | 'avatar'>('sticker')
+  const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null)
+
+  const getIframe = useCallback(() => {
+    return document.querySelector(`iframe[data-scene-id="${scene.id}"]`) as HTMLIFrameElement | null
+  }, [scene.id])
 
   const handleQuickGenerate = async () => {
-    if (!quickPrompt.trim()) return
+    if (quickType !== 'avatar' && !quickPrompt.trim()) return
+    if (quickType === 'avatar') {
+      const id = (globalThis.crypto?.randomUUID?.() ?? `avatar-${Date.now()}`) as string
+      const script = quickPrompt.trim() || 'Welcome! Let me explain this scene.'
+      addAILayer(scene.id, {
+        id,
+        type: 'avatar',
+        avatarId: '',
+        voiceId: '',
+        script,
+        removeBackground: false,
+        x: 1640,
+        y: 800,
+        width: 320,
+        height: 320,
+        opacity: 1,
+        zIndex: 100,
+        videoUrl: null,
+        thumbnailUrl: null,
+        status: 'ready',
+        heygenVideoId: null,
+        estimatedDuration: scene.duration,
+        startAt: 0,
+        label: 'Avatar Overlay',
+        avatarPlacement: 'pip_bottom_right',
+        avatarProvider: 'talkinghead',
+        talkingHeadUrl: `talkinghead://render?text=${encodeURIComponent(script)}&audio=&character=friendly`,
+        narrationScript: {
+          mood: 'happy',
+          view: 'upper',
+          lipsyncHeadMovement: true,
+          eyeContact: 0.7,
+          position: 'pip_bottom_right',
+          pipSize: 320,
+          pipShape: 'circle',
+          avatarScale: 1.15,
+          containerEnabled: true,
+          background: '#6366f1',
+          character: 'friendly',
+          containerBlur: 16,
+          containerBorderColor: '#ffffff',
+          containerBorderOpacity: 0.35,
+          containerBorderWidth: 2,
+          containerShadowOpacity: 0.35,
+          containerInnerGlow: 0.08,
+          containerBgOpacity: 0.2,
+          entranceAnimation: 'fade',
+          exitAnimation: 'fade',
+          lines: [],
+        },
+      })
+      await saveSceneHTML(scene.id)
+      setShowQuickAdd(false)
+      setQuickPrompt('')
+      return
+    }
+
     setShowQuickAdd(false)
     await generateAIImage(scene.id, {
       prompt: quickPrompt,
@@ -89,6 +151,14 @@ export default function AILayersPanel({ scene }: Props) {
         >
           <div className="flex gap-1">
             <button
+              onClick={() => setQuickType('avatar')}
+              className={`text-[10px] px-2 py-1 rounded transition-colors ${
+                quickType === 'avatar' ? 'bg-white/10 font-medium' : 'opacity-60'
+              }`}
+            >
+              Avatar
+            </button>
+            <button
               onClick={() => setQuickType('sticker')}
               className={`text-[10px] px-2 py-1 rounded transition-colors ${
                 quickType === 'sticker' ? 'bg-white/10 font-medium' : 'opacity-60'
@@ -107,7 +177,13 @@ export default function AILayersPanel({ scene }: Props) {
           </div>
           <input
             type="text"
-            placeholder={quickType === 'sticker' ? 'Describe the sticker...' : 'Describe the image...'}
+            placeholder={
+              quickType === 'avatar'
+                ? 'Optional: default avatar script...'
+                : quickType === 'sticker'
+                  ? 'Describe the sticker...'
+                  : 'Describe the image...'
+            }
             value={quickPrompt}
             onChange={(e) => setQuickPrompt(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleQuickGenerate()}
@@ -122,14 +198,17 @@ export default function AILayersPanel({ scene }: Props) {
           <div className="flex gap-1">
             <button
               onClick={handleQuickGenerate}
-              disabled={!quickPrompt.trim()}
+              disabled={quickType !== 'avatar' && !quickPrompt.trim()}
               className="flex-1 text-[10px] px-2 py-1 rounded font-medium transition-colors disabled:opacity-30"
               style={{ backgroundColor: 'var(--color-accent, #e84545)', color: '#fff' }}
             >
-              Generate
+              {quickType === 'avatar' ? 'Add Avatar' : 'Generate'}
             </button>
             <button
-              onClick={() => { setShowQuickAdd(false); setQuickPrompt('') }}
+              onClick={() => {
+                setShowQuickAdd(false)
+                setQuickPrompt('')
+              }}
               className="text-[10px] px-2 py-1 rounded opacity-60 hover:opacity-100 transition-opacity"
             >
               Cancel
@@ -142,33 +221,66 @@ export default function AILayersPanel({ scene }: Props) {
       {aiLayers.map((layer) => {
         const Icon = LAYER_ICONS[layer.type] || Sparkles
         const statusColor = STATUS_COLORS[layer.status] || 'text-[#6b6b7a]'
+        const isSelected = selectedLayerId === layer.id
+        const isAvatar = layer.type === 'avatar'
 
         return (
-          <div
-            key={layer.id}
-            className="flex items-center gap-2 p-2 rounded border group"
-            style={{
-              backgroundColor: 'var(--color-input-bg, #161622)',
-              borderColor: 'var(--color-border, #2a2a3a)',
-            }}
-          >
-            <Icon size={14} className="shrink-0 opacity-60" />
-            <div className="flex-1 min-w-0">
-              <div className="text-xs font-medium truncate">{layer.label || layer.type}</div>
-              <div className={`text-[10px] ${statusColor} flex items-center gap-1`}>
-                {layer.status === 'generating' && <Loader2 size={10} className="animate-spin" />}
-                {layer.status}
-                {'prompt' in layer && layer.prompt && (
-                  <span className="text-[#6b6b7a] truncate ml-1">— {(layer as any).prompt.slice(0, 40)}</span>
-                )}
-              </div>
-            </div>
-            <button
-              onClick={() => handleRemove(layer.id)}
-              className="p-1 rounded opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity"
+          <div key={layer.id}>
+            <div
+              onClick={() => isAvatar && setSelectedLayerId(isSelected ? null : layer.id)}
+              className={`flex items-center gap-2 p-2 rounded border group ${isAvatar ? 'cursor-pointer' : ''}`}
+              style={{
+                backgroundColor: isSelected ? 'var(--color-accent-bg, #1e1e30)' : 'var(--color-input-bg, #161622)',
+                borderColor: isSelected ? 'var(--color-accent, #e84545)' : 'var(--color-border, #2a2a3a)',
+              }}
             >
-              <Trash2 size={12} />
-            </button>
+              <Icon size={14} className="shrink-0 opacity-60" />
+              <div className="flex-1 min-w-0">
+                <div className="text-xs font-medium truncate">{layer.label || layer.type}</div>
+                <div className={`text-[10px] ${statusColor} flex items-center gap-1`}>
+                  {layer.status === 'generating' && <Loader2 size={10} className="animate-spin" />}
+                  {layer.status}
+                  {'prompt' in layer && layer.prompt && (
+                    <span className="text-[#6b6b7a] truncate ml-1">— {(layer as any).prompt.slice(0, 40)}</span>
+                  )}
+                </div>
+              </div>
+              {isAvatar && (
+                <ChevronDown
+                  size={12}
+                  className={`opacity-40 transition-transform ${isSelected ? '' : '-rotate-90'}`}
+                />
+              )}
+              <span
+                role="button"
+                tabIndex={0}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  handleRemove(layer.id)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.stopPropagation()
+                    handleRemove(layer.id)
+                  }
+                }}
+                className="p-1 rounded opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity"
+              >
+                <Trash2 size={12} />
+              </span>
+            </div>
+            {/* Avatar settings panel (expanded) */}
+            {isSelected && isAvatar && (
+              <div
+                className="mt-1 rounded border overflow-hidden"
+                style={{
+                  backgroundColor: 'var(--color-input-bg, #161622)',
+                  borderColor: 'var(--color-border, #2a2a3a)',
+                }}
+              >
+                <AvatarLayerSettings sceneId={scene.id} layer={layer as AvatarLayer} getIframe={getIframe} />
+              </div>
+            )}
           </div>
         )
       })}

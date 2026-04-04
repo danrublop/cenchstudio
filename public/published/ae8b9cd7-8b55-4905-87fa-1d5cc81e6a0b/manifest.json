@@ -1,0 +1,399 @@
+{
+  "id": "ae8b9cd7-8b55-4905-87fa-1d5cc81e6a0b",
+  "version": 1,
+  "name": "Untitled Project 8",
+  "playerOptions": {
+    "theme": "dark",
+    "showProgressBar": true,
+    "showSceneNav": true,
+    "allowFullscreen": true,
+    "brandColor": "#e84545",
+    "autoplay": true
+  },
+  "sceneGraph": {
+    "nodes": [
+      {
+        "id": "9f1a669a-5b1b-445f-b64f-a284d563112a",
+        "position": {
+          "x": 0,
+          "y": 100
+        }
+      },
+      {
+        "id": "d4a6805e-e5d8-465e-88a6-4e766ef5a9bd",
+        "position": {
+          "x": 100,
+          "y": 100
+        }
+      },
+      {
+        "id": "bc81673a-a572-417c-a4de-9e7486e4f131",
+        "position": {
+          "x": 340,
+          "y": 100
+        }
+      },
+      {
+        "id": "9f1a1154-56cd-42a9-bce6-8c839aa2b29c",
+        "position": {
+          "x": 580,
+          "y": 100
+        }
+      },
+      {
+        "id": "406faa86-2f48-4e03-867b-21a4ee035d4c",
+        "position": {
+          "x": 820,
+          "y": 100
+        }
+      },
+      {
+        "id": "11de7e41-62a4-41de-8c8c-ccde11e06397",
+        "position": {
+          "x": 100,
+          "y": 300
+        }
+      },
+      {
+        "id": "f6335d59-b303-4b60-ab4b-cff69985a4dc",
+        "position": {
+          "x": 340,
+          "y": 300
+        }
+      },
+      {
+        "id": "99902765-0948-455a-a864-d53542abe9e6",
+        "position": {
+          "x": 580,
+          "y": 300
+        }
+      },
+      {
+        "id": "044427d7-060a-4e80-8f55-186fecb05fc1",
+        "position": {
+          "x": 820,
+          "y": 300
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "27ad9e3b-a558-4349-81a5-c387e3241e49",
+        "fromSceneId": "d4a6805e-e5d8-465e-88a6-4e766ef5a9bd",
+        "toSceneId": "bc81673a-a572-417c-a4de-9e7486e4f131",
+        "condition": {
+          "type": "auto",
+          "interactionId": null,
+          "variableName": null,
+          "variableValue": null
+        }
+      },
+      {
+        "id": "2ea4065e-4ba5-427f-9de2-7a7f5498571e",
+        "fromSceneId": "bc81673a-a572-417c-a4de-9e7486e4f131",
+        "toSceneId": "9f1a1154-56cd-42a9-bce6-8c839aa2b29c",
+        "condition": {
+          "type": "auto",
+          "interactionId": null,
+          "variableName": null,
+          "variableValue": null
+        }
+      },
+      {
+        "id": "25f9f854-57b7-400d-800c-8d8261d82694",
+        "fromSceneId": "9f1a1154-56cd-42a9-bce6-8c839aa2b29c",
+        "toSceneId": "406faa86-2f48-4e03-867b-21a4ee035d4c",
+        "condition": {
+          "type": "auto",
+          "interactionId": null,
+          "variableName": null,
+          "variableValue": null
+        }
+      },
+      {
+        "id": "99b0e24d-f94f-40ab-b589-eda3b065c208",
+        "fromSceneId": "406faa86-2f48-4e03-867b-21a4ee035d4c",
+        "toSceneId": "11de7e41-62a4-41de-8c8c-ccde11e06397",
+        "condition": {
+          "type": "auto",
+          "interactionId": null,
+          "variableName": null,
+          "variableValue": null
+        }
+      },
+      {
+        "id": "6cfd7102-c4c9-4107-81f9-225973ed4c14",
+        "fromSceneId": "f6335d59-b303-4b60-ab4b-cff69985a4dc",
+        "toSceneId": "99902765-0948-455a-a864-d53542abe9e6",
+        "condition": {
+          "type": "auto",
+          "interactionId": null,
+          "variableName": null,
+          "variableValue": null
+        }
+      },
+      {
+        "id": "4801126b-c7c5-4f16-a901-f59860c8c6d3",
+        "fromSceneId": "99902765-0948-455a-a864-d53542abe9e6",
+        "toSceneId": "044427d7-060a-4e80-8f55-186fecb05fc1",
+        "condition": {
+          "type": "auto",
+          "interactionId": null,
+          "variableName": null,
+          "variableValue": null
+        }
+      }
+    ],
+    "startSceneId": "9f1a669a-5b1b-445f-b64f-a284d563112a"
+  },
+  "scenes": [
+    {
+      "id": "9f1a669a-5b1b-445f-b64f-a284d563112a",
+      "type": "svg",
+      "duration": 8,
+      "htmlUrl": "/published/ae8b9cd7-8b55-4905-87fa-1d5cc81e6a0b/scenes/9f1a669a-5b1b-445f-b64f-a284d563112a.html",
+      "htmlContent": null,
+      "interactions": [],
+      "variables": [],
+      "transition": "none"
+    },
+    {
+      "id": "d4a6805e-e5d8-465e-88a6-4e766ef5a9bd",
+      "type": "motion",
+      "duration": 10,
+      "htmlUrl": "/published/ae8b9cd7-8b55-4905-87fa-1d5cc81e6a0b/scenes/d4a6805e-e5d8-465e-88a6-4e766ef5a9bd.html",
+      "htmlContent": null,
+      "interactions": [],
+      "variables": [],
+      "transition": "none"
+    },
+    {
+      "id": "bc81673a-a572-417c-a4de-9e7486e4f131",
+      "type": "canvas2d",
+      "duration": 20,
+      "htmlUrl": "/published/ae8b9cd7-8b55-4905-87fa-1d5cc81e6a0b/scenes/bc81673a-a572-417c-a4de-9e7486e4f131.html",
+      "htmlContent": null,
+      "interactions": [
+        {
+          "id": "eb885689-eb23-485f-a2c3-718fffa88bcc",
+          "type": "tooltip",
+          "x": 68,
+          "y": 30,
+          "width": 4,
+          "height": 4,
+          "appearsAt": 3,
+          "hidesAt": null,
+          "entranceAnimation": "fade",
+          "triggerShape": "circle",
+          "triggerColor": "#888888",
+          "triggerLabel": "1",
+          "tooltipTitle": "Epicardium",
+          "tooltipBody": "The outermost serous layer (visceral pericardium). Contains coronary vessels and adipose tissue. Rarely involved in isolated myocarditis.",
+          "tooltipPosition": "right",
+          "tooltipMaxWidth": 300,
+          "visualStyle": {
+            "bgOpacity": 0.08,
+            "blur": 16,
+            "borderOpacity": 0.2,
+            "borderRadius": 12,
+            "innerGlow": 0.3,
+            "bgColor": "#f5f5f5",
+            "fontSize": 13,
+            "fontFamily": "'Inter', sans-serif"
+          }
+        },
+        {
+          "id": "d99a3bfd-d4f6-4a2a-88d7-39043c1f5a61",
+          "type": "tooltip",
+          "x": 68,
+          "y": 47,
+          "width": 4,
+          "height": 4,
+          "appearsAt": 3.5,
+          "hidesAt": null,
+          "entranceAnimation": "fade",
+          "triggerShape": "circle",
+          "triggerColor": "#e94560",
+          "triggerLabel": "2",
+          "tooltipTitle": "Myocardium",
+          "tooltipBody": "The thick muscular layer responsible for contractile function. Primary site of inflammation in myocarditis — viral infiltration and immune-mediated injury cause myocyte necrosis.",
+          "tooltipPosition": "right",
+          "tooltipMaxWidth": 300,
+          "visualStyle": {
+            "bgOpacity": 0.08,
+            "blur": 16,
+            "borderOpacity": 0.2,
+            "borderRadius": 12,
+            "innerGlow": 0.3,
+            "bgColor": "#fef2f2",
+            "fontSize": 13,
+            "fontFamily": "'Inter', sans-serif"
+          }
+        },
+        {
+          "id": "6b3501b7-3fd9-4b13-a31e-36314789b34e",
+          "type": "tooltip",
+          "x": 68,
+          "y": 58,
+          "width": 4,
+          "height": 4,
+          "appearsAt": 4,
+          "hidesAt": null,
+          "entranceAnimation": "fade",
+          "triggerShape": "circle",
+          "triggerColor": "#16213e",
+          "triggerLabel": "3",
+          "tooltipTitle": "Endocardium",
+          "tooltipBody": "Inner lining of the chambers. Continuous with valve leaflets. May show secondary involvement in severe myocarditis with mural thrombus formation.",
+          "tooltipPosition": "right",
+          "tooltipMaxWidth": 300,
+          "visualStyle": {
+            "bgOpacity": 0.08,
+            "blur": 16,
+            "borderOpacity": 0.2,
+            "borderRadius": 12,
+            "innerGlow": 0.3,
+            "bgColor": "#eff6ff",
+            "fontSize": 13,
+            "fontFamily": "'Inter', sans-serif"
+          }
+        }
+      ],
+      "variables": [],
+      "transition": "none"
+    },
+    {
+      "id": "9f1a1154-56cd-42a9-bce6-8c839aa2b29c",
+      "type": "canvas2d",
+      "duration": 20,
+      "htmlUrl": "/published/ae8b9cd7-8b55-4905-87fa-1d5cc81e6a0b/scenes/9f1a1154-56cd-42a9-bce6-8c839aa2b29c.html",
+      "htmlContent": null,
+      "interactions": [],
+      "variables": [],
+      "transition": "none"
+    },
+    {
+      "id": "406faa86-2f48-4e03-867b-21a4ee035d4c",
+      "type": "motion",
+      "duration": 15,
+      "htmlUrl": "/published/ae8b9cd7-8b55-4905-87fa-1d5cc81e6a0b/scenes/406faa86-2f48-4e03-867b-21a4ee035d4c.html",
+      "htmlContent": null,
+      "interactions": [],
+      "variables": [],
+      "transition": "none"
+    },
+    {
+      "id": "11de7e41-62a4-41de-8c8c-ccde11e06397",
+      "type": "d3",
+      "duration": 20,
+      "htmlUrl": "/published/ae8b9cd7-8b55-4905-87fa-1d5cc81e6a0b/scenes/11de7e41-62a4-41de-8c8c-ccde11e06397.html",
+      "htmlContent": null,
+      "interactions": [
+        {
+          "id": "872a0420-bf58-4d48-9e9c-51f61abd7291",
+          "type": "quiz",
+          "x": 25,
+          "y": 52,
+          "width": 50,
+          "height": 40,
+          "appearsAt": 6,
+          "hidesAt": null,
+          "entranceAnimation": "slide-up",
+          "question": "Which biomarker has the highest sensitivity for acute myocarditis?",
+          "options": [
+            {
+              "id": "25f731cc-69d5-4319-8077-1bf0b5f55a28",
+              "label": "Troponin I/T"
+            },
+            {
+              "id": "406eeef7-7d8e-400e-bb25-92a98ad2f588",
+              "label": "CRP"
+            },
+            {
+              "id": "f5984829-40f2-44e0-b885-8bf0d37fc748",
+              "label": "ESR"
+            },
+            {
+              "id": "43f67fd8-75ec-4c66-a46c-66c2c4e289fb",
+              "label": "BNP/NT-proBNP"
+            }
+          ],
+          "correctOptionId": "25f731cc-69d5-4319-8077-1bf0b5f55a28",
+          "onCorrect": "jump",
+          "onCorrectSceneId": "f6335d59-b303-4b60-ab4b-cff69985a4dc",
+          "onWrong": "retry",
+          "onWrongSceneId": null,
+          "explanation": "Troponin I/T has ~94% sensitivity in acute myocarditis, making it the most sensitive serum biomarker for myocardial injury.",
+          "visualStyle": {
+            "bgOpacity": 0.1,
+            "blur": 18,
+            "borderOpacity": 0.25,
+            "borderRadius": 16,
+            "innerGlow": 0.3,
+            "bgColor": "#f5f5f5",
+            "shadowSpread": 24,
+            "fontFamily": "'Inter', sans-serif",
+            "fontSize": 14
+          }
+        }
+      ],
+      "variables": [],
+      "transition": "none"
+    },
+    {
+      "id": "f6335d59-b303-4b60-ab4b-cff69985a4dc",
+      "type": "canvas2d",
+      "duration": 20,
+      "htmlUrl": "/published/ae8b9cd7-8b55-4905-87fa-1d5cc81e6a0b/scenes/f6335d59-b303-4b60-ab4b-cff69985a4dc.html",
+      "htmlContent": null,
+      "interactions": [
+        {
+          "id": "9f1b591e-43aa-478b-9a99-51416fa576b1",
+          "type": "gate",
+          "x": 35,
+          "y": 3,
+          "width": 30,
+          "height": 7,
+          "appearsAt": 0.5,
+          "hidesAt": null,
+          "entranceAnimation": "pop",
+          "buttonLabel": "Proceed to Complications",
+          "buttonStyle": "primary",
+          "minimumWatchTime": 0,
+          "visualStyle": {
+            "bgOpacity": 0.1,
+            "blur": 16,
+            "borderOpacity": 0.25,
+            "borderRadius": 12,
+            "innerGlow": 0.3,
+            "bgColor": "#f5f5f5",
+            "fontFamily": "'Inter', sans-serif",
+            "fontSize": 14
+          }
+        }
+      ],
+      "variables": [],
+      "transition": "none"
+    },
+    {
+      "id": "99902765-0948-455a-a864-d53542abe9e6",
+      "type": "canvas2d",
+      "duration": 20,
+      "htmlUrl": "/published/ae8b9cd7-8b55-4905-87fa-1d5cc81e6a0b/scenes/99902765-0948-455a-a864-d53542abe9e6.html",
+      "htmlContent": null,
+      "interactions": [],
+      "variables": [],
+      "transition": "none"
+    },
+    {
+      "id": "044427d7-060a-4e80-8f55-186fecb05fc1",
+      "type": "d3",
+      "duration": 15,
+      "htmlUrl": "/published/ae8b9cd7-8b55-4905-87fa-1d5cc81e6a0b/scenes/044427d7-060a-4e80-8f55-186fecb05fc1.html",
+      "htmlContent": null,
+      "interactions": [],
+      "variables": [],
+      "transition": "none"
+    }
+  ]
+}

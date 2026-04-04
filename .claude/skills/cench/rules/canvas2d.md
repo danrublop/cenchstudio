@@ -1,5 +1,7 @@
 # Canvas2D Scene Rules
 
+**When to use:** Expressive hand-drawn work (marker, chalk, brush), particles, procedural/generative art, physics, fluid motion — **not** the default for clean polished explainers (those are **Motion**).
+
 ---
 
 ## Output format
@@ -15,40 +17,48 @@ The canvas renderer is auto-injected before your code — all drawing functions 
 Copy this exactly. Fill in `draw()` with your animation logic:
 
 ```js
-const canvas = document.getElementById('c');
-const ctx = canvas.getContext('2d');
+const canvas = document.getElementById('c')
+const ctx = canvas.getContext('2d')
 
-const DURATION = 8; // replace with actual duration in seconds
-const START_T = parseFloat(new URLSearchParams(location.search).get('t') || '0');
-const startWall = performance.now() - START_T * 1000;
+// DURATION, WIDTH, HEIGHT, PALETTE, ROUGHNESS, FONT, TOOL, STROKE_COLOR, mulberry32
+// are already injected by the template as globals — do NOT redeclare them.
 
-function getT() { return (performance.now() - startWall) / 1000; }
+const START_T = parseFloat(new URLSearchParams(location.search).get('t') || '0')
+const startWall = performance.now() - START_T * 1000
 
-const easeOut = t => 1 - Math.pow(1 - t, 3);
-const easeIn  = t => t * t * t;
-const lerp    = (a, b, t) => a + (b - a) * t;
-const clamp01 = t => Math.max(0, Math.min(1, t));
+function getT() {
+  return (performance.now() - startWall) / 1000
+}
+
+const easeOut = (t) => 1 - Math.pow(1 - t, 3)
+const easeIn = (t) => t * t * t
+const lerp = (a, b, t) => a + (b - a) * t
+const clamp01 = (t) => Math.max(0, Math.min(1, t))
 
 function draw(t) {
-  ctx.clearRect(0, 0, 1920, 1080);
+  ctx.clearRect(0, 0, 1920, 1080)
   // YOUR DRAWING CODE — drive everything with t (0 → DURATION)
   // Background color is set by body CSS — do NOT fill it here
 }
 
 function loop() {
-  const t = getT();
+  const t = getT()
   if (t < DURATION) {
-    draw(t);
-    window.__animFrame = requestAnimationFrame(loop);
+    draw(t)
+    window.__animFrame = requestAnimationFrame(loop)
   } else {
-    draw(DURATION);
+    draw(DURATION)
   }
 }
 
-window.__pause  = () => { cancelAnimationFrame(window.__animFrame); };
-window.__resume = () => { window.__animFrame = requestAnimationFrame(loop); };
+window.__pause = () => {
+  cancelAnimationFrame(window.__animFrame)
+}
+window.__resume = () => {
+  window.__animFrame = requestAnimationFrame(loop)
+}
 
-window.__animFrame = requestAnimationFrame(loop);
+window.__animFrame = requestAnimationFrame(loop)
 ```
 
 ---
@@ -57,21 +67,28 @@ window.__animFrame = requestAnimationFrame(loop);
 
 The renderer provides 5 hand-drawn drawing tools. Pass them via the `tool` option:
 
-| Tool | `tool` value | Character | Best for |
-|------|-------------|-----------|----------|
-| Marker | `'marker'` | Bold, consistent, slight wobble | Titles, thick outlines |
-| Pen | `'pen'` | Fine, precise, natural | Diagrams, labels, detail work |
-| Chalk | `'chalk'` | Rough, grainy, textured | Chalkboard scenes, artistic fills |
-| Brush | `'brush'` | Wide, tapered, calligraphic | Expressive strokes, watercolor-like |
-| Highlighter | `'highlighter'` | Broad, semi-transparent | Emphasis boxes, underlining |
+| Tool        | `tool` value    | Character                       | Best for                            |
+| ----------- | --------------- | ------------------------------- | ----------------------------------- |
+| Marker      | `'marker'`      | Bold, consistent, slight wobble | Titles, thick outlines              |
+| Pen         | `'pen'`         | Fine, precise, natural          | Diagrams, labels, detail work       |
+| Chalk       | `'chalk'`       | Rough, grainy, textured         | Chalkboard scenes, artistic fills   |
+| Brush       | `'brush'`       | Wide, tapered, calligraphic     | Expressive strokes, watercolor-like |
+| Highlighter | `'highlighter'` | Broad, semi-transparent         | Emphasis boxes, underlining         |
 
 ```js
 // Example: draw a chalk-style circle on a chalkboard scene
-await animateRoughCircle(ctx, 960, 540, 200, {
-  tool: 'chalk',
-  color: '#ffffff',
-  seed: 42,
-}, 800);
+await animateRoughCircle(
+  ctx,
+  960,
+  540,
+  200,
+  {
+    tool: 'chalk',
+    color: '#ffffff',
+    seed: 42,
+  },
+  800,
+)
 ```
 
 ---
@@ -81,9 +98,11 @@ await animateRoughCircle(ctx, 960, 540, 200, {
 Pressure and texture are **automatic** — they are controlled by the tool you select.
 
 - **Pressure**: Each tool has a built-in pressure profile. Strokes taper at tips and widen toward the peak. Override with `pressureOpts`:
+
   ```js
   pressureOpts: { peakAt: 0.4, minWidth: 0.25, sharpness: 2.5 }
   ```
+
   - `peakAt` (0–1): Where the stroke is widest
   - `minWidth` (0–1): Width at tips as a fraction of base width
   - `sharpness`: How sharply pressure peaks (higher = more pronounced)
@@ -91,7 +110,7 @@ Pressure and texture are **automatic** — they are controlled by the tool you s
 - **Texture**: `chalk` and `brush` tools automatically apply grain/chalk overlays. Call `applyTextureOverlay` once at scene start for chalkboard scenes:
   ```js
   // Call once, not every frame — texture is cached
-  applyTextureOverlay(canvas, 'chalk', 42);
+  applyTextureOverlay(canvas, 'chalk', 42)
   ```
 
 ---
@@ -102,17 +121,33 @@ Chaikin's corner-cutting algorithm is applied automatically per tool. Override i
 
 ```js
 // More smoothing = rounder corners
-await animateRoughRect(ctx, 100, 100, 400, 300, {
-  tool: 'pen',
-  smooth: true,
-  smoothIterations: 3,
-}, 600);
+await animateRoughRect(
+  ctx,
+  100,
+  100,
+  400,
+  300,
+  {
+    tool: 'pen',
+    smooth: true,
+    smoothIterations: 3,
+  },
+  600,
+)
 
 // Disable smoothing for raw, jagged chalk
-await animateRoughLine(ctx, 100, 100, 800, 400, {
-  tool: 'chalk',
-  smooth: false,
-}, 500);
+await animateRoughLine(
+  ctx,
+  100,
+  100,
+  800,
+  400,
+  {
+    tool: 'chalk',
+    smooth: false,
+  },
+  500,
+)
 ```
 
 ---
@@ -126,35 +161,53 @@ Use `await` or chain with `.then()` to sequence animations.
 
 ```js
 // Line from point to point
-await animateRoughLine(ctx, x1, y1, x2, y2, opts, durationMs);
+await animateRoughLine(ctx, x1, y1, x2, y2, opts, durationMs)
 
 // Circle — diameter is total width (not radius)
-await animateRoughCircle(ctx, cx, cy, diameter, opts, durationMs);
+await animateRoughCircle(ctx, cx, cy, diameter, opts, durationMs)
 
 // Rectangle — top-left origin
-await animateRoughRect(ctx, x, y, w, h, opts, durationMs);
+await animateRoughRect(ctx, x, y, w, h, opts, durationMs)
 
 // Polygon — array of [x, y] vertices, auto-closed
-await animateRoughPolygon(ctx, [[x1,y1],[x2,y2],[x3,y3]], opts, durationMs);
+await animateRoughPolygon(
+  ctx,
+  [
+    [x1, y1],
+    [x2, y2],
+    [x3, y3],
+  ],
+  opts,
+  durationMs,
+)
 
 // Freeform curve — control points are smoothed before rendering
-await animateRoughCurve(ctx, [[x1,y1],[x2,y2],[x3,y3]], opts, durationMs);
+await animateRoughCurve(
+  ctx,
+  [
+    [x1, y1],
+    [x2, y2],
+    [x3, y3],
+  ],
+  opts,
+  durationMs,
+)
 
 // Arrow with arrowhead (80% shaft, 20% head timing split)
-await animateRoughArrow(ctx, x1, y1, x2, y2, opts, durationMs);
+await animateRoughArrow(ctx, x1, y1, x2, y2, opts, durationMs)
 ```
 
 ### Smooth primitives (no wobble)
 
 ```js
 // Perfectly straight line
-await animateLine(ctx, x1, y1, x2, y2, opts, durationMs);
+await animateLine(ctx, x1, y1, x2, y2, opts, durationMs)
 
 // Perfect circle — r is radius
-await animateCircle(ctx, cx, cy, r, opts, durationMs);
+await animateCircle(ctx, cx, cy, r, opts, durationMs)
 
 // Clean arrow with precise arrowhead
-await animateArrow(ctx, x1, y1, x2, y2, opts, durationMs);
+await animateArrow(ctx, x1, y1, x2, y2, opts, durationMs)
 ```
 
 ### Text — NEVER animated, ALWAYS instant
@@ -162,13 +215,13 @@ await animateArrow(ctx, x1, y1, x2, y2, opts, durationMs);
 ```js
 // Text appears immediately (or after delay ms)
 drawText(ctx, 'Hello World', x, y, {
-  size: 48,          // font size in pixels
+  size: 48, // font size in pixels
   color: '#ffffff',
-  weight: 'bold',    // 'normal' | 'bold' | '600' etc.
-  align: 'center',   // 'left' | 'center' | 'right'
+  weight: 'bold', // 'normal' | 'bold' | '600' etc.
+  align: 'center', // 'left' | 'center' | 'right'
   font: 'sans-serif',
-  delay: 1500,       // optional: ms to wait before appearing
-});
+  delay: 1500, // optional: ms to wait before appearing
+})
 ```
 
 **CRITICAL**: Text NEVER animates character by character. Use `delay` to control when
@@ -178,13 +231,21 @@ the complete text appears. Never loop over characters.
 
 ```js
 // Fill a shape with a fade-in effect
-await fadeInFill(ctx, (ctx) => { ctx.fillRect(x, y, w, h); }, '#color', alpha, durationMs);
+await fadeInFill(
+  ctx,
+  (ctx) => {
+    ctx.fillRect(x, y, w, h)
+  },
+  '#color',
+  alpha,
+  durationMs,
+)
 
 // Simple delay
-await wait(500); // pause for 500ms
+await wait(500) // pause for 500ms
 
 // Draw a pre-loaded asset by ID
-await drawAsset(ctx, 'assetId', { x, y, width, height, opacity });
+await drawAsset(ctx, 'assetId', { x, y, width, height, opacity })
 ```
 
 ---
@@ -214,42 +275,54 @@ All drawing functions accept an `opts` object:
 
 ---
 
-## Chalkboard Scenes
+## Roughness and tool — automatic from style preset
 
-For chalkboard-style scenes:
-
-1. Set `bgColor` to a dark green or near-black (e.g. `'#1a3a2a'` or `'#111111'`)
-2. Use `tool: 'chalk'` for all strokes
-3. Use white or off-white stroke colors (`'#f0f0e8'`, `'#e8e0d0'`)
-4. Apply chalk texture once at the start (NOT in the draw loop):
+ROUGHNESS and TOOL are set automatically by the style preset.
+Use them as constants — do not override unless you have a specific
+reason for an individual element:
 
 ```js
-const canvas = document.getElementById('c');
-const ctx = canvas.getContext('2d');
+// Normal usage — inherits preset roughness and tool
+await animateRoughLine(
+  ctx,
+  x1,
+  y1,
+  x2,
+  y2,
+  {
+    color: STROKE_COLOR,
+    seed: 1,
+  },
+  600,
+)
 
-// Apply chalk texture once — cached after first call
-applyTextureOverlay(canvas, 'chalk', 42);
-
-// Now draw chalk elements
-async function runScene() {
-  await animateRoughLine(ctx, 200, 400, 1720, 400, {
-    tool: 'chalk',
-    color: '#f0f0e8',
-    width: 3,
-    seed: 42,
-  }, 800);
-
-  drawText(ctx, 'E = mc²', 960, 300, {
-    size: 120,
-    color: '#f0f0e8',
-    align: 'center',
-    font: 'serif',
-    delay: 900,
-  });
-}
-
-runScene();
+// Override for specific element (rare)
+await animateRoughLine(
+  ctx,
+  x1,
+  y1,
+  x2,
+  y2,
+  {
+    color: PALETTE[1],
+    roughness: 0, // force clean line for this one element
+    tool: 'pen', // force pen for annotation
+    seed: 2,
+  },
+  400,
+)
 ```
+
+Default opts when omitted:
+roughness: ROUGHNESS (from preset)
+tool: TOOL (from preset)
+color: STROKE_COLOR (from preset)
+
+## Texture overlays — automatic
+
+Texture overlays (grain, paper, chalk) are now applied automatically
+by the template based on the style preset. Do NOT call
+`applyTextureOverlay()` or `generateTextureCanvas()` in scene code.
 
 ---
 
@@ -260,14 +333,14 @@ Use async/await to sequence drawing operations:
 ```js
 async function runScene() {
   // Draw in sequence
-  await animateRoughRect(ctx, 100, 100, 400, 300, { tool: 'marker', color: '#3b82f6', seed: 1 }, 500);
-  await animateRoughLine(ctx, 300, 250, 900, 540, { tool: 'pen', color: '#ffffff', seed: 2 }, 400);
-  drawText(ctx, 'Result', 900, 540, { size: 48, color: '#ffffff', delay: 0 });
-  await wait(300);
-  await animateRoughArrow(ctx, 960, 200, 960, 800, { tool: 'pen', color: '#f97316', seed: 3 }, 600);
+  await animateRoughRect(ctx, 100, 100, 400, 300, { tool: 'marker', color: '#3b82f6', seed: 1 }, 500)
+  await animateRoughLine(ctx, 300, 250, 900, 540, { tool: 'pen', color: '#ffffff', seed: 2 }, 400)
+  drawText(ctx, 'Result', 900, 540, { size: 48, color: '#ffffff', delay: 0 })
+  await wait(300)
+  await animateRoughArrow(ctx, 960, 200, 960, 800, { tool: 'pen', color: '#f97316', seed: 3 }, 600)
 }
 
-runScene();
+runScene()
 ```
 
 For parallel animations, use `Promise.all`:
@@ -279,7 +352,7 @@ async function runScene() {
     animateRoughLine(ctx, 100, 200, 500, 200, { tool: 'marker', color: '#ef4444', seed: 1 }, 500),
     animateRoughLine(ctx, 100, 400, 500, 400, { tool: 'marker', color: '#22c55e', seed: 2 }, 500),
     animateRoughLine(ctx, 100, 600, 500, 600, { tool: 'marker', color: '#3b82f6', seed: 3 }, 500),
-  ]);
+  ])
 }
 ```
 
@@ -288,15 +361,17 @@ async function runScene() {
 ## Animation patterns
 
 **Fade-in (rAF loop):**
+
 ```js
-ctx.globalAlpha = easeOut(clamp01((t - startDelay) / fadeTime));
+ctx.globalAlpha = easeOut(clamp01((t - startDelay) / fadeTime))
 // draw element
-ctx.globalAlpha = 1; // always reset after
+ctx.globalAlpha = 1 // always reset after
 ```
 
 **Motion:**
+
 ```js
-const x = lerp(startX, endX, easeOut(clamp01((t - delay) / moveDur)));
+const x = lerp(startX, endX, easeOut(clamp01((t - delay) / moveDur)))
 ```
 
 **Stagger:** element N starts at `t = N * (DURATION / totalElements)`
@@ -312,8 +387,8 @@ const x = lerp(startX, endX, easeOut(clamp01((t - delay) / moveDur)));
 - `mulberry32` is injected by the renderer — it is available as a global
 
 ```js
-const rand = mulberry32(42); // fixed seed
-const x = rand() * 1920;    // deterministic "random" position
+const rand = mulberry32(42) // fixed seed
+const x = rand() * 1920 // deterministic "random" position
 ```
 
 ---
@@ -326,6 +401,7 @@ const x = rand() * 1920;    // deterministic "random" position
 - Do not reference DOM elements outside the canvas
 - Do not animate text character by character — text always appears as a whole unit
 - Do not re-define `mulberry32`, `drawText`, `animateRoughLine`, or any renderer function — they are already injected
+- Do not redeclare template globals (`DURATION`, `WIDTH`, `HEIGHT`, `PALETTE`, `ROUGHNESS`, `FONT`, `TOOL`, `STROKE_COLOR`) — they are already injected. Redeclaring with `const` causes a SyntaxError that silently kills the scene
 
 ---
 

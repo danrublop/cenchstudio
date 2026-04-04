@@ -1,0 +1,5 @@
+{
+  "name": "cench-studio-electron",
+  "private": true,
+  "main": "../dist-electron/main.js"
+}

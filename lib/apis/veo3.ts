@@ -11,27 +11,24 @@ export async function generateVeo3Video(opts: {
   aspectRatio: '16:9' | '9:16' | '1:1'
   durationSeconds: 5 | 8
 }): Promise<{ operationName: string }> {
-  const response = await fetch(
-    `${VEO3_BASE}/models/veo-3.0-generate-preview:generateVideo?key=${GOOGLE_AI_KEY()}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        prompt: { text: opts.prompt },
-        negativePrompt: opts.negativePrompt ? { text: opts.negativePrompt } : undefined,
-        generationConfig: {
-          mediaResolution: 'MEDIA_RESOLUTION_HIGH',
-          aspectRatio: opts.aspectRatio,
-          durationSeconds: opts.durationSeconds,
-        },
-      }),
-    }
-  )
+  const response = await fetch(`${VEO3_BASE}/models/veo-3.0-generate-preview:generateVideo?key=${GOOGLE_AI_KEY()}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      prompt: { text: opts.prompt },
+      negativePrompt: opts.negativePrompt ? { text: opts.negativePrompt } : undefined,
+      generationConfig: {
+        mediaResolution: 'MEDIA_RESOLUTION_HIGH',
+        aspectRatio: opts.aspectRatio,
+        durationSeconds: opts.durationSeconds,
+      },
+    }),
+  })
 
   if (response.status === 403 || response.status === 429) {
     throw new Error(
       `Veo 3 is not available (${response.status}). You may need waitlist access. ` +
-      'Consider using Canvas2D animations or existing video assets instead.'
+        'Consider using Canvas2D animations or existing video assets instead.',
     )
   }
 
@@ -50,9 +47,7 @@ export async function getVeo3Status(operationName: string): Promise<{
   videoUri?: string
   error?: string
 }> {
-  const response = await fetch(
-    `${VEO3_BASE}/${operationName}?key=${GOOGLE_AI_KEY()}`
-  )
+  const response = await fetch(`${VEO3_BASE}/${operationName}?key=${GOOGLE_AI_KEY()}`)
 
   const data = await response.json()
   if (!response.ok) {
@@ -77,9 +72,7 @@ export async function getVeo3Status(operationName: string): Promise<{
 
 export async function downloadVeo3Video(uri: string): Promise<Buffer> {
   // GCS URI format: gs://bucket/path or direct HTTPS URL
-  const url = uri.startsWith('gs://')
-    ? `https://storage.googleapis.com/${uri.slice(5)}`
-    : uri
+  const url = uri.startsWith('gs://') ? `https://storage.googleapis.com/${uri.slice(5)}` : uri
 
   const response = await fetch(url)
   if (!response.ok) throw new Error(`Failed to download Veo 3 video: ${response.status}`)
@@ -94,16 +87,18 @@ export async function enhanceVeo3Prompt(userPrompt: string): Promise<string> {
   const client = new Anthropic()
 
   const response = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-sonnet-4-6',
     max_tokens: 300,
-    messages: [{
-      role: 'user',
-      content: `Rewrite this video description into a detailed cinematic prompt for an AI video generator.
+    messages: [
+      {
+        role: 'user',
+        content: `Rewrite this video description into a detailed cinematic prompt for an AI video generator.
 Add camera movement, lighting, atmosphere, and visual quality terms. Keep it under 200 words.
 Do NOT output anything except the enhanced prompt text.
 
 User description: "${userPrompt}"`,
-    }],
+      },
+    ],
   })
 
   const text = response.content[0]

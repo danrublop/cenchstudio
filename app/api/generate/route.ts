@@ -13,6 +13,11 @@ function calcCost(usage: { input_tokens: number; output_tokens: number }) {
   return (usage.input_tokens / 1_000_000) * 3 + (usage.output_tokens / 1_000_000) * 15
 }
 
+function extractText(content: Anthropic.ContentBlock[]): string {
+  const block = content.find((b) => b.type === 'text')
+  return block?.type === 'text' ? block.text : ''
+}
+
 export async function POST(req: NextRequest) {
   const body = await req.json()
   const {
@@ -33,31 +38,47 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'ANTHROPIC_API_KEY not set' }, { status: 500 })
   }
 
+  const operation = edit ? 'edit' : enhance ? 'enhance' : summarize ? 'summarize' : 'generate'
+  console.log(`[Generate] ${operation}: prompt="${(prompt || editInstruction || '').slice(0, 120)}"`)
+
   try {
     if (edit) {
       if (!svgContent || !editInstruction) {
         return NextResponse.json({ error: 'svgContent and editInstruction required' }, { status: 400 })
       }
       const msg = await client.messages.create({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-4-6',
         max_tokens: 8192,
         system: EDIT_SYSTEM_PROMPT,
         messages: [{ role: 'user', content: `EXISTING SVG:\n${svgContent}\n\nEDIT INSTRUCTION:\n${editInstruction}` }],
       })
-      const text = msg.content[0].type === 'text' ? msg.content[0].text : ''
+      const text = extractText(msg.content)
       const costUsd = calcCost(msg.usage)
-      return NextResponse.json({ result: text, usage: { input_tokens: msg.usage.input_tokens, output_tokens: msg.usage.output_tokens, cost_usd: costUsd } })
+      console.log(
+        `[Generate] edit complete: tokens=${msg.usage.input_tokens}in/${msg.usage.output_tokens}out cost=$${costUsd.toFixed(4)}`,
+      )
+      return NextResponse.json({
+        result: text,
+        usage: { input_tokens: msg.usage.input_tokens, output_tokens: msg.usage.output_tokens, cost_usd: costUsd },
+      })
     }
 
     if (enhance) {
       const msg = await client.messages.create({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-4-6',
         max_tokens: 512,
         system: ENHANCE_SYSTEM_PROMPT,
         messages: [{ role: 'user', content: `Enhance this scene description: "${prompt}"` }],
       })
-      const text = msg.content[0].type === 'text' ? msg.content[0].text : ''
-      return NextResponse.json({ result: text })
+      const text = extractText(msg.content)
+      const costUsd = calcCost(msg.usage)
+      console.log(
+        `[Generate] enhance complete: tokens=${msg.usage.input_tokens}in/${msg.usage.output_tokens}out cost=$${costUsd.toFixed(4)}`,
+      )
+      return NextResponse.json({
+        result: text,
+        usage: { input_tokens: msg.usage.input_tokens, output_tokens: msg.usage.output_tokens, cost_usd: costUsd },
+      })
     }
 
     if (summarize) {
@@ -65,9 +86,14 @@ export async function POST(req: NextRequest) {
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 200,
         system: SUMMARY_SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: `Original prompt: "${prompt}"\n\nSVG content (truncated): ${svgContent.slice(0, 2000)}` }],
+        messages: [
+          {
+            role: 'user',
+            content: `Original prompt: "${prompt}"\n\nSVG content (truncated): ${svgContent.slice(0, 2000)}`,
+          },
+        ],
       })
-      const text = msg.content[0].type === 'text' ? msg.content[0].text : ''
+      const text = extractText(msg.content)
       return NextResponse.json({ result: text })
     }
 
@@ -77,14 +103,20 @@ export async function POST(req: NextRequest) {
 
     const systemPrompt = SVG_SYSTEM_PROMPT(palette, strokeWidth, font, duration, previousSummary)
     const msg = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: 8192,
       system: systemPrompt,
       messages: [{ role: 'user', content: prompt }],
     })
-    const text = msg.content[0].type === 'text' ? msg.content[0].text : ''
+    const text = extractText(msg.content)
     const costUsd = calcCost(msg.usage)
-    return NextResponse.json({ result: text, usage: { input_tokens: msg.usage.input_tokens, output_tokens: msg.usage.output_tokens, cost_usd: costUsd } })
+    console.log(
+      `[Generate] generate complete: tokens=${msg.usage.input_tokens}in/${msg.usage.output_tokens}out cost=$${costUsd.toFixed(4)} resultLen=${text.length}`,
+    )
+    return NextResponse.json({
+      result: text,
+      usage: { input_tokens: msg.usage.input_tokens, output_tokens: msg.usage.output_tokens, cost_usd: costUsd },
+    })
   } catch (err: unknown) {
     console.error('Generate error:', err)
     const message = err instanceof Error ? err.message : 'Internal error'

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import fs from 'fs'
 import path from 'path'
 import type { PublishedProject, PublishedScene } from '@/lib/types'
+import { normalizeTransition } from '@/lib/transitions'
 
 export async function POST(req: NextRequest) {
   try {
@@ -22,12 +23,23 @@ export async function POST(req: NextRequest) {
 
     // Copy scene HTML files
     const publishedScenes: PublishedScene[] = []
+    const missingSceneIds: string[] = []
     for (const scene of scenes) {
       const srcPath = path.join(process.cwd(), 'public', 'scenes', `${scene.id}.html`)
       const destPath = path.join(scenesDir, `${scene.id}.html`)
 
-      if (fs.existsSync(srcPath)) {
+      if (!fs.existsSync(srcPath)) {
+        console.warn(`[Publish] Scene HTML missing: ${scene.id}.html`)
+        missingSceneIds.push(scene.id)
+        continue
+      }
+
+      try {
         fs.copyFileSync(srcPath, destPath)
+      } catch (e) {
+        console.error(`[Publish] Failed to copy scene HTML for ${scene.id}:`, e)
+        missingSceneIds.push(scene.id)
+        continue
       }
 
       publishedScenes.push({
@@ -38,8 +50,18 @@ export async function POST(req: NextRequest) {
         htmlContent: null,
         interactions: scene.interactions ?? [],
         variables: scene.variables ?? [],
-        transition: scene.transition ?? 'none',
+        transition: normalizeTransition(scene.transition),
       })
+    }
+
+    if (missingSceneIds.length > 0) {
+      return NextResponse.json(
+        {
+          error: `Failed to publish: ${missingSceneIds.length} scene(s) are missing HTML files. Regenerate them and try again.`,
+          missingSceneIds,
+        },
+        { status: 400 },
+      )
     }
 
     // Copy uploaded assets referenced in scenes
@@ -62,7 +84,9 @@ export async function POST(req: NextRequest) {
       try {
         const existing = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'))
         version = (existing.version ?? 0) + 1
-      } catch {}
+      } catch (e) {
+        console.warn('[Publish] Failed to parse existing manifest, starting at version 1:', (e as Error).message)
+      }
     }
 
     // Generate manifest
@@ -73,7 +97,7 @@ export async function POST(req: NextRequest) {
       playerOptions: {
         theme: project.interactiveSettings?.playerTheme ?? 'dark',
         showProgressBar: project.interactiveSettings?.showProgressBar ?? true,
-        showSceneNav: project.interactiveSettings?.showSceneNav ?? true,
+        showSceneNav: project.interactiveSettings?.showSceneNav ?? false,
         allowFullscreen: project.interactiveSettings?.allowFullscreen ?? true,
         brandColor: project.interactiveSettings?.brandColor ?? '#e84545',
         autoplay: true,

@@ -1,41 +1,48 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { CANVAS_SYSTEM_PROMPT } from '../../../lib/generation/prompts'
+import { withHandler } from '@/lib/api/with-handler'
+import { validateBody } from '@/lib/api/validate'
+import { apiSuccess, apiError, apiValidationError } from '@/lib/api/response'
+import { generateCanvasSchema } from '@/lib/api/schemas/generate'
+import { env } from '@/lib/env'
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY || undefined })
 
-export async function POST(req: NextRequest) {
+export const POST = withHandler(async (req: NextRequest) => {
   const body = await req.json()
-  const {
-    prompt,
-    palette = ['#181818', '#121212', '#e84545', '#151515', '#f0ece0'],
-    bgColor = '#fffef9',
-    duration = 8,
-    previousSummary = '',
-  } = body
+  const result = validateBody(generateCanvasSchema, body)
+  if (!result.success) return result.error
 
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return NextResponse.json({ error: 'ANTHROPIC_API_KEY not set' }, { status: 500 })
+  const { prompt, palette, bgColor, duration, previousSummary } = result.data
+
+  if (!env.ANTHROPIC_API_KEY) {
+    return apiError('ANTHROPIC_API_KEY not set', 500)
   }
 
-  if (!prompt) {
-    return NextResponse.json({ error: 'prompt is required' }, { status: 400 })
+  const systemPrompt = CANVAS_SYSTEM_PROMPT(palette, bgColor, duration, previousSummary)
+  const msg = await client.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 16384,
+    system: systemPrompt,
+    messages: [{ role: 'user', content: prompt }],
+  })
+
+  if (msg.stop_reason === 'max_tokens') {
+    console.warn(`[generate-canvas] Output truncated (${msg.usage.output_tokens} tokens)`)
+    return apiError('Scene code was too long and got cut off — try a simpler prompt or break into multiple scenes', 422)
   }
 
-  try {
-    const systemPrompt = CANVAS_SYSTEM_PROMPT(palette, bgColor, duration, previousSummary)
-    const msg = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 8192,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: prompt }],
-    })
-    const text = msg.content[0].type === 'text' ? msg.content[0].text : ''
-    const costUsd = (msg.usage.input_tokens / 1_000_000) * 3 + (msg.usage.output_tokens / 1_000_000) * 15
-    return NextResponse.json({ result: text, usage: { input_tokens: msg.usage.input_tokens, output_tokens: msg.usage.output_tokens, cost_usd: costUsd } })
-  } catch (err: unknown) {
-    console.error('Canvas generate error:', err)
-    const message = err instanceof Error ? err.message : 'Internal error'
-    return NextResponse.json({ error: message }, { status: 500 })
-  }
-}
+  const textBlock = msg.content.find((b: Anthropic.ContentBlock) => b.type === 'text')
+  const text = textBlock?.type === 'text' ? textBlock.text : ''
+  const costUsd = (msg.usage.input_tokens / 1_000_000) * 3 + (msg.usage.output_tokens / 1_000_000) * 15
+
+  return apiSuccess({
+    result: text,
+    usage: {
+      input_tokens: msg.usage.input_tokens,
+      output_tokens: msg.usage.output_tokens,
+      cost_usd: costUsd,
+    },
+  })
+})

@@ -1,15 +1,127 @@
 'use client'
 
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { useParams } from 'next/navigation'
-import type { PublishedProject, PublishedScene, InteractionElement, SceneEdge } from '@/lib/types'
+import type { InteractionElement } from '@/lib/types'
+import type { TransitionType } from '@/lib/transitions'
+import { transitionUsesBlendInPlayer } from '@/lib/transitions'
+import { InteractionRenderer, InteractionStyles } from '@/components/interactions/InteractionRenderer'
+import type { InteractionCallbacks } from '@/components/interactions/InteractionRenderer'
 
-interface PlayerState {
-  currentSceneId: string | null
-  playhead: number       // seconds into current scene
-  isPlaying: boolean
-  variables: Record<string, string>
+// ── Types (inline to avoid importing full lib/types) ─────────────────────────
+
+interface PlayerOptions {
+  theme: string
+  showProgressBar: boolean
+  showSceneNav: boolean
+  allowFullscreen: boolean
+  brandColor: string
+  autoplay: boolean
 }
+
+interface SceneEdge {
+  fromSceneId: string
+  toSceneId: string
+  condition: {
+    type: 'auto' | 'hotspot' | 'choice' | 'quiz' | 'gate' | 'variable'
+    interactionId?: string | null
+    variableName?: string | null
+    variableValue?: string | null
+  }
+}
+
+interface PublishedScene {
+  id: string
+  type: string
+  duration: number
+  htmlUrl: string
+  htmlContent: string | null
+  interactions: InteractionElement[]
+  variables: { name: string; defaultValue: string }[]
+  transition: TransitionType
+}
+
+interface PublishedProject {
+  id: string
+  version: number
+  name: string
+  playerOptions: PlayerOptions
+  sceneGraph: { nodes: any[]; edges: SceneEdge[]; startSceneId: string }
+  scenes: PublishedScene[]
+}
+
+// ── ScenePlayer (inline — postMessage sync with GSAP iframe) ─────────────────
+
+class ScenePlayer {
+  private iframe: HTMLIFrameElement
+  private sceneId: string
+  private handler: (e: MessageEvent) => void
+
+  public currentTime = 0
+  public duration = 0
+  public status: 'loading' | 'ready' | 'playing' | 'paused' | 'ended' = 'loading'
+
+  onTimeUpdate?: (t: number) => void
+  onEnded?: () => void
+  onReady?: (duration: number) => void
+
+  constructor(iframe: HTMLIFrameElement, sceneId: string) {
+    this.iframe = iframe
+    this.sceneId = sceneId
+    this.handler = (e: MessageEvent) => {
+      const d = e.data
+      if (!d || d.source !== 'cench-scene') return
+      if (d.sceneId !== this.sceneId) return
+      switch (d.type) {
+        case 'ready':
+          this.duration = d.duration ?? 0
+          this.status = 'paused'
+          this.onReady?.(this.duration)
+          break
+        case 'timeupdate':
+          this.currentTime = d.currentTime ?? 0
+          this.onTimeUpdate?.(this.currentTime)
+          break
+        case 'ended':
+          this.status = 'ended'
+          this.onEnded?.()
+          break
+        case 'playing':
+          this.status = 'playing'
+          break
+        case 'paused':
+          this.status = 'paused'
+          this.currentTime = d.currentTime ?? this.currentTime
+          break
+      }
+    }
+    window.addEventListener('message', this.handler)
+  }
+
+  private send(msg: Record<string, unknown>) {
+    try {
+      this.iframe.contentWindow?.postMessage({ target: 'cench-scene', sceneId: this.sceneId, ...msg }, '*')
+    } catch {}
+  }
+
+  play() {
+    this.send({ type: 'play' })
+  }
+  pause() {
+    this.send({ type: 'pause' })
+  }
+  seek(time: number) {
+    this.send({ type: 'seek', time })
+  }
+  reset() {
+    this.send({ type: 'reset' })
+  }
+  destroy() {
+    window.removeEventListener('message', this.handler)
+  }
+}
+
+// ── Published viewer ─────────────────────────────────────────────────────────
 
 export default function ViewerPage() {
   const params = useParams()
@@ -17,20 +129,21 @@ export default function ViewerPage() {
 
   const [manifest, setManifest] = useState<PublishedProject | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [state, setState] = useState<PlayerState>({
-    currentSceneId: null,
-    playhead: 0,
-    isPlaying: false,
-    variables: {},
-  })
-  const [gateActive, setGateActive] = useState(false)
+  const [currentSceneId, setCurrentSceneId] = useState<string | null>(null)
+  const [playhead, setPlayhead] = useState(0)
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [variables, setVariables] = useState<Record<string, string>>({})
+  const [transitioning, setTransitioning] = useState(false)
 
   const iframeRef = useRef<HTMLIFrameElement>(null)
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const sessionId = useRef(crypto.randomUUID())
+  const playerRef = useRef<ScenePlayer | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const sessionId = useRef(typeof crypto !== 'undefined' ? crypto.randomUUID() : 'no-crypto')
+  const triggeredGatesRef = useRef<Set<string>>(new Set())
+  const appearedRef = useRef<Set<string>>(new Set())
 
-  // Track event
+  // ── Track analytics ──
+
   const track = useCallback(
     (event: string, data: Record<string, unknown> = {}) => {
       fetch('/api/analytics', {
@@ -39,10 +152,11 @@ export default function ViewerPage() {
         body: JSON.stringify({ projectId, event, data, sessionId: sessionId.current }),
       }).catch(() => {})
     },
-    [projectId]
+    [projectId],
   )
 
-  // Load manifest
+  // ── Load manifest ──
+
   useEffect(() => {
     fetch(`/published/${projectId}/manifest.json`)
       .then((r) => {
@@ -53,20 +167,36 @@ export default function ViewerPage() {
         setManifest(data)
         if (data.scenes.length > 0) {
           const startId = data.sceneGraph.startSceneId || data.scenes[0].id
-          setState((s) => ({ ...s, currentSceneId: startId }))
+          setCurrentSceneId(startId)
           track('project_started')
         }
       })
       .catch((err) => setError(err.message))
   }, [projectId, track])
 
-  const currentScene = manifest?.scenes.find((s) => s.id === state.currentSceneId) ?? null
+  const currentScene = useMemo(
+    () => manifest?.scenes.find((s) => s.id === currentSceneId) ?? null,
+    [manifest, currentSceneId],
+  )
 
-  // Load scene HTML into iframe
+  const totalDuration = useMemo(() => manifest?.scenes.reduce((a, s) => a + s.duration, 0) ?? 0, [manifest])
+
+  const sceneOffset = useMemo(() => {
+    if (!manifest || !currentSceneId) return 0
+    const idx = manifest.scenes.findIndex((s) => s.id === currentSceneId)
+    return manifest.scenes.slice(0, idx).reduce((a, s) => a + s.duration, 0)
+  }, [manifest, currentSceneId])
+
+  // ── Load scene into iframe ──
+
   useEffect(() => {
     if (!currentScene || !iframeRef.current) return
 
     const loadScene = async () => {
+      // Clean up previous player
+      playerRef.current?.destroy()
+      playerRef.current = null
+
       let html: string
       if (currentScene.htmlContent) {
         html = currentScene.htmlContent
@@ -76,106 +206,209 @@ export default function ViewerPage() {
       }
 
       // Variable interpolation
-      for (const [name, value] of Object.entries(state.variables)) {
+      for (const [name, value] of Object.entries(variables)) {
         html = html.replaceAll(`{${name}}`, value)
       }
 
+      // Approximate blend handoff (full xfade parity only in MP4 export)
+      if (transitionUsesBlendInPlayer(currentScene.transition)) {
+        setTransitioning(true)
+        setTimeout(() => setTransitioning(false), 500)
+      }
+
       iframeRef.current!.srcdoc = html
-      setState((s) => ({ ...s, playhead: 0, isPlaying: true }))
-      setGateActive(false)
+      setPlayhead(0)
+      triggeredGatesRef.current.clear()
+      appearedRef.current.clear()
+
+      // Create ScenePlayer for GSAP sync
+      const player = new ScenePlayer(iframeRef.current!, currentScene.id)
+      playerRef.current = player
+
+      player.onTimeUpdate = (t) => {
+        setPlayhead(t)
+      }
+
+      player.onReady = () => {
+        if (manifest?.playerOptions.autoplay || isPlaying) {
+          player.play()
+          setIsPlaying(true)
+        }
+      }
+
+      player.onEnded = () => {
+        handleSceneEnd()
+      }
 
       track('scene_viewed', { sceneId: currentScene.id, type: currentScene.type })
     }
 
     loadScene()
-  }, [state.currentSceneId, currentScene?.id])
-
-  // Playhead timer
-  useEffect(() => {
-    if (timerRef.current) clearInterval(timerRef.current)
-
-    if (state.isPlaying && currentScene && !gateActive) {
-      timerRef.current = setInterval(() => {
-        setState((s) => {
-          const next = s.playhead + 0.1
-          // Check for gate interactions
-          const gate = currentScene.interactions.find(
-            (i) => i.type === 'gate' && i.appearsAt <= next && next < i.appearsAt + 0.2
-          )
-          if (gate) {
-            setGateActive(true)
-            // Pause iframe
-            try {
-              ;(iframeRef.current?.contentWindow as any)?.__pause?.()
-            } catch {}
-            return { ...s, playhead: next, isPlaying: false }
-          }
-
-          if (next >= currentScene.duration) {
-            handleSceneEnd()
-            return { ...s, playhead: currentScene.duration, isPlaying: false }
-          }
-          return { ...s, playhead: next }
-        })
-      }, 100)
-    }
 
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current)
+      playerRef.current?.destroy()
+      playerRef.current = null
     }
-  }, [state.isPlaying, currentScene, gateActive])
+  }, [currentSceneId, currentScene?.id])
+
+  // ── Gate detection via RAF polling ──
+
+  useEffect(() => {
+    if (!isPlaying || !currentScene) return
+    let rafId: number
+
+    const checkGates = () => {
+      if (!playerRef.current) return
+      const t = playerRef.current.currentTime
+
+      for (const el of currentScene.interactions) {
+        if (el.type === 'gate' && !triggeredGatesRef.current.has(el.id)) {
+          const minWatch = (el as any).minimumWatchTime ?? 0
+          if (t >= el.appearsAt && t < el.appearsAt + 0.3 && t >= minWatch) {
+            triggeredGatesRef.current.add(el.id)
+            playerRef.current?.pause()
+            setIsPlaying(false)
+            return
+          }
+        }
+      }
+      rafId = requestAnimationFrame(checkGates)
+    }
+
+    rafId = requestAnimationFrame(checkGates)
+    return () => cancelAnimationFrame(rafId)
+  }, [isPlaying, currentScene])
+
+  // ── Scene end handling ──
 
   const handleSceneEnd = useCallback(() => {
-    if (!manifest || !state.currentSceneId) return
-    const edge = manifest.sceneGraph.edges.find(
-      (e) => e.fromSceneId === state.currentSceneId && e.condition.type === 'auto'
-    )
-    if (edge) {
-      track('path_taken', {
-        fromSceneId: state.currentSceneId,
-        toSceneId: edge.toSceneId,
-        edgeCondition: 'auto',
-      })
-      setState((s) => ({ ...s, currentSceneId: edge.toSceneId }))
+    if (!manifest || !currentSceneId) return
+
+    // Check variable-condition edges first
+    const edges = manifest.sceneGraph.edges.filter((e) => e.fromSceneId === currentSceneId)
+    for (const edge of edges) {
+      if (edge.condition.type === 'variable') {
+        const val = variables[edge.condition.variableName!]
+        if (val === edge.condition.variableValue) {
+          track('path_taken', { fromSceneId: currentSceneId, toSceneId: edge.toSceneId, edgeCondition: 'variable' })
+          setCurrentSceneId(edge.toSceneId)
+          return
+        }
+      }
+    }
+
+    // Fall back to auto edge
+    const autoEdge = edges.find((e) => e.condition.type === 'auto')
+    if (autoEdge) {
+      track('path_taken', { fromSceneId: currentSceneId, toSceneId: autoEdge.toSceneId, edgeCondition: 'auto' })
+      setCurrentSceneId(autoEdge.toSceneId)
     } else {
+      // No more scenes
+      setIsPlaying(false)
       track('project_completed')
     }
-  }, [manifest, state.currentSceneId, track])
+  }, [manifest, currentSceneId, variables, track])
+
+  // ── Navigation helpers ──
 
   const goToScene = useCallback(
     (sceneId: string, reason = 'interaction') => {
-      track('path_taken', {
-        fromSceneId: state.currentSceneId,
-        toSceneId: sceneId,
-        edgeCondition: reason,
-      })
-      setState((s) => ({ ...s, currentSceneId: sceneId }))
+      track('path_taken', { fromSceneId: currentSceneId, toSceneId: sceneId, edgeCondition: reason })
+      setCurrentSceneId(sceneId)
     },
-    [state.currentSceneId, track]
+    [currentSceneId, track],
   )
 
-  const handleGateContinue = useCallback(() => {
-    setGateActive(false)
-    setState((s) => ({ ...s, isPlaying: true }))
-    try {
-      ;(iframeRef.current?.contentWindow as any)?.__resume?.()
-    } catch {}
-  }, [])
+  const togglePlay = useCallback(() => {
+    if (isPlaying) {
+      playerRef.current?.pause()
+      setIsPlaying(false)
+    } else {
+      playerRef.current?.play()
+      setIsPlaying(true)
+    }
+  }, [isPlaying])
 
-  const handleInteraction = useCallback(
-    (el: InteractionElement) => {
-      track('interaction_fired', { sceneId: state.currentSceneId, interactionId: el.id, type: el.type })
+  // ── Interaction callbacks ──
 
-      if (el.type === 'hotspot') {
+  const setVariable = useCallback(
+    (name: string, value: string) => {
+      setVariables((prev) => ({ ...prev, [name]: value }))
+      track('variable_set', { name, value })
+    },
+    [track],
+  )
+
+  const interactionCallbacks: InteractionCallbacks = useMemo(
+    () => ({
+      brandColor: manifest?.playerOptions.brandColor || '#e84545',
+      onHotspotClick: (el) => {
+        track('interaction_fired', { sceneId: currentSceneId, interactionId: el.id, type: 'hotspot' })
         if (el.jumpsToSceneId) goToScene(el.jumpsToSceneId, 'hotspot')
-      } else if (el.type === 'choice') {
-        // Choices handled per-option
-      } else if (el.type === 'gate') {
-        handleGateContinue()
-      }
-    },
-    [state.currentSceneId, track, goToScene, handleGateContinue]
+      },
+      onChoiceSelect: (el, optionId, jumpsToSceneId) => {
+        track('interaction_fired', { sceneId: currentSceneId, interactionId: el.id, type: 'choice', optionId })
+        if (jumpsToSceneId) goToScene(jumpsToSceneId, 'choice')
+      },
+      onQuizAnswer: (el, selectedOptionId, correct) => {
+        track('interaction_fired', {
+          sceneId: currentSceneId,
+          interactionId: el.id,
+          type: 'quiz',
+          correct,
+          selectedOptionId,
+        })
+        setTimeout(() => {
+          if (correct) {
+            if (el.onCorrect === 'jump' && el.onCorrectSceneId) {
+              goToScene(el.onCorrectSceneId, 'quiz-correct')
+            } else {
+              // Continue playback
+              playerRef.current?.play()
+              setIsPlaying(true)
+            }
+          } else {
+            if (el.onWrong === 'retry') {
+              // Reset handled inside QuizRenderer
+            } else if (el.onWrong === 'jump' && el.onWrongSceneId) {
+              goToScene(el.onWrongSceneId, 'quiz-wrong')
+            } else {
+              playerRef.current?.play()
+              setIsPlaying(true)
+            }
+          }
+        }, 1500)
+      },
+      onGateContinue: (_el) => {
+        track('interaction_fired', { sceneId: currentSceneId, interactionId: _el.id, type: 'gate' })
+        playerRef.current?.play()
+        setIsPlaying(true)
+      },
+      onFormSubmit: (el, values) => {
+        track('interaction_fired', { sceneId: currentSceneId, interactionId: el.id, type: 'form' })
+        // Set variables from mapping
+        for (const mapping of el.setsVariables) {
+          const val = values[mapping.fieldId] ?? ''
+          setVariable(mapping.variableName, val)
+        }
+        if (el.jumpsToSceneId) {
+          goToScene(el.jumpsToSceneId, 'form')
+        } else {
+          playerRef.current?.play()
+          setIsPlaying(true)
+        }
+      },
+      onResume: () => {
+        playerRef.current?.play()
+        setIsPlaying(true)
+      },
+      variables,
+      setVariable,
+    }),
+    [manifest, currentSceneId, goToScene, track, variables, setVariable],
   )
+
+  // ── Render ──
 
   if (error) {
     return (
@@ -197,44 +430,55 @@ export default function ViewerPage() {
   }
 
   const brandColor = manifest.playerOptions.brandColor || '#e84545'
-  const progress = currentScene.duration > 0 ? (state.playhead / currentScene.duration) * 100 : 0
+  const totalProgress = totalDuration > 0 ? ((sceneOffset + playhead) / totalDuration) * 100 : 0
+  const totalElapsed = sceneOffset + playhead
 
   return (
     <div className="flex flex-col h-screen bg-black">
+      <InteractionStyles />
+
       {/* Player container */}
       <div ref={containerRef} className="flex-1 relative flex items-center justify-center overflow-hidden">
-        {/* Scene iframe */}
-        <div className="relative w-full h-full" style={{ maxWidth: '100vw', maxHeight: '100vh', aspectRatio: '16/9' }}>
+        <div
+          className="relative w-full h-full"
+          style={{
+            maxWidth: '100vw',
+            maxHeight: '100vh',
+            aspectRatio: '16/9',
+          }}
+        >
+          {/* Scene iframe with optional blend-in between scenes */}
           <iframe
             ref={iframeRef}
             className="w-full h-full border-none bg-white"
-            sandbox="allow-scripts allow-same-origin"
+            sandbox="allow-scripts allow-same-origin allow-autoplay"
             title="Scene"
+            style={{
+              opacity: transitioning ? 0 : 1,
+              transition: 'opacity 0.5s ease',
+            }}
           />
 
           {/* Interaction overlay */}
           <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 10 }}>
             {currentScene.interactions
               .filter((el) => {
-                if (state.playhead < el.appearsAt) return false
-                if (el.hidesAt !== null && state.playhead > el.hidesAt) return false
+                if (playhead < el.appearsAt) return false
+                if (el.hidesAt !== null && playhead >= el.hidesAt) return false
                 return true
               })
-              .map((el) => (
-                <InteractionRenderer
-                  key={el.id}
-                  element={el}
-                  brandColor={brandColor}
-                  onInteraction={handleInteraction}
-                  onChoiceSelect={(optionSceneId) => goToScene(optionSceneId, 'choice')}
-                  onGateContinue={handleGateContinue}
-                  variables={state.variables}
-                  setVariable={(name, value) => {
-                    setState((s) => ({ ...s, variables: { ...s.variables, [name]: value } }))
-                    track('variable_set', { name, value })
-                  }}
-                />
-              ))}
+              .map((el) => {
+                const firstAppearance = !appearedRef.current.has(el.id)
+                if (firstAppearance) appearedRef.current.add(el.id)
+                return (
+                  <InteractionRenderer
+                    key={el.id}
+                    element={el}
+                    callbacks={interactionCallbacks}
+                    firstAppearance={firstAppearance}
+                  />
+                )
+              })}
           </div>
         </div>
       </div>
@@ -242,433 +486,89 @@ export default function ViewerPage() {
       {/* Controls bar */}
       {manifest.playerOptions.showProgressBar && (
         <div className="flex-shrink-0 px-4 py-2 bg-black/80 border-t border-white/10">
-          {/* Progress bar */}
+          {/* Total progress bar */}
           <div className="w-full h-1 bg-white/10 rounded-full mb-2 cursor-pointer">
             <div
-              className="h-full rounded-full transition-all duration-100"
-              style={{ width: `${progress}%`, background: brandColor }}
+              className="h-full rounded-full transition-all duration-150"
+              style={{ width: `${Math.min(totalProgress, 100)}%`, background: brandColor }}
             />
           </div>
 
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <button
-                onClick={() => {
-                  if (state.isPlaying) {
-                    try { (iframeRef.current?.contentWindow as any)?.__pause?.() } catch {}
-                  } else {
-                    try { (iframeRef.current?.contentWindow as any)?.__resume?.() } catch {}
-                  }
-                  setState((s) => ({ ...s, isPlaying: !s.isPlaying }))
+              <span
+                role="button"
+                tabIndex={0}
+                onClick={togglePlay}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') togglePlay()
                 }}
-                className="text-white hover:opacity-80 transition-opacity"
+                className="text-white hover:opacity-80 transition-opacity cursor-pointer"
               >
-                {state.isPlaying ? (
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                {isPlaying ? (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                    <rect x="6" y="4" width="4" height="16" />
+                    <rect x="14" y="4" width="4" height="16" />
+                  </svg>
                 ) : (
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                    <polygon points="5,3 19,12 5,21" />
+                  </svg>
                 )}
-              </button>
+              </span>
               <span className="text-[11px] text-white/50 font-mono">
-                {Math.floor(state.playhead)}s / {currentScene.duration}s
+                {formatTime(totalElapsed)} / {formatTime(totalDuration)}
               </span>
             </div>
 
-            {manifest.playerOptions.showSceneNav && (
-              <div className="flex items-center gap-1">
-                {manifest.scenes.map((s, i) => (
-                  <button
-                    key={s.id}
-                    onClick={() => goToScene(s.id, 'nav')}
-                    className="w-2 h-2 rounded-full transition-all"
-                    style={{
-                      background: s.id === state.currentSceneId ? brandColor : 'rgba(255,255,255,0.2)',
-                    }}
-                    title={`Scene ${i + 1}`}
-                  />
-                ))}
-              </div>
-            )}
-
-            {manifest.playerOptions.allowFullscreen && (
-              <button
-                onClick={() => containerRef.current?.requestFullscreen?.()}
-                className="text-white/50 hover:text-white transition-colors"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
-                </svg>
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── Interaction renderers ─────────────────────────────────────────────────────
-
-function InteractionRenderer({
-  element: el,
-  brandColor,
-  onInteraction,
-  onChoiceSelect,
-  onGateContinue,
-  variables,
-  setVariable,
-}: {
-  element: InteractionElement
-  brandColor: string
-  onInteraction: (el: InteractionElement) => void
-  onChoiceSelect: (sceneId: string) => void
-  onGateContinue: () => void
-  variables: Record<string, string>
-  setVariable: (name: string, value: string) => void
-}) {
-  if (el.type === 'hotspot') {
-    return (
-      <div
-        className="pointer-events-auto cursor-pointer"
-        style={{
-          position: 'absolute',
-          left: `${el.x}%`, top: `${el.y}%`,
-          width: `${el.width}%`, height: `${el.height}%`,
-          borderRadius: el.shape === 'circle' ? '50%' : el.shape === 'pill' ? '999px' : '8px',
-          background: `${el.color}33`,
-          border: `2px solid ${el.color}`,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          animation: el.style === 'pulse' ? 'cench-studio-pulse 2s infinite' : undefined,
-        }}
-        onClick={() => onInteraction(el)}
-      >
-        {el.label && <span style={{ color: 'white', fontSize: 14, fontWeight: 600 }}>{el.label}</span>}
-      </div>
-    )
-  }
-
-  if (el.type === 'choice') {
-    return (
-      <div
-        className="pointer-events-auto"
-        style={{
-          position: 'absolute',
-          left: `${el.x}%`, top: `${el.y}%`,
-          width: `${el.width}%`,
-          background: 'rgba(0,0,0,0.85)',
-          borderRadius: 12,
-          padding: 20,
-          backdropFilter: 'blur(8px)',
-        }}
-      >
-        {el.question && (
-          <p style={{ color: 'white', fontSize: 16, fontWeight: 600, marginBottom: 12, textAlign: 'center' }}>
-            {el.question}
-          </p>
-        )}
-        <div style={{ display: 'flex', flexDirection: el.layout === 'vertical' ? 'column' : 'row', gap: 8 }}>
-          {el.options.map((opt) => (
-            <button
-              key={opt.id}
-              onClick={() => onChoiceSelect(opt.jumpsToSceneId)}
-              style={{
-                flex: 1,
-                padding: '10px 16px',
-                borderRadius: 8,
-                border: `2px solid ${opt.color || brandColor}`,
-                background: 'transparent',
-                color: 'white',
-                fontSize: 14,
-                fontWeight: 600,
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-              }}
-              onMouseEnter={(e) => { (e.target as HTMLElement).style.background = `${opt.color || brandColor}33` }}
-              onMouseLeave={(e) => { (e.target as HTMLElement).style.background = 'transparent' }}
-            >
-              {opt.icon && <span style={{ marginRight: 6 }}>{opt.icon}</span>}
-              {opt.label}
-            </button>
-          ))}
-        </div>
-      </div>
-    )
-  }
-
-  if (el.type === 'quiz') {
-    return <QuizRenderer element={el} brandColor={brandColor} onInteraction={onInteraction} />
-  }
-
-  if (el.type === 'gate') {
-    return (
-      <div
-        className="pointer-events-auto"
-        style={{
-          position: 'absolute',
-          left: '50%', top: '50%',
-          transform: 'translate(-50%, -50%)',
-        }}
-      >
-        <button
-          onClick={onGateContinue}
-          style={{
-            padding: '12px 32px',
-            borderRadius: 8,
-            background: brandColor,
-            color: 'white',
-            fontSize: 16,
-            fontWeight: 700,
-            border: 'none',
-            cursor: 'pointer',
-            boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
-          }}
-        >
-          {el.buttonLabel || 'Continue →'}
-        </button>
-      </div>
-    )
-  }
-
-  if (el.type === 'tooltip') {
-    return (
-      <div
-        className="pointer-events-auto group"
-        style={{
-          position: 'absolute',
-          left: `${el.x}%`, top: `${el.y}%`,
-          width: `${el.width}%`, height: `${el.height}%`,
-        }}
-      >
-        <div
-          style={{
-            width: '100%', height: '100%',
-            borderRadius: el.triggerShape === 'circle' ? '50%' : '6px',
-            border: `2px solid ${el.triggerColor}`,
-            background: `${el.triggerColor}22`,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            cursor: 'help',
-            animation: 'cench-studio-pulse 3s infinite',
-          }}
-        >
-          {el.triggerLabel && (
-            <span style={{ color: 'white', fontSize: 11, fontWeight: 600 }}>{el.triggerLabel}</span>
-          )}
-        </div>
-        {/* Tooltip card - shown on hover via CSS */}
-        <div
-          style={{
-            position: 'absolute',
-            ...(el.tooltipPosition === 'top' ? { bottom: '110%', left: '50%', transform: 'translateX(-50%)' } :
-              el.tooltipPosition === 'bottom' ? { top: '110%', left: '50%', transform: 'translateX(-50%)' } :
-              el.tooltipPosition === 'left' ? { right: '110%', top: '50%', transform: 'translateY(-50%)' } :
-              { left: '110%', top: '50%', transform: 'translateY(-50%)' }),
-            maxWidth: el.tooltipMaxWidth,
-            background: 'rgba(0,0,0,0.9)',
-            borderRadius: 8,
-            padding: '10px 14px',
-            opacity: 0,
-            pointerEvents: 'none',
-            transition: 'opacity 0.2s',
-            backdropFilter: 'blur(8px)',
-          }}
-          className="group-hover:!opacity-100"
-        >
-          <p style={{ color: 'white', fontSize: 13, fontWeight: 700, marginBottom: 4 }}>{el.tooltipTitle}</p>
-          <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, lineHeight: 1.4 }}>{el.tooltipBody}</p>
-        </div>
-      </div>
-    )
-  }
-
-  // Form
-  if (el.type === 'form') {
-    return <FormRenderer element={el} brandColor={brandColor} setVariable={setVariable} />
-  }
-
-  return null
-}
-
-function QuizRenderer({
-  element: el,
-  brandColor,
-  onInteraction,
-}: {
-  element: InteractionElement & { type: 'quiz' }
-  brandColor: string
-  onInteraction: (el: InteractionElement) => void
-}) {
-  const [answered, setAnswered] = useState<string | null>(null)
-  const isCorrect = answered === el.correctOptionId
-
-  return (
-    <div
-      className="pointer-events-auto"
-      style={{
-        position: 'absolute',
-        left: `${el.x}%`, top: `${el.y}%`,
-        width: `${el.width}%`,
-        background: 'rgba(0,0,0,0.9)',
-        borderRadius: 12,
-        padding: 20,
-        backdropFilter: 'blur(8px)',
-      }}
-    >
-      <p style={{ color: 'white', fontSize: 16, fontWeight: 700, marginBottom: 16 }}>{el.question}</p>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {el.options.map((opt) => {
-          const selected = answered === opt.id
-          const correct = opt.id === el.correctOptionId
-          let bg = 'transparent'
-          let border = `2px solid ${brandColor}`
-          if (answered) {
-            if (correct) { bg = '#22c55e33'; border = '2px solid #22c55e' }
-            else if (selected) { bg = '#ef444433'; border = '2px solid #ef4444' }
-          }
-          return (
-            <button
-              key={opt.id}
-              disabled={!!answered}
-              onClick={() => setAnswered(opt.id)}
-              style={{
-                padding: '10px 16px',
-                borderRadius: 8,
-                border,
-                background: bg,
-                color: 'white',
-                fontSize: 14,
-                cursor: answered ? 'default' : 'pointer',
-                textAlign: 'left',
-                transition: 'all 0.2s',
-              }}
-            >
-              {opt.label}
-            </button>
-          )
-        })}
-      </div>
-      {answered && el.explanation && (
-        <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: 13, marginTop: 12, lineHeight: 1.4 }}>
-          {el.explanation}
-        </p>
-      )}
-      {answered && (
-        <p style={{ color: isCorrect ? '#22c55e' : '#ef4444', fontSize: 13, fontWeight: 700, marginTop: 8 }}>
-          {isCorrect ? 'Correct!' : 'Incorrect'}
-        </p>
-      )}
-    </div>
-  )
-}
-
-function FormRenderer({
-  element: el,
-  brandColor,
-  setVariable,
-}: {
-  element: InteractionElement & { type: 'form' }
-  brandColor: string
-  setVariable: (name: string, value: string) => void
-}) {
-  const [values, setValues] = useState<Record<string, string>>({})
-
-  const handleSubmit = () => {
-    for (const mapping of el.setsVariables) {
-      const val = values[mapping.fieldId] ?? ''
-      setVariable(mapping.variableName, val)
-    }
-  }
-
-  return (
-    <div
-      className="pointer-events-auto"
-      style={{
-        position: 'absolute',
-        left: `${el.x}%`, top: `${el.y}%`,
-        width: `${el.width}%`,
-        background: 'rgba(0,0,0,0.9)',
-        borderRadius: 12,
-        padding: 20,
-        backdropFilter: 'blur(8px)',
-      }}
-    >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {el.fields.map((field) => (
-          <div key={field.id}>
-            <label style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, fontWeight: 600, marginBottom: 4, display: 'block' }}>
-              {field.label} {field.required && '*'}
-            </label>
-            {field.type === 'text' && (
-              <input
-                type="text"
-                placeholder={field.placeholder ?? ''}
-                value={values[field.id] ?? ''}
-                onChange={(e) => setValues({ ...values, [field.id]: e.target.value })}
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  borderRadius: 6,
-                  border: '1px solid rgba(255,255,255,0.2)',
-                  background: 'rgba(255,255,255,0.1)',
-                  color: 'white',
-                  fontSize: 14,
-                  outline: 'none',
-                }}
-              />
-            )}
-            {field.type === 'select' && (
-              <select
-                value={values[field.id] ?? ''}
-                onChange={(e) => setValues({ ...values, [field.id]: e.target.value })}
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  borderRadius: 6,
-                  border: '1px solid rgba(255,255,255,0.2)',
-                  background: 'rgba(0,0,0,0.6)',
-                  color: 'white',
-                  fontSize: 14,
-                }}
-              >
-                <option value="">Select...</option>
-                {field.options.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
-              </select>
-            )}
-            {field.type === 'radio' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {field.options.map((opt) => (
-                  <label key={opt} style={{ color: 'white', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-                    <input
-                      type="radio"
-                      name={field.id}
-                      value={opt}
-                      checked={values[field.id] === opt}
-                      onChange={(e) => setValues({ ...values, [field.id]: e.target.value })}
+            <div className="flex items-center gap-2">
+              {/* Scene nav dots (optional, default off) */}
+              {manifest.playerOptions.showSceneNav && (
+                <div className="flex items-center gap-1">
+                  {manifest.scenes.map((s, i) => (
+                    <span
+                      key={s.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => goToScene(s.id, 'nav')}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') goToScene(s.id, 'nav')
+                      }}
+                      className="w-2 h-2 rounded-full transition-all cursor-pointer"
+                      style={{
+                        background: s.id === currentSceneId ? brandColor : 'rgba(255,255,255,0.2)',
+                      }}
+                      title={`Scene ${i + 1}`}
                     />
-                    {opt}
-                  </label>
-                ))}
-              </div>
-            )}
+                  ))}
+                </div>
+              )}
+
+              {manifest.playerOptions.allowFullscreen && (
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => containerRef.current?.requestFullscreen?.()}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') containerRef.current?.requestFullscreen?.()
+                  }}
+                  className="text-white/50 hover:text-white transition-colors cursor-pointer"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
+                  </svg>
+                </span>
+              )}
+            </div>
           </div>
-        ))}
-      </div>
-      <button
-        onClick={handleSubmit}
-        style={{
-          marginTop: 16,
-          width: '100%',
-          padding: '10px',
-          borderRadius: 8,
-          background: brandColor,
-          color: 'white',
-          fontSize: 14,
-          fontWeight: 700,
-          border: 'none',
-          cursor: 'pointer',
-        }}
-      >
-        {el.submitLabel || 'Continue'}
-      </button>
+        </div>
+      )}
     </div>
   )
+}
+
+function formatTime(seconds: number): string {
+  const m = Math.floor(seconds / 60)
+  const s = Math.floor(seconds % 60)
+  return `${m}:${s.toString().padStart(2, '0')}`
 }

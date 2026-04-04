@@ -853,12 +853,7 @@ export interface AssembleThreeSceneConfig {
 export function assembleThreeScene(config: AssembleThreeSceneConfig): string {
   const { lighting, camera, objects, environment, customCode, palette, duration, layerId } = config
 
-  const componentIds = [
-    lighting,
-    camera,
-    ...(environment ? [environment] : []),
-    ...objects,
-  ]
+  const componentIds = [lighting, camera, ...(environment ? [environment] : []), ...objects]
 
   const missing = componentIds.filter((id) => !getComponent(id))
   if (missing.length > 0) {
@@ -879,16 +874,12 @@ export function assembleThreeScene(config: AssembleThreeSceneConfig): string {
     .join('\n  ')
 
   // Collect all handles for the update loop
-  const handles = [
-    '_lighting',
-    '_camera',
-    ...(environment ? ['_env'] : []),
-    ...objects.map((_, i) => `_obj${i}`),
-  ]
+  const handles = ['_lighting', '_camera', ...(environment ? ['_env'] : []), ...objects.map((_, i) => `_obj${i}`)]
   const updateCalls = handles.map((h) => `  if (${h} && ${h}.update) ${h}.update(t);`).join('\n')
 
   return `
 import * as THREE from 'three';
+const { WIDTH, HEIGHT, DURATION, mulberry32, setupEnvironment } = window;
 
 ${functionBodies}
 
@@ -944,8 +935,11 @@ window.__animFrame = requestAnimationFrame(_animate);
 
 /** Derive the function name from a component id. e.g. 'lighting-studio' → 'buildLightingStudio' */
 function getFunctionName(id: string): string {
-  return 'build' + id
-    .split('-')
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join('')
+  return (
+    'build' +
+    id
+      .split('-')
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join('')
+  )
 }

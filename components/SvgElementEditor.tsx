@@ -6,7 +6,7 @@ import { useVideoStore } from '@/lib/store'
 import type { SvgObject } from '@/lib/types'
 
 interface SelectionBox {
-  id: string          // element id attribute or generated
+  id: string // element id attribute or generated
   el: Element
   x: number
   y: number
@@ -21,19 +21,18 @@ interface Props {
 }
 
 export default function SvgElementEditor({ sceneId }: Props) {
-  const { scenes, updateScene, saveSceneHTML } = useVideoStore()
+  const { scenes, updateScene, saveSceneHTML, openTextTabForSlot } = useVideoStore()
   // keep a stable ref to scenes for use inside extract callback
   const scenesRef = useRef(scenes)
-  useEffect(() => { scenesRef.current = scenes }, [scenes])
+  useEffect(() => {
+    scenesRef.current = scenes
+  }, [scenes])
   const scene = scenes.find((s) => s.id === sceneId)
 
   const containerRef = useRef<HTMLDivElement>(null)
   const svgContainerRef = useRef<HTMLDivElement>(null)
   const [selections, setSelections] = useState<SelectionBox[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [textEditId, setTextEditId] = useState<string | null>(null)
-  const [textEditValue, setTextEditValue] = useState('')
-  const [textEditPos, setTextEditPos] = useState({ x: 0, y: 0 })
 
   const dragState = useRef<{
     startMouseX: number
@@ -76,9 +75,7 @@ export default function SvgElementEditor({ sceneId }: Props) {
         if (!el.getAttribute('id')) el.setAttribute('id', id)
 
         const isText = el.tagName.toLowerCase() === 'text'
-        const fontSize = isText
-          ? parseFloat(getComputedStyle(el).fontSize) || 16
-          : undefined
+        const fontSize = isText ? parseFloat(getComputedStyle(el).fontSize) || 16 : undefined
 
         boxes.push({
           id,
@@ -120,35 +117,32 @@ export default function SvgElementEditor({ sceneId }: Props) {
 
   // ── Drag to move ─────────────────────────────────────────────────────────
 
-  const handleHandleMouseDown = useCallback(
-    (e: React.MouseEvent, box: SelectionBox, type: 'move' | 'scale') => {
-      e.stopPropagation()
-      e.preventDefault()
+  const handleHandleMouseDown = useCallback((e: React.MouseEvent, box: SelectionBox, type: 'move' | 'scale') => {
+    e.stopPropagation()
+    e.preventDefault()
 
-      const svgEl = svgContainerRef.current?.querySelector('svg')
-      if (!svgEl) return
-      const svgRect = svgEl.getBoundingClientRect()
-      const vb = svgEl.viewBox.baseVal
+    const svgEl = svgContainerRef.current?.querySelector('svg')
+    if (!svgEl) return
+    const svgRect = svgEl.getBoundingClientRect()
+    const vb = svgEl.viewBox.baseVal
 
-      dragState.current = {
-        startMouseX: e.clientX,
-        startMouseY: e.clientY,
-        startBx: box.x,
-        startBy: box.y,
-        svgWidth: svgRect.width,
-        svgHeight: svgRect.height,
-        viewBoxW: vb.width || 1920,
-        viewBoxH: vb.height || 1080,
-        el: box.el,
-        origTransform: box.el.getAttribute('transform') || '',
-        type,
-        startWidth: box.width,
-        startHeight: box.height,
-      }
-      setSelectedId(box.id)
-    },
-    []
-  )
+    dragState.current = {
+      startMouseX: e.clientX,
+      startMouseY: e.clientY,
+      startBx: box.x,
+      startBy: box.y,
+      svgWidth: svgRect.width,
+      svgHeight: svgRect.height,
+      viewBoxW: vb.width || 1920,
+      viewBoxH: vb.height || 1080,
+      el: box.el,
+      origTransform: box.el.getAttribute('transform') || '',
+      type,
+      startWidth: box.width,
+      startHeight: box.height,
+    }
+    setSelectedId(box.id)
+  }, [])
 
   useEffect(() => {
     const onMouseMove = (e: MouseEvent) => {
@@ -196,29 +190,10 @@ export default function SvgElementEditor({ sceneId }: Props) {
     (e: React.MouseEvent, box: SelectionBox) => {
       if (!box.isText) return
       e.stopPropagation()
-      const textContent = box.el.textContent ?? ''
-      setTextEditId(box.id)
-      setTextEditValue(textContent)
-      setTextEditPos({ x: box.x, y: box.y })
+      openTextTabForSlot(`svg:main:${box.id}`)
     },
-    []
+    [openTextTabForSlot],
   )
-
-  const commitTextEdit = useCallback(() => {
-    if (!textEditId) return
-    const box = selections.find((b) => b.id === textEditId)
-    if (box) {
-      // Replace text node content
-      const textNodes = Array.from(box.el.childNodes).filter((n) => n.nodeType === Node.TEXT_NODE)
-      if (textNodes.length > 0) {
-        textNodes[0].textContent = textEditValue
-      } else {
-        box.el.textContent = textEditValue
-      }
-      serializeAndSave()
-    }
-    setTextEditId(null)
-  }, [textEditId, textEditValue, selections, serializeAndSave])
 
   // ── Font size drag (vertical) for text elements ───────────────────────────
 
@@ -259,69 +234,67 @@ export default function SvgElementEditor({ sceneId }: Props) {
 
   // ── Extract element to independent SvgObject ─────────────────────────────
 
-  const handleExtract = useCallback((box: SelectionBox) => {
-    const svgEl = svgContainerRef.current?.querySelector('svg') as SVGSVGElement | null
-    if (!svgEl) return
+  const handleExtract = useCallback(
+    (box: SelectionBox) => {
+      const svgEl = svgContainerRef.current?.querySelector('svg') as SVGSVGElement | null
+      if (!svgEl) return
 
-    try {
-      const bbox = (box.el as SVGGraphicsElement).getBBox()
-      if (bbox.width === 0 || bbox.height === 0) return
+      try {
+        const bbox = (box.el as SVGGraphicsElement).getBBox()
+        if (bbox.width === 0 || bbox.height === 0) return
 
-      const vb = svgEl.viewBox.baseVal
-      const viewBoxW = vb.width || 1920
-      const viewBoxH = vb.height || 1080
+        const vb = svgEl.viewBox.baseVal
+        const viewBoxW = vb.width || 1920
+        const viewBoxH = vb.height || 1080
 
-      const styleBlock = svgEl.querySelector('style')?.outerHTML ?? ''
-      const defsBlock = svgEl.querySelector('defs')?.outerHTML ?? ''
-      const newSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${bbox.x} ${bbox.y} ${bbox.width} ${bbox.height}">${defsBlock}${styleBlock}${box.el.outerHTML}</svg>`
+        const styleBlock = svgEl.querySelector('style')?.outerHTML ?? ''
+        const defsBlock = svgEl.querySelector('defs')?.outerHTML ?? ''
+        const newSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${bbox.x} ${bbox.y} ${bbox.width} ${bbox.height}">${defsBlock}${styleBlock}${box.el.outerHTML}</svg>`
 
-      // Remove element from source, serialize
-      box.el.remove()
-      const newSourceSvg = svgEl.outerHTML
+        // Remove element from source, serialize
+        box.el.remove()
+        const newSourceSvg = svgEl.outerHTML
 
-      const xPct = (bbox.x / viewBoxW) * 100
-      const yPct = (bbox.y / viewBoxH) * 100
-      const wPct = Math.max(2, (bbox.width / viewBoxW) * 100)
+        const xPct = (bbox.x / viewBoxW) * 100
+        const yPct = (bbox.y / viewBoxH) * 100
+        const wPct = Math.max(2, (bbox.width / viewBoxW) * 100)
 
-      const newObj: SvgObject = {
-        id: uuidv4(),
-        prompt: `#${box.id}`,
-        svgContent: newSvg,
-        x: xPct,
-        y: yPct,
-        width: wPct,
-        opacity: 1,
-        zIndex: 5,
+        const newObj: SvgObject = {
+          id: uuidv4(),
+          prompt: `#${box.id}`,
+          svgContent: newSvg,
+          x: xPct,
+          y: yPct,
+          width: wPct,
+          opacity: 1,
+          zIndex: 5,
+        }
+
+        const currentScene = scenesRef.current.find((s) => s.id === sceneId)!
+        updateScene(sceneId, {
+          svgContent: newSourceSvg,
+          svgObjects: [
+            ...(currentScene.svgObjects ?? []).map((o) =>
+              o.id === currentScene.primaryObjectId ? { ...o, svgContent: newSourceSvg } : o,
+            ),
+            newObj,
+          ],
+        })
+        saveSceneHTML(sceneId)
+        setSelectedId(null)
+        // Recompute selections after DOM update
+        requestAnimationFrame(() => computeSelections())
+      } catch {
+        // getBBox can throw on detached/hidden elements
       }
-
-      const currentScene = scenesRef.current.find((s) => s.id === sceneId)!
-      updateScene(sceneId, {
-        svgContent: newSourceSvg,
-        svgObjects: [
-          ...(currentScene.svgObjects ?? []).map((o) =>
-            o.id === currentScene.primaryObjectId ? { ...o, svgContent: newSourceSvg } : o
-          ),
-          newObj,
-        ],
-      })
-      saveSceneHTML(sceneId)
-      setSelectedId(null)
-      // Recompute selections after DOM update
-      requestAnimationFrame(() => computeSelections())
-    } catch {
-      // getBBox can throw on detached/hidden elements
-    }
-  }, [sceneId, updateScene, saveSceneHTML, computeSelections])
+    },
+    [sceneId, updateScene, saveSceneHTML, computeSelections],
+  )
 
   if (!scene?.svgContent) return null
 
   return (
-    <div
-      ref={containerRef}
-      className="absolute inset-0"
-      style={{ zIndex: 15 }}
-      onClick={() => setSelectedId(null)}
-    >
+    <div ref={containerRef} className="absolute inset-0" style={{ zIndex: 15 }} onClick={() => setSelectedId(null)}>
       {/* SVG rendered directly */}
       <div
         ref={svgContainerRef}
@@ -347,7 +320,10 @@ export default function SvgElementEditor({ sceneId }: Props) {
             }}
             onMouseDown={(e) => handleHandleMouseDown(e, box, 'move')}
             onDoubleClick={(e) => handleDoubleClick(e, box)}
-            onClick={(e) => { e.stopPropagation(); setSelectedId(box.id) }}
+            onClick={(e) => {
+              e.stopPropagation()
+              setSelectedId(box.id)
+            }}
           >
             {isSelected && (
               <>
@@ -379,7 +355,10 @@ export default function SvgElementEditor({ sceneId }: Props) {
                     <button
                       className="text-[9px] text-[#f0ece0] bg-[#1a1a1f] border border-[#e84545]/60 px-1 rounded hover:bg-[#e84545] hover:text-white transition-colors whitespace-nowrap"
                       onMouseDown={(e) => e.stopPropagation()}
-                      onClick={(e) => { e.stopPropagation(); handleExtract(box) }}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleExtract(box)
+                      }}
                       title="Extract to independent object"
                     >
                       ✂ Extract
@@ -391,27 +370,6 @@ export default function SvgElementEditor({ sceneId }: Props) {
           </div>
         )
       })}
-
-      {/* Inline text editor */}
-      {textEditId && (
-        <div
-          className="absolute z-30 flex flex-col gap-1"
-          style={{ left: textEditPos.x, top: textEditPos.y - 32 }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <input
-            autoFocus
-            value={textEditValue}
-            onChange={(e) => setTextEditValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') commitTextEdit()
-              if (e.key === 'Escape') setTextEditId(null)
-            }}
-            onBlur={commitTextEdit}
-            className="bg-[#111114] border border-[#e84545] rounded px-2 py-1 text-xs text-[#f0ece0] focus:outline-none min-w-[120px]"
-          />
-        </div>
-      )}
     </div>
   )
 }

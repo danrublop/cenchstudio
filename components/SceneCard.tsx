@@ -6,14 +6,14 @@ import { useVideoStore } from '@/lib/store'
 import type { Scene, SceneType } from '@/lib/types'
 
 const TYPE_BADGE: Record<string, { label: string; color: string }> = {
-  svg:      { label: 'SVG',    color: '#e84545' },
+  svg: { label: 'SVG', color: '#e84545' },
   canvas2d: { label: 'Canvas', color: '#f97316' },
-  motion:   { label: 'Motion', color: '#3b82f6' },
-  d3:       { label: 'D3',     color: '#22c55e' },
-  three:    { label: '3D',     color: '#a855f7' },
-  lottie:   { label: 'Lottie', color: '#f59e0b' },
-  zdog:     { label: 'Zdog',   color: '#14b8a6' },
-  html:     { label: 'HTML',   color: '#6366f1' },
+  motion: { label: 'Motion', color: '#3b82f6' },
+  d3: { label: 'D3', color: '#22c55e' },
+  three: { label: '3D', color: '#a855f7' },
+  lottie: { label: 'Lottie', color: '#f59e0b' },
+  zdog: { label: 'Zdog', color: '#14b8a6' },
+  html: { label: 'HTML', color: '#6366f1' },
 }
 
 interface Props {
@@ -60,13 +60,12 @@ export default function SceneCard({ scene, index, isSelected, isDragging }: Prop
         style={{ backgroundColor: 'var(--color-bg)' }}
       >
         {/* Thumbnail Area */}
-        <div className="relative w-full aspect-video overflow-hidden group" style={{ backgroundColor: 'var(--color-bg)' }}>
+        <div
+          className="relative w-full aspect-video overflow-hidden group"
+          style={{ backgroundColor: 'var(--color-bg)' }}
+        >
           {scene.svgContent && scene.thumbnail ? (
-            <img
-              src={scene.thumbnail}
-              alt={`Scene ${index + 1}`}
-              className="w-full h-full object-cover"
-            />
+            <img src={scene.thumbnail} alt={`Scene ${index + 1}`} className="w-full h-full object-cover" />
           ) : scene.svgContent ? (
             <div className="w-full h-full" style={{ pointerEvents: 'none', overflow: 'hidden' }}>
               <div
@@ -82,32 +81,56 @@ export default function SceneCard({ scene, index, isSelected, isDragging }: Prop
 
           {/* More actions button (Left click menu trigger) */}
           <button
-            onClick={(e) => { e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY }) }}
+            onClick={(e) => {
+              e.stopPropagation()
+              setContextMenu({ x: e.clientX, y: e.clientY })
+            }}
             data-tooltip="More Actions"
             className="absolute top-1.5 right-1.5 w-6 h-6 rounded-md bg-black/40 backdrop-blur-sm border border-white/5 flex items-center justify-center text-white/40 hover:text-white hover:bg-white/10 transition-all opacity-0 group-hover:opacity-100 no-style"
           >
             <MoreVertical size={11} />
           </button>
 
+          {/* Style override palette indicator */}
+          {scene.styleOverride && Object.keys(scene.styleOverride).length > 0 && (
+            <div className="absolute bottom-2 left-2 flex items-center gap-1 z-10">
+              {scene.styleOverride.palette &&
+                scene.styleOverride.palette.map((c: string, i: number) => (
+                  <div key={i} className="w-2.5 h-2.5 rounded-full border border-white/20" style={{ background: c }} />
+                ))}
+              {scene.styleOverride.styleNote && (
+                <div
+                  className="w-4 h-4 rounded-full flex items-center justify-center text-[8px]"
+                  style={{ background: 'rgba(0,0,0,0.6)', color: '#e0e0e0' }}
+                  title={scene.styleOverride.styleNote}
+                >
+                  🎨
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Floating badges in bottom right */}
           <div className="absolute bottom-2 right-2 flex items-center gap-1.5 z-10">
-            {scene.sceneType !== 'svg' && (TYPE_BADGE[scene.sceneType ?? 'svg'] != null) && (
+            {scene.sceneType !== 'svg' && TYPE_BADGE[scene.sceneType ?? 'svg'] != null && (
               <div
                 className="rounded-md h-5 px-1.5 flex items-center justify-center"
                 style={{ backgroundColor: (TYPE_BADGE[scene.sceneType ?? 'svg'] ?? { color: '#6b7280' }).color }}
               >
-                <span className="text-[9px] font-bold text-white leading-none">{(TYPE_BADGE[scene.sceneType ?? 'svg'] ?? { label: scene.sceneType }).label}</span>
+                <span className="text-[9px] font-bold text-white leading-none">
+                  {(TYPE_BADGE[scene.sceneType ?? 'svg'] ?? { label: scene.sceneType }).label}
+                </span>
               </div>
             )}
-            <div
-              className="rounded-md h-6 px-2.5 flex items-center justify-center bg-black/50 backdrop-blur-md border border-white/5"
-            >
-              <span className="text-[10.5px] font-extrabold text-white/80 tracking-tight leading-none">Scene {index + 1}</span>
+            <div className="rounded-md h-6 px-2.5 flex items-center justify-center bg-black/50 backdrop-blur-md border border-white/5">
+              <span className="text-[10.5px] font-extrabold text-white/80 tracking-tight leading-none">
+                Scene {index + 1}
+              </span>
             </div>
-            <div
-              className="rounded-md h-6 px-2.5 flex items-center justify-center bg-black/50 backdrop-blur-md border border-white/5"
-            >
-              <span className="text-[10.5px] font-extrabold text-white/80 tracking-tight leading-none">{scene.duration}s</span>
+            <div className="rounded-md h-6 px-2.5 flex items-center justify-center bg-black/50 backdrop-blur-md border border-white/5">
+              <span className="text-[10.5px] font-extrabold text-white/80 tracking-tight leading-none">
+                {scene.duration}s
+              </span>
             </div>
           </div>
         </div>
@@ -117,10 +140,7 @@ export default function SceneCard({ scene, index, isSelected, isDragging }: Prop
       {contextMenu && (
         <>
           <div className="fixed inset-0 z-50" onClick={closeMenu} />
-          <div
-            className="context-menu"
-            style={{ left: contextMenu.x, top: contextMenu.y }}
-          >
+          <div className="context-menu" style={{ left: contextMenu.x, top: contextMenu.y }}>
             {showDeleteConfirm ? (
               <div className="p-1">
                 <div className="px-3 py-2 text-[10px] uppercase font-bold text-[#e84545] text-center border-b border-white/5 mb-1 tracking-widest">
@@ -128,13 +148,20 @@ export default function SceneCard({ scene, index, isSelected, isDragging }: Prop
                 </div>
                 <button
                   className="context-menu-item danger font-bold"
-                  onClick={(e) => { e.stopPropagation(); deleteScene(scene.id); closeMenu() }}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    deleteScene(scene.id)
+                    closeMenu()
+                  }}
                 >
                   Confirm Delete
                 </button>
                 <button
                   className="context-menu-item text-[#6b6b7a]"
-                  onClick={(e) => { e.stopPropagation(); setShowDeleteConfirm(false) }}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setShowDeleteConfirm(false)
+                  }}
                 >
                   Cancel
                 </button>
@@ -143,26 +170,38 @@ export default function SceneCard({ scene, index, isSelected, isDragging }: Prop
               <>
                 <button
                   className="context-menu-item"
-                  onClick={() => { setIsEditingName(true); closeMenu() }}
+                  onClick={() => {
+                    setIsEditingName(true)
+                    closeMenu()
+                  }}
                 >
                   <Pencil size={13} className="opacity-70" /> Rename
                 </button>
                 <button
                   className="context-menu-item"
-                  onClick={() => { duplicateScene(scene.id); closeMenu() }}
+                  onClick={() => {
+                    duplicateScene(scene.id)
+                    closeMenu()
+                  }}
                 >
                   <Copy size={13} /> Duplicate
                 </button>
                 <button
                   className="context-menu-item"
-                  onClick={() => { moveScene(scene.id, 'up'); closeMenu() }}
+                  onClick={() => {
+                    moveScene(scene.id, 'up')
+                    closeMenu()
+                  }}
                   disabled={index === 0}
                 >
                   <ArrowUp size={13} /> Move Up
                 </button>
                 <button
                   className="context-menu-item"
-                  onClick={() => { moveScene(scene.id, 'down'); closeMenu() }}
+                  onClick={() => {
+                    moveScene(scene.id, 'down')
+                    closeMenu()
+                  }}
                   disabled={index === scenes.length - 1}
                 >
                   <ArrowDown size={13} /> Move Down
@@ -170,7 +209,10 @@ export default function SceneCard({ scene, index, isSelected, isDragging }: Prop
                 <div className="border-t border-black/10 dark:border-white/5 my-1" />
                 <button
                   className="context-menu-item danger"
-                  onClick={(e) => { e.stopPropagation(); setShowDeleteConfirm(true) }}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setShowDeleteConfirm(true)
+                  }}
                 >
                   <Trash2 size={13} /> Delete
                 </button>

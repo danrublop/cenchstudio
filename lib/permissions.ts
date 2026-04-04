@@ -20,31 +20,52 @@ export function createDefaultAPIPermissions(): APIPermissions {
     backgroundRemoval: createDefaultPermissionConfig(),
     elevenLabs: createDefaultPermissionConfig(),
     unsplash: createDefaultPermissionConfig(),
+    googleTts: createDefaultPermissionConfig(),
+    googleImageGen: createDefaultPermissionConfig(),
+    openaiTts: createDefaultPermissionConfig(),
+    geminiTts: createDefaultPermissionConfig(),
+    freesound: { ...createDefaultPermissionConfig(), mode: 'always_allow' },
+    pixabay: { ...createDefaultPermissionConfig(), mode: 'always_allow' },
+    falAvatar: createDefaultPermissionConfig(),
   }
 }
 
 // ── Cost estimates ──────────────────────────────────────────────────────────
 
 export const API_COST_ESTIMATES: Record<string, string> = {
-  'heygen': '~$0.10–$1.00 per video',
-  'veo3': '~$0.50–$2.00 per clip',
+  heygen: '~$0.10–$1.00 per video',
+  veo3: '~$0.50–$2.00 per clip',
   'imageGen:flux-1.1-pro': '~$0.05',
   'imageGen:flux-schnell': '~$0.003',
   'imageGen:ideogram-v3': '~$0.08',
   'imageGen:recraft-v3': '~$0.04',
   'imageGen:stable-diffusion-3': '~$0.03',
   'imageGen:dall-e-3': '~$0.04',
-  'backgroundRemoval': '~$0.01',
-  'elevenLabs': '~$0.01–$0.10 per segment',
+  backgroundRemoval: '~$0.01',
+  elevenLabs: '~$0.01–$0.10 per segment',
+  googleTts: '~$0.004 per 100 chars',
+  googleImageGen: '~$0.02–$0.04 per image',
+  openaiTts: '~$0.015-0.030/1K chars',
+  geminiTts: '~$0.01-0.02/1K chars',
+  freesound: 'Free (CC licensed)',
+  pixabay: 'Free (royalty-free)',
+  falAvatar: '~$0.04–$0.15 per scene',
 }
 
 export const API_DISPLAY_NAMES: Record<APIName, string> = {
   heygen: 'HeyGen Avatars',
-  veo3: 'Veo 3 Video Generation',
-  imageGen: 'Image Generation',
+  veo3: 'Veo 3 Video',
+  imageGen: 'Image Generation (FAL)',
   backgroundRemoval: 'Background Removal',
   elevenLabs: 'ElevenLabs TTS',
   unsplash: 'Unsplash Images',
+  googleTts: 'Google Cloud TTS',
+  googleImageGen: 'Imagen (Google)',
+  openaiTts: 'OpenAI TTS',
+  geminiTts: 'Gemini TTS',
+  freesound: 'Freesound',
+  pixabay: 'Pixabay',
+  falAvatar: 'Avatar Generation (FAL)',
 }
 
 // ── Permission check (synchronous, for auto-modes) ─────────────────────────
@@ -66,10 +87,16 @@ export function checkPermission(
 
   // Check spend limits
   if (config.sessionLimit !== null && config.sessionSpend >= config.sessionLimit) {
-    return { action: 'deny', reason: `Session spend limit reached ($${config.sessionSpend.toFixed(2)} / $${config.sessionLimit.toFixed(2)})` }
+    return {
+      action: 'deny',
+      reason: `Session spend limit reached ($${config.sessionSpend.toFixed(2)} / $${config.sessionLimit.toFixed(2)})`,
+    }
   }
   if (config.monthlyLimit !== null && config.monthlySpend >= config.monthlyLimit) {
-    return { action: 'deny', reason: `Monthly spend limit reached ($${config.monthlySpend.toFixed(2)} / $${config.monthlyLimit.toFixed(2)})` }
+    return {
+      action: 'deny',
+      reason: `Monthly spend limit reached ($${config.monthlySpend.toFixed(2)} / $${config.monthlyLimit.toFixed(2)})`,
+    }
   }
 
   switch (config.mode) {

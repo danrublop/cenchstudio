@@ -1,8 +1,16 @@
+import * as fal from '@fal-ai/serverless-client'
 import type { ImageModel, ImageStyle } from '@/lib/types'
 import { checkCache, saveToCache, downloadToBuffer } from './media-cache'
 
 const FAL_KEY = () => process.env.FAL_KEY
 const OPENAI_API_KEY = () => process.env.OPENAI_API_KEY
+
+function configureFal() {
+  const key = FAL_KEY()
+  if (key) {
+    fal.config({ credentials: key })
+  }
+}
 
 const MODEL_IDS: Record<ImageModel, string | null> = {
   'flux-1.1-pro': 'fal-ai/flux-pro/v1.1',
@@ -38,28 +46,45 @@ function aspectRatioToSize(ar: string): '1024x1024' | '1792x1024' | '1024x1792' 
   return '1024x1024'
 }
 
+// FAL uses "portrait_16_9" to mean "portrait orientation of the 16:9 ratio" (i.e. 9:16)
+function aspectRatioToFal(ar: string): string {
+  if (ar === '16:9') return 'landscape_16_9'
+  if (ar === '9:16') return 'portrait_16_9'
+  if (ar === '4:3') return 'landscape_4_3'
+  if (ar === '3:4') return 'portrait_4_3'
+  return 'square_hd'
+}
+
 export async function generateImage(opts: {
   prompt: string
   negativePrompt?: string
   model: ImageModel
   aspectRatio: string
   style?: ImageStyle | null
+  skipCache?: boolean
 }): Promise<{ imageUrl: string; width: number; height: number; cost: number }> {
   // Check cache
   const cacheParams = { prompt: opts.prompt, model: opts.model, aspectRatio: opts.aspectRatio, style: opts.style }
-  const cached = await checkCache('imageGen', cacheParams)
-  if (cached) {
-    return { imageUrl: cached, width: 1024, height: 1024, cost: 0 }
+  if (!opts.skipCache) {
+    const cached = await checkCache('imageGen', cacheParams)
+    if (cached) {
+      return {
+        imageUrl: cached.filePath,
+        width: (cached.metadata.width ?? 1024) as number,
+        height: (cached.metadata.height ?? 1024) as number,
+        cost: 0,
+      }
+    }
   }
 
-  const fullPrompt = opts.prompt + (opts.style ? STYLE_PROMPTS[opts.style] ?? '' : '')
+  const fullPrompt = opts.prompt + (opts.style ? (STYLE_PROMPTS[opts.style] ?? '') : '')
   const cost = MODEL_COSTS[opts.model]
 
   if (opts.model === 'dall-e-3') {
     const response = await fetch('https://api.openai.com/v1/images/generations', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${OPENAI_API_KEY()}`,
+        Authorization: `Bearer ${OPENAI_API_KEY()}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -74,48 +99,41 @@ export async function generateImage(opts: {
     if (!response.ok) throw new Error(data.error?.message ?? 'DALL-E 3 generation failed')
 
     const imageUrl = data.data[0].url
+    const size = aspectRatioToSize(opts.aspectRatio)
+    const [w, h] = size.split('x').map(Number)
     const buffer = await downloadToBuffer(imageUrl)
-    const publicPath = await saveToCache('imageGen', cacheParams, buffer, 'png')
-    return { imageUrl: publicPath, width: 1024, height: 1024, cost }
+    const publicPath = await saveToCache('imageGen', cacheParams, buffer, 'png', { width: w, height: h })
+    return { imageUrl: publicPath, width: w, height: h, cost }
   }
 
-  // fal.ai path
+  // fal.ai path — use SDK
   const falModelId = MODEL_IDS[opts.model]
   if (!falModelId) throw new Error(`Unknown model: ${opts.model}`)
 
-  const response = await fetch(`https://queue.fal.run/${falModelId}`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Key ${FAL_KEY()}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
+  configureFal()
+
+  const result = (await fal.subscribe(falModelId, {
+    input: {
       prompt: fullPrompt,
       negative_prompt: opts.negativePrompt,
-      image_size: opts.aspectRatio === '16:9' ? 'landscape_16_9'
-        : opts.aspectRatio === '9:16' ? 'portrait_16_9'
-        : opts.aspectRatio === '4:3' ? 'landscape_4_3'
-        : opts.aspectRatio === '3:4' ? 'portrait_4_3'
-        : 'square_hd',
+      image_size: aspectRatioToFal(opts.aspectRatio),
       num_inference_steps: opts.model === 'flux-schnell' ? 4 : 28,
       guidance_scale: 3.5,
-      sync_mode: true,
-    }),
-  })
+    },
+  })) as any
 
-  const data = await response.json()
-  if (!response.ok) throw new Error(data.detail ?? 'Image generation failed')
-
-  const imageUrl = data.images?.[0]?.url
+  const imageUrl = result.images?.[0]?.url
   if (!imageUrl) throw new Error('No image returned from fal.ai')
 
+  const w = result.images[0].width ?? 1024
+  const h = result.images[0].height ?? 1024
   const buffer = await downloadToBuffer(imageUrl)
-  const publicPath = await saveToCache('imageGen', cacheParams, buffer, 'png')
+  const publicPath = await saveToCache('imageGen', cacheParams, buffer, 'png', { width: w, height: h })
 
   return {
     imageUrl: publicPath,
-    width: data.images[0].width ?? 1024,
-    height: data.images[0].height ?? 1024,
+    width: w,
+    height: h,
     cost,
   }
 }

@@ -1,0 +1,15 @@
+node_modules
+.next
+dist
+dist-electron
+renders
+render-server
+public/scenes
+public/uploads
+website
+website2
+lego-sandbox
+reference
+drizzle
+*.min.js
+*.min.css

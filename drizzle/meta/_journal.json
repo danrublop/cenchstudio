@@ -1,0 +1,111 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1774589909466,
+      "tag": "0000_concerned_silver_centurion",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1774589910000,
+      "tag": "0001_add_conversation_metadata",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1774676309466,
+      "tag": "0002_add_audio_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1774934400000,
+      "tag": "0003_add_provider_enabled",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1774934500000,
+      "tag": "0004_add_message_metrics",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1774934600000,
+      "tag": "0005_add_run_trace",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1774934700000,
+      "tag": "0006_add_project_version",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1774934800000,
+      "tag": "0007_add_avatar_system",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1774934900000,
+      "tag": "0008_add_spend_api_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1774935000000,
+      "tag": "0009_add_world_config",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1774935100000,
+      "tag": "0010_add_camera_motion",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1774935200000,
+      "tag": "0011_agent_type_planner",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1774935300000,
+      "tag": "0012_add_user_memory",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1774935400000,
+      "tag": "0013_add_run_checkpoint",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1774935500000,
+      "tag": "0014_add_agent_config",
+      "breakpoints": true
+    }
+  ]
+}

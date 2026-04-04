@@ -4,11 +4,46 @@ These rules apply to every scene regardless of type.
 
 ---
 
+## Style preset drives everything — read this first
+
+The project has a style preset that automatically sets:
+ROUGHNESS — how rough/wobbly strokes are (0=clean, 3=very rough)
+TOOL — default drawing tool (marker, pen, chalk, etc)
+STROKE_COLOR — the primary ink color for this style
+TEXTURE — background texture (applied automatically)
+FONT — default font family
+
+These are injected as globals in every scene template.
+DO NOT manually set roughness, tool, or texture in generated code.
+Just use ROUGHNESS, TOOL, STROKE_COLOR as constants.
+
+## Renderer preference
+
+**Default hierarchy:** Motion first → canvas2d for expressive hand-drawn / procedural work → SVG rarely.
+
+- **Motion** — preferred for most explainers: HTML/CSS layouts, typography, cards, steps, DOM-based diagrams, GSAP timeline (`window.__tl`).
+- **Canvas2d** — use for organic strokes, chalk, particles, generative art, physics, fluid motion — not the default for clean polished explainers.
+- **SVG** — rare; only when a self-contained vector graphic with template stroke/draw-on classes is clearly the best fit.
+
+Check the system prompt for `PREFERRED RENDERER` on every project.
+
+Whiteboard/Chalkboard/Neon/Kraft → canvas2d (organic strokes)
+Blueprint/Clean/Newspaper → motion (precise, professional layouts — not SVG by default)
+Data Story → auto (D3 for data; Motion for non-data explainer frames; canvas2d when expressive)
+
+## Colors
+
+Primary strokes: STROKE_COLOR (set by preset, may be white on dark bg)
+Accent colors: PALETTE[1], PALETTE[2], PALETTE[3]
+Never hardcode hex values.
+
+## Everything else below applies regardless of style preset.
+
+---
+
 ## Globals
 
 - Canvas is always **1920x1080** — fill the space deliberately
-- Default background: `#181818`
-- Default palette: `#181818, #121212, #e84545, #151515, #f0ece0`
 - Duration defaults to **8 seconds** unless specified
 
 ---
@@ -19,14 +54,15 @@ Always use the mulberry32 seeded PRNG:
 
 ```js
 function mulberry32(seed) {
-  return function() {
-    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
-    var t = Math.imul(seed ^ seed >>> 15, 1 | seed);
-    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
-    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  return function () {
+    seed |= 0
+    seed = (seed + 0x6d2b79f5) | 0
+    var t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
   }
 }
-const rand = mulberry32(42);
+const rand = mulberry32(42)
 ```
 
 Every scene that uses randomness must include this function and call `rand()` instead of `Math.random()`.
@@ -47,12 +83,15 @@ Duration should match how long it takes to **read all visible text aloud**.
 Estimate: **150 words per minute** (2.5 words per second).
 
 For each scene, count all visible text (titles, labels, steps, annotations) and calculate:
+
 ```
 duration = max(6, (wordCount / 2.5) + 3)
 ```
+
 The +3s padding allows time for visual absorption after the last element appears.
 
 **Scene type minimums:**
+
 - Title cards: 5–7s
 - Simple diagrams with labels: 8–12s
 - Step-by-step walkthroughs (3+ steps): 12–18s
@@ -74,9 +113,18 @@ Narration pace: ~150 words per minute. A 30-word narration ≈ 12s scene.
 
 ---
 
-## Safe area
+## Safe area & viewport fitting
+
+**ALL content must fit within the 1920×1080 viewBox.** No element may be positioned beyond x=1920 or y=1080 — anything outside is clipped and invisible in the preview and export. If you have too many items (bullet points, list entries, diagram nodes), you MUST either:
+
+- Reduce the number of items to fit
+- Use smaller font sizes / tighter spacing
+- Split across multiple scenes
+- Use a grid or multi-column layout instead of a single vertical list
 
 Keep important content within a 100px inset from all edges (i.e., between x=100 and x=1820, y=100 and y=980). Background graphics may bleed to edges.
+
+**Before finalizing**: mentally verify that your lowest element's y-coordinate + its height stays below 1080, and your rightmost element's x-coordinate + its width stays below 1920.
 
 ---
 
@@ -85,12 +133,64 @@ Keep important content within a 100px inset from all edges (i.e., between x=100 
 Use system fonts or load from Google Fonts via `<link>` in the HTML head. Safe system fonts: `'Arial'`, `'Georgia'`, `'monospace'`. For a modern look, add:
 
 ```html
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet" />
 ```
 
 Then use `font-family: 'Inter', sans-serif`.
 
 ---
+
+## Element registration (required for inspector)
+
+ALL generated elements must be registered with window.\_\_register()
+so the property inspector can find and edit them.
+
+Every element definition must include:
+id: unique string, e.g. 'line-01', 'title-text'
+type: element type string (rough-line, rough-circle, rough-rect, rough-arrow, text, svg-path, svg-text, etc.)
+label: human-readable name shown in layers panel
+bbox: { x, y, w, h } bounding box in 1920x1080 space
+animStartTime: when element starts animating (seconds)
+animDuration: how long the animation takes (seconds)
+visible: true
+opacity: 1
+
+Canvas2D elements: register BEFORE adding to GSAP timeline.
+SVG elements: add id attributes, auto-registered by scene loader.
+Three.js: register with bbox: { x: 0, y: 0, w: 1920, h: 1080 }
+(Three.js elements fill the scene, no sub-element selection)
+
+Label elements descriptively:
+GOOD: 'Arrow from client to server', 'Pythagorean formula', 'Step 3 label'
+BAD: 'element-1', 'path', 'text'
+
+Canvas2D example:
+
+```js
+const el_arrow = {
+  id: 'arrow-01',
+  type: 'rough-arrow',
+  label: 'Arrow from client to server',
+  x1: 200,
+  y1: 540,
+  x2: 1720,
+  y2: 540,
+  color: STROKE_COLOR,
+  strokeWidth: 2.5,
+  arrowheadSize: 20,
+  tool: TOOL,
+  seed: 1,
+  visible: true,
+  opacity: 1,
+  animStartTime: 0,
+  animDuration: 0.8,
+  bbox: { x: 200, y: 520, w: 1520, h: 40 },
+}
+window.__register(el_arrow)
+```
+
+For redrawAll(), read properties from element objects (not hardcoded values)
+so inspector property patches take effect immediately.
 
 ## Output format
 

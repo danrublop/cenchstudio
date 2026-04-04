@@ -1,6 +1,8 @@
 import type { Metadata } from 'next'
+import { GeistSans } from 'geist/font/sans'
 import { DM_Mono, Caveat } from 'next/font/google'
 import './globals.css'
+import '@/lib/fonts/imports'
 
 const dmMono = DM_Mono({
   subsets: ['latin'],
@@ -14,14 +16,16 @@ const caveat = Caveat({
 })
 
 export const metadata: Metadata = {
-  title: 'SVG Video Editor',
-  description: 'Create and edit animated SVG videos',
+  title: 'Cench Studio',
+  description: 'Create and edit animated videos',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${dmMono.variable} ${caveat.variable}`}>
-      <body className="font-mono antialiased overflow-hidden">{children}</body>
+    <html lang="en" className={`${GeistSans.variable} ${dmMono.variable} ${caveat.variable}`}>
+      <body className="font-sans antialiased overflow-hidden" suppressHydrationWarning>
+        {children}
+      </body>
     </html>
   )
 }

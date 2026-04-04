@@ -1,0 +1,97 @@
+import type { AudioSettings, TTSProvider, SFXProvider, MusicProvider } from '../types'
+import type { TTSProviderInterface, SFXProviderInterface, MusicProviderInterface } from './types'
+
+export { getBestTTSProvider } from './resolve-best-tts-provider'
+
+// Lazy-load providers to avoid importing everything at once
+const ttsProviders: Record<string, () => Promise<TTSProviderInterface>> = {
+  elevenlabs: () => import('./providers/elevenlabs-tts').then((m) => m.elevenlabsTTS),
+  'openai-tts': () => import('./providers/openai-tts').then((m) => m.openaiTTS),
+  'gemini-tts': () => import('./providers/gemini-tts').then((m) => m.geminiTTS),
+  'google-tts': () => import('./providers/google-tts').then((m) => m.googleTTS),
+  'openai-edge-tts': () => import('./providers/openai-edge-tts').then((m) => m.openaiEdgeTTS),
+  'native-tts': () => import('./providers/native-tts').then((m) => m.nativeTTS),
+  'web-speech': () => import('./providers/web-speech').then((m) => m.webSpeechTTS),
+  puter: () => import('./providers/puter-tts').then((m) => m.puterTTS),
+}
+
+const sfxProviders: Record<string, () => Promise<SFXProviderInterface>> = {
+  'elevenlabs-sfx': () => import('./providers/elevenlabs-sfx').then((m) => m.elevenlabsSFX),
+  freesound: () => import('./providers/freesound').then((m) => m.freesoundSFX),
+  pixabay: () => import('./providers/pixabay').then((m) => m.pixabaySFX),
+}
+
+const musicProviders: Record<string, () => Promise<MusicProviderInterface>> = {
+  'pixabay-music': () => import('./providers/pixabay-music').then((m) => m.pixabayMusic),
+  'freesound-music': () => import('./providers/freesound-music').then((m) => m.freesoundMusic),
+}
+
+export function getBestSFXProvider(settings?: AudioSettings | null): SFXProvider {
+  if (settings?.defaultSFXProvider && settings.defaultSFXProvider !== 'auto') {
+    return settings.defaultSFXProvider
+  }
+  if (process.env.ELEVENLABS_API_KEY) return 'elevenlabs-sfx'
+  if (process.env.FREESOUND_API_KEY) return 'freesound'
+  if (process.env.PIXABAY_API_KEY) return 'pixabay'
+  // No SFX provider configured — freesound will throw but is the best fallback
+  return 'freesound'
+}
+
+export function getBestMusicProvider(settings?: AudioSettings | null): MusicProvider {
+  if (settings?.defaultMusicProvider && settings.defaultMusicProvider !== 'auto') {
+    return settings.defaultMusicProvider
+  }
+  if (process.env.PIXABAY_API_KEY) return 'pixabay-music'
+  return 'freesound-music'
+}
+
+export async function getTTSProvider(id: TTSProvider): Promise<TTSProviderInterface> {
+  const loader = ttsProviders[id]
+  if (!loader) throw new Error(`Unknown TTS provider: ${id}`)
+  return loader()
+}
+
+export async function getSFXProvider(id: SFXProvider): Promise<SFXProviderInterface> {
+  const loader = sfxProviders[id]
+  if (!loader) throw new Error(`Unknown SFX provider: ${id}`)
+  return loader()
+}
+
+export async function getMusicProvider(id: MusicProvider): Promise<MusicProviderInterface> {
+  const loader = musicProviders[id]
+  if (!loader) throw new Error(`Unknown music provider: ${id}`)
+  return loader()
+}
+
+/** Check which audio providers are available based on env vars */
+export function getAvailableProviders(): {
+  tts: { id: TTSProvider; name: string; available: boolean }[]
+  sfx: { id: SFXProvider; name: string; available: boolean }[]
+  music: { id: MusicProvider; name: string; available: boolean }[]
+} {
+  return {
+    tts: [
+      { id: 'elevenlabs', name: 'ElevenLabs', available: !!process.env.ELEVENLABS_API_KEY },
+      { id: 'openai-tts', name: 'OpenAI TTS', available: !!process.env.OPENAI_API_KEY },
+      { id: 'gemini-tts', name: 'Gemini TTS', available: !!process.env.GEMINI_API_KEY },
+      { id: 'google-tts', name: 'Google Cloud TTS', available: !!process.env.GOOGLE_TTS_API_KEY },
+      { id: 'openai-edge-tts', name: 'Edge TTS (local)', available: !!process.env.EDGE_TTS_URL },
+      {
+        id: 'native-tts',
+        name: 'System Voice',
+        available: process.platform === 'darwin' || process.platform === 'win32',
+      },
+      { id: 'puter', name: 'Puter.js', available: true },
+      { id: 'web-speech', name: 'Web Speech API', available: true },
+    ],
+    sfx: [
+      { id: 'elevenlabs-sfx', name: 'ElevenLabs SFX', available: !!process.env.ELEVENLABS_API_KEY },
+      { id: 'freesound', name: 'Freesound', available: !!process.env.FREESOUND_API_KEY },
+      { id: 'pixabay', name: 'Pixabay', available: !!process.env.PIXABAY_API_KEY },
+    ],
+    music: [
+      { id: 'pixabay-music', name: 'Pixabay Music', available: !!process.env.PIXABAY_API_KEY },
+      { id: 'freesound-music', name: 'Freesound Music', available: !!process.env.FREESOUND_API_KEY },
+    ],
+  }
+}

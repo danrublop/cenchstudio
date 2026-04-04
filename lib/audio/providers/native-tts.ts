@@ -1,0 +1,146 @@
+import { execFile } from 'child_process'
+import { promisify } from 'util'
+import fs from 'fs/promises'
+import path from 'path'
+import os from 'os'
+import type { TTSProviderInterface, TTSParams, TTSResult, Voice } from '../types'
+
+const execFileAsync = promisify(execFile)
+
+function sanitizeText(text: string): string {
+  return text.replace(/[\x00-\x1f]/g, ' ')
+}
+
+async function ffmpegConvert(input: string, output: string): Promise<void> {
+  await execFileAsync('ffmpeg', ['-y', '-i', input, '-ar', '44100', '-ac', '1', '-b:a', '128k', output], {
+    timeout: 30_000,
+  })
+}
+
+function estimateDuration(mp3Bytes: number): number {
+  return Math.round(((mp3Bytes * 8) / (128 * 1000)) * 10) / 10
+}
+
+// ── macOS ────────────────────────────────────────────────────────────────────
+
+async function generateMac(params: TTSParams, outMp3: string): Promise<number> {
+  const voice = params.voiceId || 'Samantha'
+  const tmpAiff = path.join(os.tmpdir(), `native-tts-${Date.now()}.aiff`)
+  try {
+    await execFileAsync('say', ['-v', voice, '-o', tmpAiff, sanitizeText(params.text)], { timeout: 60_000 })
+    await ffmpegConvert(tmpAiff, outMp3)
+    const stat = await fs.stat(outMp3)
+    return estimateDuration(stat.size)
+  } finally {
+    await fs.unlink(tmpAiff).catch(() => {})
+  }
+}
+
+async function listVoicesMac(): Promise<Voice[]> {
+  const { stdout } = await execFileAsync('say', ['-v', '?'], { timeout: 10_000 })
+  return stdout
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => {
+      // Format: "Name       lang_REGION  # description"
+      const match = line.match(/^(.+?)\s{2,}(\S+)\s+#\s*(.*)$/)
+      if (!match) return null
+      const [, name, langRaw, description] = match
+      const lang = langRaw.replace('_', '-')
+      return {
+        id: name.trim(),
+        name: `${name.trim()} — ${description.trim()}`,
+        language: lang,
+      }
+    })
+    .filter((v): v is Voice => v !== null)
+}
+
+// ── Windows ──────────────────────────────────────────────────────────────────
+
+async function generateWin(params: TTSParams, outMp3: string): Promise<number> {
+  const voice = params.voiceId || ''
+  const tmpWav = path.join(os.tmpdir(), `native-tts-${Date.now()}.wav`)
+  const escapedText = sanitizeText(params.text).replace(/'/g, "''")
+  const selectVoice = voice ? `$synth.SelectVoice('${voice.replace(/'/g, "''")}')` : ''
+  const ps = [
+    'Add-Type -AssemblyName System.Speech',
+    '$synth = New-Object System.Speech.Synthesis.SpeechSynthesizer',
+    selectVoice,
+    `$synth.SetOutputToWaveFile('${tmpWav.replace(/'/g, "''")}')`,
+    `$synth.Speak('${escapedText}')`,
+    '$synth.Dispose()',
+  ]
+    .filter(Boolean)
+    .join('; ')
+
+  try {
+    await execFileAsync('powershell', ['-NoProfile', '-Command', ps], { timeout: 60_000 })
+    await ffmpegConvert(tmpWav, outMp3)
+    const stat = await fs.stat(outMp3)
+    return estimateDuration(stat.size)
+  } finally {
+    await fs.unlink(tmpWav).catch(() => {})
+  }
+}
+
+async function listVoicesWin(): Promise<Voice[]> {
+  const ps = [
+    'Add-Type -AssemblyName System.Speech',
+    '$synth = New-Object System.Speech.Synthesis.SpeechSynthesizer',
+    '$synth.GetInstalledVoices() | ForEach-Object {',
+    '  $v = $_.VoiceInfo',
+    '  "$($v.Name)|$($v.Culture.Name)|$($v.Gender)"',
+    '}',
+    '$synth.Dispose()',
+  ].join('; ')
+  const { stdout } = await execFileAsync('powershell', ['-NoProfile', '-Command', ps], { timeout: 10_000 })
+  return stdout
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [name, lang, gender] = line.split('|')
+      return {
+        id: name,
+        name,
+        language: lang || 'en-US',
+        gender: gender?.toLowerCase(),
+      }
+    })
+}
+
+// ── Provider ─────────────────────────────────────────────────────────────────
+
+export const nativeTTS: TTSProviderInterface = {
+  id: 'native-tts',
+  name: 'System Voice',
+  type: 'server',
+  requiresKey: null,
+
+  async generate(params: TTSParams): Promise<TTSResult> {
+    const platform = process.platform
+    if (platform !== 'darwin' && platform !== 'win32') {
+      throw new Error('Native TTS is only available on macOS and Windows')
+    }
+
+    const audioDir = path.join(process.cwd(), 'public', 'audio')
+    await fs.mkdir(audioDir, { recursive: true })
+    const filename = `tts-${params.sceneId}-${Date.now()}.mp3`
+    const outMp3 = path.join(audioDir, filename)
+
+    const duration = platform === 'darwin' ? await generateMac(params, outMp3) : await generateWin(params, outMp3)
+
+    return {
+      audioUrl: `/audio/${filename}`,
+      duration,
+      provider: 'native-tts',
+    }
+  },
+
+  async listVoices(): Promise<Voice[]> {
+    if (process.platform === 'darwin') return listVoicesMac()
+    if (process.platform === 'win32') return listVoicesWin()
+    return []
+  },
+}

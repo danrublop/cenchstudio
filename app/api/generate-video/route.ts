@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { generateVeo3Video, getVeo3Status, downloadVeo3Video, enhanceVeo3Prompt, VEO3_COST_ESTIMATE } from '@/lib/apis/veo3'
+import {
+  generateVeo3Video,
+  getVeo3Status,
+  downloadVeo3Video,
+  enhanceVeo3Prompt,
+  VEO3_COST_ESTIMATE,
+} from '@/lib/apis/veo3'
 import { saveToCache } from '@/lib/apis/media-cache'
 import { logSpend } from '@/lib/db'
 
@@ -26,11 +32,9 @@ export async function POST(req: NextRequest) {
     }
 
     // Enhance prompt with cinematic language
-    const finalPrompt = enhancePrompt
-      ? await enhanceVeo3Prompt(prompt).catch(() => prompt)
-      : prompt
+    const finalPrompt = enhancePrompt ? await enhanceVeo3Prompt(prompt).catch(() => prompt) : prompt
 
-    // Start generation
+    // Start generation (cost logged on completion in GET handler, not here)
     const { operationName } = await generateVeo3Video({
       prompt: finalPrompt,
       negativePrompt,
@@ -38,30 +42,25 @@ export async function POST(req: NextRequest) {
       durationSeconds: duration,
     })
 
-    // Log cost
-    if (projectId) {
-      await logSpend(projectId, 'veo3', VEO3_COST_ESTIMATE, `Veo3: ${prompt.slice(0, 100)}`)
-    }
-
     return NextResponse.json({
       operationName,
       enhancedPrompt: finalPrompt,
       estimatedCost: VEO3_COST_ESTIMATE,
+      projectId,
       sceneId,
       layerId,
     })
   } catch (error: any) {
     console.error('Veo 3 generation error:', error)
-    return NextResponse.json(
-      { error: error.message ?? 'Veo 3 generation failed' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: error.message ?? 'Veo 3 generation failed' }, { status: 500 })
   }
 }
 
 // GET: poll for Veo 3 generation status
 export async function GET(req: NextRequest) {
   const operationName = req.nextUrl.searchParams.get('operationName')
+  const projectId = req.nextUrl.searchParams.get('projectId')
+  const prompt = req.nextUrl.searchParams.get('prompt')
   if (!operationName) {
     return NextResponse.json({ error: 'operationName is required' }, { status: 400 })
   }
@@ -72,12 +71,12 @@ export async function GET(req: NextRequest) {
     if (result.done && result.videoUri) {
       // Download and cache
       const buffer = await downloadVeo3Video(result.videoUri)
-      const publicPath = await saveToCache(
-        'veo3',
-        { operationName },
-        buffer,
-        'mp4'
-      )
+      const publicPath = await saveToCache('veo3', { operationName }, buffer, 'mp4')
+
+      // Log cost only on successful completion
+      if (projectId) {
+        await logSpend(projectId, 'veo3', VEO3_COST_ESTIMATE, `Veo3: ${(prompt || '').slice(0, 100)}`)
+      }
 
       return NextResponse.json({
         done: true,
@@ -95,9 +94,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ done: false })
   } catch (error: any) {
     console.error('Veo 3 status poll error:', error)
-    return NextResponse.json(
-      { error: error.message ?? 'Failed to check Veo 3 status' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: error.message ?? 'Failed to check Veo 3 status' }, { status: 500 })
   }
 }

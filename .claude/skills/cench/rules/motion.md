@@ -1,5 +1,7 @@
 # Motion/Anime.js Scene Rules
 
+**When to use:** **Default** for most explainer-style scenes: HTML/CSS layouts, typography, cards, step lists, UI-like frames, and diagram-like compositions built as DOM + GSAP (`window.__tl`). Prefer Motion over SVG and over canvas2d unless the content needs vector-only draw-on or hand-drawn/canvas technique.
+
 ---
 
 ## Output format
@@ -8,35 +10,80 @@ Output three pieces that get assembled into the HTML template:
 
 - `styles` — raw CSS string (no `<style>` tags)
 - `htmlContent` — HTML elements (no `<body>` tags, no `<html>` tags)
-- `sceneCode` — JavaScript that runs after Anime.js and Motion v11 are loaded
+- `sceneCode` — JavaScript that runs inside a `<script type="module">`
 
 ---
 
 ## Libraries available
 
-- `anime` — Anime.js 3.2.2 global (loaded via CDN script tag)
-- `animate`, `stagger` — imported from Motion v11 ES module (`https://esm.sh/motion@11`)
+- `anime` — Anime.js 3.2.2 global (loaded via CDN script tag before your code)
+- `animate`, `stagger` — imported from Motion v11 (may be undefined if CDN fails — always check before using)
+- `window.__tl` — GSAP master timeline (the playback controller drives all timing)
 
-**Do not use `timeline`** — it is not exported from Motion v11. Use `anime()` with delays for sequences.
+---
+
+## Template globals (injected before your code — do NOT redeclare)
+
+`SCENE_ID`, `PALETTE`, `DURATION`, `ROUGHNESS`, `FONT`, `STROKE_COLOR`, `WIDTH` (1920), `HEIGHT` (1080)
 
 ---
 
 ## CSS rules (styles)
 
-- All CSS elements must start with `opacity: 0` — animate them in via sceneCode
-- Use `position: absolute` for all positioned elements
-- Use `left`/`top` as percentages or px values relative to 1920x1080
-- Body is 1920x1080 — use percentages to position relative to canvas size
+- Use responsive layout: **flexbox or CSS grid** — NOT absolute pixel positioning
+- Use `clamp()`, `vw`/`vh`, and percentages for sizing so content fits any viewport
+- Body is `100% × 100vh` with `overflow: hidden` — content MUST fit without overflow
+- Elements should start visible by default. Use CSS `@keyframes` for entrance animations
+  that work without JavaScript (like SVG scenes do)
+- You CAN set `opacity: 0` on elements if you animate them via CSS `animation: ... forwards`
+- NEVER rely solely on JavaScript to make elements visible — always have a CSS fallback
+
+### Good pattern — CSS-driven entrance:
 
 ```css
+@keyframes fadeSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.title {
+  opacity: 0;
+  animation: fadeSlideUp 0.6s ease-out 0.2s forwards;
+}
+```
+
+### Good pattern — responsive layout:
+
+```css
+.container {
+  display: flex;
+  width: 100%;
+  height: 100vh;
+  align-items: center;
+  justify-content: center;
+  gap: 3%;
+  padding: 4%;
+}
+.card {
+  flex: 1;
+  font-size: clamp(14px, 2vw, 28px);
+}
+```
+
+### Bad pattern — absolute pixel positioning (AVOID):
+
+```css
+/* DON'T: overflows in small viewports */
 .card {
   position: absolute;
-  opacity: 0;
-  left: 10%;
-  top: 20%;
-  width: 400px;
-  height: 300px;
-  background: #e84545;
+  left: 1200px;
+  top: 400px;
+  width: 500px;
 }
 ```
 
@@ -47,98 +94,64 @@ Output three pieces that get assembled into the HTML template:
 - No `<body>`, `<html>`, `<head>` tags — just the inner content
 - Use semantic elements: `<div>`, `<h1>`, `<p>`, `<ul>`, `<span>`
 - Assign IDs or classes for targeting in sceneCode
-- Everything is positioned absolute relative to the 1920x1080 body
+- Wrap everything in a container div with flex/grid layout
 
 ---
 
-## sceneCode patterns
+## sceneCode — GSAP timeline pattern (required)
 
-**Simple sequence with anime:**
+ALL animation timing MUST go through `window.__tl` (the GSAP master timeline).
+This ensures playback controls (play, pause, seek, scrub) work correctly.
+
+**Required skeleton:**
+
 ```js
-anime({
-  targets: '.title',
-  opacity: [0, 1],
-  translateY: [30, 0],
-  duration: 800,
-  easing: 'easeOutCubic',
-  delay: 0
-});
+const els = {
+  // Cache DOM elements
+  title: document.getElementById('title'),
+  items: document.querySelectorAll('.item'),
+}
 
-anime({
-  targets: '.subtitle',
-  opacity: [0, 1],
-  translateY: [20, 0],
-  duration: 600,
-  easing: 'easeOutCubic',
-  delay: 400
-});
+const state = { progress: 0 }
+window.__tl.to(
+  state,
+  {
+    progress: 1,
+    duration: DURATION,
+    ease: 'none',
+    onUpdate: function () {
+      const p = state.progress // 0 → 1 over DURATION seconds
+      // Drive animations based on progress:
+      // if (p > 0.1) els.title.style.opacity = Math.min(1, (p - 0.1) / 0.1);
+    },
+  },
+  0,
+)
 ```
 
-**Staggered list with Motion:**
-```js
-animate('.list-item', {
-  opacity: [0, 1],
-  y: [20, 0]
-}, {
-  delay: stagger(0.1),
-  duration: 0.6,
-  easing: 'ease-out'
-});
-```
+**Progress-based animation tips:**
 
-**Combined sequence:**
-Use `anime()` with explicit `delay` values for sequencing. For grid/list elements use `stagger()` from Motion.
+- Fade in: `Math.min(1, (p - startAt) / fadeLength)`
+- Stagger: element N enters at `p > N * 0.1`
+- Oscillate: `Math.sin(p * Math.PI * 2)`
+- Ease-in: `Math.pow((p - start) / length, 2)`
 
 ---
 
 ## Timing guidance
 
 - Total animation should complete within scene duration
-- Use `delay` values (in ms for anime, in seconds for Motion) to stagger elements
 - Layer order: backgrounds first → content second → text/labels last
-- Typical stagger: 100–200ms between elements
+- Keep all content within viewport bounds — if too many items, use smaller text or multi-column layout
 
 ---
 
 ## What NOT to do
 
-- Do not use `timeline` from Motion v11 — not exported
-- Do not use `position: fixed` — use `absolute`
-- Do not use `Math.random()` — use mulberry32 (see `core.md`)
-- Do not animate char-by-char — animate the whole text element
-
----
-
-## HTML template
-
-```html
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 100%; height: 100vh; overflow: hidden; background: BG_COLOR_HERE; position: relative; }
-    STYLES_HERE
-  </style>
-</head>
-<body>
-  HTML_CONTENT_HERE
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.2/anime.min.js"></script>
-  <script type="module">
-    import { animate, stagger } from "https://esm.sh/motion@11";
-    window.__pause  = () => { document.querySelectorAll('*').forEach(el => {
-      const s = getComputedStyle(el);
-      if (s.animationName && s.animationName !== 'none') el.style.animationPlayState = 'paused';
-    }); };
-    window.__resume = () => { document.querySelectorAll('*').forEach(el => {
-      const s = getComputedStyle(el);
-      if (s.animationName && s.animationName !== 'none') el.style.animationPlayState = 'running';
-    }); };
-    SCENE_CODE_HERE
-  </script>
-</body>
-</html>
-```
-
-Replace `BG_COLOR_HERE`, `STYLES_HERE` (raw CSS), `HTML_CONTENT_HERE`, and `SCENE_CODE_HERE`.
+- Do NOT use standalone `anime()` timelines — use `window.__tl` for all timing
+- Do NOT use `setTimeout`, `setInterval`, or `requestAnimationFrame`
+- Do NOT use `position: absolute` with pixel values for layout — use flex/grid
+- Do NOT use `Math.random()` — use mulberry32 (see `core.md`)
+- Do NOT animate text character-by-character — animate the whole element
+- Do NOT redeclare template globals (DURATION, WIDTH, HEIGHT, PALETTE, etc.)
+- Do NOT depend on `animate()` from Motion v11 being available — it may fail to load

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { X, Download, Loader2, AlertTriangle, Film } from 'lucide-react'
+import { Download, Loader2, AlertTriangle, FolderOpen } from 'lucide-react'
 import { useVideoStore } from '@/lib/store'
 import type { ExportFPS, ExportResolution, ExportSettings } from '@/lib/types'
 
@@ -36,34 +36,85 @@ const RESOLUTIONS: { value: ExportResolution; label: string; desc: string }[] = 
 const FPS_OPTIONS: ExportFPS[] = [24, 30, 60]
 
 export default function ExportModal() {
-  const { exportProgress, closeExportModal, exportVideo, isExporting, scenes } = useVideoStore()
+  const { exportProgress, closeExportModal, exportVideo, isExporting, scenes, project } = useVideoStore()
   const [resolution, setResolution] = useState<ExportResolution>('1080p')
   const [fps, setFps] = useState<ExportFPS>(30)
+  const [profile, setProfile] = useState<'fast' | 'quality'>('quality')
   const [os, setOs] = useState<OSType>('unknown')
+  const [filename, setFilename] = useState('')
+  const [saveDir, setSaveDir] = useState<FileSystemDirectoryHandle | null>(null)
+  const [saveDirName, setSaveDirName] = useState('')
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false)
 
   useEffect(() => {
     setOs(detectOS())
   }, [])
 
+  // Default filename from project name
+  useEffect(() => {
+    if (project?.name) {
+      const safe = project.name
+        .replace(/[^a-zA-Z0-9_\-\s]/g, '')
+        .trim()
+        .replace(/\s+/g, '-')
+      setFilename(safe || 'export')
+    } else {
+      setFilename('export')
+    }
+  }, [project?.name])
+
+  const pickSaveLocation = async () => {
+    try {
+      if ('showDirectoryPicker' in window) {
+        const handle = await (window as any).showDirectoryPicker({ mode: 'readwrite' })
+        setSaveDir(handle)
+        setSaveDirName(handle.name)
+      }
+    } catch {
+      // User cancelled
+    }
+  }
+
   const osWarning = OS_WARNINGS[os]
 
-  const isIdle = !exportProgress || exportProgress.phase === 'rendering' && exportProgress.currentScene === 0
   const isRendering = exportProgress?.phase === 'rendering'
+  const isMixingAudio = exportProgress?.phase === 'mixing_audio'
   const isStitching = exportProgress?.phase === 'stitching'
   const isComplete = exportProgress?.phase === 'complete'
   const isError = exportProgress?.phase === 'error'
+  const isElectronPath2 = typeof window !== 'undefined' && !!window.electronAPI
+  const backendLabel = isElectronPath2 ? 'Electron Path 2' : 'Render Server'
+
+  const sanitizedName = filename.replace(/[^a-zA-Z0-9_\-]/g, '') || 'export'
 
   const handleExport = () => {
-    const settings: ExportSettings = { resolution, fps, format: 'mp4' }
+    const settings: ExportSettings = { resolution, fps, format: 'mp4', outputName: sanitizedName, profile }
     exportVideo(settings)
   }
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 px-4" onClick={!isExporting ? closeExportModal : undefined}>
-      <div className="w-[480px] bg-[var(--color-panel)] border border-[var(--color-border)] rounded-xl overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()}>
+    <div
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 px-4"
+      onClick={!isExporting ? closeExportModal : undefined}
+    >
+      <div
+        className="w-[480px] bg-[var(--color-panel)] border border-[var(--color-border)] rounded-xl overflow-hidden shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="p-5 space-y-5">
-          {/* Settings (shown when not yet exporting) */}
-          {!exportProgress || (exportProgress.phase === 'rendering' && exportProgress.currentScene === 0 && !isExporting) ? (
+          <div className="flex justify-end">
+            <span className="inline-flex items-center rounded-full border border-[var(--color-border)] bg-[var(--color-bg)] px-2.5 py-1 text-[10px] uppercase tracking-wider text-[var(--color-text-muted)]">
+              {backendLabel}
+            </span>
+          </div>
+          <p className="text-[11px] text-[var(--color-text-muted)] -mt-3">
+            {isElectronPath2
+              ? 'Path 2 exporter active: single-scene Pixi/WebCodecs pipeline (iterating toward full multi-scene parity).'
+              : 'Render-server exporter active: scene HTML capture + FFmpeg stitching.'}
+          </p>
+
+          {/* Settings (shown when no export has been initiated) */}
+          {!exportProgress ? (
             <>
               {/* Resolution */}
               <div>
@@ -81,7 +132,9 @@ export default function ExportModal() {
                           : 'border-[var(--color-border)] hover:border-[var(--color-text-muted)]'
                       }`}
                     >
-                      <div className={`text-sm font-medium ${resolution === r.value ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-primary)]'}`}>
+                      <div
+                        className={`text-sm font-medium ${resolution === r.value ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-primary)]'}`}
+                      >
                         {r.label}
                       </div>
                       <div className="text-[10px] text-[var(--color-text-muted)]">{r.desc}</div>
@@ -112,6 +165,77 @@ export default function ExportModal() {
                 </div>
               </div>
 
+              {/* Profile */}
+              <div>
+                <label className="text-[var(--color-text-muted)] text-[10px] uppercase tracking-wider block mb-2">
+                  Export Profile
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => setProfile('fast')}
+                    className={`py-2 rounded border text-sm transition-colors no-style ${
+                      profile === 'fast'
+                        ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]'
+                        : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]'
+                    }`}
+                  >
+                    Fast
+                  </button>
+                  <button
+                    onClick={() => setProfile('quality')}
+                    className={`py-2 rounded border text-sm transition-colors no-style ${
+                      profile === 'quality'
+                        ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]'
+                        : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]'
+                    }`}
+                  >
+                    Quality
+                  </button>
+                </div>
+              </div>
+
+              {/* Filename */}
+              <div>
+                <label className="text-[var(--color-text-muted)] text-[10px] uppercase tracking-wider block mb-2">
+                  Filename
+                </label>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="text"
+                    value={filename}
+                    onChange={(e) => setFilename(e.target.value)}
+                    className="flex-1 h-9 px-3 rounded border border-[var(--color-border)] bg-[var(--color-bg)] text-[var(--color-text-primary)] text-sm outline-none focus:border-[var(--color-accent)] transition-colors"
+                    placeholder="my-video"
+                  />
+                  <span className="text-[var(--color-text-muted)] text-sm">.mp4</span>
+                </div>
+              </div>
+
+              {/* Save location */}
+              {'showDirectoryPicker' in globalThis && (
+                <div>
+                  <label className="text-[var(--color-text-muted)] text-[10px] uppercase tracking-wider block mb-2">
+                    Save to
+                  </label>
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    onClick={pickSaveLocation}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') pickSaveLocation()
+                    }}
+                    className="flex items-center gap-2 h-9 px-3 rounded border border-[var(--color-border)] bg-[var(--color-bg)] text-sm cursor-pointer hover:border-[var(--color-text-muted)] transition-colors w-full"
+                  >
+                    <FolderOpen size={14} className="text-[var(--color-text-muted)] flex-shrink-0" />
+                    <span
+                      className={saveDirName ? 'text-[var(--color-text-primary)]' : 'text-[var(--color-text-muted)]'}
+                    >
+                      {saveDirName || 'Default (Downloads)'}
+                    </span>
+                  </span>
+                </div>
+              )}
+
               {/* Summary */}
               <div className="bg-[var(--color-bg)] rounded p-3 text-xs text-[var(--color-text-muted)] space-y-1">
                 <div className="flex justify-between">
@@ -120,11 +244,21 @@ export default function ExportModal() {
                 </div>
                 <div className="flex justify-between">
                   <span>Total duration</span>
-                  <span className="text-[var(--color-text-primary)]">{scenes.reduce((a, s) => a + s.duration, 0)}s</span>
+                  <span className="text-[var(--color-text-primary)]">
+                    {scenes.reduce((a, s) => a + s.duration, 0)}s
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span>Format</span>
                   <span className="text-[var(--color-text-primary)]">MP4 (H.264)</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Profile</span>
+                  <span className="text-[var(--color-text-primary)]">{profile}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Backend</span>
+                  <span className="text-[var(--color-text-primary)]">{backendLabel}</span>
                 </div>
               </div>
 
@@ -159,22 +293,58 @@ export default function ExportModal() {
           ) : isComplete ? (
             /* Complete state */
             <div className="text-center space-y-4 py-4">
-              <div className="flex justify-center text-[var(--color-accent)] animate-bounce">
-                <Film size={48} />
+              <div className="flex justify-center">
+                <img src="/cench-logo.png" alt="Cench" className="h-12 object-contain export-logo" />
               </div>
               <div>
-                <p className="text-[#f0ece0] font-medium">Your video is ready!</p>
-                <p className="text-[#6b6b7a] text-sm mt-1">MP4 exported successfully</p>
+                <p className="text-[var(--color-text-primary)] font-medium">Your video is ready!</p>
+                <p className="text-[var(--color-text-muted)] text-sm mt-1">MP4 exported successfully</p>
               </div>
               {exportProgress.downloadUrl && (
-                <a
-                  href={exportProgress.downloadUrl}
-                  download
-                  className="kbd px-6 py-3"
-                >
-                  <Download size={16} />
-                  Download MP4
-                </a>
+                <div className="flex items-center justify-center gap-4">
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => {
+                      const url = exportProgress.downloadUrl!
+                      fetch('/api/export/reveal', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ url }),
+                      }).catch(() => {
+                        window.open(url, '_blank')
+                      })
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') e.currentTarget.click()
+                    }}
+                    className="inline-flex items-center gap-1.5 text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] cursor-pointer transition-colors"
+                  >
+                    <FolderOpen size={14} />
+                    {os === 'windows' ? 'Show in Explorer' : os === 'linux' ? 'Show in Files' : 'Show in Finder'}
+                  </span>
+                  <span className="text-[var(--color-border)]">|</span>
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => {
+                      const url = exportProgress.downloadUrl!
+                      const a = document.createElement('a')
+                      a.href = url
+                      a.download = `${sanitizedName}.mp4`
+                      document.body.appendChild(a)
+                      a.click()
+                      a.remove()
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') e.currentTarget.click()
+                    }}
+                    className="inline-flex items-center gap-1.5 text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] cursor-pointer transition-colors"
+                  >
+                    <Download size={14} />
+                    Open
+                  </span>
+                </div>
               )}
             </div>
           ) : isError ? (
@@ -187,6 +357,20 @@ export default function ExportModal() {
                 <p className="text-[#f0ece0] font-medium">Export failed</p>
                 <p className="text-[#6b6b7a] text-sm mt-1 break-words">{exportProgress?.error}</p>
               </div>
+              {exportProgress?.diagnostics && exportProgress.diagnostics.length > 0 && (
+                <div className="text-left bg-[var(--color-bg)] rounded p-3 max-h-28 overflow-auto">
+                  <div className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mb-2">
+                    Export diagnostics
+                  </div>
+                  <div className="space-y-1">
+                    {exportProgress.diagnostics.slice(-8).map((d, i) => (
+                      <div key={`${d}-${i}`} className="text-[11px] text-[var(--color-text-muted)] font-mono break-all">
+                        {d}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               <button
                 onClick={closeExportModal}
                 className="px-6 py-2 border border-[#2a2a32] text-[#6b6b7a] rounded hover:border-[#3a3a45] hover:text-[#f0ece0] transition-colors text-sm"
@@ -204,9 +388,7 @@ export default function ExportModal() {
                       <Loader2 size={14} className="animate-spin" />
                       Rendering scene {exportProgress.currentScene} of {exportProgress.totalScenes}
                     </span>
-                    <span className="text-[#f0ece0] text-sm">
-                      {Math.round(exportProgress.sceneProgress)}%
-                    </span>
+                    <span className="text-[#f0ece0] text-sm">{Math.round(exportProgress.sceneProgress)}%</span>
                   </div>
 
                   {/* Per-scene progress */}
@@ -219,7 +401,9 @@ export default function ExportModal() {
                       return (
                         <div key={scene.id}>
                           <div className="flex justify-between text-[10px] text-[#6b6b7a] mb-0.5">
-                            <span>Scene {sceneNum}: {(scene.name || scene.prompt.slice(0, 30)) || 'Untitled'}</span>
+                            <span>
+                              Scene {sceneNum}: {scene.name || scene.prompt.slice(0, 30) || 'Untitled'}
+                            </span>
                             <span>{progress > 0 ? `${Math.round(progress)}%` : '—'}</span>
                           </div>
                           <div className="h-1 bg-[#1a1a1f] rounded-full overflow-hidden">
@@ -235,6 +419,16 @@ export default function ExportModal() {
                 </div>
               )}
 
+              {isMixingAudio && (
+                <div className="flex items-center gap-3 py-4">
+                  <Loader2 size={20} className="animate-spin text-[#e84545]" />
+                  <div>
+                    <p className="text-[#f0ece0] text-sm font-medium">Mixing audio...</p>
+                    <p className="text-[#6b6b7a] text-xs">Combining TTS, SFX, and music tracks</p>
+                  </div>
+                </div>
+              )}
+
               {isStitching && (
                 <div className="flex items-center gap-3 py-4">
                   <Loader2 size={20} className="animate-spin text-[#e84545]" />
@@ -242,6 +436,71 @@ export default function ExportModal() {
                     <p className="text-[#f0ece0] text-sm font-medium">Stitching scenes...</p>
                     <p className="text-[#6b6b7a] text-xs">Combining clips with FFmpeg</p>
                   </div>
+                </div>
+              )}
+
+              {exportProgress?.diagnostics && exportProgress.diagnostics.length > 0 && (
+                <div className="bg-[var(--color-bg)] rounded p-3">
+                  <div className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mb-2">
+                    Export diagnostics
+                  </div>
+                  <div className="max-h-24 overflow-auto space-y-1">
+                    {exportProgress.diagnostics.slice(-6).map((d, i) => (
+                      <div key={`${d}-${i}`} className="text-[11px] text-[var(--color-text-muted)] font-mono break-all">
+                        {d}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {showCancelConfirm ? (
+                <div className="bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg p-4 space-y-3">
+                  <p className="text-sm text-[var(--color-text-primary)]">Cancel the export? Progress will be lost.</p>
+                  <div className="flex justify-end gap-2">
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setShowCancelConfirm(false)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') setShowCancelConfirm(false)
+                      }}
+                      className="text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] cursor-pointer transition-colors px-3 py-1.5"
+                    >
+                      Continue
+                    </span>
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => {
+                        setShowCancelConfirm(false)
+                        closeExportModal()
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          setShowCancelConfirm(false)
+                          closeExportModal()
+                        }
+                      }}
+                      className="text-sm text-[#e84545] hover:text-[#ff5555] cursor-pointer transition-colors px-3 py-1.5"
+                    >
+                      Cancel Export
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex justify-end pt-1">
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setShowCancelConfirm(true)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') setShowCancelConfirm(true)
+                    }}
+                    className="text-sm text-[var(--color-text-muted)] hover:text-[#e84545] cursor-pointer transition-colors"
+                  >
+                    Cancel
+                  </span>
                 </div>
               )}
             </div>
