@@ -25,7 +25,7 @@ export function TiltImage({ src, alt }: { src: string; alt: string }) {
       ref={ref}
       onMouseMove={handleMove}
       onMouseLeave={handleLeave}
-      className="w-full max-w-[420px]"
+      className="w-full max-w-[280px] sm:max-w-[320px] lg:max-w-[360px]"
       style={{ transform, transition: 'transform 0.15s ease-out' }}
     >
       <Image
