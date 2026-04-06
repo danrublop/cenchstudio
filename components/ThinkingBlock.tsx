@@ -14,7 +14,7 @@ export function ThinkingBlock({ thinking, isStreaming = false }: ThinkingBlockPr
   const wordCount = thinking.trim().split(/\s+/).filter(Boolean).length
 
   return (
-    <div className="my-1.5 rounded-md border border-[var(--color-border)] overflow-hidden text-[11px] font-mono">
+    <div className="my-1.5 rounded-md border border-[var(--color-border)] overflow-hidden text-[12px] font-mono">
       {/* Header — always visible */}
       <button
         onClick={() => !isStreaming && setExpanded((e) => !e)}

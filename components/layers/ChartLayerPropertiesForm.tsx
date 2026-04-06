@@ -30,11 +30,11 @@ function patchLayer(
 }
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
-  return <label className="mb-0.5 block text-[9px] font-medium text-[var(--color-text-muted)]">{children}</label>
+  return <label className="mb-0.5 block text-[10px] font-medium text-[var(--color-text-muted)]">{children}</label>
 }
 
 const inp =
-  'kbd w-full rounded border px-2 py-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]'
+  'kbd w-full rounded border px-2 py-1 text-[12px] focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]'
 const inpStyle = {
   backgroundColor: 'var(--color-input-bg)',
   borderColor: 'var(--color-border)',
@@ -130,7 +130,7 @@ export default function ChartLayerPropertiesForm({ scene, chartId }: { scene: Sc
   )
 
   if (!layer) {
-    return <p className="text-[10px] text-[var(--color-text-muted)]">Chart not found.</p>
+    return <p className="text-[11px] text-[var(--color-text-muted)]">Chart not found.</p>
   }
 
   const c = cfg(layer)
@@ -162,14 +162,14 @@ export default function ChartLayerPropertiesForm({ scene, chartId }: { scene: Sc
 
   return (
     <div className="space-y-3">
-      <p className="text-[9px] leading-snug text-[var(--color-text-muted)]">
+      <p className="text-[10px] leading-snug text-[var(--color-text-muted)]">
         Scene <strong className="text-[var(--color-text-primary)]">background</strong> (color, texture, canvas motion)
         is separate: double-click <strong className="text-[var(--color-text-primary)]">Background</strong> in the stack.
         Use panel &amp; plot fills below so charts can sit transparently on top or read as cards.
       </p>
 
       <details open className="rounded-lg border p-2" style={{ borderColor: 'var(--color-border)' }}>
-        <summary className="cursor-pointer text-[10px] font-semibold text-[var(--color-text-primary)]">
+        <summary className="cursor-pointer text-[11px] font-semibold text-[var(--color-text-primary)]">
           Identity &amp; data
         </summary>
         <div className="mt-2 space-y-2">
@@ -201,14 +201,14 @@ export default function ChartLayerPropertiesForm({ scene, chartId }: { scene: Sc
           <div>
             <FieldLabel>Data (JSON)</FieldLabel>
             {isRecharts ? (
-              <p className="mb-1 text-[9px] leading-snug text-[var(--color-text-muted)]">
+              <p className="mb-1 text-[10px] leading-snug text-[var(--color-text-muted)]">
                 Recharts (shadcn-style): array of rows with your <span className="font-mono">categoryKey</span> and{' '}
                 <span className="font-mono">valueKey</span> (defaults <span className="font-mono">label</span> /{' '}
                 <span className="font-mono">value</span>). Set series colors via the palette JSON in Typography.
               </p>
             ) : null}
             {isPlotly ? (
-              <p className="mb-1 text-[9px] leading-snug text-[var(--color-text-muted)]">
+              <p className="mb-1 text-[10px] leading-snug text-[var(--color-text-muted)]">
                 Plotly: <span className="font-mono">traces</span> array — style each trace with fields like{' '}
                 <span className="font-mono">marker.color</span>, <span className="font-mono">line.color</span>,{' '}
                 <span className="font-mono">marker.size</span> (
@@ -246,7 +246,7 @@ export default function ChartLayerPropertiesForm({ scene, chartId }: { scene: Sc
                 }
                 setDataDraft(null)
               }}
-              className={`${inp} font-mono text-[10px]`}
+              className={`${inp} font-mono text-[11px]`}
               style={inpStyle}
             />
           </div>
@@ -254,7 +254,7 @@ export default function ChartLayerPropertiesForm({ scene, chartId }: { scene: Sc
       </details>
 
       <details className="rounded-lg border p-2" style={{ borderColor: 'var(--color-border)' }}>
-        <summary className="cursor-pointer text-[10px] font-semibold text-[var(--color-text-primary)]">
+        <summary className="cursor-pointer text-[11px] font-semibold text-[var(--color-text-primary)]">
           Layout &amp; timing (% of chart area)
         </summary>
         <div className="mt-2 grid grid-cols-2 gap-2">
@@ -304,7 +304,7 @@ export default function ChartLayerPropertiesForm({ scene, chartId }: { scene: Sc
             />
           </div>
         </div>
-        <label className="mt-2 flex cursor-pointer flex-wrap items-center gap-2 text-[10px] text-[var(--color-text-primary)]">
+        <label className="mt-2 flex cursor-pointer flex-wrap items-center gap-2 text-[11px] text-[var(--color-text-primary)]">
           <input
             type="checkbox"
             disabled={isPlotlyOrRecharts}
@@ -325,10 +325,10 @@ export default function ChartLayerPropertiesForm({ scene, chartId }: { scene: Sc
       </details>
 
       <details className="rounded-lg border p-2" style={{ borderColor: 'var(--color-border)' }}>
-        <summary className="cursor-pointer text-[10px] font-semibold text-[var(--color-text-primary)]">
+        <summary className="cursor-pointer text-[11px] font-semibold text-[var(--color-text-primary)]">
           Panel vs scene (HTML container)
         </summary>
-        <p className="mt-1 text-[9px] text-[var(--color-text-muted)]">
+        <p className="mt-1 text-[10px] text-[var(--color-text-muted)]">
           Styles the chart&apos;s positioned div — not the scene. Leave transparent to float over video, images, or
           canvas background.
         </p>
@@ -401,10 +401,10 @@ export default function ChartLayerPropertiesForm({ scene, chartId }: { scene: Sc
 
       {!isPlotlyOrRecharts ? (
         <details className="rounded-lg border p-2" style={{ borderColor: 'var(--color-border)' }}>
-          <summary className="cursor-pointer text-[10px] font-semibold text-[var(--color-text-primary)]">
+          <summary className="cursor-pointer text-[11px] font-semibold text-[var(--color-text-primary)]">
             Plot area (inside SVG)
           </summary>
-          <p className="mt-1 text-[9px] text-[var(--color-text-muted)]">
+          <p className="mt-1 text-[10px] text-[var(--color-text-muted)]">
             Fills the SVG viewport behind marks. Leave empty for a see-through plot (scene shows through).
           </p>
           <div className="mt-2 flex gap-2">
@@ -433,10 +433,10 @@ export default function ChartLayerPropertiesForm({ scene, chartId }: { scene: Sc
 
       {isRecharts ? (
         <details open className="rounded-lg border p-2" style={{ borderColor: 'var(--color-border)' }}>
-          <summary className="cursor-pointer text-[10px] font-semibold text-[var(--color-text-primary)]">
+          <summary className="cursor-pointer text-[11px] font-semibold text-[var(--color-text-primary)]">
             Recharts (shadcn-style scene chart)
           </summary>
-          <p className="mt-1 text-[9px] leading-snug text-[var(--color-text-muted)]">
+          <p className="mt-1 text-[10px] leading-snug text-[var(--color-text-muted)]">
             The scene iframe loads React + Recharts from{' '}
             <a href="https://esm.sh" target="_blank" rel="noreferrer" className="text-[var(--color-accent)] underline">
               esm.sh
@@ -471,7 +471,7 @@ export default function ChartLayerPropertiesForm({ scene, chartId }: { scene: Sc
               </select>
             </div>
             <div className="flex flex-col justify-end">
-              <label className="flex cursor-pointer items-center gap-2 text-[10px] text-[var(--color-text-primary)]">
+              <label className="flex cursor-pointer items-center gap-2 text-[11px] text-[var(--color-text-primary)]">
                 <input
                   type="checkbox"
                   checked={c.showGrid !== false}
@@ -516,10 +516,10 @@ export default function ChartLayerPropertiesForm({ scene, chartId }: { scene: Sc
 
       {isPlotly ? (
         <details open className="rounded-lg border p-2" style={{ borderColor: 'var(--color-border)' }}>
-          <summary className="cursor-pointer text-[10px] font-semibold text-[var(--color-text-primary)]">
+          <summary className="cursor-pointer text-[11px] font-semibold text-[var(--color-text-primary)]">
             Plotly.js layout &amp; config
           </summary>
-          <p className="mt-1 text-[9px] leading-snug text-[var(--color-text-muted)]">
+          <p className="mt-1 text-[10px] leading-snug text-[var(--color-text-muted)]">
             Defaults: transparent <span className="font-mono">paper_bgcolor</span> /{' '}
             <span className="font-mono">plot_bgcolor</span>, <span className="font-mono">autosize</span>, merged margins
             (partial <span className="font-mono">margin</span> keys keep the rest), static export-friendly{' '}
@@ -556,7 +556,7 @@ export default function ChartLayerPropertiesForm({ scene, chartId }: { scene: Sc
             className="mt-2 space-y-3 rounded-md border border-dashed p-2"
             style={{ borderColor: 'var(--color-border)' }}
           >
-            <p className="text-[9px] font-semibold text-[var(--color-text-primary)]">Quick layout (plotlyLayout)</p>
+            <p className="text-[10px] font-semibold text-[var(--color-text-primary)]">Quick layout (plotlyLayout)</p>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
                 <FieldLabel>paper_bgcolor (full figure)</FieldLabel>
@@ -655,7 +655,7 @@ export default function ChartLayerPropertiesForm({ scene, chartId }: { scene: Sc
               <FieldLabel>plotlyLayout (JSON object)</FieldLabel>
               <textarea
                 rows={5}
-                className={`${inp} font-mono text-[10px]`}
+                className={`${inp} font-mono text-[11px]`}
                 style={inpStyle}
                 value={
                   plotlyLayoutDraft ??
@@ -691,7 +691,7 @@ export default function ChartLayerPropertiesForm({ scene, chartId }: { scene: Sc
               <FieldLabel>plotlyConfig (JSON object)</FieldLabel>
               <textarea
                 rows={4}
-                className={`${inp} font-mono text-[10px]`}
+                className={`${inp} font-mono text-[11px]`}
                 style={inpStyle}
                 value={
                   plotlyConfigDraft ??
@@ -729,15 +729,15 @@ export default function ChartLayerPropertiesForm({ scene, chartId }: { scene: Sc
 
       {!isPlotlyOrRecharts ? (
         <details className="rounded-lg border p-2" style={{ borderColor: 'var(--color-border)' }}>
-          <summary className="cursor-pointer text-[10px] font-semibold text-[var(--color-text-primary)]">
+          <summary className="cursor-pointer text-[11px] font-semibold text-[var(--color-text-primary)]">
             Ink, axes &amp; labels (CenchCharts)
           </summary>
-          <p className="mt-1 text-[9px] leading-snug text-[var(--color-text-muted)]">
+          <p className="mt-1 text-[10px] leading-snug text-[var(--color-text-muted)]">
             Override typography colors and bar outlines. Empty fields fall back to the dark/light theme and (unless
             disabled) scene <span className="font-mono">AXIS_COLOR</span> /{' '}
             <span className="font-mono">GRID_COLOR</span>.
           </p>
-          <label className="mt-2 flex cursor-pointer items-center gap-2 text-[10px] text-[var(--color-text-primary)]">
+          <label className="mt-2 flex cursor-pointer items-center gap-2 text-[11px] text-[var(--color-text-primary)]">
             <input
               type="checkbox"
               checked={c.useSceneAxisColors !== false}
@@ -822,7 +822,7 @@ export default function ChartLayerPropertiesForm({ scene, chartId }: { scene: Sc
 
       {!isPlotly ? (
         <details className="rounded-lg border p-2" style={{ borderColor: 'var(--color-border)' }}>
-          <summary className="cursor-pointer text-[10px] font-semibold text-[var(--color-text-primary)]">
+          <summary className="cursor-pointer text-[11px] font-semibold text-[var(--color-text-primary)]">
             Labels &amp; format
           </summary>
           <div className="mt-2 space-y-2">
@@ -892,7 +892,7 @@ export default function ChartLayerPropertiesForm({ scene, chartId }: { scene: Sc
                 />
               </div>
             </div>
-            <div className="flex flex-wrap gap-3 text-[10px] text-[var(--color-text-primary)]">
+            <div className="flex flex-wrap gap-3 text-[11px] text-[var(--color-text-primary)]">
               <label className="flex items-center gap-1.5">
                 <input
                   type="checkbox"
@@ -923,7 +923,7 @@ export default function ChartLayerPropertiesForm({ scene, chartId }: { scene: Sc
       ) : null}
 
       <details className="rounded-lg border p-2" style={{ borderColor: 'var(--color-border)' }}>
-        <summary className="cursor-pointer text-[10px] font-semibold text-[var(--color-text-primary)]">
+        <summary className="cursor-pointer text-[11px] font-semibold text-[var(--color-text-primary)]">
           Typography &amp; colors
         </summary>
         <div className="mt-2 space-y-2">
@@ -992,12 +992,12 @@ export default function ChartLayerPropertiesForm({ scene, chartId }: { scene: Sc
                   setColorsDraft(null)
                 }}
                 placeholder='["#e84545", "#2563eb", ...]'
-                className={`${inp} font-mono text-[10px]`}
+                className={`${inp} font-mono text-[11px]`}
                 style={inpStyle}
               />
             </div>
           ) : (
-            <p className="text-[9px] text-[var(--color-text-muted)]">
+            <p className="text-[10px] text-[var(--color-text-muted)]">
               Palette for Plotly is set per trace (<span className="font-mono">marker.color</span>,{' '}
               <span className="font-mono">line.color</span>, etc.).
             </p>
@@ -1007,7 +1007,7 @@ export default function ChartLayerPropertiesForm({ scene, chartId }: { scene: Sc
 
       {!isPlotlyOrRecharts ? (
         <details className="rounded-lg border p-2" style={{ borderColor: 'var(--color-border)' }}>
-          <summary className="cursor-pointer text-[10px] font-semibold text-[var(--color-text-primary)]">
+          <summary className="cursor-pointer text-[11px] font-semibold text-[var(--color-text-primary)]">
             Animation &amp; margin
           </summary>
           <div className="mt-2 grid grid-cols-3 gap-2">
@@ -1037,7 +1037,7 @@ export default function ChartLayerPropertiesForm({ scene, chartId }: { scene: Sc
               </div>
             ))}
           </div>
-          <p className="mt-2 text-[9px] text-[var(--color-text-muted)]">Margin (px) inside the chart SVG</p>
+          <p className="mt-2 text-[10px] text-[var(--color-text-muted)]">Margin (px) inside the chart SVG</p>
           <div className="mt-1 grid grid-cols-2 gap-2">
             {(['top', 'right', 'bottom', 'left'] as const).map((side) => {
               const m = (c.margin as Record<string, unknown> | undefined) || {}
@@ -1066,7 +1066,7 @@ export default function ChartLayerPropertiesForm({ scene, chartId }: { scene: Sc
               )
             })}
           </div>
-          <label className="mt-2 flex cursor-pointer items-center gap-2 text-[10px] text-[var(--color-text-primary)]">
+          <label className="mt-2 flex cursor-pointer items-center gap-2 text-[11px] text-[var(--color-text-primary)]">
             <input
               type="checkbox"
               checked={c.readableDefaults === false}
@@ -1079,18 +1079,18 @@ export default function ChartLayerPropertiesForm({ scene, chartId }: { scene: Sc
 
       <button
         type="button"
-        className="no-style w-full rounded-lg border px-2.5 py-2 text-left text-[11px] transition-colors hover:bg-white/[0.04]"
+        className="no-style w-full rounded-lg border px-2.5 py-2 text-left text-[12px] transition-colors hover:bg-white/[0.04]"
         style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
         onClick={() => openTextTabForSlot(`chart:${chartId}:title`)}
       >
-        <span className="text-[9px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
           Title slot
         </span>
-        <p className="mt-0.5 font-mono text-[10px] text-[var(--color-text-muted)]">
+        <p className="mt-0.5 font-mono text-[11px] text-[var(--color-text-muted)]">
           {chartLayerTitleLine(layer).slice(0, 56)}
           {chartLayerTitleLine(layer).length > 56 ? '…' : ''}
         </p>
-        <span className="mt-1 block text-[10px] text-[var(--color-accent)]">Open in Text tab →</span>
+        <span className="mt-1 block text-[11px] text-[var(--color-accent)]">Open in Text tab →</span>
       </button>
     </div>
   )

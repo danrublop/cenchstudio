@@ -19,7 +19,19 @@ import type { WorldStateMutable } from './tool-executor'
 import { AgentLogger } from './logger'
 
 /** Max iterations per sub-agent (much smaller than the parent's 15) */
-const SUB_AGENT_MAX_ITERATIONS = 8
+const SUB_AGENT_MAX_ITERATIONS = 5
+
+/** Wall-clock timeout per sub-agent in ms (90 seconds). maxIterations alone
+ *  doesn't bound time — an agent could iterate slowly with expensive API calls. */
+const SUB_AGENT_TIMEOUT_MS = 90_000
+
+/** Max retries for a sub-agent that fails with a transient error */
+const SUB_AGENT_MAX_RETRIES = 1
+
+function isTransientError(msg: string): boolean {
+  const lower = msg.toLowerCase()
+  return lower.includes('timeout') || lower.includes('rate limit') || lower.includes('overloaded') || lower.includes('529')
+}
 
 /**
  * Build a focused activeTools list for a sub-agent based on scene type.
@@ -89,6 +101,12 @@ export interface OrchestratorOptions {
   emit: (event: SSEEvent) => void
   /** Parent's logger for correlation */
   logger: AgentLogger
+  /** Remaining tool call budget from parent (stops spawning sub-agents when exhausted) */
+  toolBudgetRemaining?: number
+  /** Parent's accumulated LLM cost at handoff time */
+  parentCostUsd?: number
+  /** Max cost for the entire run (parent + sub-agents) */
+  maxRunCostUsd?: number
 }
 
 export interface SubAgentResult {
@@ -121,73 +139,133 @@ export async function runOrchestrated(opts: OrchestratorOptions): Promise<SubAge
   const { storyboard, parentWorld, parentOpts, emit, logger } = opts
   const results: SubAgentResult[] = []
   const totalScenes = storyboard.scenes.length
+  let cumulativeToolCalls = 0
+  let cumulativeCostUsd = 0
 
-  logger.log('orchestrator', `Starting orchestrated build: ${totalScenes} scenes`, {
+  logger.log('orchestrator', `Starting orchestrated build: ${totalScenes} scenes (max ${MAX_PARALLEL_SUB_AGENTS} parallel)`, {
     sceneNames: storyboard.scenes.map((s) => s.name),
   })
 
   // Match storyboard scenes to existing scene shells in the world
   const sceneMap = matchStoryboardToScenes(storyboard.scenes, parentWorld.scenes)
 
-  for (let i = 0; i < totalScenes; i++) {
-    const planned = storyboard.scenes[i]
-    const existingScene = sceneMap.get(i)
-
-    // Check abort
+  // Build scenes in batches of MAX_PARALLEL_SUB_AGENTS for parallelism
+  for (let batchStart = 0; batchStart < totalScenes; batchStart += MAX_PARALLEL_SUB_AGENTS) {
     if (parentOpts.abortSignal?.aborted) {
-      logger.warn('orchestrator', `Aborted at scene ${i + 1}/${totalScenes}`)
+      logger.warn('orchestrator', `Aborted before batch starting at scene ${batchStart + 1}`)
       break
     }
 
-    const subAgentId = uuidv4().slice(0, 8)
+    // Tool budget guardrail: stop spawning sub-agents when tool budget is exhausted
+    if (opts.toolBudgetRemaining != null && cumulativeToolCalls >= opts.toolBudgetRemaining) {
+      logger.warn('orchestrator', `Tool budget exhausted (${cumulativeToolCalls}/${opts.toolBudgetRemaining}) — skipping remaining scenes`)
+      const msg = `\n\n⚠ Tool call budget exhausted during orchestration. ${totalScenes - batchStart} scene(s) skipped.`
+      emit({ type: 'token', token: msg })
+      break
+    }
 
-    emit({
-      type: 'sub_agent_start',
-      subAgentId,
-      subAgentSceneIndex: i,
-      subAgentTotal: totalScenes,
-      subAgentSceneName: planned.name,
-    })
+    // Cost guardrail: stop if cumulative cost (parent + sub-agents) exceeds the run cap
+    if (opts.maxRunCostUsd != null && opts.parentCostUsd != null) {
+      const totalCost = opts.parentCostUsd + cumulativeCostUsd
+      if (totalCost > opts.maxRunCostUsd) {
+        logger.warn('orchestrator', `Cost limit exceeded during orchestration ($${totalCost.toFixed(3)} > $${opts.maxRunCostUsd}) — skipping remaining scenes`)
+        const msg = `\n\n⚠ Cost limit reached during orchestration ($${totalCost.toFixed(2)} / $${opts.maxRunCostUsd.toFixed(2)}). ${totalScenes - batchStart} scene(s) skipped.`
+        emit({ type: 'token', token: msg })
+        break
+      }
+    }
 
-    const subAgentActiveTools = buildActiveToolsForSceneType(
-      planned.sceneType,
-      parentOpts.activeTools,
-      storyboard.featureFlags,
-    )
+    const batchEnd = Math.min(batchStart + MAX_PARALLEL_SUB_AGENTS, totalScenes)
+    const batchItems: Array<{ index: number; planned: StoryboardScene; existingScene?: Scene; subAgentId: string }> = []
 
-    logger.log('orchestrator', `Sub-agent ${subAgentId}: building "${planned.name}" (${i + 1}/${totalScenes})`, {
-      sceneType: planned.sceneType,
-      duration: planned.duration,
-      existingSceneId: existingScene?.id ?? null,
-      activeTools: subAgentActiveTools,
-      focusedSceneType: planned.sceneType,
-    })
+    for (let i = batchStart; i < batchEnd; i++) {
+      const planned = storyboard.scenes[i]
+      const existingScene = sceneMap.get(i)
+      const subAgentId = uuidv4().slice(0, 8)
 
-    try {
-      const subResult = await buildSceneWithSubAgent({
-        planned,
-        sceneIndex: i,
-        existingScene,
-        parentWorld,
-        parentOpts,
-        featureFlags: storyboard.featureFlags,
-        emit,
-        logger,
+      batchItems.push({ index: i, planned, existingScene, subAgentId })
+
+      emit({
+        type: 'sub_agent_start',
         subAgentId,
+        subAgentSceneIndex: i,
+        subAgentTotal: totalScenes,
+        subAgentSceneName: planned.name,
       })
 
-      results.push({
-        sceneIndex: i,
-        sceneName: planned.name,
-        success: subResult.success,
-        sceneId: subResult.sceneId,
-        usage: subResult.usage,
-        toolCalls: subResult.toolCalls,
-        error: subResult.error,
+      logger.log('orchestrator', `Sub-agent ${subAgentId}: building "${planned.name}" (${i + 1}/${totalScenes})`, {
+        sceneType: planned.sceneType,
+        duration: planned.duration,
+        existingSceneId: existingScene?.id ?? null,
+        batchIndex: i - batchStart,
+        batchSize: batchEnd - batchStart,
       })
+    }
 
-      // Merge the sub-agent's updated scene back into parent world
-      if (subResult.success && subResult.updatedScene) {
+    // Run batch in parallel with per-sub-agent timeout and retry
+    const batchPromises = batchItems.map(async ({ index: i, planned, existingScene, subAgentId }) => {
+      for (let attempt = 0; attempt <= SUB_AGENT_MAX_RETRIES; attempt++) {
+        // Per-sub-agent AbortController with wall-clock timeout,
+        // composed with the parent's abort signal so parent abort cascades.
+        const subAbort = new AbortController()
+        const timer = setTimeout(() => subAbort.abort(), SUB_AGENT_TIMEOUT_MS)
+        const onParentAbort = () => subAbort.abort()
+        parentOpts.abortSignal?.addEventListener('abort', onParentAbort, { once: true })
+
+        try {
+          const subResult = await buildSceneWithSubAgent({
+            planned,
+            sceneIndex: i,
+            existingScene,
+            parentWorld,
+            parentOpts: { ...parentOpts, abortSignal: subAbort.signal },
+            featureFlags: storyboard.featureFlags,
+            emit,
+            logger,
+            subAgentId,
+          })
+
+          return {
+            index: i,
+            planned,
+            subAgentId,
+            result: subResult,
+            error: undefined as string | undefined,
+          }
+        } catch (err) {
+          const errMsg = (err as Error).message
+          if (attempt < SUB_AGENT_MAX_RETRIES && isTransientError(errMsg)) {
+            logger.warn('orchestrator', `Sub-agent ${subAgentId} failed (transient), retrying: ${errMsg}`, {
+              sceneIndex: i,
+              attempt,
+            })
+            continue
+          }
+          logger.error('orchestrator', `Sub-agent ${subAgentId} crashed: ${errMsg}`, {
+            sceneIndex: i,
+            sceneName: planned.name,
+          })
+          return {
+            index: i,
+            planned,
+            subAgentId,
+            result: undefined as BuildSceneResult | undefined,
+            error: errMsg,
+          }
+        } finally {
+          clearTimeout(timer)
+          parentOpts.abortSignal?.removeEventListener('abort', onParentAbort)
+        }
+      }
+      // Unreachable, but TypeScript needs it
+      return { index: i, planned, subAgentId, result: undefined as BuildSceneResult | undefined, error: 'max retries exceeded' }
+    })
+
+    const batchResults = await Promise.all(batchPromises)
+
+    // Merge results back in scene order (not completion order) to preserve ordering
+    for (const { index: i, planned, subAgentId, result: subResult, error } of batchResults) {
+      if (subResult?.success && subResult.updatedScene) {
         const worldIdx = parentWorld.scenes.findIndex((s) => s.id === subResult.updatedScene!.id)
         if (worldIdx !== -1) {
           parentWorld.scenes[worldIdx] = subResult.updatedScene
@@ -199,17 +277,31 @@ export async function runOrchestrated(opts: OrchestratorOptions): Promise<SubAge
         })
       }
 
+      const subUsage = subResult?.usage ?? { inputTokens: 0, outputTokens: 0, apiCalls: 0, costUsd: 0, totalDurationMs: 0 }
+      const subToolCalls = subResult?.toolCalls ?? []
+      cumulativeToolCalls += subToolCalls.length
+      cumulativeCostUsd += subUsage.costUsd
+
+      results.push({
+        sceneIndex: i,
+        sceneName: planned.name,
+        success: subResult?.success ?? false,
+        sceneId: subResult?.sceneId,
+        usage: subUsage,
+        toolCalls: subToolCalls,
+        error: error ?? subResult?.error,
+      })
+
       emit({
         type: 'sub_agent_complete',
         subAgentId,
         subAgentSceneIndex: i,
         subAgentTotal: totalScenes,
         subAgentSceneName: planned.name,
-        subAgentSuccess: subResult.success,
+        subAgentSuccess: subResult?.success ?? false,
       })
 
-      // Emit state_change so client updates preview
-      if (subResult.success && subResult.sceneId) {
+      if (subResult?.success && subResult.sceneId) {
         emit({
           type: 'preview_update',
           sceneId: subResult.sceneId,
@@ -224,32 +316,22 @@ export async function runOrchestrated(opts: OrchestratorOptions): Promise<SubAge
           ],
         })
       }
-    } catch (err) {
-      logger.error('orchestrator', `Sub-agent ${subAgentId} crashed: ${(err as Error).message}`, {
-        sceneIndex: i,
-        sceneName: planned.name,
-      })
-
-      results.push({
-        sceneIndex: i,
-        sceneName: planned.name,
-        success: false,
-        usage: { inputTokens: 0, outputTokens: 0, apiCalls: 0, costUsd: 0, totalDurationMs: 0 },
-        toolCalls: [],
-        error: (err as Error).message,
-      })
-
-      emit({
-        type: 'sub_agent_complete',
-        subAgentId,
-        subAgentSceneIndex: i,
-        subAgentTotal: totalScenes,
-        subAgentSceneName: planned.name,
-        subAgentSuccess: false,
-      })
-
-      // Continue with next scene — don't abort the whole orchestration
     }
+  }
+
+  // Cross-scene consistency check — detect issues across the full sequence
+  const consistencyIssues = checkCrossSceneConsistency(parentWorld.scenes, storyboard, results)
+  if (consistencyIssues.length > 0) {
+    logger.warn('orchestrator', `Cross-scene consistency issues: ${consistencyIssues.length}`, {
+      issues: consistencyIssues,
+    })
+    // Emit as a text token so the Director agent can see and address them
+    const issueText = [
+      '\n\n⚠ Cross-scene consistency check:',
+      ...consistencyIssues.map((issue) => `  - ${issue}`),
+      'Consider fixing these in the polish phase.',
+    ].join('\n')
+    emit({ type: 'token', token: issueText })
   }
 
   // Log summary
@@ -263,6 +345,62 @@ export async function runOrchestrated(opts: OrchestratorOptions): Promise<SubAge
   })
 
   return results
+}
+
+/** Check for visual/structural inconsistencies across scenes built by different sub-agents */
+function checkCrossSceneConsistency(
+  scenes: Scene[],
+  storyboard: Storyboard,
+  results: SubAgentResult[],
+): string[] {
+  const issues: string[] = []
+  const builtScenes = results.filter((r) => r.success && r.sceneId)
+
+  // Check for scenes that failed to build
+  const failedScenes = results.filter((r) => !r.success)
+  if (failedScenes.length > 0) {
+    issues.push(`${failedScenes.length} scene(s) failed to build: ${failedScenes.map((r) => r.sceneName).join(', ')}`)
+  }
+
+  // Check for missing audio on scenes that should have narration
+  if (storyboard.featureFlags?.narration !== false) {
+    for (const result of builtScenes) {
+      const scene = scenes.find((s) => s.id === result.sceneId)
+      if (scene && !(scene.audioLayer?.enabled)) {
+        issues.push(`Scene "${scene.name}" has no audio — narration may be missing`)
+      }
+    }
+  }
+
+  // Check for duplicate scene types exceeding 3 consecutive
+  const sceneTypes = scenes
+    .filter((s) => builtScenes.some((r) => r.sceneId === s.id))
+    .map((s) => s.sceneType)
+  let consecutiveCount = 1
+  for (let i = 1; i < sceneTypes.length; i++) {
+    if (sceneTypes[i] === sceneTypes[i - 1]) {
+      consecutiveCount++
+      if (consecutiveCount > 3) {
+        issues.push(`${consecutiveCount}+ consecutive ${sceneTypes[i]} scenes — consider varying renderer types`)
+        break
+      }
+    } else {
+      consecutiveCount = 1
+    }
+  }
+
+  // Check for scenes with very different durations from their storyboard spec
+  for (const result of builtScenes) {
+    const scene = scenes.find((s) => s.id === result.sceneId)
+    const planned = storyboard.scenes[result.sceneIndex]
+    if (scene && planned && Math.abs(scene.duration - planned.duration) > 3) {
+      issues.push(
+        `Scene "${scene.name}" duration ${scene.duration}s differs from planned ${planned.duration}s by ${Math.abs(scene.duration - planned.duration)}s`,
+      )
+    }
+  }
+
+  return issues
 }
 
 // ── Sub-agent execution ──────────────────────────────────────────────────────
@@ -294,9 +432,9 @@ async function buildSceneWithSubAgent(opts: BuildSceneOptions): Promise<BuildSce
   // Build a focused message for the SceneMaker
   const scenePrompt = buildScenePrompt(planned, existingScene)
 
-  // Clone the parent world for isolation
+  // Clone the parent world for isolation (deep clone to prevent cross-agent mutations)
   const isolatedScenes = JSON.parse(JSON.stringify(parentWorld.scenes)) as Scene[]
-  const isolatedGlobalStyle = { ...parentWorld.globalStyle } as GlobalStyle
+  const isolatedGlobalStyle = JSON.parse(JSON.stringify(parentWorld.globalStyle)) as GlobalStyle
 
   // Create a sub-agent logger that correlates to the parent run
   const subLogger = new AgentLogger()
@@ -327,6 +465,8 @@ async function buildSceneWithSubAgent(opts: BuildSceneOptions): Promise<BuildSce
     audioProviderEnabled: parentOpts.audioProviderEnabled,
     mediaGenEnabled: parentOpts.mediaGenEnabled,
     sessionPermissions: parentOpts.sessionPermissions,
+    generationOverrides: parentOpts.generationOverrides,
+    autoChooseDefaults: parentOpts.autoChooseDefaults,
     abortSignal: parentOpts.abortSignal,
     logger: subLogger,
     emit, // shared SSE stream

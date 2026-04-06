@@ -58,9 +58,15 @@ export async function resolveAudioPath(urlOrPath, tempDir, baseUrl = 'http://loc
     return downloadToTemp(urlOrPath, tempDir)
   }
 
-  // Absolute local file path
+  // Absolute local file path — restrict to project directory
   if (path.isAbsolute(urlOrPath) && fs.existsSync(urlOrPath)) {
-    return urlOrPath
+    const resolved = path.resolve(urlOrPath)
+    const projectRoot = getProjectRoot()
+    if (!resolved.startsWith(projectRoot + path.sep)) {
+      console.warn(`[audio-mixer] Blocked path outside project root: ${urlOrPath}`)
+      return null
+    }
+    return resolved
   }
 
   console.warn(`[audio-mixer] Cannot resolve audio path: ${urlOrPath}`)

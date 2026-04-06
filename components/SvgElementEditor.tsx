@@ -337,7 +337,7 @@ export default function SvgElementEditor({ sceneId }: Props) {
                 {/* Font size handle — only for text */}
                 {box.isText && (
                   <div
-                    className="absolute -top-6 right-0 flex items-center gap-1 bg-[#111114]/90 rounded px-1.5 py-0.5 text-[9px] text-[#f0ece0] select-none"
+                    className="absolute -top-6 right-0 flex items-center gap-1 bg-[#111114]/90 rounded px-1.5 py-0.5 text-[10px] text-[#f0ece0] select-none"
                     style={{ cursor: 'ns-resize', whiteSpace: 'nowrap' }}
                     onMouseDown={(e) => handleFontDragStart(e, box)}
                     title="Drag up/down to resize font"
@@ -348,12 +348,12 @@ export default function SvgElementEditor({ sceneId }: Props) {
 
                 {/* Element label + Extract button */}
                 <div className="absolute -top-5 left-0 flex items-center gap-1.5">
-                  <span className="text-[9px] text-[#e84545] bg-[#111114]/80 px-1 rounded whitespace-nowrap pointer-events-none">
+                  <span className="text-[10px] text-[#e84545] bg-[#111114]/80 px-1 rounded whitespace-nowrap pointer-events-none">
                     {box.isText ? 'text' : `#${box.id}`}
                   </span>
                   {!box.isText && (
                     <button
-                      className="text-[9px] text-[#f0ece0] bg-[#1a1a1f] border border-[#e84545]/60 px-1 rounded hover:bg-[#e84545] hover:text-white transition-colors whitespace-nowrap"
+                      className="text-[10px] text-[#f0ece0] bg-[#1a1a1f] border border-[#e84545]/60 px-1 rounded hover:bg-[#e84545] hover:text-white transition-colors whitespace-nowrap"
                       onMouseDown={(e) => e.stopPropagation()}
                       onClick={(e) => {
                         e.stopPropagation()

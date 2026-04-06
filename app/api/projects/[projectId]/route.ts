@@ -7,16 +7,15 @@ import path from 'path'
 import { normalizeScenesForPersistence } from '@/lib/charts/normalize-scenes'
 import { readProjectSceneBlob, writeProjectSceneBlob } from '@/lib/db/project-scene-storage'
 import { readProjectScenesFromTables, writeProjectScenesToTables } from '@/lib/db/project-scene-table'
+import { assertProjectAccess } from '@/lib/auth-helpers'
+import { SCRYPT_HASH_RE, LIMITS } from '@/lib/api/constants'
 
 // GET: load a single project with full data
 export async function GET(req: NextRequest, { params }: { params: Promise<{ projectId: string }> }) {
   try {
     const { projectId } = await params
-    const [project] = await db.select().from(projects).where(eq(projects.id, projectId)).limit(1)
-
-    if (!project) {
-      return NextResponse.json({ error: 'Project not found' }, { status: 404 })
-    }
+    const { error, project } = await assertProjectAccess(projectId)
+    if (error || !project) return error!
 
     const tableBacked = await readProjectScenesFromTables(projectId)
     const blobBacked = readProjectSceneBlob(project.description)
@@ -41,7 +40,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ proj
     })
   } catch (error: any) {
     console.error('Failed to load project:', error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to load project' }, { status: 500 })
   }
 }
 
@@ -49,6 +48,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ proj
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ projectId: string }> }) {
   try {
     const { projectId } = await params
+    const { error: accessError } = await assertProjectAccess(projectId)
+    if (accessError) return accessError
     const body = await req.json()
     const {
       name,
@@ -80,9 +81,28 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pr
       }
       updateData.outputMode = outputMode
     }
-    if (globalStyle !== undefined) updateData.globalStyle = globalStyle
-    if (mp4Settings !== undefined) updateData.mp4Settings = mp4Settings
-    if (interactiveSettings !== undefined) updateData.interactiveSettings = interactiveSettings
+    if (globalStyle !== undefined) {
+      // Cap globalStyle JSON size to prevent DB bloat
+      if (JSON.stringify(globalStyle).length > LIMITS.MAX_GLOBAL_STYLE_SIZE) {
+        return NextResponse.json({ error: 'globalStyle exceeds size limit' }, { status: 413 })
+      }
+      updateData.globalStyle = globalStyle
+    }
+    if (mp4Settings !== undefined) {
+      if (JSON.stringify(mp4Settings).length > LIMITS.MAX_SETTINGS_SIZE) {
+        return NextResponse.json({ error: 'mp4Settings exceeds size limit' }, { status: 413 })
+      }
+      updateData.mp4Settings = mp4Settings
+    }
+    if (interactiveSettings !== undefined) {
+      // Hash the password if it's being set (don't re-hash an already-hashed value)
+      // Use exact format match: 32-char hex salt + ":" + 128-char hex hash
+      if (interactiveSettings.password && !SCRYPT_HASH_RE.test(interactiveSettings.password)) {
+        const { hashPassword } = await import('@/lib/crypto')
+        interactiveSettings.password = hashPassword(interactiveSettings.password)
+      }
+      updateData.interactiveSettings = interactiveSettings
+    }
     if (apiPermissions !== undefined) updateData.apiPermissions = apiPermissions
     if (audioSettings !== undefined) updateData.audioSettings = audioSettings
     if (audioProviderEnabled !== undefined) updateData.audioProviderEnabled = audioProviderEnabled
@@ -146,7 +166,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pr
     return NextResponse.json(project)
   } catch (error: any) {
     console.error('Failed to update project:', error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to update project' }, { status: 500 })
   }
 }
 
@@ -154,13 +174,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pr
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ projectId: string }> }) {
   try {
     const { projectId } = await params
-
-    // Load project to find scene IDs for cleanup
-    const [project] = await db
-      .select({ description: projects.description })
-      .from(projects)
-      .where(eq(projects.id, projectId))
-      .limit(1)
+    const { error: accessError, project } = await assertProjectAccess(projectId)
+    if (accessError) return accessError
 
     // Delete from DB first (cascades to related tables via FK constraints)
     await db.delete(projects).where(eq(projects.id, projectId))
@@ -190,6 +205,6 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ p
     return NextResponse.json({ ok: true })
   } catch (error: any) {
     console.error('Failed to delete project:', error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to delete project' }, { status: 500 })
   }
 }

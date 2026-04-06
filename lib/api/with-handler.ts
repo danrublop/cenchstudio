@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { apiError } from './response'
+import { apiError, safeErrorMessage } from './response'
 import { logRequest } from './logger'
 
 type RouteHandler = (req: NextRequest) => Promise<NextResponse>
@@ -34,7 +34,8 @@ export function withHandler(handler: RouteHandler): RouteHandler {
       })
       return response
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Internal server error'
+      const rawMessage = err instanceof Error ? err.message : 'Internal server error'
+      const clientMessage = safeErrorMessage(err, 'Internal server error')
       const durationMs = Date.now() - start
       console.error(`[API] ${req.method} ${path} failed (${durationMs}ms):`, err)
       logRequest({
@@ -42,9 +43,9 @@ export function withHandler(handler: RouteHandler): RouteHandler {
         path,
         status: 500,
         durationMs,
-        error: message,
+        error: rawMessage, // Full error for server logs
       })
-      return apiError(message, 500)
+      return apiError(clientMessage, 500) // Sanitized for client
     }
   }
 }

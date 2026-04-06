@@ -19,7 +19,7 @@ const pool = new Pool({
   ssl:
     process.env.DATABASE_URL.includes('localhost') || process.env.DATABASE_URL.includes('127.0.0.1')
       ? false
-      : { rejectUnauthorized: false },
+      : { rejectUnauthorized: true },
 })
 
 pool.on('error', (err) => {

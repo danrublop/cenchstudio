@@ -31,7 +31,7 @@ export default function PermissionsPanel() {
       {activeApis.length === 0 && activeModels.length === 0 ? (
         <div className="text-center py-8 text-[#6b6b7a] flex flex-col items-center gap-2">
           <ShieldCheck size={24} className="opacity-20" />
-          <p className="text-[11px]">No active modules or models enabled.</p>
+          <p className="text-[12px]">No active modules or models enabled.</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -78,7 +78,7 @@ function PermissionConfigRow({
   return (
     <div className="p-3 rounded-lg border bg-[var(--color-panel-bg)] border-[var(--color-border)] shadow-sm space-y-3">
       <div className="flex items-center justify-between border-b border-[var(--color-border)] pb-2 mb-1">
-        <span className="text-[11px] font-bold uppercase tracking-tight text-[var(--color-text-primary)]">{label}</span>
+        <span className="text-[12px] font-bold uppercase tracking-tight text-[var(--color-text-primary)]">{label}</span>
         <span className="text-[8px] uppercase px-1.5 py-0.5 rounded border border-[var(--color-border)] text-[#6b6b7a]">
           {type === 'api' ? 'Module' : 'LLM'}
         </span>
@@ -91,7 +91,7 @@ function PermissionConfigRow({
             <select
               value={config?.mode ?? 'always_ask'}
               onChange={(e) => updateMode(e.target.value as PermissionMode)}
-              className="w-full text-[10px] p-1.5 rounded border bg-[var(--color-input-bg)] border-[var(--color-border)] text-[var(--color-text-primary)] outline-none"
+              className="w-full text-[11px] p-1.5 rounded border bg-[var(--color-input-bg)] border-[var(--color-border)] text-[var(--color-text-primary)] outline-none"
             >
               <option value="always_ask">Always Ask</option>
               <option value="always_allow">Always Allow</option>
@@ -105,12 +105,12 @@ function PermissionConfigRow({
               placeholder="No Limit"
               value={config?.monthlyLimit ?? ''}
               onChange={(e) => updateLimit(e.target.value)}
-              className="w-full text-[10px] p-1.5 rounded border bg-[var(--color-input-bg)] border-[var(--color-border)] text-[var(--color-text-primary)] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              className="w-full text-[11px] p-1.5 rounded border bg-[var(--color-input-bg)] border-[var(--color-border)] text-[var(--color-text-primary)] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
             />
           </div>
         </div>
       ) : (
-        <div className="text-[10px] text-[#6b6b7a] italic">
+        <div className="text-[11px] text-[#6b6b7a] italic">
           LLM usage permissions are currently inherited from Global Provider settings.
         </div>
       )}

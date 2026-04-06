@@ -16,6 +16,14 @@ export interface CatalogFont {
 export const FONT_CATALOG: CatalogFont[] = [
   // ── Sans-serif ──────────────────────────────────────────────
   {
+    id: 'satoshi',
+    family: 'Satoshi',
+    category: 'sans-serif',
+    weights: [400, 500, 600, 700],
+    googleFontsId: null,
+    fallback: 'system-ui, sans-serif',
+  },
+  {
     id: 'inter',
     family: 'Inter',
     category: 'sans-serif',

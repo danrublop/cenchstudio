@@ -1,6 +1,6 @@
 import type { AgentLogger } from '@/lib/agents/logger'
-import type { ToolResult } from '@/lib/agents/types'
 import type { WorldStateMutable } from '@/lib/agents/tool-executor'
+import { ok, err, findScene, updateScene, type ToolResult } from './_shared'
 
 export const ASSET_MEDIA_TOOL_NAMES = [
   'set_audio_layer',
@@ -9,36 +9,6 @@ export const ASSET_MEDIA_TOOL_NAMES = [
   'use_asset_in_scene',
   'add_watermark',
 ] as const
-
-function ok(affectedSceneId: string | null, description: string, data?: unknown): ToolResult {
-  return {
-    success: true,
-    affectedSceneId,
-    changes: [
-      {
-        type: affectedSceneId ? 'scene_updated' : 'global_updated',
-        sceneId: affectedSceneId ?? undefined,
-        description,
-      },
-    ],
-    data,
-  }
-}
-
-function err(message: string): ToolResult {
-  return { success: false, error: message }
-}
-
-function findScene(world: WorldStateMutable, sceneId: string) {
-  return world.scenes.find((s) => s.id === sceneId)
-}
-
-function updateScene(world: WorldStateMutable, sceneId: string, updates: Record<string, unknown>) {
-  const idx = world.scenes.findIndex((s) => s.id === sceneId)
-  if (idx === -1) return null
-  world.scenes[idx] = { ...world.scenes[idx], ...updates }
-  return world.scenes[idx]
-}
 
 export function createAssetMediaToolHandler(deps: {
   checkApiPermission: (
@@ -113,6 +83,8 @@ export function createAssetMediaToolHandler(deps: {
       }
 
       case 'request_screen_recording': {
+        // Deprecated: use start_recording instead. This handler now delegates to
+        // the store-based recording system for backwards compatibility.
         const { sceneId, fps, resolution } = args as {
           sceneId: string
           fps?: number
@@ -121,22 +93,23 @@ export function createAssetMediaToolHandler(deps: {
         const scene = findScene(world, sceneId)
         if (!scene) return err(`Scene ${sceneId} not found`)
 
-        const params = new URLSearchParams()
-        if (typeof fps === 'number' && Number.isFinite(fps)) {
-          params.set('fps', String(Math.max(1, Math.min(120, Math.round(fps)))))
+        if ((world as any).recordingState && (world as any).recordingState !== 'idle') {
+          return err(`Recording already in progress. Use stop_recording first.`)
         }
-        if (resolution) params.set('resolution', resolution)
-        params.set('sceneId', sceneId)
-        const markerSrc = `recording://request${params.toString() ? `?${params.toString()}` : ''}`
-
-        const videoLayer = {
-          ...scene.videoLayer,
-          enabled: true,
-          src: markerSrc,
+        ;(world as any).recordingConfig = {
+          sourceId: null,
+          micEnabled: false,
+          micDeviceId: null,
+          systemAudioEnabled: true,
+          webcamEnabled: false,
+          webcamDeviceId: null,
+          fps: fps ?? 30,
+          resolution: resolution ?? '1080p',
         }
-        updateScene(world, sceneId, { videoLayer })
-        await deps.regenerateHTML(world, sceneId, logger)
-        return ok(sceneId, 'Queued Electron screen recording request for this scene')
+        ;(world as any).recordingCommand = 'start'
+        ;(world as any).recordingCommandNonce = ((world as any).recordingCommandNonce ?? 0) + 1
+        ;(world as any).recordingAttachSceneId = sceneId
+        return ok(sceneId, 'Screen recording started. Video will be attached to this scene when stopped.')
       }
 
       case 'use_asset_in_scene': {

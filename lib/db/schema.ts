@@ -10,7 +10,9 @@ import {
   index,
   uniqueIndex,
   pgEnum,
+  primaryKey,
 } from 'drizzle-orm/pg-core'
+import type { AdapterAccountType } from 'next-auth/adapters'
 import { relations, sql } from 'drizzle-orm'
 import type {
   GlobalStyle,
@@ -57,6 +59,8 @@ export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
   email: text('email').notNull().unique(),
   name: text('name'),
+  emailVerified: timestamp('email_verified', { mode: 'date' }),
+  image: text('image'),
   avatarUrl: text('avatar_url'),
   plan: planEnum('plan').default('free'),
   defaultStorageMode: storageModeEnum('default_storage_mode').default('local'),
@@ -64,6 +68,49 @@ export const users = pgTable('users', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 })
+
+// ── Auth (Auth.js / NextAuth) ─────────────────────────
+export const accounts = pgTable(
+  'accounts',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    type: text('type').$type<AdapterAccountType>().notNull(),
+    provider: text('provider').notNull(),
+    providerAccountId: text('provider_account_id').notNull(),
+    refresh_token: text('refresh_token'),
+    access_token: text('access_token'),
+    expires_at: integer('expires_at'),
+    token_type: text('token_type'),
+    scope: text('scope'),
+    id_token: text('id_token'),
+    session_state: text('session_state'),
+  },
+  (t) => ({
+    compoundKey: primaryKey({ columns: [t.provider, t.providerAccountId] }),
+  }),
+)
+
+export const sessions = pgTable('sessions', {
+  sessionToken: text('session_token').primaryKey(),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  expires: timestamp('expires', { mode: 'date' }).notNull(),
+})
+
+export const verificationTokens = pgTable(
+  'verification_tokens',
+  {
+    identifier: text('identifier').notNull(),
+    token: text('token').notNull(),
+    expires: timestamp('expires', { mode: 'date' }).notNull(),
+  },
+  (t) => ({
+    compoundKey: primaryKey({ columns: [t.identifier, t.token] }),
+  }),
+)
 
 // ── User Memory (cross-session agent learnings) ───────
 export const userMemory = pgTable(
@@ -556,10 +603,14 @@ export const messages = pgTable(
     modelUsed: text('model_used'),
     thinkingContent: text('thinking_content'),
     toolCalls: jsonb('tool_calls').default([]),
+    /** Chronologically ordered segments (text + tool call refs) for interleaved display */
+    contentSegments: jsonb('content_segments'),
+    /** Message status: 'streaming' while agent is running, 'complete' when done, 'aborted' if interrupted */
+    status: text('status').notNull().default('complete'),
     inputTokens: integer('input_tokens'),
     outputTokens: integer('output_tokens'),
     costUsd: real('cost_usd'),
-    generationLogId: uuid('generation_log_id'),
+    generationLogId: uuid('generation_log_id').references(() => generationLogs.id, { onDelete: 'set null' }),
     userRating: integer('user_rating'),
     durationMs: integer('duration_ms'),
     apiCalls: integer('api_calls'),
@@ -570,6 +621,7 @@ export const messages = pgTable(
     convIdx: index('msg_conv_idx').on(t.conversationId),
     projectIdx: index('msg_project_idx').on(t.projectId),
     positionIdx: index('msg_position_idx').on(t.conversationId, t.position),
+    createdIdx: index('msg_created_idx').on(t.conversationId, t.createdAt),
   }),
 )
 
@@ -885,4 +937,49 @@ export const timelineTracksRelations = relations(timelineTracks, ({ one, many })
 
 export const timelineClipsRelations = relations(timelineClips, ({ one }) => ({
   track: one(timelineTracks, { fields: [timelineClips.trackId], references: [timelineTracks.id] }),
+}))
+
+// ── GitHub Integration ──────────────────────────────────────────────────────
+
+export const githubLinks = pgTable(
+  'github_links',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    repoFullName: text('repo_full_name').notNull(), // e.g. "user/repo"
+    defaultBranch: text('default_branch').notNull().default('main'),
+    accessToken: text('access_token').notNull(), // AES-256-GCM encrypted via lib/crypto.ts
+    refreshToken: text('refresh_token'), // AES-256-GCM encrypted via lib/crypto.ts
+    tokenExpiresAt: timestamp('token_expires_at'),
+    lastPushedSha: text('last_pushed_sha'),
+    lastPulledSha: text('last_pulled_sha'),
+    linkedAt: timestamp('linked_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (t) => ({
+    projectIdx: uniqueIndex('github_links_project_idx').on(t.projectId),
+    repoIdx: index('github_links_repo_idx').on(t.repoFullName),
+  }),
+)
+
+export const githubLinksRelations = relations(githubLinks, ({ one }) => ({
+  project: one(projects, { fields: [githubLinks.projectId], references: [projects.id] }),
+}))
+
+// ── Auth Relations ──────────────────────────────────────
+export const usersRelations = relations(users, ({ many }) => ({
+  accounts: many(accounts),
+  sessions: many(sessions),
+  projects: many(projects),
+  userMemory: many(userMemory),
+}))
+
+export const accountsRelations = relations(accounts, ({ one }) => ({
+  user: one(users, { fields: [accounts.userId], references: [users.id] }),
+}))
+
+export const sessionsRelations = relations(sessions, ({ one }) => ({
+  user: one(users, { fields: [sessions.userId], references: [users.id] }),
 }))

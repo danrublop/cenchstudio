@@ -123,7 +123,7 @@ export default function ProjectPanel({ onClose }: { onClose: () => void }) {
       <div className="flex-1 overflow-y-auto">
         {/* Current project details */}
         <div className="border-b border-[var(--color-border)] p-4">
-          <div className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mb-2">
+          <div className="text-[11px] uppercase tracking-wider text-[var(--color-text-muted)] mb-2">
             Current Project
           </div>
 
@@ -146,7 +146,7 @@ export default function ProjectPanel({ onClose }: { onClose: () => void }) {
               }}
               className="flex-1 min-w-0 text-sm font-semibold bg-transparent border-none outline-none text-[var(--color-text-primary)] truncate"
             />
-            <span className="text-[10px] text-[var(--color-text-muted)] shrink-0">
+            <span className="text-[11px] text-[var(--color-text-muted)] shrink-0">
               {formatRelative(project.updatedAt)}
             </span>
           </div>
@@ -155,27 +155,27 @@ export default function ProjectPanel({ onClose }: { onClose: () => void }) {
           <div className="flex items-center gap-3 mt-2 text-[var(--color-text-muted)]">
             <div className="flex items-center gap-1.5">
               <Layers size={12} />
-              <span className="text-[11px] tabular-nums">
+              <span className="text-[12px] tabular-nums">
                 {currentSceneCount} scene{currentSceneCount !== 1 ? 's' : ''}
               </span>
             </div>
             <div className="flex items-center gap-1.5">
               <Clock size={12} />
-              <span className="text-[11px] tabular-nums">{totalDuration}s</span>
+              <span className="text-[12px] tabular-nums">{totalDuration}s</span>
             </div>
-            <span className="text-[11px] tabular-nums uppercase ml-auto">{project.outputMode}</span>
+            <span className="text-[12px] tabular-nums uppercase ml-auto">{project.outputMode}</span>
           </div>
 
           {/* Project settings */}
           <details className="mt-3 group">
-            <summary className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
+            <summary className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-[var(--color-text-muted)] cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
               Details
               <ChevronDown size={10} className="group-open:rotate-180 transition-transform" />
             </summary>
-            <div className="mt-2 space-y-2 text-[11px]">
+            <div className="mt-2 space-y-2 text-[12px]">
               <div className="flex justify-between">
                 <span className="text-[var(--color-text-muted)]">ID</span>
-                <span className="text-[var(--color-text-secondary)] font-mono text-[10px] truncate ml-2 max-w-[160px]">
+                <span className="text-[var(--color-text-secondary)] font-mono text-[11px] truncate ml-2 max-w-[160px]">
                   {project.id}
                 </span>
               </div>
@@ -204,7 +204,7 @@ export default function ProjectPanel({ onClose }: { onClose: () => void }) {
         {/* All projects */}
         <div className="p-4">
           <div className="flex items-center justify-between mb-3">
-            <div className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)]">All Projects</div>
+            <div className="text-[11px] uppercase tracking-wider text-[var(--color-text-muted)]">All Projects</div>
             <span
               onClick={handleCreate}
               className="cursor-pointer text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors"
@@ -214,9 +214,9 @@ export default function ProjectPanel({ onClose }: { onClose: () => void }) {
           </div>
 
           {loading ? (
-            <div className="text-[11px] text-[var(--color-text-muted)] py-4 text-center">Loading projects...</div>
+            <div className="text-[12px] text-[var(--color-text-muted)] py-4 text-center">Loading projects...</div>
           ) : projects.length === 0 ? (
-            <div className="text-[11px] text-[var(--color-text-muted)] py-4 text-center">No projects yet</div>
+            <div className="text-[12px] text-[var(--color-text-muted)] py-4 text-center">No projects yet</div>
           ) : (
             <div className="space-y-1">
               {projects.map((p) => {
@@ -249,7 +249,7 @@ export default function ProjectPanel({ onClose }: { onClose: () => void }) {
                         </span>
                       )}
                     </div>
-                    <div className="flex items-center gap-3 mt-1 text-[10px] text-[var(--color-text-muted)]">
+                    <div className="flex items-center gap-3 mt-1 text-[11px] text-[var(--color-text-muted)]">
                       <span>
                         {sceneCount} scene{sceneCount !== 1 ? 's' : ''}
                       </span>
@@ -260,13 +260,13 @@ export default function ProjectPanel({ onClose }: { onClose: () => void }) {
                       <div className="flex gap-2 mt-1.5 justify-end" onClick={(e) => e.stopPropagation()}>
                         <span
                           onClick={() => handleDelete(p.id)}
-                          className="text-[9px] text-red-400 hover:text-red-300 cursor-pointer transition-colors"
+                          className="text-[10px] text-red-400 hover:text-red-300 cursor-pointer transition-colors"
                         >
                           Delete
                         </span>
                         <span
                           onClick={() => setConfirmDelete(null)}
-                          className="text-[9px] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] cursor-pointer transition-colors"
+                          className="text-[10px] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] cursor-pointer transition-colors"
                         >
                           Cancel
                         </span>

@@ -57,7 +57,7 @@ export default function PromptTab({ scene }: Props) {
                   onClick={handleCodeEditorSave}
                   className="kbd h-8 px-3 bg-[#e84545] border-[#e84545] shadow-[#800] text-white"
                 >
-                  <span className="text-[10px] uppercase tracking-wider">Save & Close</span>
+                  <span className="text-[11px] uppercase tracking-wider">Save & Close</span>
                 </button>
                 <button
                   onClick={() => setShowCodeEditor(false)}

@@ -66,7 +66,7 @@ export function VoicePicker({ provider, selectedVoiceId, onSelect }: VoicePicker
     <div ref={ref} className="relative">
       <span
         onClick={() => setOpen(!open)}
-        className="flex items-center justify-between w-full border rounded px-2 py-1.5 text-[11px] cursor-pointer"
+        className="flex items-center justify-between w-full border rounded px-2 py-1.5 text-[12px] cursor-pointer"
         style={{
           borderColor: 'var(--color-border)',
           backgroundColor: 'var(--color-input-bg)',
@@ -94,7 +94,7 @@ export function VoicePicker({ provider, selectedVoiceId, onSelect }: VoicePicker
                 onSelect(v.id, v.name)
                 setOpen(false)
               }}
-              className="flex items-center justify-between px-2 py-1.5 text-[11px] cursor-pointer hover:bg-white/5"
+              className="flex items-center justify-between px-2 py-1.5 text-[12px] cursor-pointer hover:bg-white/5"
               style={{ color: 'var(--color-text-primary)' }}
             >
               <span>

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { getLogsForAnalysis } from '@/lib/db/queries/generation-logs'
+import { getOptionalUser } from '@/lib/auth-helpers'
 
 const client = new Anthropic()
 
@@ -10,11 +11,20 @@ const client = new Anthropic()
  */
 export async function POST(req: NextRequest) {
   try {
-    const { question, limit = 50 } = await req.json()
+    await getOptionalUser()
+    const { question, limit: rawLimit = 50 } = await req.json()
 
     if (!question || typeof question !== 'string') {
       return NextResponse.json({ error: 'Missing question' }, { status: 400 })
     }
+
+    // Cap question length to prevent unbounded token usage
+    if (question.length > 2000) {
+      return NextResponse.json({ error: 'Question exceeds 2000 character limit' }, { status: 400 })
+    }
+
+    // Clamp limit to safe bounds
+    const limit = Math.min(Math.max(Number(rawLimit) || 50, 1), 200)
 
     const logs = await getLogsForAnalysis(limit)
 
@@ -67,6 +77,6 @@ ${JSON.stringify(logs, null, 2)}`,
     })
   } catch (error) {
     console.error('[analyze-logs] Error:', error)
-    return NextResponse.json({ error: error instanceof Error ? error.message : 'Unknown error' }, { status: 500 })
+    return NextResponse.json({ error: 'Log analysis failed' }, { status: 500 })
   }
 }

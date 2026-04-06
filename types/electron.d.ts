@@ -1,5 +1,35 @@
 export {}
 
+export interface DesktopSource {
+  id: string
+  name: string
+  thumbnailDataUrl: string
+  appIconDataUrl: string | null
+  displayId: string
+}
+
+export type RecordingCommand = 'start' | 'stop' | 'pause' | 'resume' | 'cancel' | null
+export type RecordingStoreState = 'idle' | 'recording' | 'paused' | 'saving'
+
+export interface RecordingConfig {
+  micEnabled: boolean
+  micDeviceId: string | null
+  systemAudioEnabled: boolean
+  webcamEnabled: boolean
+  webcamDeviceId: string | null
+  fps: number
+  resolution: '720p' | '1080p' | '1440p' | '2160p' | 'source'
+}
+
+export interface RecordingSessionManifest {
+  screenVideoPath: string
+  screenVideoUrl: string
+  webcamVideoPath?: string
+  webcamVideoUrl?: string
+  cursorTelemetry?: Array<{ t: number; x: number; y: number }>
+  createdAt: number
+}
+
 declare global {
   interface Window {
     electronAPI?: {
@@ -16,6 +46,17 @@ declare global {
         cleanup?: boolean
         transitions?: Array<{ type: string; duration?: number }>
       }) => Promise<{ ok: true }>
+      getGitStatus: () => Promise<{ ok: boolean; branch: string | null; dirty: boolean }>
+      webZoomIn: () => Promise<{ ok: boolean; factor: number }>
+      webZoomOut: () => Promise<{ ok: boolean; factor: number }>
+      webZoomReset: () => Promise<{ ok: boolean; factor: number }>
+      saveRecordingSession: (args: {
+        screenBytes: ArrayBuffer
+        webcamBytes?: ArrayBuffer
+        nameHint?: string
+      }) => Promise<RecordingSessionManifest>
+      startCursorTelemetry: () => Promise<{ ok: true }>
+      stopCursorTelemetry: () => Promise<{ samples: Array<{ t: number; x: number; y: number }> }>
     }
   }
 }

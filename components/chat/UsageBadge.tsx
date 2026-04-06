@@ -12,7 +12,7 @@ export function UsageBadge({ usage }: UsageBadgeProps) {
   }
 
   return (
-    <div className="flex items-center gap-2 px-3 py-1 border-t border-[var(--color-border)] text-[10px] text-[var(--color-text-muted)] font-mono">
+    <div className="flex items-center gap-2 px-3 pt-0.5 border-t border-[var(--color-border)] text-[11px] text-[var(--color-text-muted)] font-mono">
       <span title="Input tokens">{usage.inputTokens.toLocaleString()} in</span>
       <span className="opacity-40">/</span>
       <span title="Output tokens">{usage.outputTokens.toLocaleString()} out</span>

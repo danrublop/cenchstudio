@@ -44,7 +44,7 @@ function AssetTypeBadge({ type }: { type: AssetType }) {
   }
   return (
     <span
-      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium uppercase ${colors[type]}`}
+      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium uppercase ${colors[type]}`}
     >
       <AssetTypeIcon type={type} />
       {type}
@@ -127,7 +127,7 @@ function AssetCard({ asset, onDelete, onAddToTimeline }: AssetCardProps) {
         <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
           <span
             onClick={() => onAddToTimeline(asset)}
-            className="kbd h-6 px-2 text-[10px] cursor-pointer"
+            className="kbd h-6 px-2 text-[11px] cursor-pointer"
             data-tooltip="Add to timeline"
             data-tooltip-pos="bottom"
           >
@@ -150,7 +150,7 @@ function AssetCard({ asset, onDelete, onAddToTimeline }: AssetCardProps) {
 
         {/* Duration for video */}
         {asset.type === 'video' && asset.durationSeconds != null && (
-          <div className="absolute bottom-1.5 right-1.5 bg-black/70 text-[10px] px-1.5 py-0.5 rounded text-white/80">
+          <div className="absolute bottom-1.5 right-1.5 bg-black/70 text-[11px] px-1.5 py-0.5 rounded text-white/80">
             {Math.floor(asset.durationSeconds / 60)}:{String(Math.floor(asset.durationSeconds % 60)).padStart(2, '0')}
           </div>
         )}
@@ -169,7 +169,7 @@ function AssetCard({ asset, onDelete, onAddToTimeline }: AssetCardProps) {
                   if (e.key === 'Enter') saveName()
                   if (e.key === 'Escape') setIsEditing(false)
                 }}
-                className="flex-1 bg-transparent border border-[var(--color-border)] rounded px-1 py-0.5 text-[11px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent)]"
+                className="flex-1 bg-transparent border border-[var(--color-border)] rounded px-1 py-0.5 text-[12px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent)]"
                 autoFocus
               />
               <span onClick={saveName} className="cursor-pointer text-green-400 hover:text-green-300">
@@ -184,7 +184,7 @@ function AssetCard({ asset, onDelete, onAddToTimeline }: AssetCardProps) {
             </div>
           ) : (
             <>
-              <span className="text-[11px] text-[var(--color-text-primary)] truncate flex-1 font-medium">
+              <span className="text-[12px] text-[var(--color-text-primary)] truncate flex-1 font-medium">
                 {asset.name}
               </span>
               <span
@@ -201,7 +201,7 @@ function AssetCard({ asset, onDelete, onAddToTimeline }: AssetCardProps) {
         </div>
 
         {/* Size + dimensions */}
-        <div className="text-[10px] text-[var(--color-text-muted)] flex gap-2">
+        <div className="text-[11px] text-[var(--color-text-muted)] flex gap-2">
           <span>{formatBytes(asset.sizeBytes)}</span>
           {asset.width && asset.height && (
             <span>
@@ -215,7 +215,7 @@ function AssetCard({ asset, onDelete, onAddToTimeline }: AssetCardProps) {
           {asset.tags.map((tag) => (
             <span
               key={tag}
-              className="inline-flex items-center gap-0.5 bg-[var(--color-border)] text-[var(--color-text-muted)] rounded px-1.5 py-0 text-[9px]"
+              className="inline-flex items-center gap-0.5 bg-[var(--color-border)] text-[var(--color-text-muted)] rounded px-1.5 py-0 text-[10px]"
             >
               {tag}
               <span onClick={() => removeTag(tag)} className="cursor-pointer hover:text-red-400 ml-0.5">
@@ -225,7 +225,7 @@ function AssetCard({ asset, onDelete, onAddToTimeline }: AssetCardProps) {
           ))}
           <span
             onClick={() => setShowTags(!showTags)}
-            className="cursor-pointer inline-flex items-center gap-0.5 text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] text-[9px]"
+            className="cursor-pointer inline-flex items-center gap-0.5 text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] text-[10px]"
           >
             <Tag size={8} /> <ChevronDown size={8} />
           </span>
@@ -244,7 +244,7 @@ function AssetCard({ asset, onDelete, onAddToTimeline }: AssetCardProps) {
                   }
                 }}
                 placeholder="Add tag..."
-                className="flex-1 bg-transparent border border-[var(--color-border)] rounded px-1.5 py-0.5 text-[10px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent)]"
+                className="flex-1 bg-transparent border border-[var(--color-border)] rounded px-1.5 py-0.5 text-[11px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent)]"
               />
             </div>
             <div className="flex flex-wrap gap-1">
@@ -252,7 +252,7 @@ function AssetCard({ asset, onDelete, onAddToTimeline }: AssetCardProps) {
                 <span
                   key={t}
                   onClick={() => addTag(t)}
-                  className="cursor-pointer bg-[var(--color-border)] hover:bg-[var(--color-text-muted)]/20 text-[var(--color-text-muted)] rounded px-1.5 py-0 text-[9px]"
+                  className="cursor-pointer bg-[var(--color-border)] hover:bg-[var(--color-text-muted)]/20 text-[var(--color-text-muted)] rounded px-1.5 py-0 text-[10px]"
                 >
                   + {t}
                 </span>
@@ -400,8 +400,8 @@ export default function MediaLibrary() {
         }`}
       >
         <Upload size={20} className="mx-auto mb-1 text-[var(--color-text-muted)]" />
-        <p className="text-[11px] text-[var(--color-text-muted)]">Drop files here or click to upload</p>
-        <p className="text-[9px] text-[var(--color-text-muted)] mt-0.5">Images (10MB), Video (100MB), SVG</p>
+        <p className="text-[12px] text-[var(--color-text-muted)]">Drop files here or click to upload</p>
+        <p className="text-[10px] text-[var(--color-text-muted)] mt-0.5">Images (10MB), Video (100MB), SVG</p>
         <input
           ref={fileInputRef}
           type="file"
@@ -426,7 +426,7 @@ export default function MediaLibrary() {
                   style={{ width: `${pct}%` }}
                 />
               </div>
-              <span className="text-[10px] text-[var(--color-text-muted)]">{pct}%</span>
+              <span className="text-[11px] text-[var(--color-text-muted)]">{pct}%</span>
             </div>
           ))}
         </div>
@@ -434,7 +434,7 @@ export default function MediaLibrary() {
 
       {/* Error */}
       {uploadError && (
-        <div className="mx-3 mb-2 px-2 py-1.5 rounded bg-red-500/10 border border-red-500/30 text-red-400 text-[10px] flex items-center gap-2">
+        <div className="mx-3 mb-2 px-2 py-1.5 rounded bg-red-500/10 border border-red-500/30 text-red-400 text-[11px] flex items-center gap-2">
           <span className="flex-1">{uploadError}</span>
           <span onClick={() => setUploadError(null)} className="cursor-pointer">
             <X size={12} />
@@ -448,7 +448,7 @@ export default function MediaLibrary() {
           <span
             key={t}
             onClick={() => setTypeFilter(t)}
-            className={`cursor-pointer px-2 py-0.5 rounded text-[10px] transition-colors ${
+            className={`cursor-pointer px-2 py-0.5 rounded text-[11px] transition-colors ${
               typeFilter === t
                 ? 'bg-[var(--color-accent)]/20 text-[var(--color-accent)]'
                 : 'text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]'
@@ -463,9 +463,9 @@ export default function MediaLibrary() {
       {/* Asset grid */}
       <div className="flex-1 overflow-y-auto px-3 pb-3">
         {assetsLoading ? (
-          <div className="text-[11px] text-[var(--color-text-muted)] text-center py-8 animate-pulse">Loading...</div>
+          <div className="text-[12px] text-[var(--color-text-muted)] text-center py-8 animate-pulse">Loading...</div>
         ) : filteredAssets.length === 0 ? (
-          <div className="text-[11px] text-[var(--color-text-muted)] text-center py-8">
+          <div className="text-[12px] text-[var(--color-text-muted)] text-center py-8">
             {projectAssets.length === 0 ? 'No assets yet. Upload images, videos, or SVGs.' : 'No matching assets.'}
           </div>
         ) : (

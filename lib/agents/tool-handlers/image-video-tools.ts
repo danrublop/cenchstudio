@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid'
 import type { APIName } from '@/lib/types'
-import type { ToolResult } from '@/lib/agents/types'
 import type { WorldStateMutable } from '@/lib/agents/tool-executor'
+import { ok, err, findScene, updateScene, type ToolResult } from './_shared'
 
 export const IMAGE_VIDEO_TOOL_NAMES = [
   'search_images',
@@ -10,36 +10,6 @@ export const IMAGE_VIDEO_TOOL_NAMES = [
   'generate_sticker',
   'generate_veo3_video',
 ] as const
-
-function ok(affectedSceneId: string | null, description: string, data?: unknown): ToolResult {
-  return {
-    success: true,
-    affectedSceneId,
-    changes: [
-      {
-        type: affectedSceneId ? 'scene_updated' : 'global_updated',
-        sceneId: affectedSceneId ?? undefined,
-        description,
-      },
-    ],
-    data,
-  }
-}
-
-function err(message: string): ToolResult {
-  return { success: false, error: message }
-}
-
-function findScene(world: WorldStateMutable, sceneId: string) {
-  return world.scenes.find((s) => s.id === sceneId)
-}
-
-function updateScene(world: WorldStateMutable, sceneId: string, updates: Record<string, unknown>) {
-  const idx = world.scenes.findIndex((s) => s.id === sceneId)
-  if (idx === -1) return null
-  world.scenes[idx] = { ...world.scenes[idx], ...updates }
-  return world.scenes[idx]
-}
 
 export function createImageVideoToolHandler(deps: {
   checkMediaEnabled: (world: WorldStateMutable, providerId: string, label: string) => ToolResult | null

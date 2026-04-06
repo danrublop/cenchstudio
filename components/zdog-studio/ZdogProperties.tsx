@@ -20,7 +20,7 @@ export default function ZdogProperties() {
       <div className="h-full flex items-center justify-center text-[var(--color-text-muted)] p-4">
         <div className="text-center">
           <Box size={28} className="mx-auto mb-2 opacity-20" />
-          <p className="text-[10px]">Select a shape to edit</p>
+          <p className="text-[11px]">Select a shape to edit</p>
         </div>
       </div>
     )
@@ -42,9 +42,9 @@ export default function ZdogProperties() {
                   type="text"
                   value={selectedShape.name}
                   onChange={(e) => updateShape(selectedShape.id, { name: e.target.value })}
-                  className="bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded px-1.5 py-0.5 text-[10px] w-24 focus:border-blue-500 outline-none"
+                  className="bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded px-1.5 py-0.5 text-[11px] w-24 focus:border-blue-500 outline-none"
                 />
-                <span className="text-[9px] font-mono text-[var(--color-text-muted)]">{selectedShape.type}</span>
+                <span className="text-[10px] font-mono text-[var(--color-text-muted)]">{selectedShape.type}</span>
               </div>
             </div>
 

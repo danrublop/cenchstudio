@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid'
 import type { APIName } from '@/lib/types'
-import type { ToolResult } from '@/lib/agents/types'
 import type { WorldStateMutable } from '@/lib/agents/tool-executor'
+import { ok, err, findScene, type ToolResult } from './_shared'
 
 export const AVATAR_TOOL_NAMES = [
   'list_avatars',
@@ -9,29 +9,6 @@ export const AVATAR_TOOL_NAMES = [
   'generate_avatar_narration',
   'generate_avatar_scene',
 ] as const
-
-function ok(affectedSceneId: string | null, description: string, data?: unknown): ToolResult {
-  return {
-    success: true,
-    affectedSceneId,
-    changes: [
-      {
-        type: affectedSceneId ? 'scene_updated' : 'global_updated',
-        sceneId: affectedSceneId ?? undefined,
-        description,
-      },
-    ],
-    data,
-  }
-}
-
-function err(message: string): ToolResult {
-  return { success: false, error: message }
-}
-
-function findScene(world: WorldStateMutable, sceneId: string) {
-  return world.scenes.find((s) => s.id === sceneId)
-}
 
 export function createAvatarToolHandler(deps: {
   checkMediaEnabled: (world: WorldStateMutable, providerId: string, label: string) => ToolResult | null
@@ -263,6 +240,8 @@ export function createAvatarToolHandler(deps: {
 
         const avatarProvider =
           world.generationOverrides?.falAvatar?.provider ?? world.generationOverrides?.heygen?.provider ?? 'talkinghead'
+        const mediaErr = deps.checkMediaEnabled(world, avatarProvider, `Avatar provider "${avatarProvider}"`)
+        if (mediaErr) return mediaErr
         if (['musetalk', 'fabric', 'aurora'].includes(avatarProvider)) {
           const blocked = deps.checkApiPermission(world, 'falAvatar', {
             reason: 'Generate full avatar presenter scene (FAL provider)',

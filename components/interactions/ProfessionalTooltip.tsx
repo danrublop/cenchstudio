@@ -19,7 +19,7 @@ interface ProfessionalTooltipProps {
 }
 
 const panelBase =
-  'absolute z-50 box-border px-3.5 py-2.5 text-left text-xs font-bold text-white bg-slate-900 rounded-lg shadow-xl break-words [overflow-wrap:anywhere]'
+  'absolute z-50 box-border px-3.5 py-2.5 text-left text-sm font-bold text-white bg-slate-900 rounded-lg shadow-xl break-words [overflow-wrap:anywhere]'
 
 const positionPanel: Record<ProfessionalTooltipPosition, string> = {
   top: '-top-2 left-1/2 -translate-x-1/2 -translate-y-full',

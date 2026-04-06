@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Film,
   Music,
@@ -54,9 +54,11 @@ import { compileD3SceneFromLayers } from '@/lib/charts/compile'
 import { compilePhysicsSceneFromLayers } from '@/lib/physics/compile'
 import ZdogOutliner from '@/components/zdog-studio/ZdogOutliner'
 import CanvasMotionTemplatesPanel from '@/components/CanvasMotionTemplatesPanel'
+import ColorSelect from '@/components/ui/ColorSelect'
 import SceneLayersStackPanel from '@/components/layers/SceneLayersStackPanel'
 import LayerStackPropertiesPanel from '@/components/layers/LayerStackPropertiesPanel'
 import LayersTabSubheader from '@/components/layers/LayersTabSubheader'
+import SceneList from '@/components/SceneList'
 import TextTab from '@/components/tabs/TextTab'
 import {
   DEFAULT_LAYERS_VISIBLE_TABS,
@@ -211,6 +213,32 @@ function extractCameraMovesFromSceneHTML(sceneHTML: string): CameraMove[] {
 
 interface Props {
   scene: Scene
+  /** Electron left rail: project scene list + New Scene under subheader */
+  showScenesSection?: boolean
+  isLeftCollapsed?: boolean
+  onToggleLeftCollapse?: () => void
+}
+
+// Stable colors for section headers when active
+const SECTION_COLORS: Record<string, string> = {
+  'Scene Settings': '#e8a849',
+  'Style': '#c678dd',
+  'Scene Style': '#e06c75',
+  'Grid & Snapping': '#61afef',
+  'Transition to Next Scene': '#d19a66',
+  'Camera Animation': '#56b6c2',
+  'Physics': '#5ec4b6',
+  'Charts': '#98c379',
+  'SVG Layer': '#e5c07b',
+  'Video Layer': '#61afef',
+  'Audio Layer': '#c678dd',
+  'SVG Objects': '#e8a849',
+  'Text Overlays': '#e06c75',
+  'Canvas motion templates': '#56b6c2',
+  'AI Layers': '#be5046',
+  'Zdog Studio': '#5ec4b6',
+  'SFX Tracks': '#98c379',
+  'Music Tracks': '#d19a66',
 }
 
 function CollapsibleSection({
@@ -222,6 +250,7 @@ function CollapsibleSection({
   badge,
   enabled,
   onEnabledChange,
+  active,
 }: {
   title: string
   icon: any
@@ -231,6 +260,8 @@ function CollapsibleSection({
   badge?: React.ReactNode
   enabled?: boolean
   onEnabledChange?: (val: boolean) => void
+  /** When true, the section title is colored to indicate it has content in use */
+  active?: boolean
 }) {
   const [isOpen, setIsOpen] = useState(defaultOpen)
 
@@ -239,54 +270,60 @@ function CollapsibleSection({
     if (enabled) setIsOpen(true)
   }, [enabled])
 
+  const isActive = active ?? enabled
+  const activeColor = isActive ? (SECTION_COLORS[title] ?? '#e8a849') : undefined
+
   return (
-    <section
-      className="border rounded-lg overflow-hidden transition-all duration-200"
-      style={{ borderColor: 'var(--color-border)' }}
-    >
+    <section className="overflow-hidden transition-all duration-200">
       <div
-        className="flex items-center gap-2 p-3 cursor-pointer select-none hover:bg-white/[0.02] transition-colors"
+        className="flex items-center gap-1.5 pl-1.5 pr-3 py-2 cursor-pointer select-none hover:bg-white/[0.03] transition-colors"
         onClick={() => setIsOpen(!isOpen)}
       >
-        <div className="flex items-center gap-2 flex-1 min-w-0">
-          <Icon size={13} className="text-[#6b6b7a] shrink-0" />
-          <span className="text-xs font-medium text-[var(--color-text-primary)] truncate">{title}</span>
-          {badge}
-        </div>
-        <div className="flex items-center gap-3">
-          {onEnabledChange && (
-            <div className="flex items-center gap-2 mr-1" onClick={(e) => e.stopPropagation()}>
-              <span className="text-[10px] text-[#6b6b7a] uppercase tracking-wider">{enabled ? 'On' : 'Off'}</span>
-              <div className="relative">
-                <input
-                  type="checkbox"
-                  className="tgl"
-                  id={`toggle-${title.replace(/\s+/g, '-').toLowerCase()}`}
-                  checked={enabled}
-                  onChange={(e) => onEnabledChange(e.target.checked)}
-                />
-                <label className="tgl-btn" htmlFor={`toggle-${title.replace(/\s+/g, '-').toLowerCase()}`} />
-              </div>
-            </div>
-          )}
-          {extraHeaderContent && (
-            <div className="flex items-center" onClick={(e) => e.stopPropagation()}>
-              {extraHeaderContent}
-            </div>
-          )}
-          <ChevronRight
-            size={12}
-            className={`text-[#6b6b7a] transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}`}
+        <ChevronRight
+          size={14}
+          strokeWidth={2.5}
+          className={`transition-transform duration-200 shrink-0 ${isOpen ? 'rotate-90' : ''}`}
+          style={{ color: activeColor ?? 'var(--color-text-muted)' }}
+        />
+        <span
+          className="text-[11px] font-semibold uppercase tracking-widest truncate flex-1 transition-colors"
+          style={{ color: activeColor ?? 'var(--color-text-muted)' }}
+        >
+          {title}
+        </span>
+        {isActive && (
+          <span
+            className="w-2 h-2 rounded-full shrink-0"
+            style={{ backgroundColor: activeColor }}
           />
-        </div>
+        )}
+        {onEnabledChange && (
+          <div className="flex items-center" onClick={(e) => e.stopPropagation()}>
+            <div className="relative">
+              <input
+                type="checkbox"
+                className="tgl"
+                id={`toggle-${title.replace(/\s+/g, '-').toLowerCase()}`}
+                checked={enabled}
+                onChange={(e) => onEnabledChange(e.target.checked)}
+              />
+              <label className="tgl-btn" htmlFor={`toggle-${title.replace(/\s+/g, '-').toLowerCase()}`} />
+            </div>
+          </div>
+        )}
+        {isOpen && extraHeaderContent && (
+          <div className="flex items-center" onClick={(e) => e.stopPropagation()}>
+            {extraHeaderContent}
+          </div>
+        )}
+        {isOpen && badge}
       </div>
       <div
         className={`transition-all duration-300 ease-in-out overflow-hidden ${
-          isOpen ? 'max-h-[5000px] opacity-100 border-t' : 'max-h-0 opacity-0 pointer-events-none'
+          isOpen ? 'max-h-[5000px] opacity-100' : 'max-h-0 opacity-0 pointer-events-none'
         }`}
-        style={{ borderColor: 'var(--color-border)' }}
       >
-        <div className="p-3 space-y-4">{children}</div>
+        <div className="pl-7 pr-3 pb-3 pt-1 space-y-4">{children}</div>
       </div>
     </section>
   )
@@ -301,8 +338,14 @@ async function uploadFile(file: File): Promise<string> {
   return url
 }
 
-export default function LayersTab({ scene }: Props) {
+export default function LayersTab({
+  scene,
+  showScenesSection = false,
+  isLeftCollapsed = false,
+  onToggleLeftCollapse,
+}: Props) {
   const {
+    addScene,
     updateScene,
     saveSceneHTML,
     addTextOverlay,
@@ -386,6 +429,40 @@ export default function LayersTab({ scene }: Props) {
     )
     clearLayersTabSectionPending()
   }, [layersTabSectionPending, clearLayersTabSectionPending])
+
+  useEffect(() => {
+    if (!showScenesSection) return
+    setLayersVisibleTabIds((prev) => (prev.includes('scenes') ? prev : ['scenes', ...prev]))
+  }, [showScenesSection])
+
+  useEffect(() => {
+    if (!showScenesSection && layersActiveTab === 'scenes') {
+      setLayersActiveTab('scene')
+    }
+  }, [showScenesSection, layersActiveTab])
+
+  const subheaderVisibleIds = useMemo(
+    () => (showScenesSection ? layersVisibleTabIds : layersVisibleTabIds.filter((id) => id !== 'scenes')),
+    [showScenesSection, layersVisibleTabIds],
+  )
+
+  const subheaderActiveId = useMemo(() => {
+    if (showScenesSection) return layersActiveTab
+    return layersActiveTab === 'scenes' ? 'scene' : layersActiveTab
+  }, [showScenesSection, layersActiveTab])
+
+  const handleVisibleTabIdsChange = useCallback(
+    (ids: LayersTabSectionId[]) => {
+      if (showScenesSection) {
+        setLayersVisibleTabIds(ids)
+        return
+      }
+      const hadScenes = layersVisibleTabIds.includes('scenes')
+      const without = ids.filter((id) => id !== 'scenes')
+      setLayersVisibleTabIds(hadScenes ? (['scenes', ...without] as LayersTabSectionId[]) : without)
+    },
+    [showScenesSection, layersVisibleTabIds],
+  )
 
   useEffect(() => {
     if (project.outputMode === 'interactive') return
@@ -828,30 +905,58 @@ export default function LayersTab({ scene }: Props) {
     }
   }, [physicsCardDrag, physicsLayers, updatePhysicsLayers])
 
+  const panelSectionId =
+    layersActiveTab === 'scenes' && !showScenesSection ? 'scene' : layersActiveTab
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <LayersTabSubheader
-        visibleTabIds={layersVisibleTabIds}
-        onVisibleTabIdsChange={setLayersVisibleTabIds}
-        activeTabId={layersActiveTab}
+        visibleTabIds={subheaderVisibleIds}
+        onVisibleTabIdsChange={handleVisibleTabIdsChange}
+        activeTabId={subheaderActiveId}
         onActiveTabChange={setLayersActiveTab}
         hasInteractTab={project.outputMode === 'interactive'}
+        catalogExcludeIds={showScenesSection ? [] : ['scenes']}
       />
-      {layersActiveTab === 'text' ? (
+      {layersActiveTab === 'scenes' && showScenesSection ? (
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <div
+            className="flex flex-shrink-0 border-b px-2 py-2"
+            style={{ borderBottomColor: 'var(--color-hairline)' }}
+          >
+            <button
+              type="button"
+              onClick={() => addScene()}
+              className={`kbd h-8 !py-0 gap-2 text-sm font-medium shadow-black/40 transition-all duration-200 flex w-full items-center justify-center overflow-hidden ${
+                isLeftCollapsed ? 'px-0' : 'px-3'
+              }`}
+            >
+              <Plus size={14} strokeWidth={1.5} className="flex-shrink-0" />
+              {!isLeftCollapsed && <span className="whitespace-nowrap">New Scene</span>}
+            </button>
+          </div>
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <SceneList
+              isCollapsed={isLeftCollapsed}
+              onToggleCollapse={onToggleLeftCollapse ?? (() => {})}
+            />
+          </div>
+        </div>
+      ) : panelSectionId === 'text' ? (
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <TextTab scene={scene} />
         </div>
-      ) : layersActiveTab === 'properties' ? (
+      ) : panelSectionId === 'properties' ? (
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
           <LayerStackPropertiesPanel scene={scene} />
         </div>
       ) : (
-        <div className="min-h-0 flex-1 overflow-y-auto p-4 space-y-5">
-          {layersActiveTab === 'scene' && (
+        <div className="min-h-0 flex-1 overflow-y-auto pl-1 pr-4 py-2 space-y-1">
+          {panelSectionId === 'scene' && (
             <>
-              <CollapsibleSection title="Scene Settings" icon={Film}>
+              <CollapsibleSection title="Scene Settings" icon={Film} active>
                 <div>
-                  <label className="text-[#6b6b7a] text-[10px] uppercase tracking-wider block mb-1.5">Name</label>
+                  <label className="text-[#6b6b7a] text-[11px] uppercase tracking-wider block mb-1.5">Name</label>
                   <input
                     type="text"
                     placeholder="Untitled scene"
@@ -867,7 +972,7 @@ export default function LayersTab({ scene }: Props) {
                   />
                 </div>
                 <div>
-                  <label className="text-[#6b6b7a] text-[10px] uppercase tracking-wider block mb-1.5">
+                  <label className="text-[#6b6b7a] text-[11px] uppercase tracking-wider block mb-1.5">
                     Duration: {scene.duration}s
                   </label>
                   <input
@@ -880,13 +985,13 @@ export default function LayersTab({ scene }: Props) {
                     onMouseUp={commitLayer}
                     className="w-full"
                   />
-                  <div className="flex justify-between text-[9px] text-[#6b6b7a] mt-0.5">
+                  <div className="flex justify-between text-[10px] text-[#6b6b7a] mt-0.5">
                     <span>3s</span>
                     <span>20s</span>
                   </div>
                 </div>
                 <div>
-                  <label className="text-[#6b6b7a] text-[10px] uppercase tracking-wider block mb-1.5">
+                  <label className="text-[#6b6b7a] text-[11px] uppercase tracking-wider block mb-1.5">
                     Background color
                   </label>
                   <div className="flex items-center gap-2">
@@ -911,7 +1016,7 @@ export default function LayersTab({ scene }: Props) {
                           updateScene(scene.id, { bgColor: e.target.value })
                       }}
                       onBlur={commitLayer}
-                      className="flex-1 border rounded px-3 py-1.5 text-xs font-mono focus:outline-none focus:border-[#e84545] transition-colors"
+                      className="flex-1 border rounded px-3 py-1.5 text-sm font-mono focus:outline-none focus:border-[#e84545] transition-colors"
                       style={{
                         backgroundColor: 'var(--color-input-bg)',
                         borderColor: 'var(--color-border)',
@@ -924,9 +1029,9 @@ export default function LayersTab({ scene }: Props) {
                 <div className="space-y-2 border-t pt-3 mt-1" style={{ borderColor: 'var(--color-border)' }}>
                   <div className="flex items-center gap-2">
                     <Box size={12} className="text-[#6b6b7a] shrink-0" />
-                    <span className="text-[#6b6b7a] text-[10px] uppercase tracking-wider">3D stage environment</span>
+                    <span className="text-[#6b6b7a] text-[11px] uppercase tracking-wider">3D stage environment</span>
                   </div>
-                  <p className="text-[9px] leading-snug text-[#6b6b7a]">
+                  <p className="text-[10px] leading-snug text-[#6b6b7a]">
                     For Three.js scenes: built-in world behind your models (
                     <span className="font-mono text-[var(--color-text-muted)]">applyCenchThreeEnvironment</span>
                     ). With an empty scene code, choosing an environment creates a starter Three.js scene you can edit.
@@ -936,18 +1041,12 @@ export default function LayersTab({ scene }: Props) {
                     </span>{' '}
                     each frame.
                   </p>
-                  <select
-                    className="w-full border rounded px-2 py-1.5 text-xs focus:outline-none focus:border-[#e84545] transition-colors"
-                    style={{
-                      backgroundColor: 'var(--color-input-bg)',
-                      borderColor: 'var(--color-border)',
-                      color: 'var(--color-text-primary)',
-                    }}
+                  <ColorSelect
+                    size="md"
                     value={
                       parseAppliedThreeEnvironmentId(scene.sceneCode || '') ?? scene.threeEnvironmentPresetId ?? ''
                     }
-                    onChange={async (e) => {
-                      const v = e.target.value
+                    onChange={async (v) => {
                       const envId = v === '' ? null : v
                       const code = scene.sceneCode || ''
                       const res = patchThreeEnvironmentInSceneCode(code, envId)
@@ -979,27 +1078,24 @@ export default function LayersTab({ scene }: Props) {
                       })
                       await saveSceneHTML(scene.id)
                     }}
-                  >
-                    <option value="">None (custom backdrop only)</option>
-                    {CENCH_THREE_ENVIRONMENTS.map((env) => (
-                      <option key={env.id} value={env.id}>
-                        {env.name}
-                      </option>
-                    ))}
-                  </select>
+                    options={[
+                      { value: '', label: 'None (custom backdrop only)' },
+                      ...CENCH_THREE_ENVIRONMENTS.map((env) => ({ value: env.id, label: env.name })),
+                    ]}
+                  />
                   {threeEnvPatchHint ? (
-                    <p className="text-[9px] leading-snug text-amber-600 dark:text-amber-400/90">{threeEnvPatchHint}</p>
+                    <p className="text-[10px] leading-snug text-amber-600 dark:text-amber-400/90">{threeEnvPatchHint}</p>
                   ) : null}
                 </div>
 
-                <p className="text-[9px] leading-snug text-[#6b6b7a]">
+                <p className="text-[10px] leading-snug text-[#6b6b7a]">
                   Transitions and camera moves are in the{' '}
                   <span className="text-[var(--color-text-muted)]">Transitions</span> tab.
                 </p>
               </CollapsibleSection>
 
               {/* Project-wide style preset */}
-              <CollapsibleSection title="Style" icon={Palette}>
+              <CollapsibleSection title="Style" icon={Palette} active={!!globalStyle.presetId}>
                 <StylePresetPicker
                   currentPresetId={globalStyle.presetId}
                   onChange={(id) =>
@@ -1026,14 +1122,14 @@ export default function LayersTab({ scene }: Props) {
 
                 {/* Advanced overrides (collapsed) */}
                 <details className="group">
-                  <summary className="text-[10px] text-[#6b6b7a] cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden flex items-center gap-1">
+                  <summary className="text-[11px] text-[#6b6b7a] cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden flex items-center gap-1">
                     <ChevronDown size={10} className="group-open:rotate-180 transition-transform" />
                     Advanced overrides
                   </summary>
                   <div className="mt-2 space-y-3">
                     {/* Palette override */}
                     <div>
-                      <label className="text-[#6b6b7a] text-[10px] uppercase tracking-wider block mb-1.5">
+                      <label className="text-[#6b6b7a] text-[11px] uppercase tracking-wider block mb-1.5">
                         Palette override
                       </label>
                       <div className="flex gap-1">
@@ -1066,7 +1162,7 @@ export default function LayersTab({ scene }: Props) {
                         {globalStyle.paletteOverride && (
                           <button
                             onClick={() => updateGlobalStyle({ paletteOverride: null })}
-                            className="text-[9px] text-[#6b6b7a] hover:text-[var(--color-accent)] ml-1"
+                            className="text-[10px] text-[#6b6b7a] hover:text-[var(--color-accent)] ml-1"
                           >
                             reset
                           </button>
@@ -1076,7 +1172,7 @@ export default function LayersTab({ scene }: Props) {
 
                     {/* Background override */}
                     <div>
-                      <label className="text-[#6b6b7a] text-[10px] uppercase tracking-wider block mb-1.5">
+                      <label className="text-[#6b6b7a] text-[11px] uppercase tracking-wider block mb-1.5">
                         Background override
                       </label>
                       <div className="flex items-center gap-2">
@@ -1089,7 +1185,7 @@ export default function LayersTab({ scene }: Props) {
                         {globalStyle.bgColorOverride && (
                           <button
                             onClick={() => updateGlobalStyle({ bgColorOverride: null })}
-                            className="text-[9px] text-[#6b6b7a] hover:text-[var(--color-accent)]"
+                            className="text-[10px] text-[#6b6b7a] hover:text-[var(--color-accent)]"
                           >
                             reset
                           </button>
@@ -1100,12 +1196,12 @@ export default function LayersTab({ scene }: Props) {
                 </details>
               </CollapsibleSection>
 
-              <CollapsibleSection title="Scene Style" icon={Palette}>
+              <CollapsibleSection title="Scene Style" icon={Palette} active={Object.keys(scene.styleOverride ?? {}).length > 0}>
                 {Object.keys(scene.styleOverride ?? {}).length === 0 ? (
                   <div className="space-y-2">
-                    <p className="text-[10px] text-[#6b6b7a]">Inheriting from project style</p>
+                    <p className="text-[11px] text-[#6b6b7a]">Inheriting from project style</p>
                     <details className="group">
-                      <summary className="text-[10px] text-[#e84545] cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden flex items-center gap-1">
+                      <summary className="text-[11px] text-[#e84545] cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden flex items-center gap-1">
                         <ChevronDown size={10} className="group-open:rotate-180 transition-transform" />
                         Apply scene override
                       </summary>
@@ -1118,7 +1214,7 @@ export default function LayersTab({ scene }: Props) {
                               updateScene(scene.id, { styleOverride: SCENE_STYLE_PRESETS[name] })
                               commitLayer()
                             }}
-                            className="kbd h-7 text-[10px] text-[#6b6b7a] hover:text-[#f0ece0] flex items-center gap-1.5"
+                            className="kbd h-7 text-[11px] text-[#6b6b7a] hover:text-[#f0ece0] flex items-center gap-1.5"
                           >
                             <div className="flex gap-0.5">
                               {SCENE_STYLE_PRESETS[name].palette?.map((c, i) => (
@@ -1152,7 +1248,7 @@ export default function LayersTab({ scene }: Props) {
                       )}
                     </div>
                     <div>
-                      <label className="text-[#6b6b7a] text-[10px] uppercase tracking-wider block mb-1.5">Preset</label>
+                      <label className="text-[#6b6b7a] text-[11px] uppercase tracking-wider block mb-1.5">Preset</label>
                       <div className="grid grid-cols-2 gap-1.5">
                         {(Object.keys(SCENE_STYLE_PRESETS) as SceneStylePresetName[]).map((name) => {
                           const isActive =
@@ -1166,7 +1262,7 @@ export default function LayersTab({ scene }: Props) {
                                 updateScene(scene.id, { styleOverride: SCENE_STYLE_PRESETS[name] })
                                 commitLayer()
                               }}
-                              className={`kbd h-7 text-[10px] flex items-center gap-1.5 ${
+                              className={`kbd h-7 text-[11px] flex items-center gap-1.5 ${
                                 isActive
                                   ? 'border-[#e84545] text-[#e84545] shadow-[#800]'
                                   : 'text-[#6b6b7a] hover:text-[#f0ece0]'
@@ -1189,7 +1285,7 @@ export default function LayersTab({ scene }: Props) {
                         updateScene(scene.id, { styleOverride: {} })
                         commitLayer()
                       }}
-                      className="text-[10px] text-[#e84545] hover:underline"
+                      className="text-[11px] text-[#e84545] hover:underline"
                     >
                       Clear override — inherit from project
                     </button>
@@ -1197,7 +1293,7 @@ export default function LayersTab({ scene }: Props) {
                 )}
               </CollapsibleSection>
 
-              <CollapsibleSection title="Grid & Snapping" icon={Grid3X3}>
+              <CollapsibleSection title="Grid & Snapping" icon={Grid3X3} active={gridConfig.enabled}>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
@@ -1205,17 +1301,17 @@ export default function LayersTab({ scene }: Props) {
                     onChange={(e) => updateGridConfig({ enabled: e.target.checked })}
                     className="accent-[#e84545]"
                   />
-                  <span className="text-[11px] text-[var(--color-text-primary)]">Enable snapping</span>
+                  <span className="text-[12px] text-[var(--color-text-primary)]">Enable snapping</span>
                 </label>
                 <div>
-                  <label className="text-[#6b6b7a] text-[10px] uppercase tracking-wider block mb-1.5">Grid size</label>
+                  <label className="text-[#6b6b7a] text-[11px] uppercase tracking-wider block mb-1.5">Grid size</label>
                   <div className="flex gap-1.5">
                     {([20, 40, 80] as const).map((size) => (
                       <button
                         key={size}
                         type="button"
                         onClick={() => updateGridConfig({ size })}
-                        className={`kbd h-7 flex-1 text-[10px] ${
+                        className={`kbd h-7 flex-1 text-[11px] ${
                           gridConfig.size === size
                             ? 'border-[#e84545] text-[#e84545] shadow-[#800]'
                             : 'text-[#6b6b7a] hover:text-[#f0ece0]'
@@ -1233,8 +1329,8 @@ export default function LayersTab({ scene }: Props) {
                     onChange={(e) => updateGridConfig({ showGrid: e.target.checked })}
                     className="accent-[#e84545]"
                   />
-                  <span className="text-[11px] text-[var(--color-text-primary)]">Show grid overlay</span>
-                  <span className="text-[9px] text-[#6b6b7a] ml-auto">G</span>
+                  <span className="text-[12px] text-[var(--color-text-primary)]">Show grid overlay</span>
+                  <span className="text-[10px] text-[#6b6b7a] ml-auto">G</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -1243,23 +1339,23 @@ export default function LayersTab({ scene }: Props) {
                     onChange={(e) => updateGridConfig({ snapToElements: e.target.checked })}
                     className="accent-[#e84545]"
                   />
-                  <span className="text-[11px] text-[var(--color-text-primary)]">Snap to other elements</span>
+                  <span className="text-[12px] text-[var(--color-text-primary)]">Snap to other elements</span>
                 </label>
               </CollapsibleSection>
             </>
           )}
 
-          {layersActiveTab === 'transitions' && (
+          {panelSectionId === 'transitions' && (
             <>
-              <CollapsibleSection title="Transition to Next Scene" icon={Clapperboard}>
-                <p className="mb-2 text-[10px] leading-snug text-[#6b6b7a]">
+              <CollapsibleSection title="Transition to Next Scene" icon={Clapperboard} active={!!scene.transition && scene.transition !== 'none'}>
+                <p className="mb-2 text-[11px] leading-snug text-[#6b6b7a]">
                   How this scene hands off to the next in MP4 export (FFmpeg xfade). The hosted player uses a short fade
                   for any blend style.
                 </p>
                 <div className="max-h-[min(52vh,420px)] overflow-y-auto pr-0.5 space-y-3">
                   {TRANSITION_UI_GROUPS.map((group) => (
                     <div key={group.category}>
-                      <div className="text-[9px] font-semibold uppercase tracking-wide text-[#8b8b99] mb-1.5">
+                      <div className="text-[10px] font-semibold uppercase tracking-wide text-[#8b8b99] mb-1.5">
                         {group.category}
                       </div>
                       <div className="grid grid-cols-2 gap-1.5">
@@ -1271,7 +1367,7 @@ export default function LayersTab({ scene }: Props) {
                               updateScene(scene.id, { transition: t.id })
                               commitLayer()
                             }}
-                            className={`kbd h-7 text-[10px] text-left px-2 truncate ${
+                            className={`kbd h-7 text-[11px] text-left px-2 truncate ${
                               scene.transition === t.id
                                 ? 'border-[#e84545] text-[#e84545] shadow-[#800]'
                                 : 'text-[#6b6b7a] hover:text-[#f0ece0]'
@@ -1290,6 +1386,7 @@ export default function LayersTab({ scene }: Props) {
               <CollapsibleSection
                 title="Camera Animation"
                 icon={Camera}
+                active={cameraMoves.length > 0}
                 extraHeaderContent={
                   <button
                     type="button"
@@ -1297,18 +1394,18 @@ export default function LayersTab({ scene }: Props) {
                     className="kbd h-6 px-2 text-[#6b6b7a] hover:text-[#e84545]"
                   >
                     <Plus size={11} />
-                    <span className="text-[10px]">Add</span>
+                    <span className="text-[11px]">Add</span>
                   </button>
                 }
                 badge={
-                  <span className="text-[10px] text-[#6b6b7a]">
+                  <span className="text-[11px] text-[#6b6b7a]">
                     {cameraMoves.length} move{cameraMoves.length === 1 ? '' : 's'}
                   </span>
                 }
               >
                 {importableCameraMoves.length > 0 && (
                   <div
-                    className="space-y-2 rounded border p-2 text-[10px]"
+                    className="space-y-2 rounded border p-2 text-[11px]"
                     style={{ borderColor: 'var(--color-border)' }}
                   >
                     <p className="text-[#6b6b7a]">
@@ -1321,7 +1418,7 @@ export default function LayersTab({ scene }: Props) {
                         updateScene(scene.id, { cameraMotion: importableCameraMoves })
                         commitLayer()
                       }}
-                      className="kbd h-7 px-2 text-[10px] text-[#6b6b7a] hover:text-[#e84545]"
+                      className="kbd h-7 px-2 text-[11px] text-[#6b6b7a] hover:text-[#e84545]"
                     >
                       Import Camera Moves
                     </button>
@@ -1330,12 +1427,12 @@ export default function LayersTab({ scene }: Props) {
 
                 {cameraMoves.length === 0 ? (
                   <div
-                    className="space-y-1 rounded border border-dashed py-3 text-center text-[10px] text-[#6b6b7a]"
+                    className="space-y-1 rounded border border-dashed py-3 text-center text-[11px] text-[#6b6b7a]"
                     style={{ borderColor: 'var(--color-border)' }}
                   >
                     <div>No camera moves. Add one to animate scene framing.</div>
                     {(scene.sceneCode?.includes('camera') || scene.sceneCode?.includes('scene-camera')) && (
-                      <div className="text-[9px] text-[#8b8b99]">
+                      <div className="text-[10px] text-[#8b8b99]">
                         This scene appears to use inline camera logic in code (not structured `cameraMotion` data).
                       </div>
                     )}
@@ -1353,34 +1450,24 @@ export default function LayersTab({ scene }: Props) {
                           style={{ borderColor: 'var(--color-border)' }}
                         >
                           <div className="flex items-center gap-2">
-                            <span className="text-[9px] text-[#6b6b7a]">#{idx + 1}</span>
-                            <select
+                            <span className="text-[10px] text-[#6b6b7a]">#{idx + 1}</span>
+                            <ColorSelect
+                              className="flex-1"
                               value={move.type}
-                              onChange={(e) => updateCameraMove(idx, { type: e.target.value as CameraMove['type'] })}
-                              className="flex-1 rounded border px-2 py-1 text-[11px] focus:border-[#e84545] focus:outline-none"
-                              style={{
-                                backgroundColor: 'var(--color-input-bg)',
-                                borderColor: 'var(--color-border)',
-                                color: 'var(--color-text-primary)',
-                              }}
-                            >
-                              {CAMERA_MOVE_TYPES.map((type) => (
-                                <option key={type} value={type}>
-                                  {type}
-                                </option>
-                              ))}
-                            </select>
+                              onChange={(v) => updateCameraMove(idx, { type: v as CameraMove['type'] })}
+                              options={CAMERA_MOVE_TYPES.map((type) => ({ value: type, label: type }))}
+                            />
                             <button
                               type="button"
                               onClick={() => moveCameraMove(idx, idx - 1)}
-                              className="kbd h-7 w-7 text-[10px]"
+                              className="kbd h-7 w-7 text-[11px]"
                             >
                               ↑
                             </button>
                             <button
                               type="button"
                               onClick={() => moveCameraMove(idx, idx + 1)}
-                              className="kbd h-7 w-7 text-[10px]"
+                              className="kbd h-7 w-7 text-[11px]"
                             >
                               ↓
                             </button>
@@ -1395,7 +1482,7 @@ export default function LayersTab({ scene }: Props) {
 
                           <div className="grid grid-cols-2 gap-2">
                             <div>
-                              <label className="mb-0.5 block text-[9px] text-[#6b6b7a]">At (s)</label>
+                              <label className="mb-0.5 block text-[10px] text-[#6b6b7a]">At (s)</label>
                               <input
                                 type="number"
                                 min={0}
@@ -1406,7 +1493,7 @@ export default function LayersTab({ scene }: Props) {
                                     params: { ...(move.params ?? {}), at: parseFloat(e.target.value) || 0 },
                                   })
                                 }
-                                className="w-full rounded border px-2 py-1 text-[11px] focus:border-[#e84545] focus:outline-none"
+                                className="w-full rounded border px-2 py-1 text-[12px] focus:border-[#e84545] focus:outline-none"
                                 style={{
                                   backgroundColor: 'var(--color-input-bg)',
                                   borderColor: 'var(--color-border)',
@@ -1415,7 +1502,7 @@ export default function LayersTab({ scene }: Props) {
                               />
                             </div>
                             <div>
-                              <label className="mb-0.5 block text-[9px] text-[#6b6b7a]">Duration (s)</label>
+                              <label className="mb-0.5 block text-[10px] text-[#6b6b7a]">Duration (s)</label>
                               <input
                                 type="number"
                                 min={0.1}
@@ -1429,7 +1516,7 @@ export default function LayersTab({ scene }: Props) {
                                     },
                                   })
                                 }
-                                className="w-full rounded border px-2 py-1 text-[11px] focus:border-[#e84545] focus:outline-none"
+                                className="w-full rounded border px-2 py-1 text-[12px] focus:border-[#e84545] focus:outline-none"
                                 style={{
                                   backgroundColor: 'var(--color-input-bg)',
                                   borderColor: 'var(--color-border)',
@@ -1440,7 +1527,7 @@ export default function LayersTab({ scene }: Props) {
                           </div>
 
                           <div>
-                            <label className="mb-0.5 block text-[9px] text-[#6b6b7a]">Advanced params (JSON)</label>
+                            <label className="mb-0.5 block text-[10px] text-[#6b6b7a]">Advanced params (JSON)</label>
                             <textarea
                               value={paramsText}
                               onChange={(e) => setCameraParamsDraft((prev) => ({ ...prev, [idx]: e.target.value }))}
@@ -1458,7 +1545,7 @@ export default function LayersTab({ scene }: Props) {
                                 }
                               }}
                               rows={4}
-                              className="w-full rounded border px-2 py-1 font-mono text-[10px] focus:border-[#e84545] focus:outline-none"
+                              className="w-full rounded border px-2 py-1 font-mono text-[11px] focus:border-[#e84545] focus:outline-none"
                               style={{
                                 backgroundColor: 'var(--color-input-bg)',
                                 borderColor: 'var(--color-border)',
@@ -1475,26 +1562,27 @@ export default function LayersTab({ scene }: Props) {
             </>
           )}
 
-          {layersActiveTab === 'scene' && (
+          {panelSectionId === 'scene' && (
             <>
               <CollapsibleSection
                 title="Physics"
                 icon={Sparkles}
+                active={physicsLayers.length > 0}
                 extraHeaderContent={
                   <button onClick={addPhysicsLayer} className="kbd h-6 px-2 text-[#6b6b7a] hover:text-[#e84545]">
                     <Plus size={11} />
-                    <span className="text-[10px]">Add</span>
+                    <span className="text-[11px]">Add</span>
                   </button>
                 }
                 badge={
-                  <span className="text-[10px] text-[#6b6b7a]">
+                  <span className="text-[11px] text-[#6b6b7a]">
                     {physicsLayers.length} layer{physicsLayers.length === 1 ? '' : 's'}
                   </span>
                 }
               >
                 {physicsLayers.length === 0 ? (
                   <div
-                    className="text-[10px] text-[#6b6b7a] text-center py-3 border border-dashed rounded"
+                    className="text-[11px] text-[#6b6b7a] text-center py-3 border border-dashed rounded"
                     style={{ borderColor: 'var(--color-border)' }}
                   >
                     No physics layers yet. Add one to edit simulation params manually.
@@ -1515,33 +1603,22 @@ export default function LayersTab({ scene }: Props) {
                               next[idx] = { ...layer, name: e.target.value }
                               updatePhysicsLayers(next)
                             }}
-                            className="flex-1 border rounded px-2 py-1 text-[11px] focus:outline-none focus:border-[#e84545]"
+                            className="flex-1 border rounded px-2 py-1 text-[12px] focus:outline-none focus:border-[#e84545]"
                             style={{
                               backgroundColor: 'var(--color-input-bg)',
                               borderColor: 'var(--color-border)',
                               color: 'var(--color-text-primary)',
                             }}
                           />
-                          <select
+                          <ColorSelect
                             value={layer.simulation}
-                            onChange={(e) => {
+                            onChange={(v) => {
                               const next = [...physicsLayers]
-                              next[idx] = { ...layer, simulation: e.target.value as PhysicsSimulationType }
+                              next[idx] = { ...layer, simulation: v as PhysicsSimulationType }
                               updatePhysicsLayers(next)
                             }}
-                            className="border rounded px-2 py-1 text-[11px]"
-                            style={{
-                              backgroundColor: 'var(--color-input-bg)',
-                              borderColor: 'var(--color-border)',
-                              color: 'var(--color-text-primary)',
-                            }}
-                          >
-                            {PHYSICS_SIM_TYPES.map((t) => (
-                              <option key={t} value={t}>
-                                {t}
-                              </option>
-                            ))}
-                          </select>
+                            options={PHYSICS_SIM_TYPES.map((t) => ({ value: t, label: t }))}
+                          />
                           <button
                             onClick={() => {
                               const next = physicsLayers.filter((_, i) => i !== idx)
@@ -1555,28 +1632,24 @@ export default function LayersTab({ scene }: Props) {
 
                         <div className="grid grid-cols-2 gap-2">
                           <div>
-                            <label className="text-[9px] text-[#6b6b7a] block mb-0.5">Layout</label>
-                            <select
+                            <ColorSelect
+                              className="w-full"
+                              label="Layout"
                               value={layer.layout}
-                              onChange={(e) => {
+                              onChange={(v) => {
                                 const next = [...physicsLayers]
-                                next[idx] = { ...layer, layout: e.target.value as PhysicsLayer['layout'] }
+                                next[idx] = { ...layer, layout: v as PhysicsLayer['layout'] }
                                 updatePhysicsLayers(next)
                               }}
-                              className="w-full border rounded px-2 py-1 text-[10px]"
-                              style={{
-                                backgroundColor: 'var(--color-input-bg)',
-                                borderColor: 'var(--color-border)',
-                                color: 'var(--color-text-primary)',
-                              }}
-                            >
-                              <option value="split">split</option>
-                              <option value="fullscreen">fullscreen</option>
-                              <option value="equation_focus">equation_focus</option>
-                            </select>
+                              options={[
+                                { value: 'split', label: 'split' },
+                                { value: 'fullscreen', label: 'fullscreen' },
+                                { value: 'equation_focus', label: 'equation_focus' },
+                              ]}
+                            />
                           </div>
                           <div>
-                            <label className="text-[9px] text-[#6b6b7a] block mb-0.5">Equation Keys (comma)</label>
+                            <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Equation Keys (comma)</label>
                             <input
                               value={(layer.equations || []).join(', ')}
                               onChange={(e) => {
@@ -1590,7 +1663,7 @@ export default function LayersTab({ scene }: Props) {
                                 }
                                 updatePhysicsLayers(next)
                               }}
-                              className="w-full border rounded px-2 py-1 text-[10px]"
+                              className="w-full border rounded px-2 py-1 text-[11px]"
                               style={{
                                 backgroundColor: 'var(--color-input-bg)',
                                 borderColor: 'var(--color-border)',
@@ -1601,7 +1674,7 @@ export default function LayersTab({ scene }: Props) {
                         </div>
 
                         <div>
-                          <label className="text-[9px] text-[#6b6b7a] block mb-0.5">Title</label>
+                          <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Title</label>
                           <input
                             value={layer.title}
                             onChange={(e) => {
@@ -1609,7 +1682,7 @@ export default function LayersTab({ scene }: Props) {
                               next[idx] = { ...layer, title: e.target.value }
                               updatePhysicsLayers(next)
                             }}
-                            className="w-full border rounded px-2 py-1 text-[10px]"
+                            className="w-full border rounded px-2 py-1 text-[11px]"
                             style={{
                               backgroundColor: 'var(--color-input-bg)',
                               borderColor: 'var(--color-border)',
@@ -1619,7 +1692,7 @@ export default function LayersTab({ scene }: Props) {
                         </div>
 
                         <div>
-                          <label className="text-[9px] text-[#6b6b7a] block mb-0.5">Narration</label>
+                          <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Narration</label>
                           <textarea
                             rows={2}
                             value={layer.narration}
@@ -1628,7 +1701,7 @@ export default function LayersTab({ scene }: Props) {
                               next[idx] = { ...layer, narration: e.target.value }
                               updatePhysicsLayers(next)
                             }}
-                            className="w-full border rounded px-2 py-1 text-[10px]"
+                            className="w-full border rounded px-2 py-1 text-[11px]"
                             style={{
                               backgroundColor: 'var(--color-input-bg)',
                               borderColor: 'var(--color-border)',
@@ -1639,7 +1712,7 @@ export default function LayersTab({ scene }: Props) {
 
                         {layer.simulation === 'electric_field' ? (
                           <div>
-                            <label className="text-[9px] text-[#6b6b7a] block mb-0.5">Charges JSON</label>
+                            <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Charges JSON</label>
                             <textarea
                               rows={4}
                               value={JSON.stringify(
@@ -1655,7 +1728,7 @@ export default function LayersTab({ scene }: Props) {
                                   updatePhysicsLayers(next)
                                 } catch {}
                               }}
-                              className="w-full border rounded px-2 py-1 text-[10px] font-mono"
+                              className="w-full border rounded px-2 py-1 text-[11px] font-mono"
                               style={{
                                 backgroundColor: 'var(--color-input-bg)',
                                 borderColor: 'var(--color-border)',
@@ -1667,7 +1740,7 @@ export default function LayersTab({ scene }: Props) {
                           <div className="grid grid-cols-2 gap-2">
                             {(PHYSICS_PARAM_FIELDS[layer.simulation] || []).map((f) => (
                               <div key={f.key}>
-                                <label className="text-[9px] text-[#6b6b7a] block mb-0.5">{f.label}</label>
+                                <label className="text-[10px] text-[#6b6b7a] block mb-0.5">{f.label}</label>
                                 <input
                                   type="number"
                                   min={f.min}
@@ -1682,7 +1755,7 @@ export default function LayersTab({ scene }: Props) {
                                     }
                                     updatePhysicsLayers(next)
                                   }}
-                                  className="w-full border rounded px-2 py-1 text-[10px]"
+                                  className="w-full border rounded px-2 py-1 text-[11px]"
                                   style={{
                                     backgroundColor: 'var(--color-input-bg)',
                                     borderColor: 'var(--color-border)',
@@ -1697,7 +1770,7 @@ export default function LayersTab({ scene }: Props) {
                         {layer.layout !== 'fullscreen' && (
                           <div className="grid grid-cols-2 gap-2">
                             <div>
-                              <label className="text-[9px] text-[#6b6b7a] block mb-0.5">Card X (%)</label>
+                              <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Card X (%)</label>
                               <input
                                 type="number"
                                 min={0}
@@ -1712,7 +1785,7 @@ export default function LayersTab({ scene }: Props) {
                                   }
                                   updatePhysicsLayers(next)
                                 }}
-                                className="w-full border rounded px-2 py-1 text-[10px]"
+                                className="w-full border rounded px-2 py-1 text-[11px]"
                                 style={{
                                   backgroundColor: 'var(--color-input-bg)',
                                   borderColor: 'var(--color-border)',
@@ -1721,7 +1794,7 @@ export default function LayersTab({ scene }: Props) {
                               />
                             </div>
                             <div>
-                              <label className="text-[9px] text-[#6b6b7a] block mb-0.5">Card Y (%)</label>
+                              <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Card Y (%)</label>
                               <input
                                 type="number"
                                 min={0}
@@ -1736,7 +1809,7 @@ export default function LayersTab({ scene }: Props) {
                                   }
                                   updatePhysicsLayers(next)
                                 }}
-                                className="w-full border rounded px-2 py-1 text-[10px]"
+                                className="w-full border rounded px-2 py-1 text-[11px]"
                                 style={{
                                   backgroundColor: 'var(--color-input-bg)',
                                   borderColor: 'var(--color-border)',
@@ -1745,7 +1818,7 @@ export default function LayersTab({ scene }: Props) {
                               />
                             </div>
                             <div>
-                              <label className="text-[9px] text-[#6b6b7a] block mb-0.5">Card Width (%)</label>
+                              <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Card Width (%)</label>
                               <input
                                 type="number"
                                 min={16}
@@ -1760,7 +1833,7 @@ export default function LayersTab({ scene }: Props) {
                                   }
                                   updatePhysicsLayers(next)
                                 }}
-                                className="w-full border rounded px-2 py-1 text-[10px]"
+                                className="w-full border rounded px-2 py-1 text-[11px]"
                                 style={{
                                   backgroundColor: 'var(--color-input-bg)',
                                   borderColor: 'var(--color-border)',
@@ -1769,7 +1842,7 @@ export default function LayersTab({ scene }: Props) {
                               />
                             </div>
                             <div>
-                              <label className="text-[9px] text-[#6b6b7a] block mb-0.5">Sim Scale</label>
+                              <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Sim Scale</label>
                               <input
                                 type="number"
                                 min={0.35}
@@ -1786,7 +1859,7 @@ export default function LayersTab({ scene }: Props) {
                                   }
                                   updatePhysicsLayers(next)
                                 }}
-                                className="w-full border rounded px-2 py-1 text-[10px]"
+                                className="w-full border rounded px-2 py-1 text-[11px]"
                                 style={{
                                   backgroundColor: 'var(--color-input-bg)',
                                   borderColor: 'var(--color-border)',
@@ -1795,31 +1868,27 @@ export default function LayersTab({ scene }: Props) {
                               />
                             </div>
                             <div>
-                              <label className="text-[9px] text-[#6b6b7a] block mb-0.5">Card Preset</label>
-                              <select
+                              <ColorSelect
+                                className="w-full"
+                                label="Card Preset"
                                 value={String((layer.params as any)?.ui_cardPreset ?? 'glass_dark')}
-                                onChange={(e) => {
+                                onChange={(v) => {
                                   const next = [...physicsLayers]
                                   next[idx] = {
                                     ...layer,
-                                    params: { ...(layer.params || {}), ui_cardPreset: e.target.value },
+                                    params: { ...(layer.params || {}), ui_cardPreset: v },
                                   }
                                   updatePhysicsLayers(next)
                                 }}
-                                className="w-full border rounded px-2 py-1 text-[10px]"
-                                style={{
-                                  backgroundColor: 'var(--color-input-bg)',
-                                  borderColor: 'var(--color-border)',
-                                  color: 'var(--color-text-primary)',
-                                }}
-                              >
-                                <option value="glass_dark">glass_dark</option>
-                                <option value="glass_light">glass_light</option>
-                                <option value="neon">neon</option>
-                                <option value="chalk">chalk</option>
-                              </select>
+                                options={[
+                                  { value: 'glass_dark', label: 'glass_dark' },
+                                  { value: 'glass_light', label: 'glass_light' },
+                                  { value: 'neon', label: 'neon' },
+                                  { value: 'chalk', label: 'chalk' },
+                                ]}
+                              />
                             </div>
-                            <label className="flex items-center gap-1 text-[10px] text-[#6b6b7a]">
+                            <label className="flex items-center gap-1 text-[11px] text-[#6b6b7a]">
                               <input
                                 type="checkbox"
                                 checked={Boolean((layer.params as any)?.ui_cardAuto)}
@@ -1839,7 +1908,7 @@ export default function LayersTab({ scene }: Props) {
 
                         {layer.layout !== 'fullscreen' && (
                           <div>
-                            <label className="text-[9px] text-[#6b6b7a] block mb-1">Visual card position/size</label>
+                            <label className="text-[10px] text-[#6b6b7a] block mb-1">Visual card position/size</label>
                             <div
                               className="relative h-36 rounded border overflow-hidden"
                               style={{
@@ -1865,7 +1934,7 @@ export default function LayersTab({ scene }: Props) {
                               }}
                             >
                               <div className="absolute inset-0 opacity-40 pointer-events-none">
-                                <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[9px] text-[#6b6b7a]">
+                                <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[10px] text-[#6b6b7a]">
                                   simulation center
                                 </div>
                               </div>
@@ -1894,7 +1963,7 @@ export default function LayersTab({ scene }: Props) {
                                   })
                                 }}
                               >
-                                <div className="absolute left-1 top-1 text-[9px] text-[#f0b4b4] pointer-events-none">
+                                <div className="absolute left-1 top-1 text-[10px] text-[#f0b4b4] pointer-events-none">
                                   card
                                 </div>
                                 <div
@@ -1918,12 +1987,12 @@ export default function LayersTab({ scene }: Props) {
                         )}
 
                         <details>
-                          <summary className="text-[10px] text-[#6b6b7a] cursor-pointer">
+                          <summary className="text-[11px] text-[#6b6b7a] cursor-pointer">
                             Card style + text controls
                           </summary>
                           <div className="mt-2 grid grid-cols-2 gap-2">
                             <div>
-                              <label className="text-[9px] text-[#6b6b7a] block mb-0.5">Card Opacity</label>
+                              <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Card Opacity</label>
                               <input
                                 type="number"
                                 min={0.2}
@@ -1938,7 +2007,7 @@ export default function LayersTab({ scene }: Props) {
                                   }
                                   updatePhysicsLayers(next)
                                 }}
-                                className="w-full border rounded px-2 py-1 text-[10px]"
+                                className="w-full border rounded px-2 py-1 text-[11px]"
                                 style={{
                                   backgroundColor: 'var(--color-input-bg)',
                                   borderColor: 'var(--color-border)',
@@ -1947,7 +2016,7 @@ export default function LayersTab({ scene }: Props) {
                               />
                             </div>
                             <div>
-                              <label className="text-[9px] text-[#6b6b7a] block mb-0.5">Blur (px)</label>
+                              <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Blur (px)</label>
                               <input
                                 type="number"
                                 min={0}
@@ -1962,7 +2031,7 @@ export default function LayersTab({ scene }: Props) {
                                   }
                                   updatePhysicsLayers(next)
                                 }}
-                                className="w-full border rounded px-2 py-1 text-[10px]"
+                                className="w-full border rounded px-2 py-1 text-[11px]"
                                 style={{
                                   backgroundColor: 'var(--color-input-bg)',
                                   borderColor: 'var(--color-border)',
@@ -1971,7 +2040,7 @@ export default function LayersTab({ scene }: Props) {
                               />
                             </div>
                             <div>
-                              <label className="text-[9px] text-[#6b6b7a] block mb-0.5">Radius (px)</label>
+                              <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Radius (px)</label>
                               <input
                                 type="number"
                                 min={0}
@@ -1986,7 +2055,7 @@ export default function LayersTab({ scene }: Props) {
                                   }
                                   updatePhysicsLayers(next)
                                 }}
-                                className="w-full border rounded px-2 py-1 text-[10px]"
+                                className="w-full border rounded px-2 py-1 text-[11px]"
                                 style={{
                                   backgroundColor: 'var(--color-input-bg)',
                                   borderColor: 'var(--color-border)',
@@ -1995,7 +2064,7 @@ export default function LayersTab({ scene }: Props) {
                               />
                             </div>
                             <div>
-                              <label className="text-[9px] text-[#6b6b7a] block mb-0.5">Padding (px)</label>
+                              <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Padding (px)</label>
                               <input
                                 type="number"
                                 min={8}
@@ -2010,7 +2079,7 @@ export default function LayersTab({ scene }: Props) {
                                   }
                                   updatePhysicsLayers(next)
                                 }}
-                                className="w-full border rounded px-2 py-1 text-[10px]"
+                                className="w-full border rounded px-2 py-1 text-[11px]"
                                 style={{
                                   backgroundColor: 'var(--color-input-bg)',
                                   borderColor: 'var(--color-border)',
@@ -2019,33 +2088,29 @@ export default function LayersTab({ scene }: Props) {
                               />
                             </div>
                             <div>
-                              <label className="text-[9px] text-[#6b6b7a] block mb-0.5">Text Align</label>
-                              <select
+                              <ColorSelect
+                                className="w-full"
+                                label="Text Align"
                                 value={String(
                                   (layer.params as any)?.ui_textAlign ??
                                     (layer.layout === 'equation_focus' ? 'center' : 'left'),
                                 )}
-                                onChange={(e) => {
+                                onChange={(v) => {
                                   const next = [...physicsLayers]
                                   next[idx] = {
                                     ...layer,
-                                    params: { ...(layer.params || {}), ui_textAlign: e.target.value },
+                                    params: { ...(layer.params || {}), ui_textAlign: v },
                                   }
                                   updatePhysicsLayers(next)
                                 }}
-                                className="w-full border rounded px-2 py-1 text-[10px]"
-                                style={{
-                                  backgroundColor: 'var(--color-input-bg)',
-                                  borderColor: 'var(--color-border)',
-                                  color: 'var(--color-text-primary)',
-                                }}
-                              >
-                                <option value="left">left</option>
-                                <option value="center">center</option>
-                              </select>
+                                options={[
+                                  { value: 'left', label: 'left' },
+                                  { value: 'center', label: 'center' },
+                                ]}
+                              />
                             </div>
                             <div>
-                              <label className="text-[9px] text-[#6b6b7a] block mb-0.5">Title Size (px)</label>
+                              <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Title Size (px)</label>
                               <input
                                 type="number"
                                 min={16}
@@ -2060,7 +2125,7 @@ export default function LayersTab({ scene }: Props) {
                                   }
                                   updatePhysicsLayers(next)
                                 }}
-                                className="w-full border rounded px-2 py-1 text-[10px]"
+                                className="w-full border rounded px-2 py-1 text-[11px]"
                                 style={{
                                   backgroundColor: 'var(--color-input-bg)',
                                   borderColor: 'var(--color-border)',
@@ -2069,7 +2134,7 @@ export default function LayersTab({ scene }: Props) {
                               />
                             </div>
                             <div>
-                              <label className="text-[9px] text-[#6b6b7a] block mb-0.5">Body Size (px)</label>
+                              <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Body Size (px)</label>
                               <input
                                 type="number"
                                 min={12}
@@ -2084,7 +2149,7 @@ export default function LayersTab({ scene }: Props) {
                                   }
                                   updatePhysicsLayers(next)
                                 }}
-                                className="w-full border rounded px-2 py-1 text-[10px]"
+                                className="w-full border rounded px-2 py-1 text-[11px]"
                                 style={{
                                   backgroundColor: 'var(--color-input-bg)',
                                   borderColor: 'var(--color-border)',
@@ -2093,7 +2158,7 @@ export default function LayersTab({ scene }: Props) {
                               />
                             </div>
                             <div>
-                              <label className="text-[9px] text-[#6b6b7a] block mb-0.5">Equation Size (px)</label>
+                              <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Equation Size (px)</label>
                               <input
                                 type="number"
                                 min={14}
@@ -2108,7 +2173,7 @@ export default function LayersTab({ scene }: Props) {
                                   }
                                   updatePhysicsLayers(next)
                                 }}
-                                className="w-full border rounded px-2 py-1 text-[10px]"
+                                className="w-full border rounded px-2 py-1 text-[11px]"
                                 style={{
                                   backgroundColor: 'var(--color-input-bg)',
                                   borderColor: 'var(--color-border)',
@@ -2120,7 +2185,7 @@ export default function LayersTab({ scene }: Props) {
                         </details>
 
                         <details>
-                          <summary className="text-[10px] text-[#6b6b7a] cursor-pointer">Params JSON</summary>
+                          <summary className="text-[11px] text-[#6b6b7a] cursor-pointer">Params JSON</summary>
                           <textarea
                             rows={5}
                             value={JSON.stringify(layer.params ?? {}, null, 2)}
@@ -2134,7 +2199,7 @@ export default function LayersTab({ scene }: Props) {
                                 // keep invalid draft in field; user can fix JSON
                               }
                             }}
-                            className="w-full mt-1 border rounded px-2 py-1 text-[10px] font-mono"
+                            className="w-full mt-1 border rounded px-2 py-1 text-[11px] font-mono"
                             style={{
                               backgroundColor: 'var(--color-input-bg)',
                               borderColor: 'var(--color-border)',
@@ -2144,7 +2209,7 @@ export default function LayersTab({ scene }: Props) {
                         </details>
                       </div>
                     ))}
-                    <p className="text-[9px] text-[#6b6b7a]">
+                    <p className="text-[10px] text-[#6b6b7a]">
                       Primary render currently uses the first physics layer in this list.
                     </p>
                   </div>
@@ -2154,21 +2219,22 @@ export default function LayersTab({ scene }: Props) {
               <CollapsibleSection
                 title="Charts"
                 icon={Grid3X3}
+                active={chartLayers.length > 0}
                 extraHeaderContent={
                   <button onClick={addChartLayer} className="kbd h-6 px-2 text-[#6b6b7a] hover:text-[#e84545]">
                     <Plus size={11} />
-                    <span className="text-[10px]">Add</span>
+                    <span className="text-[11px]">Add</span>
                   </button>
                 }
                 badge={
-                  <span className="text-[10px] text-[#6b6b7a]">
+                  <span className="text-[11px] text-[#6b6b7a]">
                     {chartLayers.length} chart{chartLayers.length === 1 ? '' : 's'}
                   </span>
                 }
               >
                 {scene.sceneType !== 'd3' && chartLayers.length === 0 && (
                   <div
-                    className="text-[10px] text-[#6b6b7a] border rounded p-2"
+                    className="text-[11px] text-[#6b6b7a] border rounded p-2"
                     style={{ borderColor: 'var(--color-border)' }}
                   >
                     Add a chart to convert this scene to D3 mode.
@@ -2176,7 +2242,7 @@ export default function LayersTab({ scene }: Props) {
                 )}
                 {chartLayers.length === 0 ? (
                   <div
-                    className="text-[10px] text-[#6b6b7a] text-center py-3 border border-dashed rounded"
+                    className="text-[11px] text-[#6b6b7a] text-center py-3 border border-dashed rounded"
                     style={{ borderColor: 'var(--color-border)' }}
                   >
                     No chart layers yet. Add one to edit directly in Layers.
@@ -2197,33 +2263,22 @@ export default function LayersTab({ scene }: Props) {
                               next[idx] = { ...layer, name: e.target.value }
                               updateChartLayers(next)
                             }}
-                            className="flex-1 border rounded px-2 py-1 text-[11px] focus:outline-none focus:border-[#e84545]"
+                            className="flex-1 border rounded px-2 py-1 text-[12px] focus:outline-none focus:border-[#e84545]"
                             style={{
                               backgroundColor: 'var(--color-input-bg)',
                               borderColor: 'var(--color-border)',
                               color: 'var(--color-text-primary)',
                             }}
                           />
-                          <select
+                          <ColorSelect
                             value={layer.chartType}
-                            onChange={(e) => {
+                            onChange={(v) => {
                               const next = [...chartLayers]
-                              next[idx] = { ...layer, chartType: e.target.value as D3ChartType }
+                              next[idx] = { ...layer, chartType: v as D3ChartType }
                               updateChartLayers(next)
                             }}
-                            className="border rounded px-2 py-1 text-[11px]"
-                            style={{
-                              backgroundColor: 'var(--color-input-bg)',
-                              borderColor: 'var(--color-border)',
-                              color: 'var(--color-text-primary)',
-                            }}
-                          >
-                            {D3_CHART_TYPES.map((t) => (
-                              <option key={t} value={t}>
-                                {t}
-                              </option>
-                            ))}
-                          </select>
+                            options={D3_CHART_TYPES.map((t) => ({ value: t, label: t }))}
+                          />
                           <button
                             onClick={() => {
                               const next = chartLayers.filter((_, i) => i !== idx)
@@ -2247,7 +2302,7 @@ export default function LayersTab({ scene }: Props) {
                               next[idx] = { ...layer, layout: { ...layer.layout, x: parseFloat(e.target.value) || 0 } }
                               updateChartLayers(next)
                             }}
-                            className="border rounded px-2 py-1 text-[10px]"
+                            className="border rounded px-2 py-1 text-[11px]"
                             style={{
                               backgroundColor: 'var(--color-input-bg)',
                               borderColor: 'var(--color-border)',
@@ -2265,7 +2320,7 @@ export default function LayersTab({ scene }: Props) {
                               next[idx] = { ...layer, layout: { ...layer.layout, y: parseFloat(e.target.value) || 0 } }
                               updateChartLayers(next)
                             }}
-                            className="border rounded px-2 py-1 text-[10px]"
+                            className="border rounded px-2 py-1 text-[11px]"
                             style={{
                               backgroundColor: 'var(--color-input-bg)',
                               borderColor: 'var(--color-border)',
@@ -2286,7 +2341,7 @@ export default function LayersTab({ scene }: Props) {
                               }
                               updateChartLayers(next)
                             }}
-                            className="border rounded px-2 py-1 text-[10px]"
+                            className="border rounded px-2 py-1 text-[11px]"
                             style={{
                               backgroundColor: 'var(--color-input-bg)',
                               borderColor: 'var(--color-border)',
@@ -2307,7 +2362,7 @@ export default function LayersTab({ scene }: Props) {
                               }
                               updateChartLayers(next)
                             }}
-                            className="border rounded px-2 py-1 text-[10px]"
+                            className="border rounded px-2 py-1 text-[11px]"
                             style={{
                               backgroundColor: 'var(--color-input-bg)',
                               borderColor: 'var(--color-border)',
@@ -2330,7 +2385,7 @@ export default function LayersTab({ scene }: Props) {
                               }
                               updateChartLayers(next)
                             }}
-                            className="border rounded px-2 py-1 text-[10px]"
+                            className="border rounded px-2 py-1 text-[11px]"
                             style={{
                               backgroundColor: 'var(--color-input-bg)',
                               borderColor: 'var(--color-border)',
@@ -2350,14 +2405,14 @@ export default function LayersTab({ scene }: Props) {
                               }
                               updateChartLayers(next)
                             }}
-                            className="border rounded px-2 py-1 text-[10px]"
+                            className="border rounded px-2 py-1 text-[11px]"
                             style={{
                               backgroundColor: 'var(--color-input-bg)',
                               borderColor: 'var(--color-border)',
                               color: 'var(--color-text-primary)',
                             }}
                           />
-                          <label className="flex items-center gap-1 text-[10px] text-[#6b6b7a]">
+                          <label className="flex items-center gap-1 text-[11px] text-[#6b6b7a]">
                             <input
                               type="checkbox"
                               checked={layer.timing.animated}
@@ -2372,7 +2427,7 @@ export default function LayersTab({ scene }: Props) {
                         </div>
 
                         <details>
-                          <summary className="text-[10px] text-[#6b6b7a] cursor-pointer">Data JSON</summary>
+                          <summary className="text-[11px] text-[#6b6b7a] cursor-pointer">Data JSON</summary>
                           <textarea
                             rows={4}
                             value={chartDataDraft[layer.id] ?? JSON.stringify(layer.data ?? [], null, 2)}
@@ -2390,7 +2445,7 @@ export default function LayersTab({ scene }: Props) {
                                 })
                               } catch {}
                             }}
-                            className="w-full mt-1 border rounded px-2 py-1 text-[10px] font-mono"
+                            className="w-full mt-1 border rounded px-2 py-1 text-[11px] font-mono"
                             style={{
                               backgroundColor: 'var(--color-input-bg)',
                               borderColor: 'var(--color-border)',
@@ -2400,7 +2455,7 @@ export default function LayersTab({ scene }: Props) {
                         </details>
 
                         <details>
-                          <summary className="text-[10px] text-[#6b6b7a] cursor-pointer">Config JSON</summary>
+                          <summary className="text-[11px] text-[#6b6b7a] cursor-pointer">Config JSON</summary>
                           <textarea
                             rows={4}
                             value={chartConfigDraft[layer.id] ?? JSON.stringify(layer.config ?? {}, null, 2)}
@@ -2418,7 +2473,7 @@ export default function LayersTab({ scene }: Props) {
                                 })
                               } catch {}
                             }}
-                            className="w-full mt-1 border rounded px-2 py-1 text-[10px] font-mono"
+                            className="w-full mt-1 border rounded px-2 py-1 text-[11px] font-mono"
                             style={{
                               backgroundColor: 'var(--color-input-bg)',
                               borderColor: 'var(--color-border)',
@@ -2434,13 +2489,14 @@ export default function LayersTab({ scene }: Props) {
             </>
           )}
 
-          {layersActiveTab === 'scene' && (
+          {panelSectionId === 'scene' && (
             <>
               {/* SVG Layer (always) */}
               <CollapsibleSection
                 title="SVG Layer"
                 icon={Layers}
-                badge={<span className="text-[10px] text-[#6b6b7a] ml-auto">always present</span>}
+                active={!!scene.sceneCode}
+                badge={<span className="text-[11px] text-[#6b6b7a] ml-auto">always present</span>}
               >
                 <div
                   className="w-full h-full"
@@ -2478,7 +2534,7 @@ export default function LayersTab({ scene }: Props) {
                     className="kbd w-full h-8 border-dashed border-[#444] text-[#6b6b7a] hover:text-[#e84545] hover:border-[#e84545] transition-colors"
                   >
                     <Plus size={14} />
-                    <span className="text-xs">{scene.videoLayer.src ? 'Replace video' : 'Upload MP4'}</span>
+                    <span className="text-sm">{scene.videoLayer.src ? 'Replace video' : 'Upload MP4'}</span>
                   </button>
                   <button
                     onClick={handleToggleScreenRecord}
@@ -2489,53 +2545,47 @@ export default function LayersTab({ scene }: Props) {
                     }`}
                   >
                     <Camera size={14} />
-                    <span className="text-xs">{isRecordingScreen ? 'Stop recording' : 'Record Screen'}</span>
+                    <span className="text-sm">{isRecordingScreen ? 'Stop recording' : 'Record Screen'}</span>
                   </button>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="text-[10px] text-[#6b6b7a] block mb-1">Recording FPS</label>
-                      <select
-                        value={recordingFps}
-                        onChange={(e) => setRecordingFps(parseInt(e.target.value, 10) || 30)}
-                        className="w-full border rounded px-2 py-1 text-xs focus:outline-none focus:border-[#e84545] transition-colors"
-                        style={{
-                          backgroundColor: 'var(--color-input-bg)',
-                          borderColor: 'var(--color-border)',
-                          color: 'var(--color-text-primary)',
-                        }}
-                      >
-                        <option value={24}>24</option>
-                        <option value={30}>30</option>
-                        <option value={60}>60</option>
-                      </select>
+                      <ColorSelect
+                        className="w-full"
+                        size="md"
+                        label="Recording FPS"
+                        value={String(recordingFps)}
+                        onChange={(v) => setRecordingFps(parseInt(v, 10) || 30)}
+                        options={[
+                          { value: '24', label: '24' },
+                          { value: '30', label: '30' },
+                          { value: '60', label: '60' },
+                        ]}
+                      />
                     </div>
                     <div>
-                      <label className="text-[10px] text-[#6b6b7a] block mb-1">Resolution hint</label>
-                      <select
+                      <ColorSelect
+                        className="w-full"
+                        size="md"
+                        label="Resolution hint"
                         value={recordingResolution}
-                        onChange={(e) =>
-                          setRecordingResolution((e.target.value as typeof recordingResolution) || '1080p')
+                        onChange={(v) =>
+                          setRecordingResolution((v as typeof recordingResolution) || '1080p')
                         }
-                        className="w-full border rounded px-2 py-1 text-xs focus:outline-none focus:border-[#e84545] transition-colors"
-                        style={{
-                          backgroundColor: 'var(--color-input-bg)',
-                          borderColor: 'var(--color-border)',
-                          color: 'var(--color-text-primary)',
-                        }}
-                      >
-                        <option value="source">Source/native</option>
-                        <option value="720p">1280x720</option>
-                        <option value="1080p">1920x1080</option>
-                        <option value="1440p">2560x1440</option>
-                        <option value="2160p">3840x2160</option>
-                      </select>
+                        options={[
+                          { value: 'source', label: 'Source/native' },
+                          { value: '720p', label: '1280x720' },
+                          { value: '1080p', label: '1920x1080' },
+                          { value: '1440p', label: '2560x1440' },
+                          { value: '2160p', label: '3840x2160' },
+                        ]}
+                      />
                     </div>
                   </div>
                   {scene.videoLayer.src && (
-                    <p className="text-[#6b6b7a] text-[10px] truncate">{scene.videoLayer.src}</p>
+                    <p className="text-[#6b6b7a] text-[11px] truncate">{scene.videoLayer.src}</p>
                   )}
                   <div>
-                    <label className="text-[10px] text-[#6b6b7a] block mb-1">Or paste URL</label>
+                    <label className="text-[11px] text-[#6b6b7a] block mb-1">Or paste URL</label>
                     <input
                       type="text"
                       placeholder="https://..."
@@ -2546,7 +2596,7 @@ export default function LayersTab({ scene }: Props) {
                         })
                       }
                       onBlur={commitLayer}
-                      className="w-full border rounded px-2 py-1 text-xs placeholder-[#6b6b7a] focus:outline-none focus:border-[#e84545] transition-colors"
+                      className="w-full border rounded px-2 py-1 text-sm placeholder-[#6b6b7a] focus:outline-none focus:border-[#e84545] transition-colors"
                       style={{
                         backgroundColor: 'var(--color-input-bg)',
                         borderColor: 'var(--color-border)',
@@ -2558,7 +2608,7 @@ export default function LayersTab({ scene }: Props) {
 
                 {/* Opacity */}
                 <div>
-                  <label className="text-[10px] text-[#6b6b7a] block mb-1">
+                  <label className="text-[11px] text-[#6b6b7a] block mb-1">
                     Opacity: {Math.round(scene.videoLayer.opacity * 100)}%
                   </label>
                   <input
@@ -2580,7 +2630,7 @@ export default function LayersTab({ scene }: Props) {
                 {/* Trim */}
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="text-[10px] text-[#6b6b7a] block mb-1">Trim start (s)</label>
+                    <label className="text-[11px] text-[#6b6b7a] block mb-1">Trim start (s)</label>
                     <input
                       type="number"
                       min={0}
@@ -2592,7 +2642,7 @@ export default function LayersTab({ scene }: Props) {
                         })
                       }
                       onBlur={commitLayer}
-                      className="w-full border rounded px-2 py-1 text-xs focus:outline-none focus:border-[#e84545] transition-colors"
+                      className="w-full border rounded px-2 py-1 text-sm focus:outline-none focus:border-[#e84545] transition-colors"
                       style={{
                         backgroundColor: 'var(--color-input-bg)',
                         borderColor: 'var(--color-border)',
@@ -2601,7 +2651,7 @@ export default function LayersTab({ scene }: Props) {
                     />
                   </div>
                   <div>
-                    <label className="text-[10px] text-[#6b6b7a] block mb-1">Trim end (s)</label>
+                    <label className="text-[11px] text-[#6b6b7a] block mb-1">Trim end (s)</label>
                     <input
                       type="number"
                       min={0}
@@ -2617,7 +2667,7 @@ export default function LayersTab({ scene }: Props) {
                         })
                       }
                       onBlur={commitLayer}
-                      className="w-full border rounded px-2 py-1 text-xs focus:outline-none focus:border-[#e84545] transition-colors"
+                      className="w-full border rounded px-2 py-1 text-sm focus:outline-none focus:border-[#e84545] transition-colors"
                       style={{
                         backgroundColor: 'var(--color-input-bg)',
                         borderColor: 'var(--color-border)',
@@ -2630,7 +2680,7 @@ export default function LayersTab({ scene }: Props) {
             </>
           )}
 
-          {layersActiveTab === 'audio' && (
+          {panelSectionId === 'audio' && (
             <>
               {/* Audio Layer */}
               <CollapsibleSection
@@ -2662,7 +2712,7 @@ export default function LayersTab({ scene }: Props) {
                           className="kbd flex-1 h-8 border-dashed border-[#444] text-[#6b6b7a] hover:text-[#e84545] hover:border-[#e84545] flex items-center justify-center gap-1 cursor-pointer"
                         >
                           <Plus size={14} />
-                          <span className="text-[10px] shrink-0 whitespace-nowrap">
+                          <span className="text-[11px] shrink-0 whitespace-nowrap">
                             {scene.audioLayer.src ? 'Replace' : 'Upload MP3'}
                           </span>
                         </span>
@@ -2671,7 +2721,7 @@ export default function LayersTab({ scene }: Props) {
                           className="kbd flex-1 h-8 text-[#6b6b7a] hover:text-[#f0ece0] flex items-center justify-center gap-1 cursor-pointer"
                         >
                           <Music size={14} />
-                          <span className="text-[10px]">ElevenLabs</span>
+                          <span className="text-[11px]">ElevenLabs</span>
                         </span>
                       </div>
 
@@ -2679,24 +2729,24 @@ export default function LayersTab({ scene }: Props) {
                       {audio.tts && audio.tts.text && (
                         <div className="space-y-1.5">
                           <div className="flex items-center gap-2">
-                            <span className="text-[10px] text-[#6b6b7a]">Narration</span>
+                            <span className="text-[11px] text-[#6b6b7a]">Narration</span>
                             <span
-                              className="text-[9px] px-1.5 py-0.5 rounded"
+                              className="text-[10px] px-1.5 py-0.5 rounded"
                               style={{ backgroundColor: 'var(--color-accent)', color: '#fff' }}
                             >
                               {audio.tts.provider}
                             </span>
-                            {audio.tts.status === 'ready' && <span className="text-[9px] text-green-500">ready</span>}
+                            {audio.tts.status === 'ready' && <span className="text-[10px] text-green-500">ready</span>}
                             {audio.tts.status === 'generating' && (
-                              <span className="text-[9px] text-yellow-500">generating...</span>
+                              <span className="text-[10px] text-yellow-500">generating...</span>
                             )}
-                            {audio.tts.status === 'error' && <span className="text-[9px] text-red-400">error</span>}
+                            {audio.tts.status === 'error' && <span className="text-[10px] text-red-400">error</span>}
                           </div>
                           <textarea
                             readOnly
                             value={audio.tts.text}
                             rows={2}
-                            className="w-full border rounded px-2 py-1 text-[10px] resize-none"
+                            className="w-full border rounded px-2 py-1 text-[11px] resize-none"
                             style={{
                               backgroundColor: 'var(--color-input-bg)',
                               borderColor: 'var(--color-border)',
@@ -2717,7 +2767,7 @@ export default function LayersTab({ scene }: Props) {
                               } catch {}
                               setGeneratingTTS(false)
                             }}
-                            className="kbd w-full h-7 flex items-center justify-center gap-1 text-[10px] cursor-pointer"
+                            className="kbd w-full h-7 flex items-center justify-center gap-1 text-[11px] cursor-pointer"
                           >
                             <RefreshCw size={10} className={generatingTTS ? 'animate-spin' : ''} />
                             {generatingTTS ? 'Regenerating...' : 'Regenerate'}
@@ -2726,12 +2776,12 @@ export default function LayersTab({ scene }: Props) {
                       )}
 
                       {scene.audioLayer.src && (
-                        <p className="text-[#6b6b7a] text-[10px] truncate">{scene.audioLayer.src}</p>
+                        <p className="text-[#6b6b7a] text-[11px] truncate">{scene.audioLayer.src}</p>
                       )}
 
                       {/* Volume */}
                       <div>
-                        <label className="text-[10px] text-[#6b6b7a] block mb-1">
+                        <label className="text-[11px] text-[#6b6b7a] block mb-1">
                           Volume: {Math.round(scene.audioLayer.volume * 100)}%
                         </label>
                         <input
@@ -2752,7 +2802,7 @@ export default function LayersTab({ scene }: Props) {
 
                       {/* Start offset */}
                       <div>
-                        <label className="text-[10px] text-[#6b6b7a] block mb-1">Start offset (s)</label>
+                        <label className="text-[11px] text-[#6b6b7a] block mb-1">Start offset (s)</label>
                         <input
                           type="number"
                           min={0}
@@ -2767,7 +2817,7 @@ export default function LayersTab({ scene }: Props) {
                             })
                           }
                           onBlur={commitLayer}
-                          className="w-full border rounded px-2 py-1 text-xs focus:outline-none focus:border-[#e84545] transition-colors"
+                          className="w-full border rounded px-2 py-1 text-sm focus:outline-none focus:border-[#e84545] transition-colors"
                           style={{
                             backgroundColor: 'var(--color-input-bg)',
                             borderColor: 'var(--color-border)',
@@ -2794,7 +2844,7 @@ export default function LayersTab({ scene }: Props) {
                               }}
                               className="w-3 h-3 accent-[#e84545]"
                             />
-                            <span className="text-[10px] text-[#6b6b7a]">{label}</span>
+                            <span className="text-[11px] text-[#6b6b7a]">{label}</span>
                           </label>
                         ))}
                       </div>
@@ -2802,12 +2852,12 @@ export default function LayersTab({ scene }: Props) {
                       {/* SFX Sub-section */}
                       <div className="border-t pt-3 space-y-2" style={{ borderColor: 'var(--color-border)' }}>
                         <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-medium text-[var(--color-text-primary)]">
+                          <span className="text-[11px] font-medium text-[var(--color-text-primary)]">
                             Sound Effects
                           </span>
                           <span
                             onClick={() => setShowSFXSearch(!showSFXSearch)}
-                            className="kbd h-6 px-2 flex items-center gap-1 text-[10px] cursor-pointer"
+                            className="kbd h-6 px-2 flex items-center gap-1 text-[11px] cursor-pointer"
                           >
                             <Plus size={10} />
                             Add SFX
@@ -2836,7 +2886,7 @@ export default function LayersTab({ scene }: Props) {
                             {audio.sfx.map((sfx) => (
                               <div
                                 key={sfx.id}
-                                className="flex items-center gap-2 text-[10px]"
+                                className="flex items-center gap-2 text-[11px]"
                                 style={{ color: 'var(--color-text-primary)' }}
                               >
                                 <span className="flex-1 truncate">{sfx.name}</span>
@@ -2859,11 +2909,11 @@ export default function LayersTab({ scene }: Props) {
                       {/* Music Sub-section */}
                       <div className="border-t pt-3 space-y-2" style={{ borderColor: 'var(--color-border)' }}>
                         <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-medium text-[var(--color-text-primary)]">Music</span>
+                          <span className="text-[11px] font-medium text-[var(--color-text-primary)]">Music</span>
                           {!audio.music && (
                             <span
                               onClick={() => setShowMusicSearch(!showMusicSearch)}
-                              className="kbd h-6 px-2 flex items-center gap-1 text-[10px] cursor-pointer"
+                              className="kbd h-6 px-2 flex items-center gap-1 text-[11px] cursor-pointer"
                             >
                               <Plus size={10} />
                               Add Music
@@ -2891,7 +2941,7 @@ export default function LayersTab({ scene }: Props) {
                         {audio.music && (
                           <div className="space-y-2">
                             <div
-                              className="flex items-center gap-2 text-[10px]"
+                              className="flex items-center gap-2 text-[11px]"
                               style={{ color: 'var(--color-text-primary)' }}
                             >
                               <span className="flex-1 truncate">{audio.music.name}</span>
@@ -2921,7 +2971,7 @@ export default function LayersTab({ scene }: Props) {
                                 }}
                                 className="flex-1"
                               />
-                              <span className="text-[9px] w-7" style={{ color: 'var(--color-text-muted)' }}>
+                              <span className="text-[10px] w-7" style={{ color: 'var(--color-text-muted)' }}>
                                 {Math.round(audio.music.volume * 100)}%
                               </span>
                             </div>
@@ -2937,7 +2987,7 @@ export default function LayersTab({ scene }: Props) {
                                 }}
                                 className="w-3 h-3 accent-[#e84545]"
                               />
-                              <span className="text-[10px] text-[#6b6b7a]">Loop</span>
+                              <span className="text-[11px] text-[#6b6b7a]">Loop</span>
                             </label>
                             {/* Duck toggle */}
                             <label className="flex items-center gap-1.5 cursor-pointer">
@@ -2951,7 +3001,7 @@ export default function LayersTab({ scene }: Props) {
                                 }}
                                 className="w-3 h-3 accent-[#e84545]"
                               />
-                              <span className="text-[10px] text-[#6b6b7a]">Duck during narration</span>
+                              <span className="text-[11px] text-[#6b6b7a]">Duck during narration</span>
                             </label>
                           </div>
                         )}
@@ -2963,26 +3013,27 @@ export default function LayersTab({ scene }: Props) {
             </>
           )}
 
-          {layersActiveTab === 'scene' && (
+          {panelSectionId === 'scene' && (
             <>
               {/* SVG Objects */}
               <CollapsibleSection
                 title="SVG Objects"
                 icon={Layers}
-                badge={<span className="text-[10px] text-[#6b6b7a]">transparent stickers</span>}
+                active={(scene.svgObjects ?? []).length > 0}
+                badge={<span className="text-[11px] text-[#6b6b7a]">transparent stickers</span>}
                 extraHeaderContent={
                   <button
                     onClick={() => addSvgObject(scene.id)}
                     className="kbd h-6 px-2 text-[#6b6b7a] hover:text-[#e84545]"
                   >
                     <Plus size={11} />
-                    <span className="text-[10px]">Add</span>
+                    <span className="text-[11px]">Add</span>
                   </button>
                 }
               >
                 {(scene.svgObjects ?? []).length === 0 ? (
                   <div
-                    className="text-[10px] text-[#6b6b7a] text-center py-3 border border-dashed rounded"
+                    className="text-[11px] text-[#6b6b7a] text-center py-3 border border-dashed rounded"
                     style={{ borderColor: 'var(--color-border)' }}
                   >
                     No SVG objects
@@ -2999,13 +3050,13 @@ export default function LayersTab({ scene }: Props) {
                           style={{ borderColor: 'var(--color-border)' }}
                         >
                           <div className="flex items-center gap-1.5">
-                            <span className="text-[9px] text-[#6b6b7a] shrink-0">#{idx + 1}</span>
+                            <span className="text-[10px] text-[#6b6b7a] shrink-0">#{idx + 1}</span>
                             <input
                               type="text"
                               value={prompt}
                               onChange={(e) => setObjectPrompts((p) => ({ ...p, [obj.id]: e.target.value }))}
                               placeholder="Describe this object..."
-                              className="flex-1 border rounded px-2 py-1 text-[10px] placeholder-[#6b6b7a] focus:outline-none focus:border-[#e84545] transition-colors"
+                              className="flex-1 border rounded px-2 py-1 text-[11px] placeholder-[#6b6b7a] focus:outline-none focus:border-[#e84545] transition-colors"
                               style={{
                                 backgroundColor: 'var(--color-input-bg)',
                                 borderColor: 'var(--color-border)',
@@ -3021,7 +3072,7 @@ export default function LayersTab({ scene }: Props) {
                               disabled={!prompt.trim() || isThisGenerating}
                               className="kbd h-8 px-2 bg-[#e84545] border-[#e84545] shadow-[#800] text-white disabled:opacity-40 shrink-0"
                             >
-                              <span className="text-[10px] uppercase tracking-wider">
+                              <span className="text-[11px] uppercase tracking-wider">
                                 {isThisGenerating ? '...' : obj.svgContent ? 'Regen' : 'Gen'}
                               </span>
                             </button>
@@ -3041,10 +3092,10 @@ export default function LayersTab({ scene }: Props) {
                               {/* X Position */}
                               <div>
                                 <div className="flex justify-between items-end mb-1">
-                                  <label className="text-[9px] text-[#6b6b7a] uppercase tracking-wider">
+                                  <label className="text-[10px] text-[#6b6b7a] uppercase tracking-wider">
                                     X Position
                                   </label>
-                                  <span className="text-[9px] text-[var(--color-text-muted)] font-mono">
+                                  <span className="text-[10px] text-[var(--color-text-muted)] font-mono">
                                     {Math.round(obj.x)}%
                                   </span>
                                 </div>
@@ -3065,10 +3116,10 @@ export default function LayersTab({ scene }: Props) {
                               {/* Y Position */}
                               <div>
                                 <div className="flex justify-between items-end mb-1">
-                                  <label className="text-[9px] text-[#6b6b7a] uppercase tracking-wider">
+                                  <label className="text-[10px] text-[#6b6b7a] uppercase tracking-wider">
                                     Y Position
                                   </label>
-                                  <span className="text-[9px] text-[var(--color-text-muted)] font-mono">
+                                  <span className="text-[10px] text-[var(--color-text-muted)] font-mono">
                                     {Math.round(obj.y)}%
                                   </span>
                                 </div>
@@ -3089,8 +3140,8 @@ export default function LayersTab({ scene }: Props) {
                               {/* Scale (Width) */}
                               <div>
                                 <div className="flex justify-between items-end mb-1">
-                                  <label className="text-[9px] text-[#6b6b7a] uppercase tracking-wider">Scale</label>
-                                  <span className="text-[9px] text-[var(--color-text-muted)] font-mono">
+                                  <label className="text-[10px] text-[#6b6b7a] uppercase tracking-wider">Scale</label>
+                                  <span className="text-[10px] text-[var(--color-text-muted)] font-mono">
                                     {Math.round(obj.width)}%
                                   </span>
                                 </div>
@@ -3111,8 +3162,8 @@ export default function LayersTab({ scene }: Props) {
                               {/* Opacity */}
                               <div>
                                 <div className="flex justify-between items-end mb-1">
-                                  <label className="text-[9px] text-[#6b6b7a] uppercase tracking-wider">Opacity</label>
-                                  <span className="text-[9px] text-[var(--color-text-muted)] font-mono">
+                                  <label className="text-[10px] text-[#6b6b7a] uppercase tracking-wider">Opacity</label>
+                                  <span className="text-[10px] text-[var(--color-text-muted)] font-mono">
                                     {Math.round(obj.opacity * 100)}%
                                   </span>
                                 </div>
@@ -3133,7 +3184,7 @@ export default function LayersTab({ scene }: Props) {
                           </div>
 
                           {obj.svgContent && (
-                            <div className="text-[9px] text-[#6b6b7a]">
+                            <div className="text-[10px] text-[#6b6b7a]">
                               {obj.svgContent.length.toLocaleString()} chars generated
                             </div>
                           )}
@@ -3148,19 +3199,20 @@ export default function LayersTab({ scene }: Props) {
               <CollapsibleSection
                 title="Text Overlays"
                 icon={Type}
+                active={(scene.textOverlays ?? []).length > 0}
                 extraHeaderContent={
                   <button
                     onClick={() => addTextOverlay(scene.id)}
                     className="kbd h-6 px-2 text-[#6b6b7a] hover:text-[#e84545]"
                   >
                     <Plus size={11} />
-                    <span className="text-[10px]">Add</span>
+                    <span className="text-[11px]">Add</span>
                   </button>
                 }
               >
                 {scene.textOverlays.length === 0 ? (
                   <div
-                    className="text-[10px] text-[#6b6b7a] text-center py-3 border border-dashed rounded"
+                    className="text-[11px] text-[#6b6b7a] text-center py-3 border border-dashed rounded"
                     style={{ borderColor: 'var(--color-border)' }}
                   >
                     No text overlays
@@ -3181,7 +3233,7 @@ export default function LayersTab({ scene }: Props) {
                               updateTextOverlay(scene.id, overlay.id, { content: e.target.value })
                               commitLayerDebounced()
                             }}
-                            className="flex-1 border rounded px-2 py-1 text-xs focus:outline-none focus:border-[#e84545] transition-colors"
+                            className="flex-1 border rounded px-2 py-1 text-sm focus:outline-none focus:border-[#e84545] transition-colors"
                             style={{
                               backgroundColor: 'var(--color-input-bg)',
                               borderColor: 'var(--color-border)',
@@ -3201,7 +3253,7 @@ export default function LayersTab({ scene }: Props) {
 
                         <div className="grid grid-cols-2 gap-2">
                           <div>
-                            <label className="text-[9px] text-[#6b6b7a] block mb-0.5">X%</label>
+                            <label className="text-[10px] text-[#6b6b7a] block mb-0.5">X%</label>
                             <input
                               type="number"
                               min={0}
@@ -3211,7 +3263,7 @@ export default function LayersTab({ scene }: Props) {
                                 updateTextOverlay(scene.id, overlay.id, { x: parseFloat(e.target.value) || 0 })
                                 commitLayerDebounced()
                               }}
-                              className="w-full border rounded px-2 py-0.5 text-[10px] focus:outline-none focus:border-[#e84545] transition-colors"
+                              className="w-full border rounded px-2 py-0.5 text-[11px] focus:outline-none focus:border-[#e84545] transition-colors"
                               style={{
                                 backgroundColor: 'var(--color-input-bg)',
                                 borderColor: 'var(--color-border)',
@@ -3220,7 +3272,7 @@ export default function LayersTab({ scene }: Props) {
                             />
                           </div>
                           <div>
-                            <label className="text-[9px] text-[#6b6b7a] block mb-0.5">Y%</label>
+                            <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Y%</label>
                             <input
                               type="number"
                               min={0}
@@ -3230,7 +3282,7 @@ export default function LayersTab({ scene }: Props) {
                                 updateTextOverlay(scene.id, overlay.id, { y: parseFloat(e.target.value) || 0 })
                                 commitLayerDebounced()
                               }}
-                              className="w-full border rounded px-2 py-0.5 text-[10px] focus:outline-none focus:border-[#e84545] transition-colors"
+                              className="w-full border rounded px-2 py-0.5 text-[11px] focus:outline-none focus:border-[#e84545] transition-colors"
                               style={{
                                 backgroundColor: 'var(--color-input-bg)',
                                 borderColor: 'var(--color-border)',
@@ -3239,7 +3291,7 @@ export default function LayersTab({ scene }: Props) {
                             />
                           </div>
                           <div>
-                            <label className="text-[9px] text-[#6b6b7a] block mb-0.5">Size</label>
+                            <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Size</label>
                             <input
                               type="number"
                               min={10}
@@ -3249,7 +3301,7 @@ export default function LayersTab({ scene }: Props) {
                                 updateTextOverlay(scene.id, overlay.id, { size: parseInt(e.target.value) || 48 })
                                 commitLayerDebounced()
                               }}
-                              className="w-full border rounded px-2 py-0.5 text-[10px] focus:outline-none focus:border-[#e84545] transition-colors"
+                              className="w-full border rounded px-2 py-0.5 text-[11px] focus:outline-none focus:border-[#e84545] transition-colors"
                               style={{
                                 backgroundColor: 'var(--color-input-bg)',
                                 borderColor: 'var(--color-border)',
@@ -3258,7 +3310,7 @@ export default function LayersTab({ scene }: Props) {
                             />
                           </div>
                           <div>
-                            <label className="text-[9px] text-[#6b6b7a] block mb-0.5">Color</label>
+                            <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Color</label>
                             <input
                               type="color"
                               value={overlay.color}
@@ -3270,7 +3322,7 @@ export default function LayersTab({ scene }: Props) {
                             />
                           </div>
                           <div>
-                            <label className="text-[9px] text-[#6b6b7a] block mb-0.5">Delay (s)</label>
+                            <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Delay (s)</label>
                             <input
                               type="number"
                               min={0}
@@ -3280,7 +3332,7 @@ export default function LayersTab({ scene }: Props) {
                                 updateTextOverlay(scene.id, overlay.id, { delay: parseFloat(e.target.value) || 0 })
                                 commitLayerDebounced()
                               }}
-                              className="w-full border rounded px-2 py-0.5 text-[10px] focus:outline-none focus:border-[#e84545] transition-colors"
+                              className="w-full border rounded px-2 py-0.5 text-[11px] focus:outline-none focus:border-[#e84545] transition-colors"
                               style={{
                                 backgroundColor: 'var(--color-input-bg)',
                                 borderColor: 'var(--color-border)',
@@ -3289,26 +3341,22 @@ export default function LayersTab({ scene }: Props) {
                             />
                           </div>
                           <div>
-                            <label className="text-[9px] text-[#6b6b7a] block mb-0.5">Animation</label>
-                            <select
+                            <ColorSelect
+                              className="w-full"
+                              label="Animation"
                               value={overlay.animation}
-                              onChange={(e) => {
+                              onChange={(v) => {
                                 updateTextOverlay(scene.id, overlay.id, {
-                                  animation: e.target.value as 'fade-in' | 'slide-up' | 'typewriter',
+                                  animation: v as 'fade-in' | 'slide-up' | 'typewriter',
                                 })
                                 commitLayerDebounced()
                               }}
-                              className="w-full border rounded px-1 py-0.5 text-[10px] focus:outline-none focus:border-[#e84545] transition-colors"
-                              style={{
-                                backgroundColor: 'var(--color-input-bg)',
-                                borderColor: 'var(--color-border)',
-                                color: 'var(--color-text-primary)',
-                              }}
-                            >
-                              <option value="fade-in">Fade In</option>
-                              <option value="slide-up">Slide Up</option>
-                              <option value="typewriter">Typewriter</option>
-                            </select>
+                              options={[
+                                { value: 'fade-in', label: 'Fade In' },
+                                { value: 'slide-up', label: 'Slide Up' },
+                                { value: 'typewriter', label: 'Typewriter' },
+                              ]}
+                            />
                           </div>
                         </div>
                       </div>
@@ -3320,25 +3368,27 @@ export default function LayersTab({ scene }: Props) {
               <CollapsibleSection
                 title="Canvas motion templates"
                 icon={LayoutTemplate}
+                active={scene.sceneType === 'canvas2d' || scene.sceneType === 'motion'}
                 defaultOpen={false}
-                badge={<span className="text-[10px] text-[#6b6b7a]">backgrounds</span>}
+                badge={<span className="text-[11px] text-[#6b6b7a]">backgrounds</span>}
               >
                 <CanvasMotionTemplatesPanel scene={scene} />
               </CollapsibleSection>
 
               {/* AI Generated Layers */}
-              <CollapsibleSection title="AI Layers" icon={Sparkles}>
+              <CollapsibleSection title="AI Layers" icon={Sparkles} active={(scene.aiLayers ?? []).length > 0}>
                 <AILayersPanel scene={scene} />
               </CollapsibleSection>
 
               <CollapsibleSection
                 title="Zdog Studio"
                 icon={User}
+                active={zdogStudioMode}
                 badge={
                   zdogStudioMode ? (
-                    <span className="text-[10px] text-teal-400">active</span>
+                    <span className="text-[11px] text-teal-400">active</span>
                   ) : (
-                    <span className="text-[10px] text-[#6b6b7a]">shape builder</span>
+                    <span className="text-[11px] text-[#6b6b7a]">shape builder</span>
                   )
                 }
               >
@@ -3347,17 +3397,17 @@ export default function LayersTab({ scene }: Props) {
                     <ZdogOutliner projectId={project.id} />
                     <button
                       onClick={() => setZdogStudioMode(false)}
-                      className="kbd h-7 px-3 text-[10px] text-[#6b6b7a] hover:text-[#e84545] w-full"
+                      className="kbd h-7 px-3 text-[11px] text-[#6b6b7a] hover:text-[#e84545] w-full"
                     >
                       Exit Zdog Studio
                     </button>
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    <p className="text-[10px] text-[#6b6b7a]">Build reusable Zdog shapes, characters, and items.</p>
+                    <p className="text-[11px] text-[#6b6b7a]">Build reusable Zdog shapes, characters, and items.</p>
                     <button
                       onClick={() => setZdogStudioMode(true)}
-                      className="kbd h-7 px-3 text-[10px] text-[#6b6b7a] hover:text-teal-400 w-full"
+                      className="kbd h-7 px-3 text-[11px] text-[#6b6b7a] hover:text-teal-400 w-full"
                     >
                       Enter Zdog Studio
                     </button>
@@ -3368,12 +3418,13 @@ export default function LayersTab({ scene }: Props) {
           )}
 
           {/* Scene Elements (registered from iframe) */}
-          {layersActiveTab === 'elements' && Object.keys(inspectorElements).length > 0 && (
+          {panelSectionId === 'elements' && Object.keys(inspectorElements).length > 0 && (
             <CollapsibleSection
               title="Scene Elements"
               icon={Box}
+              active={Object.keys(inspectorElements).length > 0}
               badge={
-                <span className="text-[10px] text-[#6b6b7a] ml-auto">
+                <span className="text-[11px] text-[#6b6b7a] ml-auto">
                   {Object.keys(inspectorElements).length} element
                   {Object.keys(inspectorElements).length !== 1 ? 's' : ''}
                 </span>
@@ -3394,7 +3445,7 @@ export default function LayersTab({ scene }: Props) {
                       >
                         <Box size={10} className={isSelected ? 'text-[#e84545]' : 'text-[#6b6b7a]'} />
                         <span
-                          className={`text-[11px] flex-1 truncate ${
+                          className={`text-[12px] flex-1 truncate ${
                             isSelected
                               ? 'text-[var(--color-text-primary)] font-medium'
                               : 'text-[var(--color-text-primary)]'
@@ -3402,7 +3453,7 @@ export default function LayersTab({ scene }: Props) {
                         >
                           {element.label || element.id}
                         </span>
-                        <span className="text-[9px] font-mono text-[#4a4a52] bg-[#1a1a1f] px-1 py-0.5 rounded flex-shrink-0">
+                        <span className="text-[10px] font-mono text-[#4a4a52] bg-[#1a1a1f] px-1 py-0.5 rounded flex-shrink-0">
                           {element.type}
                         </span>
                         <span
@@ -3437,19 +3488,20 @@ export default function LayersTab({ scene }: Props) {
             </CollapsibleSection>
           )}
 
-          {layersActiveTab === 'elements' && Object.keys(inspectorElements).length === 0 && (
-            <p className="py-8 text-center text-[10px] text-[var(--color-text-muted)]">
+          {panelSectionId === 'elements' && Object.keys(inspectorElements).length === 0 && (
+            <p className="py-8 text-center text-[11px] text-[var(--color-text-muted)]">
               No elements listed yet. Click something in the preview to inspect it here.
             </p>
           )}
 
           {/* Interactions (only in interactive mode) */}
-          {layersActiveTab === 'interact' && project.outputMode === 'interactive' && (
+          {panelSectionId === 'interact' && project.outputMode === 'interactive' && (
             <CollapsibleSection
               title="Interactions"
               icon={Layers}
+              active={(scene.interactions ?? []).length > 0}
               badge={
-                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#e84545]/20 text-[#e84545] font-bold">
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#e84545]/20 text-[#e84545] font-bold">
                   Interactive
                 </span>
               }
@@ -3501,7 +3553,7 @@ function InteractionsSection({
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') addElement(type)
             }}
-            className="kbd h-7 text-[10px] font-bold flex items-center justify-center gap-1 cursor-pointer"
+            className="kbd h-7 text-[11px] font-bold flex items-center justify-center gap-1 cursor-pointer"
             style={{ borderColor: (TYPE_COLORS[type] ?? '#e84545') + '60', color: TYPE_COLORS[type] ?? '#e84545' }}
           >
             {TYPE_ICONS[type]} {label}
@@ -3509,7 +3561,7 @@ function InteractionsSection({
         ))}
       </div>
 
-      <p className="text-[10px] text-[var(--color-text-muted)] leading-relaxed rounded-lg border border-[var(--color-border)] px-3 py-2.5">
+      <p className="text-[11px] text-[var(--color-text-muted)] leading-relaxed rounded-lg border border-[var(--color-border)] px-3 py-2.5">
         Each interaction appears in the <strong>layer stack</strong> below. Expand ▸ to edit{' '}
         <strong>Text & labels</strong> in one place. <strong>Double-click</strong> the row for full properties (type,
         size, timing, style presets & sliders). Use <strong>+</strong> in the stack to add interactions.

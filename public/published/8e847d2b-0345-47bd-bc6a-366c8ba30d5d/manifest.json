@@ -1,0 +1,208 @@
+{
+  "id": "8e847d2b-0345-47bd-bc6a-366c8ba30d5d",
+  "version": 1,
+  "name": "Untitled Project 6",
+  "playerOptions": {
+    "theme": "dark",
+    "showProgressBar": true,
+    "showSceneNav": true,
+    "allowFullscreen": true,
+    "brandColor": "#e84545",
+    "autoplay": true
+  },
+  "sceneGraph": {
+    "nodes": [
+      {
+        "id": "b69c8aad-afab-4c39-a862-e48b4a78e990",
+        "position": {
+          "x": 1980,
+          "y": 100
+        }
+      },
+      {
+        "id": "d1462afd-c679-43b4-9702-b8c779285412",
+        "position": {
+          "x": 2200,
+          "y": 100
+        }
+      },
+      {
+        "id": "a4d1b779-0461-48c9-9e66-576c2ca46ec6",
+        "position": {
+          "x": 2420,
+          "y": 100
+        }
+      },
+      {
+        "id": "23f44a80-2301-4183-bbf1-e169987bb0e1",
+        "position": {
+          "x": 220,
+          "y": 100
+        }
+      },
+      {
+        "id": "2c9d40a6-4137-4113-8609-32d643160b98",
+        "position": {
+          "x": 440,
+          "y": 100
+        }
+      },
+      {
+        "id": "30977c54-527e-4df1-909c-96a41b00bfd9",
+        "position": {
+          "x": 660,
+          "y": 100
+        }
+      },
+      {
+        "id": "f2df29ce-de16-4e1a-a0ad-9938056fa2b4",
+        "position": {
+          "x": 880,
+          "y": 100
+        }
+      },
+      {
+        "id": "c43758d7-b97e-40ef-8a99-da0a06538011",
+        "position": {
+          "x": 1100,
+          "y": 100
+        }
+      },
+      {
+        "id": "7da14f55-5718-4f31-9e58-2c30ca2f900f",
+        "position": {
+          "x": 1320,
+          "y": 100
+        }
+      },
+      {
+        "id": "7db6f342-1481-4381-80da-86b632dd850d",
+        "position": {
+          "x": 1540,
+          "y": 100
+        }
+      },
+      {
+        "id": "ad45e889-cef9-4fd3-853c-951f64266e5c",
+        "position": {
+          "x": 1760,
+          "y": 100
+        }
+      }
+    ],
+    "edges": [],
+    "startSceneId": "23f44a80-2301-4183-bbf1-e169987bb0e1"
+  },
+  "scenes": [
+    {
+      "id": "23f44a80-2301-4183-bbf1-e169987bb0e1",
+      "type": "motion",
+      "duration": 25,
+      "htmlUrl": "/published/8e847d2b-0345-47bd-bc6a-366c8ba30d5d/scenes/23f44a80-2301-4183-bbf1-e169987bb0e1.html",
+      "htmlContent": null,
+      "interactions": [],
+      "variables": [],
+      "transition": "dissolve"
+    },
+    {
+      "id": "2c9d40a6-4137-4113-8609-32d643160b98",
+      "type": "motion",
+      "duration": 22,
+      "htmlUrl": "/published/8e847d2b-0345-47bd-bc6a-366c8ba30d5d/scenes/2c9d40a6-4137-4113-8609-32d643160b98.html",
+      "htmlContent": null,
+      "interactions": [],
+      "variables": [],
+      "transition": "none"
+    },
+    {
+      "id": "30977c54-527e-4df1-909c-96a41b00bfd9",
+      "type": "motion",
+      "duration": 15,
+      "htmlUrl": "/published/8e847d2b-0345-47bd-bc6a-366c8ba30d5d/scenes/30977c54-527e-4df1-909c-96a41b00bfd9.html",
+      "htmlContent": null,
+      "interactions": [],
+      "variables": [],
+      "transition": "none"
+    },
+    {
+      "id": "f2df29ce-de16-4e1a-a0ad-9938056fa2b4",
+      "type": "canvas2d",
+      "duration": 25,
+      "htmlUrl": "/published/8e847d2b-0345-47bd-bc6a-366c8ba30d5d/scenes/f2df29ce-de16-4e1a-a0ad-9938056fa2b4.html",
+      "htmlContent": null,
+      "interactions": [],
+      "variables": [],
+      "transition": "none"
+    },
+    {
+      "id": "c43758d7-b97e-40ef-8a99-da0a06538011",
+      "type": "motion",
+      "duration": 25,
+      "htmlUrl": "/published/8e847d2b-0345-47bd-bc6a-366c8ba30d5d/scenes/c43758d7-b97e-40ef-8a99-da0a06538011.html",
+      "htmlContent": null,
+      "interactions": [],
+      "variables": [],
+      "transition": "crossfade"
+    },
+    {
+      "id": "7da14f55-5718-4f31-9e58-2c30ca2f900f",
+      "type": "motion",
+      "duration": 18,
+      "htmlUrl": "/published/8e847d2b-0345-47bd-bc6a-366c8ba30d5d/scenes/7da14f55-5718-4f31-9e58-2c30ca2f900f.html",
+      "htmlContent": null,
+      "interactions": [],
+      "variables": [],
+      "transition": "crossfade"
+    },
+    {
+      "id": "7db6f342-1481-4381-80da-86b632dd850d",
+      "type": "three",
+      "duration": 28,
+      "htmlUrl": "/published/8e847d2b-0345-47bd-bc6a-366c8ba30d5d/scenes/7db6f342-1481-4381-80da-86b632dd850d.html",
+      "htmlContent": null,
+      "interactions": [],
+      "variables": [],
+      "transition": "none"
+    },
+    {
+      "id": "ad45e889-cef9-4fd3-853c-951f64266e5c",
+      "type": "d3",
+      "duration": 30,
+      "htmlUrl": "/published/8e847d2b-0345-47bd-bc6a-366c8ba30d5d/scenes/ad45e889-cef9-4fd3-853c-951f64266e5c.html",
+      "htmlContent": null,
+      "interactions": [],
+      "variables": [],
+      "transition": "fade-black"
+    },
+    {
+      "id": "b69c8aad-afab-4c39-a862-e48b4a78e990",
+      "type": "motion",
+      "duration": 30,
+      "htmlUrl": "/published/8e847d2b-0345-47bd-bc6a-366c8ba30d5d/scenes/b69c8aad-afab-4c39-a862-e48b4a78e990.html",
+      "htmlContent": null,
+      "interactions": [],
+      "variables": [],
+      "transition": "none"
+    },
+    {
+      "id": "d1462afd-c679-43b4-9702-b8c779285412",
+      "type": "motion",
+      "duration": 11,
+      "htmlUrl": "/published/8e847d2b-0345-47bd-bc6a-366c8ba30d5d/scenes/d1462afd-c679-43b4-9702-b8c779285412.html",
+      "htmlContent": null,
+      "interactions": [],
+      "variables": [],
+      "transition": "crossfade"
+    },
+    {
+      "id": "a4d1b779-0461-48c9-9e66-576c2ca46ec6",
+      "type": "motion",
+      "duration": 17,
+      "htmlUrl": "/published/8e847d2b-0345-47bd-bc6a-366c8ba30d5d/scenes/a4d1b779-0461-48c9-9e66-576c2ca46ec6.html",
+      "htmlContent": null,
+      "interactions": [],
+      "variables": [],
+      "transition": "none"
+    }
+  ]
+}

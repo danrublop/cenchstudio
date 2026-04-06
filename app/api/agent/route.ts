@@ -28,6 +28,7 @@ import { createGenerationLog, updateGenerationLog } from '@/lib/db/queries/gener
 import { db } from '@/lib/db'
 import { projectAssets as projectAssetsTable } from '@/lib/db/schema'
 import { persistScenesFromAgentRun, getRunCheckpoint, clearRunCheckpoint } from '@/lib/db/queries/projects'
+import { assertProjectAccess } from '@/lib/auth-helpers'
 import { getMemoriesForUser, upsertMemory } from '@/lib/db/queries/user-memory'
 import { extractMemories } from '@/lib/agents/memory-extractor'
 import { registerBuiltInHooks } from '@/lib/agents/built-in-hooks'
@@ -73,6 +74,10 @@ export interface AgentAPIRequest {
   userId?: string
   /** Resume an interrupted run from its checkpoint */
   resumeCheckpoint?: boolean
+  /** Local mode flag — routes all calls through local LLM */
+  localMode?: boolean
+  /** Model configs for resolving local model endpoints */
+  modelConfigs?: import('@/lib/agents/model-config').ModelConfig[]
 }
 
 export async function POST(req: NextRequest) {
@@ -96,6 +101,31 @@ export async function POST(req: NextRequest) {
   if (!body.scenes || !Array.isArray(body.scenes)) {
     console.warn('[Agent API] Missing required field: scenes')
     return new Response('Missing required field: scenes', { status: 400 })
+  }
+
+  // ── Input size limits ──────────────────────────────────────────────────────
+  const MAX_MESSAGE_LENGTH = 50_000
+  const MAX_SCENES = 100
+  const MAX_HISTORY = 200
+
+  const msgTextForValidation = typeof body.message === 'string' ? body.message : JSON.stringify(body.message)
+  if (msgTextForValidation.length > MAX_MESSAGE_LENGTH) {
+    return new Response('Message too long', { status: 413 })
+  }
+  if (body.scenes.length > MAX_SCENES) {
+    return new Response('Too many scenes', { status: 413 })
+  }
+  if (body.history && body.history.length > MAX_HISTORY) {
+    return new Response('History too long', { status: 413 })
+  }
+
+  // Verify project ownership if projectId is provided
+  // Also derive authenticated userId from session (never trust client-supplied userId)
+  let authenticatedUserId: string | null = null
+  if (body.projectId) {
+    const access = await assertProjectAccess(body.projectId)
+    if (access.error) return access.error
+    authenticatedUserId = access.user?.id ?? null
   }
 
   // ── Mock mode: return canned SSE stream without hitting any LLM API ──────
@@ -209,12 +239,12 @@ export async function POST(req: NextRequest) {
 
   // Fetch user memories for cross-session preference injection
   let userMemories: Array<{ category: string; key: string; value: string; confidence: number }> = []
-  if (body.userId) {
+  if (authenticatedUserId) {
     try {
-      const rows = await getMemoriesForUser(body.userId, 20)
+      const rows = await getMemoriesForUser(authenticatedUserId, 20)
       userMemories = rows.map((r) => ({ category: r.category, key: r.key, value: r.value, confidence: r.confidence }))
       if (userMemories.length > 0) {
-        logger.log('api', `Loaded ${userMemories.length} user memories`, { userId: body.userId })
+        logger.log('api', `Loaded ${userMemories.length} user memories`, { userId: authenticatedUserId })
       }
     } catch (e) {
       console.warn('[Agent API] Failed to fetch user memories:', e)
@@ -242,7 +272,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Build effective message and state (checkpoint overrides if resuming)
+  // Build effective message and state (checkpoint merges with current state if resuming)
   const effectiveMessage = resumedCheckpoint
     ? (() => {
         const resumeCtx = `Continue building the video. ${resumedCheckpoint.completedSceneIds.length} of ${resumedCheckpoint.storyboard?.scenes.length ?? '?'} scenes are already built. Build the remaining scenes following the storyboard.`
@@ -250,9 +280,59 @@ export async function POST(req: NextRequest) {
         return userMsg && userMsg !== 'Resume interrupted build' ? `${userMsg}\n\n${resumeCtx}` : resumeCtx
       })()
     : body.message
-  const effectiveScenes = resumedCheckpoint ? resumedCheckpoint.worldSnapshot.scenes : body.scenes
+
+  // Merge checkpoint scenes with current client scenes:
+  // - Keep user-edited scenes (scenes in client but not in checkpoint, or modified since checkpoint)
+  // - Use checkpoint scenes for those the agent was building
+  const effectiveScenes = (() => {
+    if (!resumedCheckpoint) return body.scenes
+    const checkpointScenes = resumedCheckpoint.worldSnapshot.scenes ?? []
+    const clientScenes: any[] = body.scenes ?? []
+    if (clientScenes.length === 0) return checkpointScenes
+    const checkpointMap = new Map(checkpointScenes.map((s: any) => [s.id, s]))
+    const clientMap = new Map(clientScenes.map((s: any) => [s.id, s]))
+    const merged: any[] = []
+    // Start with client scenes — preserve user edits
+    for (const cs of clientScenes) {
+      const cpScene = checkpointMap.get(cs.id)
+      if (!cpScene) {
+        // Scene only in client (user added it while agent was paused) — keep it
+        merged.push(cs)
+      } else if (resumedCheckpoint.completedSceneIds.includes(cs.id)) {
+        // Scene was completed by agent — use checkpoint version (has generated content)
+        merged.push(cpScene)
+      } else {
+        // Scene exists in both but wasn't completed — prefer client version (user may have edited)
+        merged.push(cs)
+      }
+    }
+    // Add any checkpoint-only scenes (agent created them before pause)
+    for (const cpScene of checkpointScenes) {
+      if (!clientMap.has(cpScene.id)) {
+        merged.push(cpScene)
+      }
+    }
+    return merged
+  })()
   const effectiveGlobalStyle = resumedCheckpoint ? resumedCheckpoint.worldSnapshot.globalStyle : body.globalStyle
   const effectiveStoryboard = resumedCheckpoint?.storyboard ?? body.initialStoryboard ?? null
+
+  // When building from an approved storyboard, pre-approve session permissions
+  // for APIs that the storyboard's feature flags will need. This avoids
+  // interrupting the agent run with permission dialogs for each API separately.
+  if (effectiveStoryboard?.featureFlags) {
+    const sp = body.sessionPermissions ?? {}
+    const flags = effectiveStoryboard.featureFlags
+    if (flags.narration && !sp['elevenLabs']) sp['elevenLabs'] = 'allow'
+    if (flags.music && !sp['elevenLabs']) sp['elevenLabs'] = 'allow'
+    body.sessionPermissions = sp
+  }
+
+  // Log local mode info
+  if (body.localMode) {
+    const localModelCount = body.modelConfigs?.length ?? 0
+    logger.log('api', `Local mode enabled: modelOverride=${body.modelOverride}, ${localModelCount} local model configs`)
+  }
 
   // Run agent asynchronously
   runAgent({
@@ -291,7 +371,8 @@ export async function POST(req: NextRequest) {
     logger,
     emit: wrappedSendEvent,
     userMemories: userMemories.length > 0 ? userMemories : undefined,
-    userId: body.userId,
+    userId: authenticatedUserId ?? undefined,
+    modelConfigs: body.modelConfigs,
   })
     .then(async (result) => {
       logger.log('api', 'Runner complete', {
@@ -301,10 +382,31 @@ export async function POST(req: NextRequest) {
         durationMs: result.usage.totalDurationMs,
       })
       // Persist scenes first so the client can refetch after SSE drops (timeouts / disconnects).
+      // Filter out scenes with placeholder content (lightScenes strips content for non-focused scenes).
+      // Placeholder strings like "[123 chars]" must NOT be persisted to DB.
+      const isPlaceholder = (v: string | undefined | null) => !!v && /^\[\d+ chars\]$/.test(v)
+      const cleanScenesForPersistence = result.updatedScenes.map((s: any) => {
+        if (isPlaceholder(s.svgContent) || isPlaceholder(s.canvasCode) || isPlaceholder(s.sceneCode) || isPlaceholder(s.lottieSource)) {
+          // Find the original scene from the request to get the original (stripped) state.
+          // Since we don't have the real content server-side, skip writing content fields for this scene
+          // by setting them to empty — the DB already has the real content.
+          const orig = body.scenes.find((os: any) => os.id === s.id)
+          return {
+            ...s,
+            svgContent: orig?.svgContent && !isPlaceholder(orig.svgContent) ? s.svgContent : undefined,
+            canvasCode: orig?.canvasCode && !isPlaceholder(orig.canvasCode) ? s.canvasCode : undefined,
+            sceneCode: orig?.sceneCode && !isPlaceholder(orig.sceneCode) ? s.sceneCode : undefined,
+            lottieSource: orig?.lottieSource && !isPlaceholder(orig.lottieSource) ? s.lottieSource : undefined,
+            sceneHTML: undefined, // will be regenerated from real content
+          }
+        }
+        return s
+      })
+
       if (body.projectId) {
         try {
           const ok = await persistScenesFromAgentRun(body.projectId, {
-            scenes: result.updatedScenes,
+            scenes: cleanScenesForPersistence,
             sceneGraph: result.updatedSceneGraph,
             globalStyle: result.updatedGlobalStyle,
             storyboard: result.updatedStoryboard,
@@ -331,11 +433,11 @@ export async function POST(req: NextRequest) {
       }
 
       // Extract and persist user memories (fire-and-forget)
-      if (body.userId && result.toolCalls.length > 0) {
+      if (authenticatedUserId && result.toolCalls.length > 0) {
         try {
           const memories = extractMemories(result.agentType, result.toolCalls, result.updatedGlobalStyle)
           for (const mem of memories) {
-            await upsertMemory(body.userId, mem.category, mem.key, mem.value, mem.confidence, logger.runId)
+            await upsertMemory(authenticatedUserId, mem.category, mem.key, mem.value, mem.confidence, logger.runId)
           }
           if (memories.length > 0) {
             logger.log('api', `Extracted ${memories.length} memories`, { memories: memories.map((m) => m.key) })
@@ -394,6 +496,7 @@ export async function POST(req: NextRequest) {
 
       // The 'done' event is already emitted inside runAgent.
       // Send the final updated state + generationLogId as a state_change event.
+      // Use cleanScenesForPersistence to avoid sending placeholder content to the client.
       sendEvent({
         type: 'state_change',
         changes: [
@@ -402,11 +505,16 @@ export async function POST(req: NextRequest) {
             description: '__final_state__',
           },
         ],
-        updatedScenes: result.updatedScenes,
+        updatedScenes: cleanScenesForPersistence,
         updatedGlobalStyle: result.updatedGlobalStyle,
         updatedSceneGraph: result.updatedSceneGraph,
         generationLogId: generationLogId ?? undefined,
-      })
+        // Recording state from agent tools
+        recordingCommand: result.recordingCommand,
+        recordingCommandNonce: result.recordingCommandNonce,
+        recordingConfig: result.recordingConfig,
+        recordingAttachSceneId: result.recordingAttachSceneId,
+      } as any)
     })
     .catch(async (error) => {
       logger.error('api', `Runner error: ${error?.message ?? 'Unknown error'}`, { stack: error?.stack })

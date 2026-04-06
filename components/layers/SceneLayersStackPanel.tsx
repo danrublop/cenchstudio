@@ -287,7 +287,7 @@ function AudioStackSubRows({ scene, onOpenAudio }: { scene: Scene; onOpenAudio: 
           <div
             role="button"
             tabIndex={0}
-            className="flex cursor-pointer items-center gap-0.5 rounded px-1 py-0.5 text-[10px] hover:bg-white/[0.04]"
+            className="flex cursor-pointer items-center gap-0.5 rounded px-1 py-0.5 text-[11px] hover:bg-white/[0.04]"
             onClick={(e) => {
               e.stopPropagation()
               onOpenAudio()
@@ -379,7 +379,7 @@ function ChartTitleStackSubRow({
     <div
       role="button"
       tabIndex={0}
-      className="flex cursor-pointer items-center gap-0.5 rounded px-1 py-0.5 text-[10px] hover:bg-white/[0.04]"
+      className="flex cursor-pointer items-center gap-0.5 rounded px-1 py-0.5 text-[11px] hover:bg-white/[0.04]"
       onClick={() => openTextTabForSlot(slotKey)}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -561,7 +561,7 @@ function LayerStackRows({ scene, selectedKey, onToggleRow, onOpenLayerProperties
   return (
     <>
       {orderedKeys.length === 0 ? (
-        <p className="px-2 py-3 text-center text-[10px] text-[var(--color-text-muted)]">No layers in this scene yet.</p>
+        <p className="px-2 py-3 text-center text-[11px] text-[var(--color-text-muted)]">No layers in this scene yet.</p>
       ) : (
         <ul className="space-y-0.5">
           {orderedKeys.map((key, index) => {
@@ -639,7 +639,7 @@ function LayerStackRows({ scene, selectedKey, onToggleRow, onOpenLayerProperties
                       ? 'Double-click for full properties (type, layout, style). Expand ▸ for text only. Avatar: single-click also opens Properties.'
                       : undefined
                   }
-                  className={`flex cursor-pointer items-center gap-0.5 rounded px-1 text-[10px] ${
+                  className={`flex cursor-pointer items-center gap-0.5 rounded px-1 text-[11px] ${
                     prominentRow ? 'py-1 min-h-[30px]' : 'py-0.5'
                   } ${isSel ? 'bg-[var(--color-accent)]/15 ring-1 ring-[var(--color-accent)]/40' : 'hover:bg-white/[0.04]'}`}
                 >
@@ -802,7 +802,7 @@ function LayerStackRows({ scene, selectedKey, onToggleRow, onOpenLayerProperties
                           <div
                             role="button"
                             tabIndex={0}
-                            className="flex cursor-pointer items-center gap-0.5 rounded px-1 py-0.5 text-[10px] hover:bg-white/[0.04]"
+                            className="flex cursor-pointer items-center gap-0.5 rounded px-1 py-0.5 text-[11px] hover:bg-white/[0.04]"
                             onClick={() => openTextTabForSlot(slotKey)}
                             onKeyDown={(e) => {
                               if (e.key === 'Enter' || e.key === ' ') {
@@ -860,7 +860,7 @@ function LayerStackRows({ scene, selectedKey, onToggleRow, onOpenLayerProperties
                       const subVisOff = subHiddenState[sub]
                       return (
                         <li key={`${rowId}-${sub}`}>
-                          <div className="flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] hover:bg-white/[0.04]">
+                          <div className="flex items-center gap-0.5 rounded px-1 py-0.5 text-[11px] hover:bg-white/[0.04]">
                             <span className="inline-block h-6 w-6 shrink-0" aria-hidden />
                             <button
                               type="button"
@@ -925,7 +925,7 @@ function LayerStackRows({ scene, selectedKey, onToggleRow, onOpenLayerProperties
                     style={{ borderLeftColor: 'var(--color-hairline)' }}
                   >
                     <li>
-                      <div className="flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px]">
+                      <div className="flex items-center gap-0.5 rounded px-1 py-0.5 text-[11px]">
                         <span className="inline-block h-6 w-6 shrink-0" aria-hidden />
                         <Type size={11} className="shrink-0 text-[var(--color-text-muted)]" strokeWidth={2.25} />
                         <span className="min-w-0 flex-1 font-semibold text-[var(--color-text-primary)]">
@@ -978,6 +978,7 @@ export default function SceneLayersStackPanel({ scene }: Props) {
   const [addOpen, setAddOpen] = useState(false)
   const [stackBodyHeight, setStackBodyHeight] = useState(LAYER_STACK_H_DEFAULT)
   const [stackResizeDrag, setStackResizeDrag] = useState(false)
+  const [stackCollapsed, setStackCollapsed] = useState(false)
   const layerStackDragRef = useRef<{ startY: number; startH: number } | null>(null)
   const allowHeightPersist = useRef(false)
 
@@ -1143,136 +1144,40 @@ export default function SceneLayersStackPanel({ scene }: Props) {
       style={{ borderTopColor: 'var(--color-hairline)' }}
       data-scene-layers-stack
     >
-      <div
-        role="separator"
-        aria-orientation="horizontal"
-        aria-valuenow={stackBodyHeight}
-        aria-valuemin={LAYER_STACK_H_MIN}
-        aria-valuemax={LAYER_STACK_H_MAX}
-        aria-label="Resize layer stack height"
-        tabIndex={0}
-        onMouseDown={(e) => {
-          e.preventDefault()
-          layerStackDragRef.current = { startY: e.clientY, startH: stackBodyHeight }
-          setStackResizeDrag(true)
-          document.body.style.cursor = 'row-resize'
-          document.body.style.userSelect = 'none'
-        }}
-        onKeyDown={(e) => {
-          const step = e.shiftKey ? 40 : 16
-          if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-            e.preventDefault()
-            setStackBodyHeight((h) => clampStackBodyHeight(h + (e.key === 'ArrowUp' ? step : -step)))
-          }
-          if (e.key === 'Home') {
-            e.preventDefault()
-            setStackBodyHeight(LAYER_STACK_H_MAX)
-          }
-          if (e.key === 'End') {
-            e.preventDefault()
-            setStackBodyHeight(LAYER_STACK_H_MIN)
-          }
-        }}
-        className="group relative z-10 flex h-2 flex-shrink-0 cursor-row-resize items-center justify-center border-b bg-[var(--color-bg)] hover:bg-[var(--color-panel)]"
-        style={{ borderBottomColor: 'var(--color-hairline)' }}
-      >
-        <span
-          className="h-0.5 w-8 rounded-full opacity-80 group-hover:opacity-100"
-          style={{ backgroundColor: 'var(--color-hairline)' }}
-          aria-hidden
-        />
-      </div>
       {stackResizeDrag && <div className="fixed inset-0 z-[9998]" style={{ cursor: 'row-resize' }} aria-hidden />}
 
       {/* Match AgentChat header: conversation tabs row + New Chat–style controls (no tab ✕) */}
       <div
-        className="flex flex-shrink-0 items-center border-b bg-[var(--color-bg)] px-2 py-1"
-        style={{ borderBottomColor: 'var(--color-hairline)' }}
+        className="flex flex-shrink-0 items-center bg-[var(--color-panel)] px-2 py-1 cursor-row-resize"
+        onMouseDown={(e) => {
+          // Only start drag from the bar background, not from interactive children
+          if ((e.target as HTMLElement).closest('[role="tab"], [role="button"], button')) return
+          e.preventDefault()
+          layerStackDragRef.current = { startY: e.clientY, startH: stackBodyHeight }
+          setStackResizeDrag(true)
+          if (stackCollapsed) setStackCollapsed(false)
+          document.body.style.cursor = 'row-resize'
+          document.body.style.userSelect = 'none'
+        }}
       >
-        <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
-          <span
-            role="tab"
-            tabIndex={0}
-            aria-selected={stackSegment === 'layers'}
-            onClick={() => setStackSegment('layers')}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault()
-                setStackSegment('layers')
-              }
-            }}
-            className={`chat-tab relative flex-shrink-0 cursor-pointer select-none overflow-hidden rounded px-2 py-1 text-[10px] whitespace-nowrap outline-none transition-all ${
-              stackSegment === 'layers'
-                ? 'border border-[var(--color-border)] bg-[var(--color-panel)] text-[var(--kbd-text)]'
-                : 'border border-transparent text-[var(--color-text-muted)] hover:bg-[var(--color-panel)]/50 hover:text-[var(--kbd-text)]'
-            }`}
-            style={
-              {
-                maxWidth: 120,
-                '--tab-bg': stackSegment === 'layers' ? 'var(--color-panel)' : 'var(--color-bg)',
-              } as React.CSSProperties
+        <span
+          role="button"
+          tabIndex={0}
+          onClick={() => setStackCollapsed((c) => !c)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              setStackCollapsed((c) => !c)
             }
-          >
-            <span
-              className="inline-block align-bottom overflow-hidden whitespace-nowrap"
-              style={{
-                maxWidth: stackSegment === 'layers' ? '120px' : '120px',
-                WebkitMaskImage:
-                  stackSegment === 'layers'
-                    ? 'linear-gradient(to right, black 70px, transparent 90px)'
-                    : 'linear-gradient(to right, black 80px, transparent 100px)',
-                maskImage:
-                  stackSegment === 'layers'
-                    ? 'linear-gradient(to right, black 70px, transparent 90px)'
-                    : 'linear-gradient(to right, black 80px, transparent 100px)',
-              }}
-            >
-              Layers
-            </span>
-          </span>
-          <span
-            role="tab"
-            tabIndex={0}
-            aria-selected={stackSegment === 'scenes'}
-            onClick={() => setStackSegment('scenes')}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault()
-                setStackSegment('scenes')
-              }
-            }}
-            className={`chat-tab relative flex-shrink-0 cursor-pointer select-none overflow-hidden rounded px-2 py-1 text-[10px] whitespace-nowrap outline-none transition-all ${
-              stackSegment === 'scenes'
-                ? 'border border-[var(--color-border)] bg-[var(--color-panel)] text-[var(--kbd-text)]'
-                : 'border border-transparent text-[var(--color-text-muted)] hover:bg-[var(--color-panel)]/50 hover:text-[var(--kbd-text)]'
-            }`}
-            style={
-              {
-                maxWidth: 120,
-                '--tab-bg': stackSegment === 'scenes' ? 'var(--color-panel)' : 'var(--color-bg)',
-              } as React.CSSProperties
-            }
-          >
-            <span
-              className="inline-block align-bottom overflow-hidden whitespace-nowrap"
-              style={{
-                maxWidth: 120,
-                WebkitMaskImage:
-                  stackSegment === 'scenes'
-                    ? 'linear-gradient(to right, black 70px, transparent 90px)'
-                    : 'linear-gradient(to right, black 80px, transparent 100px)',
-                maskImage:
-                  stackSegment === 'scenes'
-                    ? 'linear-gradient(to right, black 70px, transparent 90px)'
-                    : 'linear-gradient(to right, black 80px, transparent 100px)',
-              }}
-            >
-              Scenes
-            </span>
-          </span>
-        </div>
+          }}
+          className="mr-1 flex h-5 w-5 flex-shrink-0 cursor-pointer items-center justify-center rounded text-[var(--color-text-muted)] hover:text-[var(--kbd-text)] transition-colors"
+          aria-label={stackCollapsed ? 'Expand layers' : 'Collapse layers'}
+        >
+          <ChevronDown size={12} className={`transition-transform ${stackCollapsed ? '-rotate-90' : ''}`} />
+        </span>
+        <span className="flex-1 select-none text-[12px] font-semibold uppercase tracking-widest text-[var(--color-text-muted)]">Layers</span>
 
-        {stackSegment === 'layers' && (
+        {(
           <div className="relative ml-1 flex flex-shrink-0 items-center">
             <span
               role="button"
@@ -1305,14 +1210,14 @@ export default function SceneLayersStackPanel({ scene }: Props) {
                 >
                   <button
                     type="button"
-                    className="no-style flex w-full items-center gap-2 px-2 py-1.5 text-left text-[10px] hover:bg-white/10"
+                    className="no-style flex w-full items-center gap-2 px-2 py-1.5 text-left text-[11px] hover:bg-white/10"
                     onClick={onAddText}
                   >
                     <Type size={12} /> Text overlay
                   </button>
                   <button
                     type="button"
-                    className="no-style flex w-full items-center gap-2 px-2 py-1.5 text-left text-[10px] hover:bg-white/10"
+                    className="no-style flex w-full items-center gap-2 px-2 py-1.5 text-left text-[11px] hover:bg-white/10"
                     onClick={onAddSvg}
                   >
                     <Layers size={12} /> SVG object
@@ -1320,7 +1225,7 @@ export default function SceneLayersStackPanel({ scene }: Props) {
                   {project.outputMode === 'interactive' && (
                     <>
                       <div className="my-1 border-t border-[var(--color-border)]" role="separator" />
-                      <p className="px-2 pt-1 text-[9px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
+                      <p className="px-2 pt-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
                         Interaction
                       </p>
                       {(
@@ -1336,7 +1241,7 @@ export default function SceneLayersStackPanel({ scene }: Props) {
                         <button
                           key={t}
                           type="button"
-                          className="no-style flex w-full items-center gap-2 px-2 py-1.5 text-left text-[10px] hover:bg-white/10"
+                          className="no-style flex w-full items-center gap-2 px-2 py-1.5 text-left text-[11px] hover:bg-white/10"
                           onClick={() => onAddInteraction(t)}
                         >
                           <MousePointerClick size={12} /> {lab}
@@ -1350,126 +1255,57 @@ export default function SceneLayersStackPanel({ scene }: Props) {
           </div>
         )}
 
-        {stackSegment === 'layers' && (
-          <span
-            role="button"
-            tabIndex={deleteDisabled || selection?.sceneId !== scene.id ? -1 : 0}
-            onClick={() => {
-              if (!deleteDisabled && selection?.sceneId === scene.id) deleteSelected()
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault()
-                if (!deleteDisabled && selection?.sceneId === scene.id) deleteSelected()
-              }
-            }}
-            className={`ml-1 mr-1 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded outline-none transition-all ${
-              deleteDisabled || selection?.sceneId !== scene.id
-                ? 'cursor-default opacity-30 text-[var(--color-text-muted)]'
-                : 'cursor-pointer text-[var(--color-text-muted)] hover:bg-[var(--color-panel)]/50 hover:text-red-400'
-            }`}
-            data-tooltip={
-              !selection
-                ? 'Select a layer'
-                : selection.key === 'audio' || selection.key === 'video'
-                  ? 'Remove from Audio / Video sections'
-                  : selection.sceneId !== scene.id
-                    ? 'Select a layer in this scene'
-                    : 'Delete layer'
-            }
-            data-tooltip-pos="bottom"
-            aria-label="Delete selected layer"
-          >
-            <Trash2 size={12} />
-          </span>
-        )}
-
-        {stackSegment === 'scenes' && (
-          <span
-            role="button"
-            tabIndex={deleteDisabled ? -1 : 0}
-            onClick={() => {
-              if (!deleteDisabled) deleteSelected()
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault()
-                if (!deleteDisabled) deleteSelected()
-              }
-            }}
-            className={`ml-1 mr-1 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded outline-none transition-all ${
-              deleteDisabled
-                ? 'cursor-default opacity-30 text-[var(--color-text-muted)]'
-                : 'cursor-pointer text-[var(--color-text-muted)] hover:bg-[var(--color-panel)]/50 hover:text-red-400'
-            }`}
-            data-tooltip={!selection ? 'Select a layer' : 'Delete layer'}
-            data-tooltip-pos="bottom"
-            aria-label="Delete selected layer"
-          >
-            <Trash2 size={12} />
-          </span>
-        )}
       </div>
 
       <div
         className="min-h-0 flex-shrink-0 overflow-y-auto overscroll-contain px-1 py-1"
-        style={{ height: stackBodyHeight }}
+        style={{ height: stackCollapsed ? 0 : stackBodyHeight, overflow: stackCollapsed ? 'hidden' : undefined }}
       >
-        {stackSegment === 'layers' ? (
-          <LayerStackRows
-            scene={scene}
-            selectedKey={selKey}
-            onToggleRow={onToggleRow(scene.id)}
-            onOpenLayerProperties={handleOpenLayerProperties}
-          />
-        ) : (
-          <div className="space-y-0.5">
-            {scenes.map((s) => {
-              const open = expandedScenes[s.id] ?? false
-              const isCurrent = s.id === selectedSceneId
-              return (
-                <div
-                  key={s.id}
-                  className="rounded border bg-[var(--color-bg)]/30"
-                  style={{ borderColor: 'var(--color-hairline)' }}
-                >
-                  <div className="flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] hover:bg-white/[0.04]">
-                    <button
-                      type="button"
-                      className="no-style flex h-7 w-7 shrink-0 items-center justify-center rounded text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
-                      aria-expanded={open}
-                      aria-label={open ? 'Collapse scene layers' : 'Expand scene layers'}
-                      onClick={() => setExpandedScenes((p) => ({ ...p, [s.id]: !open }))}
-                    >
-                      <ChevronRight size={14} className={`transition-transform ${open ? 'rotate-90' : ''}`} />
-                    </button>
-                    <button
-                      type="button"
-                      className="no-style flex min-w-0 flex-1 cursor-pointer items-center gap-1 rounded py-1 pl-0.5 pr-2 text-left"
-                      onClick={() => selectScene(s.id)}
-                    >
-                      <Film size={12} className="shrink-0 text-[var(--color-text-muted)]" />
-                      <span className="min-w-0 flex-1 truncate font-medium text-[var(--color-text-primary)]">
-                        {s.name?.trim() || 'Untitled scene'}
-                      </span>
-                      {isCurrent && <span className="shrink-0 text-[9px] text-[var(--color-accent)]">Now</span>}
-                    </button>
-                  </div>
-                  {open && (
-                    <div className="border-t px-1 pb-1 pt-0.5" style={{ borderTopColor: 'var(--color-hairline)' }}>
-                      <LayerStackRows
-                        scene={s}
-                        selectedKey={selection?.sceneId === s.id ? selection.key : null}
-                        onToggleRow={onToggleRow(s.id)}
-                        onOpenLayerProperties={handleOpenLayerProperties}
-                      />
-                    </div>
-                  )}
+        <div className="space-y-0.5">
+          {scenes.map((s) => {
+            const open = expandedScenes[s.id] ?? (s.id === selectedSceneId)
+            const isCurrent = s.id === selectedSceneId
+            return (
+              <div
+                key={s.id}
+                className="rounded bg-[var(--color-bg)]/30"
+              >
+                <div className="flex items-center gap-0.5 rounded px-1 py-0.5 text-[11px] hover:bg-white/[0.04]">
+                  <button
+                    type="button"
+                    className="no-style flex h-7 w-7 shrink-0 items-center justify-center rounded text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
+                    aria-expanded={open}
+                    aria-label={open ? 'Collapse scene layers' : 'Expand scene layers'}
+                    onClick={() => setExpandedScenes((p) => ({ ...p, [s.id]: !open }))}
+                  >
+                    <ChevronRight size={14} className={`transition-transform ${open ? 'rotate-90' : ''}`} />
+                  </button>
+                  <button
+                    type="button"
+                    className="no-style flex min-w-0 flex-1 cursor-pointer items-center gap-1 rounded py-1 pl-0.5 pr-2 text-left"
+                    onClick={() => selectScene(s.id)}
+                  >
+                    <Film size={12} className="shrink-0 text-[var(--color-text-muted)]" />
+                    <span className="min-w-0 flex-1 truncate font-medium text-[var(--color-text-primary)]">
+                      {s.name?.trim() || 'Untitled scene'}
+                    </span>
+                    {isCurrent && <span className="shrink-0 h-1.5 w-1.5 rounded-full bg-red-500/50" />}
+                  </button>
                 </div>
-              )
-            })}
-          </div>
-        )}
+                {open && (
+                  <div className="px-1 pb-1 pt-0.5">
+                    <LayerStackRows
+                      scene={s}
+                      selectedKey={selection?.sceneId === s.id ? selection.key : null}
+                      onToggleRow={onToggleRow(s.id)}
+                      onOpenLayerProperties={handleOpenLayerProperties}
+                    />
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
       </div>
     </div>
   )

@@ -163,12 +163,12 @@ export function InteractionTextBulkForm({ scene, el }: { scene: Scene; el: Inter
   const { updateInteraction } = useVideoStore()
   const update = (updates: Partial<InteractionElement>) => updateInteraction(scene.id, el.id, updates)
   const fieldClass =
-    'w-full bg-[var(--color-bg)] border border-[var(--color-border)] rounded px-2 py-1 text-xs text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent)]'
-  const labelClass = 'text-[10px] font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-1 block'
+    'w-full bg-[var(--color-bg)] border border-[var(--color-border)] rounded px-2 py-1 text-sm text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent)]'
+  const labelClass = 'text-[11px] font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-1 block'
 
   return (
     <div className="space-y-2.5">
-      <p className="text-[9px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">Text & labels</p>
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">Text & labels</p>
       {el.type === 'hotspot' && (
         <div>
           <label className={labelClass}>Label</label>
@@ -339,8 +339,8 @@ export function InteractionFormBody({
   const update = (updates: Partial<InteractionElement>) => updateInteraction(scene.id, el.id, updates)
 
   const fieldClass =
-    'w-full bg-[var(--color-bg)] border border-[var(--color-border)] rounded px-2 py-1 text-xs text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent)]'
-  const labelClass = 'text-[10px] font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-1 block'
+    'w-full bg-[var(--color-bg)] border border-[var(--color-border)] rounded px-2 py-1 text-sm text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent)]'
+  const labelClass = 'text-[11px] font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-1 block'
 
   return (
     <div className="space-y-3">
@@ -464,8 +464,8 @@ export function InteractionFormBody({
           })()}
         </div>
         <div className="flex justify-between mt-0.5">
-          <span className="text-[9px] text-[var(--color-text-muted)]">0s</span>
-          <span className="text-[9px] text-[var(--color-text-muted)]">{scene.duration}s</span>
+          <span className="text-[10px] text-[var(--color-text-muted)]">0s</span>
+          <span className="text-[10px] text-[var(--color-text-muted)]">{scene.duration}s</span>
         </div>
       </div>
 
@@ -511,13 +511,13 @@ function ElementEditor({ scene, el, onClose }: { scene: Scene; el: InteractionEl
   return (
     <div className="space-y-3 p-3 border-t border-[var(--color-border)]">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-bold text-[var(--color-text-primary)]">
+        <span className="text-sm font-bold text-[var(--color-text-primary)]">
           {TYPE_ICONS[el.type]} Edit {el.type}
         </span>
         <button
           type="button"
           onClick={onClose}
-          className="kbd w-6 h-6 p-0 flex items-center justify-center text-[10px]"
+          className="kbd w-6 h-6 p-0 flex items-center justify-center text-[11px]"
         >
           <X size={10} />
         </button>
@@ -582,7 +582,7 @@ function InteractionStyleEditor({
 
   const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
     <details className="border-t border-[var(--color-border)] pt-1.5 mt-1.5">
-      <summary className="text-[9px] font-bold text-[var(--color-text-muted)] uppercase tracking-wider cursor-pointer select-none list-none flex items-center gap-1 [&::-webkit-details-marker]:hidden">
+      <summary className="text-[10px] font-bold text-[var(--color-text-muted)] uppercase tracking-wider cursor-pointer select-none list-none flex items-center gap-1 [&::-webkit-details-marker]:hidden">
         <svg
           width="7"
           height="7"
@@ -606,7 +606,7 @@ function InteractionStyleEditor({
           <span
             key={preset}
             onClick={() => applyPreset(preset)}
-            className={`text-[9px] text-center py-1 px-0.5 rounded cursor-pointer transition-all border ${s.preset === preset ? 'border-[var(--color-accent)] text-[var(--color-text-primary)] bg-[var(--color-accent)]/10' : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)]'}`}
+            className={`text-[10px] text-center py-1 px-0.5 rounded cursor-pointer transition-all border ${s.preset === preset ? 'border-[var(--color-accent)] text-[var(--color-text-primary)] bg-[var(--color-accent)]/10' : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)]'}`}
           >
             <div
               className="w-3 h-3 rounded-sm mx-auto mb-0.5"
@@ -639,7 +639,7 @@ function InteractionStyleEditor({
               value={s.bgOpacity}
               onChange={(e) => set('bgOpacity', Number(e.target.value))}
             />
-            <span className="text-[9px] text-[var(--color-text-muted)]">{s.bgOpacity.toFixed(2)}</span>
+            <span className="text-[10px] text-[var(--color-text-muted)]">{s.bgOpacity.toFixed(2)}</span>
           </div>
         </div>
         <div>
@@ -677,7 +677,7 @@ function InteractionStyleEditor({
               value={s.borderOpacity}
               onChange={(e) => set('borderOpacity', Number(e.target.value))}
             />
-            <span className="text-[9px] text-[var(--color-text-muted)]">{s.borderOpacity.toFixed(2)}</span>
+            <span className="text-[10px] text-[var(--color-text-muted)]">{s.borderOpacity.toFixed(2)}</span>
           </div>
           <div>
             <label className={labelClass}>Width (px)</label>
@@ -726,7 +726,7 @@ function InteractionStyleEditor({
               value={s.shadowOpacity}
               onChange={(e) => set('shadowOpacity', Number(e.target.value))}
             />
-            <span className="text-[9px] text-[var(--color-text-muted)]">{s.shadowOpacity.toFixed(2)}</span>
+            <span className="text-[10px] text-[var(--color-text-muted)]">{s.shadowOpacity.toFixed(2)}</span>
           </div>
           <div>
             <label className={labelClass}>Spread (px)</label>
@@ -750,7 +750,7 @@ function InteractionStyleEditor({
               value={s.innerGlow}
               onChange={(e) => set('innerGlow', Number(e.target.value))}
             />
-            <span className="text-[9px] text-[var(--color-text-muted)]">{s.innerGlow.toFixed(2)}</span>
+            <span className="text-[10px] text-[var(--color-text-muted)]">{s.innerGlow.toFixed(2)}</span>
           </div>
         </div>
       </Section>
@@ -997,7 +997,7 @@ function ChoiceFields({ scene, el, update, fieldClass, labelClass }: any) {
           {(el.options as ChoiceOption[]).map((opt) => (
             <div key={opt.id} className="border border-[var(--color-border)] rounded p-2 space-y-1">
               <div className="flex gap-1 items-center">
-                <p className="text-[10px] text-[var(--color-text-primary)] truncate font-medium flex-1 min-w-0">
+                <p className="text-[11px] text-[var(--color-text-primary)] truncate font-medium flex-1 min-w-0">
                   {opt.label || '(empty)'}
                 </p>
                 <button
@@ -1031,7 +1031,7 @@ function ChoiceFields({ scene, el, update, fieldClass, labelClass }: any) {
             </div>
           ))}
           <button
-            className="kbd w-full h-6 text-[10px] flex items-center justify-center gap-1"
+            className="kbd w-full h-6 text-[11px] flex items-center justify-center gap-1"
             onClick={() =>
               update({
                 options: [
@@ -1076,7 +1076,7 @@ function QuizFields({ scene, el, update, fieldClass, labelClass }: any) {
             </div>
           ))}
           <button
-            className="kbd w-full h-6 text-[10px] flex items-center justify-center gap-1"
+            className="kbd w-full h-6 text-[11px] flex items-center justify-center gap-1"
             onClick={() => update({ options: [...el.options, { id: uuidv4(), label: 'New option' }] })}
           >
             <Plus size={10} /> Add option
@@ -1231,7 +1231,7 @@ function FormFields({ scene, el, update, fieldClass, labelClass }: any) {
           {(el.fields as FormField[]).map((field, i) => (
             <div key={field.id} className="border border-[var(--color-border)] rounded p-2 space-y-1.5">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold text-[var(--color-text-muted)] truncate max-w-[140px]">
+                <span className="text-[11px] font-bold text-[var(--color-text-muted)] truncate max-w-[140px]">
                   {field.label || `Field ${i + 1}`}
                 </span>
                 <button
@@ -1258,7 +1258,7 @@ function FormFields({ scene, el, update, fieldClass, labelClass }: any) {
             </div>
           ))}
           <button
-            className="kbd w-full h-6 text-[10px] flex items-center justify-center gap-1"
+            className="kbd w-full h-6 text-[11px] flex items-center justify-center gap-1"
             onClick={() =>
               update({
                 fields: [
@@ -1277,7 +1277,7 @@ function FormFields({ scene, el, update, fieldClass, labelClass }: any) {
       {(el.fields as FormField[]).length > 0 && (
         <div>
           <label className={labelClass}>Variable Mapping</label>
-          <p className="text-[10px] text-[var(--color-text-muted)] mb-1.5">
+          <p className="text-[11px] text-[var(--color-text-muted)] mb-1.5">
             Map fields to variables for use in later scenes via {'{'}
             <span>varName</span>
             {'}'}
@@ -1285,8 +1285,8 @@ function FormFields({ scene, el, update, fieldClass, labelClass }: any) {
           <div className="space-y-1.5">
             {(el.fields as FormField[]).map((field) => (
               <div key={field.id} className="flex gap-1.5 items-center">
-                <span className="text-[10px] text-[var(--color-text-muted)] shrink-0 w-20 truncate">{field.label}</span>
-                <span className="text-[10px] text-[var(--color-text-muted)]">→</span>
+                <span className="text-[11px] text-[var(--color-text-muted)] shrink-0 w-20 truncate">{field.label}</span>
+                <span className="text-[11px] text-[var(--color-text-muted)]">→</span>
                 <input
                   className={`${fieldClass} flex-1`}
                   value={currentMappings[field.id] ?? ''}

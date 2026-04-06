@@ -46,7 +46,7 @@ export function AgentIcon({ icon, size = 14, className }: { icon: string; size?:
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <h4 className="text-[10px] uppercase tracking-widest text-[#6b6b7a] font-bold px-1 mb-2">
+    <h4 className="text-[11px] uppercase tracking-widest text-[#6b6b7a] font-bold px-1 mb-2">
       {children}
     </h4>
   )
@@ -79,7 +79,7 @@ function AgentCard({ agent }: { agent: AgentConfig }) {
             <span className="text-sm font-semibold text-[var(--color-text-primary)] truncate leading-none">{agent.name}</span>
             {!agent.isBuiltIn && <span className="text-[8px] px-1 font-bold bg-yellow-400/10 text-yellow-400 border border-yellow-400/20 rounded uppercase tracking-tighter">Custom</span>}
           </div>
-          <p className="text-[10px] text-[var(--color-text-muted)] truncate">{agent.description}</p>
+          <p className="text-[11px] text-[var(--color-text-muted)] truncate">{agent.description}</p>
         </div>
       </div>
 
@@ -117,13 +117,13 @@ export default function AgentsSettingsTab() {
       <div className="px-1 flex gap-1.5">
         <button 
           onClick={() => setIsCreatingAgent(true)}
-          className="flex-1 flex items-center justify-center gap-2 py-1.5 text-[10px] font-bold bg-[var(--color-accent)]/10 text-[var(--color-accent)] border border-[var(--color-accent)]/30 rounded hover:bg-[var(--color-accent)]/20 transition-all shadow-none"
+          className="flex-1 flex items-center justify-center gap-2 py-1.5 text-[11px] font-bold bg-[var(--color-accent)]/10 text-[var(--color-accent)] border border-[var(--color-accent)]/30 rounded hover:bg-[var(--color-accent)]/20 transition-all shadow-none"
         >
           <Plus size={11} />
           Create
         </button>
         <button 
-          className="flex-1 flex items-center justify-center gap-2 py-1.5 text-[10px] font-bold bg-[var(--color-bg)] text-[var(--color-text-muted)] border border-[var(--color-border)] rounded hover:text-[var(--color-text-primary)] hover:border-[var(--color-text-muted)] transition-all shadow-none"
+          className="flex-1 flex items-center justify-center gap-2 py-1.5 text-[11px] font-bold bg-[var(--color-bg)] text-[var(--color-text-muted)] border border-[var(--color-border)] rounded hover:text-[var(--color-text-primary)] hover:border-[var(--color-text-muted)] transition-all shadow-none"
         >
           Import
         </button>

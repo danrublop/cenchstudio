@@ -1,38 +1,8 @@
 import type { APIName } from '@/lib/types'
-import type { ToolResult } from '@/lib/agents/types'
 import type { WorldStateMutable } from '@/lib/agents/tool-executor'
+import { ok, err, findScene, updateScene, type ToolResult } from './_shared'
 
 export const AUDIO_TOOL_NAMES = ['elevenlabs_tts', 'add_narration', 'add_sound_effect', 'add_background_music'] as const
-
-function ok(affectedSceneId: string | null, description: string, data?: unknown): ToolResult {
-  return {
-    success: true,
-    affectedSceneId,
-    changes: [
-      {
-        type: affectedSceneId ? 'scene_updated' : 'global_updated',
-        sceneId: affectedSceneId ?? undefined,
-        description,
-      },
-    ],
-    data,
-  }
-}
-
-function err(message: string): ToolResult {
-  return { success: false, error: message }
-}
-
-function findScene(world: WorldStateMutable, sceneId: string) {
-  return world.scenes.find((s) => s.id === sceneId)
-}
-
-function updateScene(world: WorldStateMutable, sceneId: string, updates: Record<string, unknown>) {
-  const idx = world.scenes.findIndex((s) => s.id === sceneId)
-  if (idx === -1) return null
-  world.scenes[idx] = { ...world.scenes[idx], ...updates }
-  return world.scenes[idx]
-}
 
 export function createAudioToolHandler(deps: {
   checkApiPermission: (
@@ -105,6 +75,13 @@ export function createAudioToolHandler(deps: {
         const effectiveProvider =
           explicitProvider ??
           (() => {
+            // In local mode, only use free TTS providers
+            if (world.localMode) {
+              if (isProviderEnabled('openai-edge-tts')) return 'openai-edge-tts'
+              if (isProviderEnabled('native-tts')) return 'native-tts'
+              if (isProviderEnabled('web-speech')) return 'web-speech'
+              return null
+            }
             if (process.env.ELEVENLABS_API_KEY && isProviderEnabled('elevenlabs')) return 'elevenlabs'
             if (process.env.OPENAI_API_KEY && isProviderEnabled('openai-tts')) return 'openai-tts'
             if (process.env.GEMINI_API_KEY && isProviderEnabled('gemini-tts')) return 'gemini-tts'
@@ -144,7 +121,7 @@ export function createAudioToolHandler(deps: {
           const res = await fetch(`${baseUrl}/api/tts`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text, sceneId, voiceId, provider: effectiveProvider ?? undefined, instructions }),
+            body: JSON.stringify({ text, sceneId, voiceId, provider: effectiveProvider ?? undefined, instructions, localMode: world.localMode }),
           })
           if (!res.ok) {
             const errData = await res.json().catch(() => ({ error: 'TTS request failed' }))

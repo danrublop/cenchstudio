@@ -8,6 +8,8 @@ import { promisify } from 'util'
 import { db } from '@/lib/db'
 import { projectAssets, projects } from '@/lib/db/schema'
 import { eq, and, desc } from 'drizzle-orm'
+import { assertProjectAccess } from '@/lib/auth-helpers'
+import { sanitizeSvg } from '@/lib/api/sanitize-svg'
 
 const execFileAsync = promisify(execFile)
 
@@ -34,15 +36,19 @@ function classifyType(mime: string): 'image' | 'video' | 'svg' {
   return 'image'
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 export async function POST(req: NextRequest, { params }: { params: Promise<{ projectId: string }> }) {
   const { projectId } = await params
 
+  // Prevent path traversal via malicious projectId
+  if (!UUID_RE.test(projectId)) {
+    return NextResponse.json({ error: 'Invalid projectId format' }, { status: 400 })
+  }
+
   try {
-    // Validate project exists
-    const [project] = await db.select({ id: projects.id }).from(projects).where(eq(projects.id, projectId))
-    if (!project) {
-      return NextResponse.json({ error: 'Project not found' }, { status: 404 })
-    }
+    const access = await assertProjectAccess(projectId)
+    if (access.error) return access.error
 
     const formData = await req.formData()
     const file = formData.get('file') as File | null
@@ -115,10 +121,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
         console.warn('[asset-upload] sharp metadata/thumbnail failed:', e)
       }
     } else if (assetType === 'svg') {
+      // Sanitize SVG to strip XSS vectors (script tags, event handlers, javascript: URIs)
+      const rawSvg = buffer.toString('utf-8')
+      const cleanSvg = sanitizeSvg(rawSvg)
+      if (cleanSvg !== rawSvg) {
+        await fs.writeFile(storagePath, cleanSvg, 'utf-8')
+      }
       // SVG is its own thumbnail
       thumbnailUrl = publicUrl
       // Try to extract viewBox dimensions
-      const svgText = buffer.toString('utf-8')
+      const svgText = cleanSvg
       const vbMatch = svgText.match(/viewBox=["']\s*(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s*["']/)
       if (vbMatch) {
         width = Math.round(parseFloat(vbMatch[3]))
@@ -140,7 +152,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
           '-show_format',
           '-show_streams',
           storagePath,
-        ])
+        ], { timeout: 15_000 })
         const info = JSON.parse(stdout)
         const videoStream = info.streams?.find((s: any) => s.codec_type === 'video')
         if (videoStream) {
@@ -156,7 +168,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
       try {
         const thumbFilename = `${assetId}_thumb.jpg`
         const thumbPath = path.join(uploadsDir, thumbFilename)
-        await execFileAsync('ffmpeg', ['-i', storagePath, '-vframes', '1', '-vf', 'scale=300:-1', '-y', thumbPath])
+        await execFileAsync('ffmpeg', ['-i', storagePath, '-vframes', '1', '-vf', 'scale=300:-1', '-y', thumbPath], { timeout: 30_000 })
         thumbnailUrl = `/uploads/projects/${projectId}/${thumbFilename}`
       } catch (e) {
         console.warn('[asset-upload] ffmpeg thumbnail failed:', e)
@@ -168,7 +180,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
       .values({
         id: assetId,
         projectId,
-        filename: file.name,
+        filename: file.name.slice(0, 255),
         storagePath,
         publicUrl,
         type: assetType,
@@ -186,16 +198,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
     return NextResponse.json({ asset })
   } catch (err: unknown) {
     console.error('[asset-upload] error:', err)
-    const message = err instanceof Error ? err.message : 'Upload failed'
-    return NextResponse.json({ error: message }, { status: 500 })
+    return NextResponse.json({ error: 'Upload failed' }, { status: 500 })
   }
 }
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ projectId: string }> }) {
   const { projectId } = await params
-  const typeFilter = req.nextUrl.searchParams.get('type')
-
+  if (!UUID_RE.test(projectId)) {
+    return NextResponse.json({ error: 'Invalid projectId format' }, { status: 400 })
+  }
   try {
+    const access = await assertProjectAccess(projectId)
+    if (access.error) return access.error
+
+    const typeFilter = req.nextUrl.searchParams.get('type')
     const conditions = [eq(projectAssets.projectId, projectId)]
     if (typeFilter && ['image', 'video', 'svg'].includes(typeFilter)) {
       conditions.push(eq(projectAssets.type, typeFilter))

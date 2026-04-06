@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect } from 'react'
-import { ChevronDown, ChevronUp, CheckCircle2, ListOrdered, X, RotateCcw } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { ChevronDown, ChevronUp, ListOrdered, X, RotateCcw, MoreHorizontal } from 'lucide-react'
 import type { Storyboard, StoryboardScene } from '@/lib/agents/types'
 import { useVideoStore } from '@/lib/store'
 import { ALL_TRANSITION_IDS } from '@/lib/transitions'
+import { AUDIO_PROVIDERS } from '@/lib/audio/provider-registry'
 
 const SCENE_TYPES = ['svg', 'canvas2d', 'd3', 'three', 'motion', 'lottie', 'zdog'] as const
 
@@ -38,6 +39,29 @@ export default function StoryboardReviewCard({ disabled, onApprove }: Props) {
   const storyboardProposed = useVideoStore((s) => s.storyboardProposed)
   const setStoryboardProposed = useVideoStore((s) => s.setStoryboardProposed)
   const projectId = useVideoStore((s) => s.project.id)
+  const audioProviderEnabled = useVideoStore((s) => s.audioProviderEnabled)
+
+  const isAudioEnabled = (id: string) => audioProviderEnabled[id] ?? true
+  const hasTTS = AUDIO_PROVIDERS.some((p) => p.category === 'tts' && isAudioEnabled(p.id))
+  const hasSFX = AUDIO_PROVIDERS.some((p) => p.category === 'sfx' && isAudioEnabled(p.id))
+  const hasMusic = AUDIO_PROVIDERS.some((p) => p.category === 'music' && isAudioEnabled(p.id))
+  const featureAvailable: Record<string, boolean> = { narration: hasTTS, music: hasMusic, sfx: hasSFX, interactions: true }
+
+  // Auto-correct feature flags when providers become unavailable
+  useEffect(() => {
+    if (!pendingStoryboard?.featureFlags) return
+    const flags = pendingStoryboard.featureFlags
+    const corrections: Partial<typeof flags> = {}
+    if (!hasTTS && flags.narration) corrections.narration = false
+    if (!hasMusic && flags.music) corrections.music = false
+    if (!hasSFX && flags.sfx) corrections.sfx = false
+    if (Object.keys(corrections).length > 0) {
+      setPendingStoryboard({
+        ...pendingStoryboard,
+        featureFlags: { ...flags, ...corrections },
+      })
+    }
+  }, [hasTTS, hasMusic, hasSFX]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Persist storyboard review state so it survives reloads.
   useEffect(() => {
@@ -78,7 +102,68 @@ export default function StoryboardReviewCard({ disabled, onApprove }: Props) {
     }
   }, [projectId, pendingStoryboard, storyboardProposed])
 
+  const [expandedSceneId, setExpandedSceneId] = useState<string | null>(null)
+
+  const discardStoryboard = useCallback(() => {
+    if (disabled) return
+    setPendingStoryboard(null)
+    setStoryboardProposed(null)
+    if (projectId) {
+      fetch(`/api/projects/${projectId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ storyboardProposed: null, storyboardEdited: null }),
+      }).catch(() => {})
+    }
+  }, [disabled, projectId, setPendingStoryboard, setStoryboardProposed])
+
+  useEffect(() => {
+    if (!pendingStoryboard) return
+
+    const onKey = (e: KeyboardEvent) => {
+      if (disabled) return
+      const t = e.target as HTMLElement
+      const tag = t.tagName
+      const inTextarea = tag === 'TEXTAREA'
+      const inSelect = tag === 'SELECT'
+      const inputEl = tag === 'INPUT' ? (t as HTMLInputElement) : null
+      const skipPlainEnterForCreate =
+        inTextarea ||
+        inSelect ||
+        t.isContentEditable ||
+        (inputEl != null && ['number', 'range'].includes(inputEl.type))
+
+      if ((e.metaKey || e.ctrlKey) && (e.key === '.' || e.code === 'Period')) {
+        e.preventDefault()
+        discardStoryboard()
+        return
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        discardStoryboard()
+        return
+      }
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault()
+        onApprove()
+        return
+      }
+      if (e.key === 'Enter' && !skipPlainEnterForCreate) {
+        e.preventDefault()
+        onApprove()
+      }
+    }
+
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [pendingStoryboard, disabled, discardStoryboard, onApprove])
+
   if (!pendingStoryboard) return null
+
+  const modKey =
+    typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/i.test(navigator.platform || '')
+      ? '⌘'
+      : 'Ctrl'
 
   const findProposedScene = (scene: StoryboardScene, idx: number): StoryboardScene | null => {
     if (!storyboardProposed) return null
@@ -134,376 +219,329 @@ export default function StoryboardReviewCard({ disabled, onApprove }: Props) {
     })
   }
 
-  return (
-    <div className="mx-2 mb-3 rounded-xl border border-cyan-500/35 bg-cyan-500/5 overflow-hidden">
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-cyan-500/25 bg-cyan-500/10">
-        <ListOrdered size={14} className="text-cyan-400 flex-shrink-0" />
-        <span className="text-[11px] font-semibold text-cyan-300">Storyboard review</span>
-        <span className="text-[10px] text-[var(--color-text-muted)] ml-auto">
-          {pendingStoryboard.scenes.length} scenes · {pendingStoryboard.totalDuration}s
-        </span>
-      </div>
+  const revertBtn = (onClick: () => void, title: string, size = 14) => (
+    <span
+      onClick={() => !disabled && onClick()}
+      className={`p-0.5 rounded text-[var(--color-text-muted)] ${disabled ? 'opacity-30' : 'hover:text-[var(--color-text-primary)] cursor-pointer'}`}
+      title={title}
+    >
+      <RotateCcw size={size} />
+    </span>
+  )
 
-      <div className="p-3 space-y-3 max-h-[min(52vh,420px)] overflow-y-auto">
-        <label className="block">
-          <span className="text-[10px] font-medium text-[var(--color-text-muted)] uppercase tracking-wide">Title</span>
+  const inputClass = 'w-full bg-transparent text-[13px] text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-muted)]/50 border-b border-transparent focus:border-[var(--color-border)] transition-colors'
+  const textareaClass = inputClass + ' resize-none overflow-hidden'
+
+  return (
+    <div className="space-y-2.5">
+      {/* ── Title card ── */}
+      <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--color-border)' }}>
+        <div className="flex items-center gap-2 px-3 py-2.5 bg-[var(--color-panel)]">
+          <ListOrdered size={16} className="text-[var(--color-text-muted)] flex-shrink-0" />
+          <span className="text-[13px] font-semibold text-[var(--color-text-primary)]">Storyboard</span>
+          <span className="text-[12px] text-[var(--color-text-muted)] ml-auto">
+            {pendingStoryboard.scenes.length} scenes · {pendingStoryboard.totalDuration}s
+          </span>
+        </div>
+        <div className="border-t border-[var(--color-border)]" />
+        <div className="p-3 space-y-2.5">
           <input
             value={pendingStoryboard.title}
             onChange={(e) => updateTitle(e.target.value)}
             disabled={disabled}
-            className="mt-0.5 w-full px-2 py-1.5 rounded-md bg-[var(--color-panel)] border border-[var(--color-border)] text-[12px] text-[var(--color-text-primary)]"
+            placeholder="Title"
+            className="w-full bg-transparent text-[14px] font-medium text-[var(--color-text-primary)] outline-none"
           />
-        </label>
-
-        <label className="block">
-          <span className="text-[10px] font-medium text-[var(--color-text-muted)] uppercase tracking-wide">
-            Style notes
-          </span>
           <textarea
             value={pendingStoryboard.styleNotes ?? ''}
             onChange={(e) => updateStyleNotes(e.target.value)}
             disabled={disabled}
-            rows={2}
-            className="mt-0.5 w-full px-2 py-1.5 rounded-md bg-[var(--color-panel)] border border-[var(--color-border)] text-[11px] text-[var(--color-text-primary)] resize-y min-h-[48px]"
+            rows={1}
+            placeholder="Style notes"
+            className={textareaClass}
           />
-        </label>
-
-        <div className="flex flex-wrap gap-3 text-[10px]">
-          {(['narration', 'music', 'sfx', 'interactions'] as const).map((key) => (
-            <label key={key} className="flex items-center gap-1.5 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={pendingStoryboard.featureFlags?.[key] ?? key === 'narration'}
-                onChange={() => toggleFlag(key)}
-                disabled={disabled}
-                className="rounded border-[var(--color-border)]"
-              />
-              <span className="text-[var(--color-text-primary)] capitalize">{key}</span>
-            </label>
-          ))}
+          <div className="flex gap-1 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+            {(['narration', 'music', 'sfx', 'interactions'] as const).map((key) => {
+              const available = featureAvailable[key] ?? true
+              const checked = available && (pendingStoryboard.featureFlags?.[key] ?? key === 'narration')
+              return (
+                <div key={key} className="sb-toggle">
+                  <label
+                    title={!available ? `No ${key} providers enabled` : undefined}
+                    className={`px-2.5 py-1.5 rounded-md text-[12px] border select-none transition-all ${
+                      !available
+                        ? 'opacity-40 cursor-not-allowed border-transparent'
+                        : checked
+                          ? 'bg-[var(--color-panel)] text-[var(--kbd-text)] border-[var(--color-border)] cursor-pointer'
+                          : 'text-[var(--color-text-muted)] border-transparent hover:text-[var(--kbd-text)] hover:bg-[var(--color-panel)]/50 cursor-pointer'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => available && toggleFlag(key)}
+                      disabled={disabled || !available}
+                    />
+                    <span className="rdo" />
+                    <span className="capitalize">{key}</span>
+                  </label>
+                </div>
+              )
+            })}
+          </div>
         </div>
+      </div>
 
-        <div className="space-y-2">
-          {pendingStoryboard.scenes.map((sc, idx) => (
-            <div
-              key={sc.id ?? idx}
-              className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] p-2 space-y-1.5"
-            >
-              <div className="flex items-center gap-1">
-                <span className="text-[10px] text-[var(--color-text-muted)] w-5">{idx + 1}</span>
-                <input
-                  value={sc.name}
-                  onChange={(e) => updateScene(idx, { name: e.target.value })}
-                  disabled={disabled}
-                  className="flex-1 min-w-0 px-1.5 py-1 rounded text-[11px] font-medium bg-[var(--color-panel)] border border-[var(--color-border)]"
-                  placeholder="Scene name"
-                />
-                {(() => {
-                  const proposed = findProposedScene(sc, idx)
-                  if (!proposed) return null
-                  if (proposed.name === sc.name) return null
-                  return (
-                    <span
-                      onClick={() => !disabled && updateScene(idx, { name: proposed.name })}
-                      className={`p-1 rounded ${disabled ? 'opacity-30' : 'hover:bg-[var(--color-border)]/40 cursor-pointer'}`}
-                      title="Revert scene name"
-                    >
-                      <RotateCcw size={14} />
-                    </span>
-                  )
-                })()}
-                <span
-                  onClick={() => !disabled && moveScene(idx, -1)}
-                  className={`p-1 rounded ${disabled ? 'opacity-30' : 'hover:bg-[var(--color-border)]/40 cursor-pointer'}`}
-                >
-                  <ChevronUp size={14} />
-                </span>
-                <span
-                  onClick={() => !disabled && moveScene(idx, 1)}
-                  className={`p-1 rounded ${disabled ? 'opacity-30' : 'hover:bg-[var(--color-border)]/40 cursor-pointer'}`}
-                >
-                  <ChevronDown size={14} />
-                </span>
-                <span
-                  onClick={() => !disabled && removeScene(idx)}
-                  className={`p-1 rounded text-red-400/80 ${disabled ? 'opacity-30' : 'hover:bg-red-500/15 cursor-pointer'}`}
-                >
-                  <X size={14} />
-                </span>
-                {(() => {
-                  const proposed = findProposedScene(sc, idx)
-                  if (!proposed) return null
-                  const changed =
-                    proposed.name !== sc.name ||
-                    proposed.purpose !== sc.purpose ||
-                    proposed.sceneType !== sc.sceneType ||
-                    proposed.duration !== sc.duration ||
-                    (proposed.transition ?? 'none') !== (sc.transition ?? 'none') ||
-                    (proposed.narrationDraft ?? '') !== (sc.narrationDraft ?? '') ||
-                    (proposed.visualElements ?? '') !== (sc.visualElements ?? '') ||
-                    (proposed.audioNotes ?? '') !== (sc.audioNotes ?? '') ||
-                    JSON.stringify(proposed.chartSpec ?? null) !== JSON.stringify(sc.chartSpec ?? null) ||
-                    (proposed.mediaLayers ?? '') !== (sc.mediaLayers ?? '') ||
-                    (proposed.cameraMovement ?? '') !== (sc.cameraMovement ?? '') ||
-                    (proposed.physicsSimulation ?? '') !== (sc.physicsSimulation ?? '') ||
-                    (proposed.worldEnvironment ?? '') !== (sc.worldEnvironment ?? '')
-                  if (!changed) return null
-                  return (
-                    <span
-                      onClick={() =>
-                        !disabled &&
-                        updateScene(idx, {
-                          name: proposed.name,
-                          purpose: proposed.purpose,
-                          sceneType: proposed.sceneType,
-                          duration: proposed.duration,
-                          transition: proposed.transition,
-                          narrationDraft: proposed.narrationDraft,
-                          visualElements: proposed.visualElements,
-                          audioNotes: proposed.audioNotes,
-                          chartSpec: proposed.chartSpec,
-                          mediaLayers: proposed.mediaLayers,
-                          cameraMovement: proposed.cameraMovement,
-                          physicsSimulation: proposed.physicsSimulation,
-                          worldEnvironment: proposed.worldEnvironment,
-                        })
-                      }
-                      className={`p-1 rounded ${disabled ? 'opacity-30' : 'hover:bg-[var(--color-border)]/40 cursor-pointer'}`}
-                      title="Revert entire scene to proposed"
-                    >
-                      <RotateCcw size={14} />
-                    </span>
-                  )
-                })()}
-              </div>
+      {/* ── Individual scene cards ── */}
+      {pendingStoryboard.scenes.map((sc, idx) => {
+        const sceneKey = sc.id ?? String(idx)
+        const proposed = findProposedScene(sc, idx)
+        const sceneChanged = proposed && (
+          proposed.name !== sc.name || proposed.purpose !== sc.purpose ||
+          proposed.sceneType !== sc.sceneType || proposed.duration !== sc.duration ||
+          (proposed.transition ?? 'none') !== (sc.transition ?? 'none') ||
+          (proposed.narrationDraft ?? '') !== (sc.narrationDraft ?? '') ||
+          (proposed.visualElements ?? '') !== (sc.visualElements ?? '') ||
+          (proposed.audioNotes ?? '') !== (sc.audioNotes ?? '') ||
+          (proposed.mediaLayers ?? '') !== (sc.mediaLayers ?? '') ||
+          (proposed.cameraMovement ?? '') !== (sc.cameraMovement ?? '') ||
+          (proposed.physicsSimulation ?? '') !== (sc.physicsSimulation ?? '') ||
+          (proposed.worldEnvironment ?? '') !== (sc.worldEnvironment ?? '') ||
+          JSON.stringify(proposed.chartSpec ?? null) !== JSON.stringify(sc.chartSpec ?? null)
+        )
+        return (
+          <div
+            key={sc.id ?? idx}
+            className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--color-border)' }}
+          >
+            {/* Scene header row */}
+            <div className="flex items-center gap-2 px-3 py-2 bg-[var(--color-panel)]">
+              <span className="text-[12px] text-[var(--color-text-muted)] tabular-nums">{idx + 1}</span>
+              <input
+                value={sc.name}
+                onChange={(e) => updateScene(idx, { name: e.target.value })}
+                disabled={disabled}
+                placeholder="Scene name"
+                className="flex-1 min-w-0 bg-transparent text-[13px] font-medium text-[var(--color-text-primary)] outline-none"
+              />
+              {proposed && proposed.name !== sc.name && revertBtn(() => updateScene(idx, { name: proposed.name }), 'Revert name')}
+              {sceneChanged && revertBtn(() => updateScene(idx, {
+                name: proposed!.name, purpose: proposed!.purpose, sceneType: proposed!.sceneType,
+                duration: proposed!.duration, transition: proposed!.transition,
+                narrationDraft: proposed!.narrationDraft, visualElements: proposed!.visualElements,
+                audioNotes: proposed!.audioNotes, chartSpec: proposed!.chartSpec,
+                mediaLayers: proposed!.mediaLayers, cameraMovement: proposed!.cameraMovement,
+                physicsSimulation: proposed!.physicsSimulation, worldEnvironment: proposed!.worldEnvironment,
+              }), 'Revert all', 16)}
+              <span
+                onClick={() => !disabled && moveScene(idx, -1)}
+                className={`p-0.5 rounded text-[var(--color-text-muted)] ${disabled ? 'opacity-30' : 'hover:text-[var(--color-text-primary)] cursor-pointer'}`}
+              >
+                <ChevronUp size={16} />
+              </span>
+              <span
+                onClick={() => !disabled && moveScene(idx, 1)}
+                className={`p-0.5 rounded text-[var(--color-text-muted)] ${disabled ? 'opacity-30' : 'hover:text-[var(--color-text-primary)] cursor-pointer'}`}
+              >
+                <ChevronDown size={16} />
+              </span>
+              <span
+                onClick={() => !disabled && removeScene(idx)}
+                className={`p-0.5 rounded text-red-400/60 ${disabled ? 'opacity-30' : 'hover:text-red-400 cursor-pointer'}`}
+              >
+                <X size={16} />
+              </span>
+            </div>
+            <div className="border-t border-[var(--color-border)]" />
+
+            {/* Card body */}
+            <div className="p-3 space-y-1.5">
               <textarea
                 value={sc.purpose}
                 onChange={(e) => updateScene(idx, { purpose: e.target.value })}
                 disabled={disabled}
-                rows={2}
-                className="w-full px-1.5 py-1 rounded text-[10px] bg-[var(--color-panel)] border border-[var(--color-border)] resize-y"
-                placeholder="Purpose / narrative beat"
-              />
-              {(() => {
-                const proposed = findProposedScene(sc, idx)
-                if (!proposed) return null
-                if (proposed.purpose === sc.purpose) return null
-                return (
-                  <div className="flex justify-end">
-                    <span
-                      onClick={() => !disabled && updateScene(idx, { purpose: proposed.purpose })}
-                      className={`p-1 rounded ${disabled ? 'opacity-30' : 'hover:bg-[var(--color-border)]/40 cursor-pointer'}`}
-                      title="Revert purpose"
-                    >
-                      <RotateCcw size={12} />
-                    </span>
-                  </div>
-                )
-              })()}
-              <div className="flex flex-wrap gap-2">
-                <select
-                  value={sc.sceneType}
-                  onChange={(e) => updateScene(idx, { sceneType: e.target.value })}
-                  disabled={disabled}
-                  className="px-1.5 py-1 rounded text-[10px] bg-[var(--color-panel)] border border-[var(--color-border)]"
-                >
-                  {SCENE_TYPES.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
-                    </option>
-                  ))}
-                </select>
-                {(() => {
-                  const proposed = findProposedScene(sc, idx)
-                  if (!proposed) return null
-                  if (proposed.sceneType === sc.sceneType) return null
-                  return (
-                    <span
-                      onClick={() => !disabled && updateScene(idx, { sceneType: proposed.sceneType })}
-                      className={`p-1 rounded ${disabled ? 'opacity-30' : 'hover:bg-[var(--color-border)]/40 cursor-pointer'}`}
-                      title="Revert scene type"
-                    >
-                      <RotateCcw size={12} />
-                    </span>
-                  )
-                })()}
-                <label className="flex items-center gap-1 text-[10px] text-[var(--color-text-muted)]">
-                  s
-                  <input
-                    type="number"
-                    min={6}
-                    max={30}
-                    value={sc.duration}
-                    onChange={(e) => updateScene(idx, { duration: Number(e.target.value) })}
-                    disabled={disabled}
-                    className="w-14 px-1 py-0.5 rounded text-[10px] bg-[var(--color-panel)] border border-[var(--color-border)]"
-                  />
-                  {(() => {
-                    const proposed = findProposedScene(sc, idx)
-                    if (!proposed) return null
-                    if (proposed.duration === sc.duration) return null
-                    return (
-                      <span
-                        onClick={() => !disabled && updateScene(idx, { duration: proposed.duration })}
-                        className={`p-1 rounded ${disabled ? 'opacity-30' : 'hover:bg-[var(--color-border)]/40 cursor-pointer'}`}
-                        title="Revert duration"
-                      >
-                        <RotateCcw size={12} />
-                      </span>
-                    )
-                  })()}
-                </label>
-                <select
-                  value={sc.transition ?? 'none'}
-                  onChange={(e) => updateScene(idx, { transition: e.target.value })}
-                  disabled={disabled}
-                  className="flex-1 min-w-[100px] px-1 py-1 rounded text-[10px] bg-[var(--color-panel)] border border-[var(--color-border)]"
-                >
-                  {ALL_TRANSITION_IDS.map((id) => (
-                    <option key={id} value={id}>
-                      {id}
-                    </option>
-                  ))}
-                </select>
-                {(() => {
-                  const proposed = findProposedScene(sc, idx)
-                  if (!proposed) return null
-                  const p = proposed.transition ?? 'none'
-                  const cur = sc.transition ?? 'none'
-                  if (p === cur) return null
-                  return (
-                    <span
-                      onClick={() => !disabled && updateScene(idx, { transition: proposed.transition })}
-                      className={`p-1 rounded ${disabled ? 'opacity-30' : 'hover:bg-[var(--color-border)]/40 cursor-pointer'}`}
-                      title="Revert transition"
-                    >
-                      <RotateCcw size={12} />
-                    </span>
-                  )
-                })()}
-              </div>
-              <textarea
-                value={sc.narrationDraft ?? ''}
-                onChange={(e) => updateScene(idx, { narrationDraft: e.target.value })}
-                disabled={disabled}
-                rows={2}
-                className="w-full px-1.5 py-1 rounded text-[10px] bg-[var(--color-panel)] border border-[var(--color-border)] resize-y"
-                placeholder="Narration draft (optional)"
-              />
-              {(() => {
-                const proposed = findProposedScene(sc, idx)
-                if (!proposed) return null
-                const p = proposed.narrationDraft ?? ''
-                const cur = sc.narrationDraft ?? ''
-                if (p === cur) return null
-                return (
-                  <div className="flex justify-end">
-                    <span
-                      onClick={() => !disabled && updateScene(idx, { narrationDraft: proposed.narrationDraft })}
-                      className={`p-1 rounded ${disabled ? 'opacity-30' : 'hover:bg-[var(--color-border)]/40 cursor-pointer'}`}
-                      title="Revert narration draft"
-                    >
-                      <RotateCcw size={12} />
-                    </span>
-                  </div>
-                )
-              })()}
-              <textarea
-                value={sc.visualElements ?? ''}
-                onChange={(e) => updateScene(idx, { visualElements: e.target.value })}
-                disabled={disabled}
                 rows={1}
-                className="w-full px-1.5 py-1 rounded text-[10px] bg-[var(--color-panel)] border border-[var(--color-border)] resize-y"
-                placeholder="Visual elements"
+                placeholder="Purpose / narrative beat"
+                className={textareaClass}
               />
-              {(() => {
-                const proposed = findProposedScene(sc, idx)
-                if (!proposed) return null
-                const p = proposed.visualElements ?? ''
-                const cur = sc.visualElements ?? ''
-                if (p === cur) return null
-                return (
-                  <div className="flex justify-end">
-                    <span
-                      onClick={() => !disabled && updateScene(idx, { visualElements: proposed.visualElements })}
-                      className={`p-1 rounded ${disabled ? 'opacity-30' : 'hover:bg-[var(--color-border)]/40 cursor-pointer'}`}
-                      title="Revert visual elements"
-                    >
-                      <RotateCcw size={12} />
-                    </span>
-                  </div>
-                )
-              })()}
-              {/* New storyboard fields — display as compact info badges */}
-              {(sc.mediaLayers || sc.cameraMovement || sc.physicsSimulation || sc.worldEnvironment) && (
-                <div className="flex flex-wrap gap-1 mt-1">
-                  {sc.mediaLayers && (
-                    <span
-                      className="text-[9px] px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-300 border border-purple-500/25"
-                      title={sc.mediaLayers}
-                    >
-                      Media: {sc.mediaLayers.length > 40 ? sc.mediaLayers.slice(0, 40) + '…' : sc.mediaLayers}
-                    </span>
-                  )}
-                  {sc.cameraMovement && (
-                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-300 border border-blue-500/25">
-                      Camera: {sc.cameraMovement}
-                    </span>
-                  )}
-                  {sc.physicsSimulation && (
-                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-green-500/15 text-green-300 border border-green-500/25">
-                      Sim: {sc.physicsSimulation}
-                    </span>
-                  )}
-                  {sc.worldEnvironment && (
-                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/25">
-                      Env: {sc.worldEnvironment}
-                    </span>
-                  )}
-                </div>
-              )}
+              <div className="flex items-center">
+                <span className="text-[12px] text-[var(--color-text-muted)]">
+                  {sc.sceneType} · {sc.duration}s{sc.transition && sc.transition !== 'none' ? ` · ${sc.transition}` : ''}
+                </span>
+                <span
+                  onClick={() => setExpandedSceneId(expandedSceneId === sceneKey ? null : sceneKey)}
+                  className={`ml-auto p-0.5 rounded text-[var(--color-text-muted)] ${disabled ? 'opacity-30' : 'hover:text-[var(--color-text-primary)] cursor-pointer'}`}
+                >
+                  <MoreHorizontal size={16} />
+                </span>
+              </div>
             </div>
-          ))}
-        </div>
 
-        <button
-          type="button"
-          onClick={addScene}
-          disabled={disabled}
-          className="text-[10px] font-medium px-2 py-1 rounded-md border border-[var(--color-border)] hover:bg-[var(--color-border)]/20 disabled:opacity-40"
-        >
-          + Add scene
-        </button>
-      </div>
+            {/* Expanded dropdown */}
+            {expandedSceneId === sceneKey && (
+              <>
+                <div className="border-t border-[var(--color-border)]" />
+                <div className="p-3 space-y-2.5">
+                  {/* Timing */}
+                  <div className="space-y-1.5">
+                    <span className="text-[12px] text-[var(--color-text-muted)] uppercase tracking-wide">Timing</span>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={sc.sceneType}
+                        onChange={(e) => updateScene(idx, { sceneType: e.target.value })}
+                        disabled={disabled}
+                        className="bg-transparent text-[12px] text-[var(--color-text-secondary)] outline-none cursor-pointer"
+                      >
+                        {SCENE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                      <span className="text-[var(--color-text-muted)]/30">·</span>
+                      <input
+                        type="number"
+                        min={6}
+                        max={30}
+                        value={sc.duration}
+                        onChange={(e) => updateScene(idx, { duration: Number(e.target.value) })}
+                        disabled={disabled}
+                        className="w-9 bg-transparent text-[12px] text-[var(--color-text-secondary)] outline-none tabular-nums"
+                      />
+                      <span className="text-[12px] text-[var(--color-text-muted)]/50">s</span>
+                      <span className="text-[var(--color-text-muted)]/30">·</span>
+                      <select
+                        value={sc.transition ?? 'none'}
+                        onChange={(e) => updateScene(idx, { transition: e.target.value })}
+                        disabled={disabled}
+                        className="bg-transparent text-[12px] text-[var(--color-text-secondary)] outline-none cursor-pointer"
+                      >
+                        {ALL_TRANSITION_IDS.map((id) => <option key={id} value={id}>{id}</option>)}
+                      </select>
+                    </div>
+                  </div>
 
-      <div className="flex items-center gap-2 px-3 py-2 border-t border-cyan-500/25 bg-[var(--color-bg)]">
+                  {/* Content */}
+                  <div className="space-y-1.5">
+                    <span className="text-[12px] text-[var(--color-text-muted)] uppercase tracking-wide">Content</span>
+                    <textarea
+                      value={sc.narrationDraft ?? ''}
+                      onChange={(e) => updateScene(idx, { narrationDraft: e.target.value })}
+                      disabled={disabled}
+                      rows={1}
+                      placeholder="Narration"
+                      className={textareaClass}
+                    />
+                    <textarea
+                      value={sc.visualElements ?? ''}
+                      onChange={(e) => updateScene(idx, { visualElements: e.target.value })}
+                      disabled={disabled}
+                      rows={1}
+                      placeholder="Visual elements"
+                      className={textareaClass}
+                    />
+                    <textarea
+                      value={sc.audioNotes ?? ''}
+                      onChange={(e) => updateScene(idx, { audioNotes: e.target.value })}
+                      disabled={disabled}
+                      rows={1}
+                      placeholder="Audio notes"
+                      className={textareaClass}
+                    />
+                  </div>
+
+                  {/* Advanced */}
+                  <div className="space-y-1.5">
+                    <span className="text-[12px] text-[var(--color-text-muted)] uppercase tracking-wide">Advanced</span>
+                    <textarea
+                      value={sc.mediaLayers ?? ''}
+                      onChange={(e) => updateScene(idx, { mediaLayers: e.target.value })}
+                      disabled={disabled}
+                      rows={1}
+                      placeholder="Media layers"
+                      className={textareaClass}
+                    />
+                    <textarea
+                      value={sc.cameraMovement ?? ''}
+                      onChange={(e) => updateScene(idx, { cameraMovement: e.target.value })}
+                      disabled={disabled}
+                      rows={1}
+                      placeholder="Camera movement"
+                      className={textareaClass}
+                    />
+                    <textarea
+                      value={sc.physicsSimulation ?? ''}
+                      onChange={(e) => updateScene(idx, { physicsSimulation: e.target.value })}
+                      disabled={disabled}
+                      rows={1}
+                      placeholder="Physics simulation"
+                      className={textareaClass}
+                    />
+                    <textarea
+                      value={sc.worldEnvironment ?? ''}
+                      onChange={(e) => updateScene(idx, { worldEnvironment: e.target.value })}
+                      disabled={disabled}
+                      rows={1}
+                      placeholder="World environment"
+                      className={textareaClass}
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )
+      })}
+
+      {/* ── Actions row ── */}
+      <div className="flex items-center gap-2">
         <span
-          onClick={() => {
+          role="button"
+          tabIndex={0}
+          title="Add scene"
+          onClick={() => !disabled && addScene()}
+          onKeyDown={(e) => {
             if (disabled) return
-            setPendingStoryboard(null)
-            setStoryboardProposed(null)
-            if (projectId) {
-              fetch(`/api/projects/${projectId}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  storyboardProposed: null,
-                  storyboardEdited: null,
-                }),
-              }).catch(() => {})
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              addScene()
             }
           }}
-          className={`text-[11px] font-semibold px-2.5 py-1.5 rounded-md border border-[var(--color-border)] ${disabled ? 'opacity-40' : 'cursor-pointer hover:bg-[var(--color-border)]/25'}`}
+          className={`text-[12px] text-[var(--color-text-muted)] ${disabled ? 'opacity-40' : 'cursor-pointer hover:text-[var(--color-text-primary)]'}`}
         >
-          Discard
+          + Scene
         </span>
-        <span
-          onClick={() => !disabled && onApprove()}
-          className={`ml-auto flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-md bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 ${disabled ? 'opacity-40' : 'cursor-pointer hover:bg-cyan-500/30'}`}
-        >
-          <CheckCircle2 size={14} />
-          Approve &amp; build
-        </span>
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={discardStoryboard}
+            title={`Cancel (Esc or ${modKey}+.)`}
+            className="no-style inline-flex items-center !h-auto !min-h-9 !max-h-none !py-1.5 !px-4 !leading-none !font-medium !gap-2.5 !rounded-xl !border !border-solid !border-[1px] !border-[var(--color-border)] !bg-[var(--color-panel)] !text-[var(--color-text-muted)] transition-colors enabled:hover:!text-[var(--color-text-primary)] enabled:hover:!bg-[var(--color-border)]/25 disabled:!cursor-not-allowed disabled:!opacity-40"
+          >
+            <span className="text-[14px]">Cancel</span>
+            <span
+              className="inline-flex items-center gap-0.5 text-[12px] font-medium text-[var(--color-text-muted)] opacity-70"
+              aria-hidden
+            >
+              <span>Esc</span>
+              <span className="text-[var(--color-text-muted)] opacity-50">·</span>
+              <span>{modKey}</span>
+            </span>
+          </button>
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => onApprove()}
+            title="Create (Enter or ⌘↵)"
+            className="storyboard-create-btn-glow no-style inline-flex items-center !h-auto !min-h-9 !max-h-none !py-1.5 !px-4 !leading-none !font-medium !gap-2.5 !rounded-xl !border !border-solid !border-[1px] !border-[#b8c9d9] !bg-[#94a3b8] !text-[#141820] transition-colors hover:!border-[#c9d8e6] hover:!bg-[#8699af] disabled:!cursor-not-allowed disabled:!opacity-40"
+          >
+            <span className="text-[14px] font-semibold">Create</span>
+            <span
+              className="inline-flex items-center gap-1 text-[15px] font-semibold tabular-nums text-[#141820]/80"
+              aria-hidden
+            >
+              <span>{modKey}</span>
+              <span>↵</span>
+            </span>
+          </button>
+        </div>
       </div>
     </div>
   )

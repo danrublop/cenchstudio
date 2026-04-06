@@ -4,11 +4,22 @@ import fs from 'fs/promises'
 import path from 'path'
 import os from 'os'
 import type { TTSProviderInterface, TTSParams, TTSResult, Voice } from '../types'
+import { safeAudioFilename } from '../sanitize'
 
 const execFileAsync = promisify(execFile)
 
 function sanitizeText(text: string): string {
   return text.replace(/[\x00-\x1f]/g, ' ')
+}
+
+/** Only allow safe characters in voice IDs to prevent shell/PowerShell injection */
+function sanitizeVoiceId(id: string): string {
+  // Real voice names are alphanumeric with spaces, hyphens, periods, and underscores
+  const cleaned = id.replace(/[^a-zA-Z0-9 \-_.]/g, '')
+  if (cleaned !== id) {
+    console.warn(`[native-tts] Stripped unsafe characters from voiceId: "${id}" -> "${cleaned}"`)
+  }
+  return cleaned
 }
 
 async function ffmpegConvert(input: string, output: string): Promise<void> {
@@ -24,7 +35,7 @@ function estimateDuration(mp3Bytes: number): number {
 // ── macOS ────────────────────────────────────────────────────────────────────
 
 async function generateMac(params: TTSParams, outMp3: string): Promise<number> {
-  const voice = params.voiceId || 'Samantha'
+  const voice = sanitizeVoiceId(params.voiceId || 'Samantha')
   const tmpAiff = path.join(os.tmpdir(), `native-tts-${Date.now()}.aiff`)
   try {
     await execFileAsync('say', ['-v', voice, '-o', tmpAiff, sanitizeText(params.text)], { timeout: 60_000 })
@@ -59,7 +70,7 @@ async function listVoicesMac(): Promise<Voice[]> {
 // ── Windows ──────────────────────────────────────────────────────────────────
 
 async function generateWin(params: TTSParams, outMp3: string): Promise<number> {
-  const voice = params.voiceId || ''
+  const voice = sanitizeVoiceId(params.voiceId || '')
   const tmpWav = path.join(os.tmpdir(), `native-tts-${Date.now()}.wav`)
   const escapedText = sanitizeText(params.text).replace(/'/g, "''")
   const selectVoice = voice ? `$synth.SelectVoice('${voice.replace(/'/g, "''")}')` : ''
@@ -126,7 +137,7 @@ export const nativeTTS: TTSProviderInterface = {
 
     const audioDir = path.join(process.cwd(), 'public', 'audio')
     await fs.mkdir(audioDir, { recursive: true })
-    const filename = `tts-${params.sceneId}-${Date.now()}.mp3`
+    const filename = safeAudioFilename('tts', params.sceneId, 'mp3')
     const outMp3 = path.join(audioDir, filename)
 
     const duration = platform === 'darwin' ? await generateMac(params, outMp3) : await generateWin(params, outMp3)

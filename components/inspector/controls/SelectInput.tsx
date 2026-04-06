@@ -16,7 +16,7 @@ export function SelectInput({ label, value, options, optionLabels, onChange }: P
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="bg-[var(--color-input-bg,#1a1a1f)] border border-[var(--color-border,#2a2a32)] rounded text-[var(--color-text-primary,#f0ece0)] text-[10px] font-mono px-1.5 py-1 cursor-pointer min-w-[80px]"
+        className="bg-[var(--color-input-bg,#1a1a1f)] border border-[var(--color-border,#2a2a32)] rounded text-[var(--color-text-primary,#f0ece0)] text-[11px] font-mono px-1.5 py-1 cursor-pointer min-w-[80px]"
       >
         {options.map((opt, i) => (
           <option key={opt} value={opt}>

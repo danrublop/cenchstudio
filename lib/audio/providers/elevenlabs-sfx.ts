@@ -1,5 +1,6 @@
 import fs from 'fs/promises'
 import path from 'path'
+import crypto from 'crypto'
 import type { SFXProviderInterface, SFXResult } from '../types'
 
 const API_BASE = 'https://api.elevenlabs.io/v1'
@@ -37,7 +38,8 @@ async function generateSFX(prompt: string, duration?: number): Promise<SFXResult
   await fs.mkdir(audioDir, { recursive: true })
 
   const timestamp = Date.now()
-  const filename = `sfx-generated-${timestamp}.mp3`
+  const rand = crypto.randomBytes(4).toString('hex')
+  const filename = `sfx-generated-${timestamp}-${rand}.mp3`
   const filePath = path.join(audioDir, filename)
   await fs.writeFile(filePath, audioBuffer)
 

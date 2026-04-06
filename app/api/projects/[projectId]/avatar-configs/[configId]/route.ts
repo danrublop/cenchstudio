@@ -2,13 +2,22 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { avatarConfigs } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
+import { assertProjectAccess } from '@/lib/auth-helpers'
 
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ projectId: string; configId: string }> },
 ) {
   const { projectId, configId } = await params
-  const body = await req.json()
+  const access = await assertProjectAccess(projectId)
+  if (access.error) return access.error
+
+  let body: any
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+  }
   const { provider, name, config, isDefault, thumbnailUrl } = body
 
   // If setting as default, clear existing defaults first
@@ -41,6 +50,8 @@ export async function DELETE(
   { params }: { params: Promise<{ projectId: string; configId: string }> },
 ) {
   const { projectId, configId } = await params
+  const access = await assertProjectAccess(projectId)
+  if (access.error) return access.error
 
   const [deleted] = await db
     .delete(avatarConfigs)

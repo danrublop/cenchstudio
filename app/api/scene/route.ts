@@ -8,6 +8,8 @@ import { v4 as uuidv4 } from 'uuid'
 import { normalizeTransition } from '@/lib/transitions'
 import { readProjectSceneBlob, writeProjectSceneBlob } from '@/lib/db/project-scene-storage'
 import { readProjectScenesFromTables, writeProjectScenesToTables } from '@/lib/db/project-scene-table'
+import { assertProjectAccess } from '@/lib/auth-helpers'
+import { LIMITS, VALID_SCENE_TYPES } from '@/lib/api/constants'
 
 // ── GET /api/scene ────────────────────────────────────────────────────────────
 // ?projectId=X           → list scenes from the project's JSONB blob
@@ -22,6 +24,9 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    const access = await assertProjectAccess(projectId)
+    if (access.error) return access.error
+
     const [project] = await db
       .select({ description: schema.projects.description })
       .from(schema.projects)
@@ -56,7 +61,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ scenes: summaries })
   } catch (err) {
     console.error('[GET /api/scene]', err)
-    return NextResponse.json({ error: String(err) }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to fetch scenes' }, { status: 500 })
   }
 }
 
@@ -100,7 +105,7 @@ export async function POST(req: NextRequest) {
     // Mode 1: SDK — create scene in project JSONB
     const {
       projectId,
-      name = 'Untitled Scene',
+      name: rawName = 'Untitled Scene',
       type = 'svg',
       prompt = '',
       generatedCode,
@@ -114,9 +119,30 @@ export async function POST(req: NextRequest) {
       transition: bodyTransition,
     } = body
 
+    const name = typeof rawName === 'string' ? rawName.slice(0, LIMITS.MAX_NAME_LENGTH) : 'Untitled Scene'
+
     if (!projectId) {
       return NextResponse.json({ error: 'projectId is required' }, { status: 400 })
     }
+
+    // Validate scene type
+    if (type && !(VALID_SCENE_TYPES as readonly string[]).includes(type)) {
+      return NextResponse.json({ error: `Invalid scene type: ${type}` }, { status: 400 })
+    }
+
+    // Validate code size
+    const code_raw = svgContent ?? generatedCode ?? ''
+    if (typeof code_raw === 'string' && code_raw.length > LIMITS.MAX_CODE_SIZE) {
+      return NextResponse.json({ error: `Code exceeds ${LIMITS.MAX_CODE_SIZE / 1024 / 1024}MB limit` }, { status: 413 })
+    }
+
+    // Validate duration
+    if (typeof duration === 'number' && (duration < LIMITS.MIN_SCENE_DURATION || duration > LIMITS.MAX_SCENE_DURATION)) {
+      return NextResponse.json({ error: `Duration must be between ${LIMITS.MIN_SCENE_DURATION} and ${LIMITS.MAX_SCENE_DURATION} seconds` }, { status: 400 })
+    }
+
+    const access = await assertProjectAccess(projectId)
+    if (access.error) return access.error
 
     // Load existing project
     const [project] = await db.select().from(schema.projects).where(eq(schema.projects.id, projectId)).limit(1)
@@ -194,7 +220,13 @@ export async function POST(req: NextRequest) {
     }
 
     if (bodyAudioLayer && typeof bodyAudioLayer === 'object' && !Array.isArray(bodyAudioLayer)) {
-      newScene.audioLayer = { ...newScene.audioLayer, ...bodyAudioLayer }
+      // Allowlist keys to prevent merging unexpected properties
+      const AUDIO_KEYS = ['enabled', 'src', 'volume', 'fadeIn', 'fadeOut', 'startOffset'] as const
+      const safeAudio: Record<string, unknown> = {}
+      for (const k of AUDIO_KEYS) {
+        if (k in bodyAudioLayer) safeAudio[k] = bodyAudioLayer[k]
+      }
+      newScene.audioLayer = { ...newScene.audioLayer, ...safeAudio }
     }
 
     if (type === 'd3' && Array.isArray(bodyChartLayers) && bodyChartLayers.length > 0) {
@@ -219,7 +251,7 @@ export async function POST(req: NextRequest) {
       sceneGraph.startSceneId = sceneId
     }
 
-    // Generate and write HTML first (idempotent — safe to retry if DB step fails)
+    // Generate HTML (but write DB first to avoid orphaned HTML on conflict)
     const { generateSceneHTML } = await import('@/lib/sceneTemplate')
     const html = generateSceneHTML(
       newScene as any,
@@ -227,16 +259,8 @@ export async function POST(req: NextRequest) {
       undefined,
       project.audioSettings ?? undefined,
     )
-    const scenesDir = path.join(process.cwd(), 'public', 'scenes')
-    try {
-      await fs.mkdir(scenesDir, { recursive: true })
-      await fs.writeFile(path.join(scenesDir, `${sceneId}.html`), html, 'utf-8')
-    } catch (e) {
-      console.error(`[POST /api/scene] Failed to write HTML for scene ${sceneId}:`, e)
-      return NextResponse.json({ error: `Failed to write scene HTML: ${(e as Error).message}` }, { status: 500 })
-    }
 
-    // Save to project JSONB with optimistic locking
+    // Save to project JSONB with optimistic locking (DB first — source of truth)
     const currentVersion = project.version ?? 1
     const [updated] = await db
       .update(schema.projects)
@@ -250,6 +274,16 @@ export async function POST(req: NextRequest) {
 
     if (!updated) {
       return NextResponse.json({ error: 'Conflict: project was modified concurrently. Please retry.' }, { status: 409 })
+    }
+
+    // Write HTML to disk (safe to retry — DB is already committed)
+    const scenesDir = path.join(process.cwd(), 'public', 'scenes')
+    try {
+      await fs.mkdir(scenesDir, { recursive: true })
+      await fs.writeFile(path.join(scenesDir, `${sceneId}.html`), html, 'utf-8')
+    } catch (e) {
+      console.error(`[POST /api/scene] Failed to write HTML for scene ${sceneId}:`, e)
+      // DB is saved — HTML can be regenerated on next load, so don't fail the request
     }
 
     try {
@@ -271,7 +305,7 @@ export async function POST(req: NextRequest) {
     })
   } catch (err: unknown) {
     console.error('[POST /api/scene]', err)
-    const message = err instanceof Error ? err.message : 'Internal error'
+    const message = err instanceof Error ? err.message.slice(0, 200) : 'Internal error'
     return NextResponse.json({ error: message }, { status: 500 })
   }
 }
@@ -297,11 +331,36 @@ export async function PATCH(req: NextRequest) {
       name: sceneName,
       audioLayer: bodyAudioLayer,
       aiLayers: bodyAiLayers,
+      sceneType: bodySceneType,
     } = body
 
     if (!projectId || !sceneId) {
       return NextResponse.json({ error: 'projectId and sceneId are required' }, { status: 400 })
     }
+
+    // Validate scene type if provided
+    if (bodySceneType && !(VALID_SCENE_TYPES as readonly string[]).includes(bodySceneType)) {
+      return NextResponse.json({ error: `Invalid scene type: ${bodySceneType}` }, { status: 400 })
+    }
+
+    // Validate code size
+    const rawCode = svgContent ?? generatedCode
+    if (typeof rawCode === 'string' && rawCode.length > LIMITS.MAX_CODE_SIZE) {
+      return NextResponse.json({ error: `Code exceeds ${LIMITS.MAX_CODE_SIZE / 1024 / 1024}MB limit` }, { status: 413 })
+    }
+
+    // Validate duration if provided
+    if (duration !== undefined && typeof duration === 'number' && (duration < LIMITS.MIN_SCENE_DURATION || duration > LIMITS.MAX_SCENE_DURATION)) {
+      return NextResponse.json({ error: `Duration must be between ${LIMITS.MIN_SCENE_DURATION} and ${LIMITS.MAX_SCENE_DURATION} seconds` }, { status: 400 })
+    }
+
+    // Cap name length if provided
+    if (sceneName !== undefined && typeof sceneName === 'string' && sceneName.length > LIMITS.MAX_NAME_LENGTH) {
+      return NextResponse.json({ error: `Name exceeds ${LIMITS.MAX_NAME_LENGTH} character limit` }, { status: 400 })
+    }
+
+    const patchAccess = await assertProjectAccess(projectId)
+    if (patchAccess.error) return patchAccess.error
 
     const code = svgContent ?? generatedCode
     const hasPropertyUpdate =
@@ -313,7 +372,8 @@ export async function PATCH(req: NextRequest) {
       duration !== undefined ||
       sceneName !== undefined ||
       bodyAudioLayer !== undefined ||
-      bodyAiLayers !== undefined
+      bodyAiLayers !== undefined ||
+      bodySceneType !== undefined
     if (!code && !hasPropertyUpdate) {
       return NextResponse.json(
         { error: 'generatedCode, svgContent, or a scene property update is required' },
@@ -338,6 +398,15 @@ export async function PATCH(req: NextRequest) {
 
     // Update the scene's code
     const scene = scenes[sceneIdx]
+
+    if (typeof bodySceneType === 'string' && bodySceneType.length > 0) {
+      scene.sceneType = bodySceneType
+      if (bodySceneType === 'three') {
+        scene.sceneHTML = ''
+        scene.sceneStyles = ''
+      }
+    }
+
     const sceneType = scene.sceneType || 'svg'
 
     if (code) {
@@ -377,7 +446,7 @@ export async function PATCH(req: NextRequest) {
 
     scenes[sceneIdx] = scene
 
-    // Regenerate HTML first (idempotent — safe to retry if DB step fails)
+    // Regenerate HTML
     const { generateSceneHTML } = await import('@/lib/sceneTemplate')
     let html: string
     try {
@@ -390,23 +459,12 @@ export async function PATCH(req: NextRequest) {
     } catch (genErr) {
       console.error(`[PATCH /api/scene] generateSceneHTML failed:`, genErr)
       return NextResponse.json(
-        {
-          error: `HTML generation failed: ${(genErr as Error).message}`,
-          stack: (genErr as Error).stack?.split('\n').slice(0, 5),
-        },
+        { error: `HTML generation failed: ${(genErr as Error).message}` },
         { status: 500 },
       )
     }
-    const scenesDir = path.join(process.cwd(), 'public', 'scenes')
-    try {
-      await fs.mkdir(scenesDir, { recursive: true })
-      await fs.writeFile(path.join(scenesDir, `${sceneId}.html`), html, 'utf-8')
-    } catch (e) {
-      console.error(`[PATCH /api/scene] Failed to write HTML for scene ${sceneId}:`, e)
-      return NextResponse.json({ error: `Failed to write scene HTML: ${(e as Error).message}` }, { status: 500 })
-    }
 
-    // Save to DB with optimistic locking
+    // Save to DB first with optimistic locking (source of truth)
     const currentVersion = project.version ?? 1
     const [updated] = await db
       .update(schema.projects)
@@ -420,6 +478,16 @@ export async function PATCH(req: NextRequest) {
 
     if (!updated) {
       return NextResponse.json({ error: 'Conflict: project was modified concurrently. Please retry.' }, { status: 409 })
+    }
+
+    // Write HTML to disk (safe to retry — DB already committed)
+    const scenesDir = path.join(process.cwd(), 'public', 'scenes')
+    try {
+      await fs.mkdir(scenesDir, { recursive: true })
+      await fs.writeFile(path.join(scenesDir, `${sceneId}.html`), html, 'utf-8')
+    } catch (e) {
+      // DB is saved — HTML can be regenerated on next load, so log but don't fail
+      console.error(`[PATCH /api/scene] Failed to write HTML for scene ${sceneId}:`, e)
     }
 
     try {
@@ -437,6 +505,6 @@ export async function PATCH(req: NextRequest) {
     })
   } catch (err) {
     console.error('[PATCH /api/scene]', err)
-    return NextResponse.json({ error: String(err) }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to update scene' }, { status: 500 })
   }
 }

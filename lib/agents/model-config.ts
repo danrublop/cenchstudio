@@ -318,3 +318,43 @@ export function getModelsByProvider(models: ModelConfig[] = DEFAULT_MODELS): Rec
   }
   return result
 }
+
+/**
+ * Resolve API / persisted model id to the configured display label (e.g. claude-sonnet-4-6 → "Sonnet 4.6").
+ */
+export function resolveAgentModelDisplayName(
+  raw: string | undefined | null,
+  configs?: readonly ModelConfig[] | null,
+): string {
+  if (raw == null || String(raw).trim() === '') return ''
+
+  const match = (m: ModelConfig, id: string) =>
+    m.modelId === id || m.id === id || (m.localModelName != null && m.localModelName === id)
+
+  const lookup = (id: string): string | null => {
+    if (configs?.length) {
+      const fromStore = configs.find((m) => match(m, id))
+      if (fromStore?.displayName) return fromStore.displayName
+    }
+    const builtIn = DEFAULT_MODELS.find((m) => match(m, id))
+    return builtIn?.displayName ?? null
+  }
+
+  const r = String(raw)
+  const direct = lookup(r)
+  if (direct) return direct
+
+  const stripDate = r.replace(/-\d{8}$/, '')
+  if (stripDate !== r) {
+    const d = lookup(stripDate)
+    if (d) return d
+  }
+
+  const noPrefix = r.replace(/^claude-/, '')
+  if (noPrefix !== r) {
+    const p = lookup(`claude-${noPrefix}`)
+    if (p) return p
+  }
+
+  return r.replace(/^claude-/, '').replace(/-\d{8}$/, '')
+}

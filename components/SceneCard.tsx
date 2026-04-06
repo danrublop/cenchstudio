@@ -75,7 +75,7 @@ export default function SceneCard({ scene, index, isSelected, isDragging }: Prop
             </div>
           ) : (
             <div className="w-full h-full flex items-center justify-center">
-              <span className="text-white/10 text-[10px] uppercase font-bold tracking-widest">Empty Scene</span>
+              <span className="text-white/10 text-[11px] uppercase font-bold tracking-widest">Empty Scene</span>
             </div>
           )}
 
@@ -117,7 +117,7 @@ export default function SceneCard({ scene, index, isSelected, isDragging }: Prop
                 className="rounded-md h-5 px-1.5 flex items-center justify-center"
                 style={{ backgroundColor: (TYPE_BADGE[scene.sceneType ?? 'svg'] ?? { color: '#6b7280' }).color }}
               >
-                <span className="text-[9px] font-bold text-white leading-none">
+                <span className="text-[10px] font-bold text-white leading-none">
                   {(TYPE_BADGE[scene.sceneType ?? 'svg'] ?? { label: scene.sceneType }).label}
                 </span>
               </div>
@@ -143,7 +143,7 @@ export default function SceneCard({ scene, index, isSelected, isDragging }: Prop
           <div className="context-menu" style={{ left: contextMenu.x, top: contextMenu.y }}>
             {showDeleteConfirm ? (
               <div className="p-1">
-                <div className="px-3 py-2 text-[10px] uppercase font-bold text-[#e84545] text-center border-b border-white/5 mb-1 tracking-widest">
+                <div className="px-3 py-2 text-[11px] uppercase font-bold text-[#e84545] text-center border-b border-white/5 mb-1 tracking-widest">
                   Are you sure?
                 </div>
                 <button

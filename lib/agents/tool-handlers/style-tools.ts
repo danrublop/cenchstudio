@@ -2,11 +2,11 @@ import { normalizeTransition } from '@/lib/transitions'
 import { FONT_FAMILIES, isValidFont } from '@/lib/fonts/catalog'
 import { SCENE_STYLE_PRESETS } from '@/lib/styles/scene-presets'
 import type { AgentLogger } from '@/lib/agents/logger'
-import type { ToolResult } from '@/lib/agents/types'
-import type { GlobalStyle, Scene, SceneStyleOverride } from '@/lib/types'
+import type { GlobalStyle, SceneStyleOverride } from '@/lib/types'
 import type { SceneStylePresetName } from '@/lib/types'
 import type { StylePresetId } from '@/lib/styles/presets'
 import type { WorldStateMutable } from '@/lib/agents/tool-executor'
+import { ok, err, findScene, updateScene, type ToolResult } from './_shared'
 
 export const STYLE_TOOL_NAMES = [
   'set_camera_motion',
@@ -16,36 +16,6 @@ export const STYLE_TOOL_NAMES = [
   'set_scene_style',
   'style_scene',
 ] as const
-
-function ok(affectedSceneId: string | null, description: string, data?: unknown): ToolResult {
-  return {
-    success: true,
-    affectedSceneId,
-    changes: [
-      {
-        type: affectedSceneId ? 'scene_updated' : 'global_updated',
-        sceneId: affectedSceneId ?? undefined,
-        description,
-      },
-    ],
-    data,
-  }
-}
-
-function err(message: string): ToolResult {
-  return { success: false, error: message }
-}
-
-function findScene(world: WorldStateMutable, sceneId: string): Scene | undefined {
-  return world.scenes.find((s) => s.id === sceneId)
-}
-
-function updateScene(world: WorldStateMutable, sceneId: string, updates: Partial<Scene>): Scene | null {
-  const idx = world.scenes.findIndex((s) => s.id === sceneId)
-  if (idx === -1) return null
-  world.scenes[idx] = { ...world.scenes[idx], ...updates }
-  return world.scenes[idx]
-}
 
 export function createStyleToolHandler(deps: {
   regenerateHTML: (world: WorldStateMutable, sceneId: string, logger?: AgentLogger) => Promise<{ htmlWritten: boolean }>

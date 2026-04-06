@@ -2,9 +2,11 @@
 
 import dynamic from 'next/dynamic'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Play, Pause, RotateCcw, Layers, SquareDashedMousePointer, AlignStartVertical } from 'lucide-react'
+import { Play, Pause, RotateCcw, Layers, SquareDashedMousePointer, AlignStartVertical, SlidersHorizontal } from 'lucide-react'
 import { useVideoStore } from '@/lib/store'
 import Timeline from './timeline'
+import StudioRecordPreview from './recording/StudioRecordPreview'
+import RecordingControlPanel from './recording/RecordingControlPanel'
 import ZdogViewport from './zdog-studio/ZdogViewport'
 import ZdogProperties from './zdog-studio/ZdogProperties'
 import SvgObjectEditor from './SvgObjectEditor'
@@ -53,6 +55,7 @@ export default function PreviewPlayer() {
     setPreviewFullscreen,
     setPreviewZoom,
     zdogStudioMode,
+    studioRecordMode,
     compositorPreview,
   } = useVideoStore()
   const outputMode = project.outputMode
@@ -79,7 +82,18 @@ export default function PreviewPlayer() {
   // seekTimes removed — GSAP seek via postMessage replaces ?t= URL params
   const [sceneVersions, setSceneVersions] = useState<Record<string, number>>({})
   const [loadedScenes, setLoadedScenes] = useState<Set<string>>(new Set())
+  const [failedScenes, setFailedScenes] = useState<Set<string>>(new Set())
+  const sceneWriteErrors = useVideoStore((s) => s.sceneWriteErrors)
   const [timelineView, setTimelineView] = useState<'track' | 'graph'>('track')
+  const [bottomTab, setBottomTab] = useState<'controls' | 'timeline'>('controls')
+
+  // Reset to controls tab when entering studio mode
+  useEffect(() => {
+    if (studioRecordMode) {
+      console.log('[PreviewPlayer] Studio record mode activated, timelineHeight:', timelineHeight)
+      setBottomTab('controls')
+    }
+  }, [studioRecordMode, timelineHeight])
   const [zoom, setZoom] = useState(1)
   useEffect(() => {
     setPreviewZoom(zoom)
@@ -1033,27 +1047,68 @@ export default function PreviewPlayer() {
         {scenes.map((scene) => {
           const src = getSceneSrc(scene)
           if (!src) return null
+          const isSelected = !compositorPreview && scene.id === selectedSceneId
+          const hasError = failedScenes.has(scene.id) || !!sceneWriteErrors[scene.id]
           return (
-            <iframe
-              key={scene.id}
-              ref={(el) => {
-                iframeMapRef.current[scene.id] = el
-              }}
-              data-scene-id={scene.id}
-              src={src}
-              className="scene-iframe absolute inset-0 h-full w-full max-h-full max-w-full border-0 outline-none ring-0"
-              style={{
-                // visibility (not display:none) — hidden iframes still run media; we pause non-selected via pauseAllScenes
-                visibility: !compositorPreview && scene.id === selectedSceneId ? 'visible' : 'hidden',
-                zIndex: scene.id === selectedSceneId ? 2 : 1,
-                pointerEvents: !compositorPreview && scene.id === selectedSceneId ? 'auto' : 'none',
-                background: scene.bgColor ?? '#fffef9',
-              }}
-              onLoad={() => handleSceneLoad(scene.id)}
-              allow="autoplay; fullscreen"
-              sandbox="allow-scripts allow-same-origin allow-autoplay"
-              title={`Scene ${scene.id}`}
-            />
+            <div key={scene.id} className="absolute inset-0" style={{
+              visibility: isSelected ? 'visible' : 'hidden',
+              zIndex: scene.id === selectedSceneId ? 2 : 1,
+            }}>
+              <iframe
+                ref={(el) => {
+                  iframeMapRef.current[scene.id] = el
+                }}
+                data-scene-id={scene.id}
+                src={src}
+                className="scene-iframe absolute inset-0 h-full w-full max-h-full max-w-full border-0 outline-none ring-0"
+                style={{
+                  pointerEvents: isSelected ? 'auto' : 'none',
+                  background: scene.bgColor ?? '#fffef9',
+                }}
+                onLoad={() => {
+                  setFailedScenes((prev) => {
+                    if (!prev.has(scene.id)) return prev
+                    const next = new Set(prev)
+                    next.delete(scene.id)
+                    return next
+                  })
+                  handleSceneLoad(scene.id)
+                }}
+                onError={() => {
+                  setFailedScenes((prev) => new Set(prev).add(scene.id))
+                }}
+                allow="autoplay; fullscreen"
+                sandbox="allow-scripts allow-same-origin allow-autoplay"
+                title={`Scene ${scene.id}`}
+              />
+              {/* Error overlay — shown when scene HTML failed to load or write */}
+              {isSelected && hasError && (
+                <div
+                  className="absolute inset-0 z-[5] flex flex-col items-center justify-center gap-2"
+                  style={{ background: scene.bgColor ?? '#fffef9' }}
+                >
+                  <span className="text-sm text-red-500 font-medium">
+                    {sceneWriteErrors[scene.id] || 'Scene failed to load'}
+                  </span>
+                  <span
+                    className="text-sm text-neutral-500 hover:text-neutral-700 cursor-pointer underline"
+                    onClick={() => {
+                      setFailedScenes((prev) => {
+                        const next = new Set(prev)
+                        next.delete(scene.id)
+                        return next
+                      })
+                      // Clear store error and bump version to force iframe reload
+                      const { [scene.id]: _, ...rest } = useVideoStore.getState().sceneWriteErrors
+                      useVideoStore.setState({ sceneWriteErrors: rest })
+                      setSceneVersions((prev) => ({ ...prev, [scene.id]: (prev[scene.id] ?? 0) + 1 }))
+                    }}
+                  >
+                    Click to retry
+                  </span>
+                </div>
+              )}
+            </div>
           )
         })}
 
@@ -1068,46 +1123,46 @@ export default function PreviewPlayer() {
           >
             {selectedScene?.sceneType === 'canvas2d' ? (
               <>
-                <span className="text-[var(--color-accent)] text-xs font-mono uppercase tracking-widest animate-pulse">
+                <span className="text-[var(--color-accent)] text-sm font-mono uppercase tracking-widest animate-pulse">
                   drawing...
                 </span>
-                <span className="text-[#3a3a45] text-[10px] text-center max-w-[200px]">
+                <span className="text-[#3a3a45] text-[11px] text-center max-w-[200px]">
                   Generating Canvas animation...
                 </span>
               </>
             ) : selectedScene?.sceneType === 'motion' ? (
               <>
-                <span className="text-[var(--color-accent)] text-xs font-mono uppercase tracking-widest animate-pulse">
+                <span className="text-[var(--color-accent)] text-sm font-mono uppercase tracking-widest animate-pulse">
                   animating...
                 </span>
-                <span className="text-[#3a3a45] text-[10px] text-center max-w-[200px]">
+                <span className="text-[#3a3a45] text-[11px] text-center max-w-[200px]">
                   Generating Motion animation...
                 </span>
               </>
             ) : selectedScene?.sceneType === 'd3' ? (
               <>
-                <span className="text-[var(--color-accent)] text-xs font-mono uppercase tracking-widest animate-pulse">
+                <span className="text-[var(--color-accent)] text-sm font-mono uppercase tracking-widest animate-pulse">
                   charting...
                 </span>
-                <span className="text-[#3a3a45] text-[10px] text-center max-w-[200px]">
+                <span className="text-[#3a3a45] text-[11px] text-center max-w-[200px]">
                   Generating D3 visualization...
                 </span>
               </>
             ) : selectedScene?.sceneType === 'three' ? (
               <>
-                <span className="text-[var(--color-accent)] text-xs font-mono uppercase tracking-widest animate-pulse">
+                <span className="text-[var(--color-accent)] text-sm font-mono uppercase tracking-widest animate-pulse">
                   rendering...
                 </span>
-                <span className="text-[#3a3a45] text-[10px] text-center max-w-[200px]">
+                <span className="text-[#3a3a45] text-[11px] text-center max-w-[200px]">
                   Generating Three.js scene...
                 </span>
               </>
             ) : selectedScene?.sceneType === 'lottie' ? (
               <>
-                <span className="text-[var(--color-accent)] text-xs font-mono uppercase tracking-widest animate-pulse">
+                <span className="text-[var(--color-accent)] text-sm font-mono uppercase tracking-widest animate-pulse">
                   drawing...
                 </span>
-                <span className="text-[#3a3a45] text-[10px] text-center max-w-[200px]">Generating SVG overlay...</span>
+                <span className="text-[#3a3a45] text-[11px] text-center max-w-[200px]">Generating SVG overlay...</span>
               </>
             ) : selectedScene?.svgContent ? (
               <div
@@ -1117,10 +1172,10 @@ export default function PreviewPlayer() {
               />
             ) : (
               <>
-                <span className="text-[var(--color-accent)] text-xs font-mono uppercase tracking-widest animate-pulse">
+                <span className="text-[var(--color-accent)] text-sm font-mono uppercase tracking-widest animate-pulse">
                   drawing...
                 </span>
-                <span className="text-[#3a3a45] text-[10px] text-center max-w-[200px]">
+                <span className="text-[#3a3a45] text-[11px] text-center max-w-[200px]">
                   Generating SVG elements and animations...
                 </span>
               </>
@@ -1143,7 +1198,7 @@ export default function PreviewPlayer() {
               style={{ background: selectedScene?.bgColor ?? 'var(--color-input-bg)' }}
             >
               <p className="text-[#6b6b7a] text-sm">{selectedScene ? 'No content yet' : 'Select a scene'}</p>
-              {selectedScene && <p className="text-[#3a3a45] text-xs">Write a prompt and click Generate</p>}
+              {selectedScene && <p className="text-[#3a3a45] text-sm">Write a prompt and click Generate</p>}
             </div>
           )}
 
@@ -1161,7 +1216,7 @@ export default function PreviewPlayer() {
           !loadedScenes.has(selectedSceneId) &&
           !isThisGenerating && (
             <div className="absolute inset-0 z-10 bg-[#0d0d0f]/80 flex items-center justify-center pointer-events-none">
-              <div className="text-[#6b6b7a] text-xs">Loading preview...</div>
+              <div className="text-[#6b6b7a] text-sm">Loading preview...</div>
             </div>
           )}
 
@@ -1296,21 +1351,63 @@ export default function PreviewPlayer() {
     <div className="flex flex-col flex-1 overflow-visible relative">
       {isDraggingTimeline && <div className="fixed inset-0 z-[9999]" style={{ cursor: 'row-resize' }} />}
       <div className="flex-1 relative">
-        <div className={`absolute inset-0 ${outputMode === 'interactive' ? 'overflow-visible' : 'overflow-hidden'}`}>
-          {viewport}
-        </div>
-        {selectedScene && (
-          <div className="absolute bottom-2 left-0 right-0 text-center pointer-events-none">
-            <span className="text-[var(--color-text-muted)] text-[11px] font-medium">
-              {selectedScene.name || selectedScene.prompt.slice(0, 50) || 'Untitled Scene'}
-            </span>
+        {studioRecordMode ? (
+          <div className="absolute inset-0 overflow-hidden">
+            <StudioRecordPreview />
           </div>
+        ) : (
+          <>
+            <div className={`absolute inset-0 ${outputMode === 'interactive' ? 'overflow-visible' : 'overflow-hidden'}`}>
+              {viewport}
+            </div>
+            {selectedScene && (
+              <div className="absolute bottom-2 left-0 right-0 text-center pointer-events-none">
+                <span className="text-[var(--color-text-muted)] text-[12px] font-medium">
+                  {selectedScene.name || selectedScene.prompt.slice(0, 50) || 'Untitled Scene'}
+                </span>
+              </div>
+            )}
+          </>
         )}
       </div>
       {timelineResizeHandle}
-      {playbackBar}
-      {timelineHeight > 0 &&
-        (timelineView === 'graph' ? (
+      {/* Tab bar (only in studio record mode) */}
+      {studioRecordMode && timelineHeight > 0 && (
+        <div
+          className="flex items-center gap-0 flex-shrink-0"
+          style={{ background: 'var(--color-panel)', borderTop: '1px solid var(--color-border)' }}
+        >
+          <span
+            onClick={() => setBottomTab('controls')}
+            className="flex items-center gap-1.5 px-4 py-1.5 text-[11px] font-medium cursor-pointer transition-colors"
+            style={{
+              color: bottomTab === 'controls' ? 'var(--color-text-primary)' : 'var(--color-text-muted)',
+              borderBottom: bottomTab === 'controls' ? '2px solid #e05252' : '2px solid transparent',
+            }}
+          >
+            <SlidersHorizontal size={12} />
+            Controls
+          </span>
+          <span
+            onClick={() => setBottomTab('timeline')}
+            className="flex items-center gap-1.5 px-4 py-1.5 text-[11px] font-medium cursor-pointer transition-colors"
+            style={{
+              color: bottomTab === 'timeline' ? 'var(--color-text-primary)' : 'var(--color-text-muted)',
+              borderBottom: bottomTab === 'timeline' ? '2px solid var(--color-accent)' : '2px solid transparent',
+            }}
+          >
+            <AlignStartVertical size={12} />
+            Timeline
+          </span>
+        </div>
+      )}
+      {!studioRecordMode && playbackBar}
+      {timelineHeight > 0 && (
+        studioRecordMode && bottomTab === 'controls' ? (
+          <div style={{ height: timelineHeight }} className="border-t border-[var(--color-border)]">
+            <RecordingControlPanel />
+          </div>
+        ) : timelineView === 'graph' ? (
           <div style={{ height: timelineHeight }} className="border-t border-[var(--color-border)]">
             <SceneGraphEditor />
           </div>
@@ -1321,7 +1418,8 @@ export default function PreviewPlayer() {
             onSeek={handleSeek}
             trackHeight={timelineHeight}
           />
-        ))}
+        )
+      )}
     </div>
   )
 }

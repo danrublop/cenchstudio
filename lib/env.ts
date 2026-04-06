@@ -35,12 +35,26 @@ const serverSchema = z.object({
   CLOUD_STORAGE_SECRET_KEY: z.string().default(''),
   CLOUD_STORAGE_ENDPOINT: z.string().default(''),
 
+  // ── Auth (Auth.js / NextAuth) ──────────────────────────
+  NEXTAUTH_SECRET: z.string().refine(
+    (val) => process.env.NODE_ENV !== 'production' || val.length > 0,
+    { message: 'NEXTAUTH_SECRET is required in production' },
+  ).default(''),
+  NEXTAUTH_URL: z.string().default('http://localhost:3000'),
+  GOOGLE_CLIENT_ID: z.string().default(''),
+  GOOGLE_CLIENT_SECRET: z.string().default(''),
+  GITHUB_CLIENT_ID: z.string().default(''),
+  GITHUB_CLIENT_SECRET: z.string().default(''),
+  ALLOW_GUEST_MODE: z.string().default('true'),
+
   // ── Runtime ───────────────────────────────────────────
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+  MOCK_AGENT: z.string().default(''),
 })
 
 const clientSchema = z.object({
   NEXT_PUBLIC_RENDER_SERVER_URL: z.string().default('http://localhost:3001'),
+  NEXT_PUBLIC_ALLOW_GUEST_MODE: z.string().default('true'),
 })
 
 function validateEnv() {

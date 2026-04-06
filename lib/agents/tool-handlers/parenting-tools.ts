@@ -1,31 +1,8 @@
 import { v4 as uuidv4 } from 'uuid'
-import type { ToolResult } from '@/lib/agents/types'
 import type { WorldStateMutable } from '@/lib/agents/tool-executor'
+import { ok, err, findScene, type ToolResult } from './_shared'
 
 export const PARENTING_TOOL_NAMES = ['set_layer_parent', 'create_group_layer'] as const
-
-function ok(affectedSceneId: string | null, description: string, data?: unknown): ToolResult {
-  return {
-    success: true,
-    affectedSceneId,
-    changes: [
-      {
-        type: affectedSceneId ? 'scene_updated' : 'global_updated',
-        sceneId: affectedSceneId ?? undefined,
-        description,
-      },
-    ],
-    data,
-  }
-}
-
-function err(message: string): ToolResult {
-  return { success: false, error: message }
-}
-
-function findScene(world: WorldStateMutable, sceneId: string) {
-  return world.scenes.find((s) => s.id === sceneId)
-}
 
 export function createParentingToolHandler() {
   return async function handleParentingTools(

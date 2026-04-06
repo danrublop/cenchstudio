@@ -51,7 +51,7 @@ export default function SettingsPanel({ onClose }: Props) {
       <div className="flex-1 overflow-y-auto">
         {/* General section */}
         <details className="group border-b border-[var(--color-border)]" open>
-          <summary className="flex items-center justify-between p-4 cursor-pointer text-xs font-semibold transition-colors select-none list-none [&::-webkit-details-marker]:hidden">
+          <summary className="flex items-center justify-between p-4 cursor-pointer text-sm font-semibold transition-colors select-none list-none [&::-webkit-details-marker]:hidden">
             General
             <ChevronDown
               size={14}
@@ -65,7 +65,7 @@ export default function SettingsPanel({ onClose }: Props) {
 
         {/* Usage section */}
         <details className="group border-b border-[var(--color-border)]">
-          <summary className="flex items-center justify-between p-4 cursor-pointer text-xs font-semibold transition-colors select-none list-none [&::-webkit-details-marker]:hidden">
+          <summary className="flex items-center justify-between p-4 cursor-pointer text-sm font-semibold transition-colors select-none list-none [&::-webkit-details-marker]:hidden">
             Usage
             <ChevronDown
               size={14}
@@ -79,7 +79,7 @@ export default function SettingsPanel({ onClose }: Props) {
 
         {/* Agents section */}
         <details className="group border-b border-[var(--color-border)]">
-          <summary className="flex items-center justify-between p-4 cursor-pointer text-xs font-semibold transition-colors select-none list-none [&::-webkit-details-marker]:hidden">
+          <summary className="flex items-center justify-between p-4 cursor-pointer text-sm font-semibold transition-colors select-none list-none [&::-webkit-details-marker]:hidden">
             Agents
             <ChevronDown
               size={14}
@@ -93,7 +93,7 @@ export default function SettingsPanel({ onClose }: Props) {
 
         {/* Models & API section */}
         <details className="group border-b border-[var(--color-border)]">
-          <summary className="flex items-center justify-between p-4 cursor-pointer text-xs font-semibold transition-colors select-none list-none [&::-webkit-details-marker]:hidden">
+          <summary className="flex items-center justify-between p-4 cursor-pointer text-sm font-semibold transition-colors select-none list-none [&::-webkit-details-marker]:hidden">
             Models & APIs
             <ChevronDown
               size={14}
@@ -107,7 +107,7 @@ export default function SettingsPanel({ onClose }: Props) {
 
         {/* Audio section */}
         <details className="group border-b border-[var(--color-border)]">
-          <summary className="flex items-center justify-between p-4 cursor-pointer text-xs font-semibold transition-colors select-none list-none [&::-webkit-details-marker]:hidden">
+          <summary className="flex items-center justify-between p-4 cursor-pointer text-sm font-semibold transition-colors select-none list-none [&::-webkit-details-marker]:hidden">
             Audio
             <ChevronDown
               size={14}
@@ -121,7 +121,7 @@ export default function SettingsPanel({ onClose }: Props) {
 
         {/* Media Gen section */}
         <details className="group border-b border-[var(--color-border)]">
-          <summary className="flex items-center justify-between p-4 cursor-pointer text-xs font-semibold transition-colors select-none list-none [&::-webkit-details-marker]:hidden">
+          <summary className="flex items-center justify-between p-4 cursor-pointer text-sm font-semibold transition-colors select-none list-none [&::-webkit-details-marker]:hidden">
             Media Gen
             <ChevronDown
               size={14}
@@ -135,7 +135,7 @@ export default function SettingsPanel({ onClose }: Props) {
 
         {/* Permissions section */}
         <details className="group border-b border-[var(--color-border)]">
-          <summary className="flex items-center justify-between p-4 cursor-pointer text-xs font-semibold transition-colors select-none list-none [&::-webkit-details-marker]:hidden">
+          <summary className="flex items-center justify-between p-4 cursor-pointer text-sm font-semibold transition-colors select-none list-none [&::-webkit-details-marker]:hidden">
             Permissions
             <ChevronDown
               size={14}
@@ -149,7 +149,7 @@ export default function SettingsPanel({ onClose }: Props) {
 
         {/* Dev section */}
         <details className="group border-b border-[var(--color-border)] last:border-b-0">
-          <summary className="flex items-center justify-between p-4 cursor-pointer text-xs font-semibold transition-colors select-none list-none [&::-webkit-details-marker]:hidden">
+          <summary className="flex items-center justify-between p-4 cursor-pointer text-sm font-semibold transition-colors select-none list-none [&::-webkit-details-marker]:hidden">
             Dev
             <ChevronDown
               size={14}
@@ -164,7 +164,7 @@ export default function SettingsPanel({ onClose }: Props) {
                 setIsSeeding(false)
               }}
               disabled={isSeeding}
-              className="kbd w-full h-8 flex items-center justify-center gap-2 text-[11px] text-[var(--color-text-muted)] hover:text-[#f0ece0] disabled:opacity-40"
+              className="kbd w-full h-8 flex items-center justify-center gap-2 text-[12px] text-[var(--color-text-muted)] hover:text-[#f0ece0] disabled:opacity-40"
             >
               <FlaskConical size={13} />
               {isSeeding ? 'Loading test scenes...' : 'Load Test Scenes'}
@@ -176,7 +176,7 @@ export default function SettingsPanel({ onClose }: Props) {
                 setIsSeedingCapability(false)
               }}
               disabled={isSeedingCapability}
-              className="kbd w-full h-8 flex items-center justify-center gap-2 text-[11px] text-[#6b6b7a] hover:text-[#f0ece0] disabled:opacity-40"
+              className="kbd w-full h-8 flex items-center justify-center gap-2 text-[12px] text-[#6b6b7a] hover:text-[#f0ece0] disabled:opacity-40"
             >
               <FlaskConical size={13} />
               {isSeedingCapability ? 'Loading...' : 'Load Three.js showcase (6 scenes)'}
@@ -188,7 +188,7 @@ export default function SettingsPanel({ onClose }: Props) {
                 setIsSeedingEnvGallery(false)
               }}
               disabled={isSeedingEnvGallery}
-              className="kbd w-full h-8 flex items-center justify-center gap-2 text-[11px] text-[#6b6b7a] hover:text-[#f0ece0] disabled:opacity-40"
+              className="kbd w-full h-8 flex items-center justify-center gap-2 text-[12px] text-[#6b6b7a] hover:text-[#f0ece0] disabled:opacity-40"
             >
               <FlaskConical size={13} />
               {isSeedingEnvGallery ? 'Loading...' : `Load Three env gallery (${THREE_ENV_GALLERY_SCENE_COUNT} scenes)`}
@@ -200,7 +200,7 @@ export default function SettingsPanel({ onClose }: Props) {
                 setIsSeedingAvatarShowcase(false)
               }}
               disabled={isSeedingAvatarShowcase}
-              className="kbd w-full h-8 flex items-center justify-center gap-2 text-[11px] text-[#6b6b7a] hover:text-[#f0ece0] disabled:opacity-40"
+              className="kbd w-full h-8 flex items-center justify-center gap-2 text-[12px] text-[#6b6b7a] hover:text-[#f0ece0] disabled:opacity-40"
             >
               <FlaskConical size={13} />
               {isSeedingAvatarShowcase ? 'Loading...' : 'Load Avatar showcase (9 scenes)'}
@@ -212,7 +212,7 @@ export default function SettingsPanel({ onClose }: Props) {
                 setIsSeedingTalkingHeadLipSync(false)
               }}
               disabled={isSeedingTalkingHeadLipSync}
-              className="kbd w-full h-8 flex items-center justify-center gap-2 text-[11px] text-[#6b6b7a] hover:text-[#f0ece0] disabled:opacity-40"
+              className="kbd w-full h-8 flex items-center justify-center gap-2 text-[12px] text-[#6b6b7a] hover:text-[#f0ece0] disabled:opacity-40"
             >
               <FlaskConical size={13} />
               {isSeedingTalkingHeadLipSync ? 'Loading...' : 'Load TalkingHead lip sync test (1 scene)'}
@@ -224,7 +224,7 @@ export default function SettingsPanel({ onClose }: Props) {
                 setIsSeedingInteractive(false)
               }}
               disabled={isSeedingInteractive}
-              className="kbd w-full h-8 flex items-center justify-center gap-2 text-[11px] text-[#6b6b7a] hover:text-[#f0ece0] disabled:opacity-40"
+              className="kbd w-full h-8 flex items-center justify-center gap-2 text-[12px] text-[#6b6b7a] hover:text-[#f0ece0] disabled:opacity-40"
             >
               <FlaskConical size={13} />
               {isSeedingInteractive ? 'Loading...' : 'Load Interactive Scenes'}
@@ -236,7 +236,7 @@ export default function SettingsPanel({ onClose }: Props) {
                 setIsSeedingInteractiveShowcase(false)
               }}
               disabled={isSeedingInteractiveShowcase}
-              className="kbd w-full h-8 flex items-center justify-center gap-2 text-[11px] text-[#6b6b7a] hover:text-[#f0ece0] disabled:opacity-40"
+              className="kbd w-full h-8 flex items-center justify-center gap-2 text-[12px] text-[#6b6b7a] hover:text-[#f0ece0] disabled:opacity-40"
             >
               <FlaskConical size={13} />
               {isSeedingInteractiveShowcase ? 'Loading...' : 'Load Interactive style showcase (2 scenes)'}
@@ -248,7 +248,7 @@ export default function SettingsPanel({ onClose }: Props) {
                 setIsSeedingProfessionalTour(false)
               }}
               disabled={isSeedingProfessionalTour}
-              className="kbd w-full h-8 flex items-center justify-center gap-2 text-[11px] text-[#6b6b7a] hover:text-[#f0ece0] disabled:opacity-40"
+              className="kbd w-full h-8 flex items-center justify-center gap-2 text-[12px] text-[#6b6b7a] hover:text-[#f0ece0] disabled:opacity-40"
             >
               <FlaskConical size={13} />
               {isSeedingProfessionalTour ? 'Loading...' : 'Load Professional interaction tour (6 scenes)'}
@@ -260,7 +260,7 @@ export default function SettingsPanel({ onClose }: Props) {
                 setIsSeedingProfessionalTooltipDemo(false)
               }}
               disabled={isSeedingProfessionalTooltipDemo}
-              className="kbd w-full h-8 flex items-center justify-center gap-2 text-[11px] text-[#6b6b7a] hover:text-[#f0ece0] disabled:opacity-40"
+              className="kbd w-full h-8 flex items-center justify-center gap-2 text-[12px] text-[#6b6b7a] hover:text-[#f0ece0] disabled:opacity-40"
             >
               <FlaskConical size={13} />
               {isSeedingProfessionalTooltipDemo ? 'Loading...' : 'Load Professional tooltip demo (3 scenes)'}
@@ -272,7 +272,7 @@ export default function SettingsPanel({ onClose }: Props) {
                 setIsSeedingWorld(false)
               }}
               disabled={isSeedingWorld}
-              className="kbd w-full h-8 flex items-center justify-center gap-2 text-[11px] text-[#6b6b7a] hover:text-[#f0ece0] disabled:opacity-40"
+              className="kbd w-full h-8 flex items-center justify-center gap-2 text-[12px] text-[#6b6b7a] hover:text-[#f0ece0] disabled:opacity-40"
             >
               <FlaskConical size={13} />
               {isSeedingWorld ? 'Loading...' : 'Load 3D World Scenes'}
@@ -284,7 +284,7 @@ export default function SettingsPanel({ onClose }: Props) {
                 setIsSeedingMedical(false)
               }}
               disabled={isSeedingMedical}
-              className="kbd w-full h-8 flex items-center justify-center gap-2 text-[11px] text-[#6b6b7a] hover:text-[#f0ece0] disabled:opacity-40"
+              className="kbd w-full h-8 flex items-center justify-center gap-2 text-[12px] text-[#6b6b7a] hover:text-[#f0ece0] disabled:opacity-40"
             >
               <FlaskConical size={13} />
               {isSeedingMedical ? 'Loading...' : 'Load Medical Scenes'}
@@ -296,7 +296,7 @@ export default function SettingsPanel({ onClose }: Props) {
                 setIsSeedingTextHarness(false)
               }}
               disabled={isSeedingTextHarness}
-              className="kbd w-full h-8 flex items-center justify-center gap-2 text-[11px] text-[#6b6b7a] hover:text-[#f0ece0] disabled:opacity-40"
+              className="kbd w-full h-8 flex items-center justify-center gap-2 text-[12px] text-[#6b6b7a] hover:text-[#f0ece0] disabled:opacity-40"
             >
               <FlaskConical size={13} />
               {isSeedingTextHarness ? 'Loading...' : 'Load Text editing harness (8 scenes)'}
@@ -306,7 +306,7 @@ export default function SettingsPanel({ onClose }: Props) {
                 onClick={async () => {
                   if (confirm(`Delete project "${project.name}"?`)) await deleteProjectFromDb(project.id)
                 }}
-                className="kbd w-full h-8 flex items-center justify-center gap-2 text-[11px] font-medium text-red-400 hover:text-white border border-red-900/50 bg-red-950/20 hover:bg-red-500/80 transition-all shadow-none"
+                className="kbd w-full h-8 flex items-center justify-center gap-2 text-[12px] font-medium text-red-400 hover:text-white border border-red-900/50 bg-red-950/20 hover:bg-red-500/80 transition-all shadow-none"
               >
                 <Trash2 size={13} />
                 Delete Project

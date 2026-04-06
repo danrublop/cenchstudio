@@ -8,8 +8,9 @@ import Anthropic from '@anthropic-ai/sdk'
 import type { SceneType } from '../types'
 import type { ZdogComposedSceneSpec } from '../types'
 import { logSpend } from '../db'
-import { MODEL_PRICING, getModelProvider } from '../agents/types'
+import { getModelPricing, getModelProvider } from '../agents/types'
 import type { ModelId, ModelTier } from '../agents/types'
+import type { ModelConfig } from '../agents/model-config'
 import {
   SVG_SYSTEM_PROMPT,
   CANVAS_SYSTEM_PROMPT,
@@ -26,6 +27,7 @@ const anthropicClient = new Anthropic()
 // Lazy-initialized providers
 let openaiClient: any = null
 let googleClient: any = null
+const localClients = new Map<string, any>()
 
 function getOpenAIClient() {
   if (!openaiClient) {
@@ -41,6 +43,14 @@ function getGoogleClient() {
     googleClient = new GoogleGenAI({ apiKey: process.env.GOOGLE_API_KEY ?? '' })
   }
   return googleClient
+}
+
+function getLocalClient(endpoint: string) {
+  if (!localClients.has(endpoint)) {
+    const OpenAI = require('openai').default
+    localClients.set(endpoint, new OpenAI({ baseURL: `${endpoint}/v1`, apiKey: 'ollama' }))
+  }
+  return localClients.get(endpoint)!
 }
 
 /** Max output tokens per scene type — prevents runaway output */
@@ -75,6 +85,8 @@ export interface GenerateCodeOptions {
   modelTier?: ModelTier
   /** Deterministic no-LLM Zdog composition spec */
   zdogComposedSpec?: ZdogComposedSceneSpec
+  /** Model configs for resolving local model endpoints */
+  modelConfigs?: ModelConfig[]
 }
 
 export interface GenerateCodeResult {
@@ -161,7 +173,7 @@ export async function generateCode(
 
   // ── Route to provider ──────────────────────────────────────────────────────
 
-  const provider = getModelProvider(model as ModelId)
+  const provider = getModelProvider(model as ModelId, options.modelConfigs)
   console.log(
     `[generateCode] Start: type=${layerType} model=${model} provider=${provider} prompt="${prompt.slice(0, 120)}"`,
   )
@@ -171,7 +183,12 @@ export async function generateCode(
   let outputTokens: number
   let truncated: boolean
 
-  if (provider === 'openai') {
+  if (provider === 'local') {
+    const localConfig = options.modelConfigs?.find((m) => m.id === model || m.modelId === model)
+    const endpoint = localConfig?.endpoint ?? process.env.OLLAMA_ENDPOINT ?? 'http://localhost:11434'
+    const localModelName = localConfig?.localModelName ?? model
+    ;({ raw, inputTokens, outputTokens, truncated } = await callLocal(endpoint, localModelName, systemPrompt, userContent, maxTokens))
+  } else if (provider === 'openai') {
     ;({ raw, inputTokens, outputTokens, truncated } = await callOpenAI(model, systemPrompt, userContent, maxTokens))
   } else if (provider === 'google') {
     ;({ raw, inputTokens, outputTokens, truncated } = await callGoogle(model, systemPrompt, userContent, maxTokens))
@@ -181,7 +198,7 @@ export async function generateCode(
 
   // ── Calculate cost ──────────────────────────────────────────────────────────
 
-  const pricing = MODEL_PRICING[model as keyof typeof MODEL_PRICING] ?? { inputPer1M: 3, outputPer1M: 15 }
+  const pricing = getModelPricing(model as ModelId)
   const costUsd = (inputTokens / 1_000_000) * pricing.inputPer1M + (outputTokens / 1_000_000) * pricing.outputPer1M
 
   console.log(
@@ -440,6 +457,58 @@ async function callGoogle(
     raw: text,
     inputTokens: usageMetadata.promptTokenCount ?? 0,
     outputTokens: usageMetadata.candidatesTokenCount ?? 0,
+    truncated,
+  }
+}
+
+async function callLocal(
+  endpoint: string,
+  localModelName: string,
+  systemPrompt: string,
+  userContent: string,
+  maxTokens: number,
+): Promise<ProviderResult> {
+  const client = getLocalClient(endpoint)
+
+  let result: any
+  try {
+    result = await client.chat.completions.create(
+      {
+        model: localModelName,
+        max_tokens: maxTokens,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userContent },
+        ],
+      },
+      { timeout: 120_000 },
+    )
+  } catch (firstErr) {
+    console.warn('[generateCode] Local LLM first attempt failed, retrying in 1s:', (firstErr as Error).message)
+    await new Promise((resolve) => setTimeout(resolve, 1000))
+    result = await client.chat.completions.create(
+      {
+        model: localModelName,
+        max_tokens: maxTokens,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userContent },
+        ],
+      },
+      { timeout: 120_000 },
+    )
+  }
+
+  const finishReason = result.choices?.[0]?.finish_reason
+  const truncated = finishReason === 'length'
+  if (truncated) {
+    console.warn(`[generateCode] Local LLM output truncated (hit max_tokens=${maxTokens})`)
+  }
+
+  return {
+    raw: result.choices?.[0]?.message?.content ?? '',
+    inputTokens: result.usage?.prompt_tokens ?? 0,
+    outputTokens: result.usage?.completion_tokens ?? 0,
     truncated,
   }
 }

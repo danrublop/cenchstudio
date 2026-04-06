@@ -76,9 +76,9 @@ function EmptyInspector({ elementCount }: { elementCount: number }) {
     <div className="flex flex-col items-center justify-center h-48 px-6 text-center gap-3">
       <MousePointerClick size={24} className="text-[#3a3a42]" />
       <div className="space-y-1">
-        <p className="text-xs text-[#6b6b7a]">Click an element in the scene to inspect it</p>
+        <p className="text-sm text-[#6b6b7a]">Click an element in the scene to inspect it</p>
         {elementCount > 0 && (
-          <p className="text-[10px] text-[#4a4a52]">
+          <p className="text-[11px] text-[#4a4a52]">
             {elementCount} element{elementCount !== 1 ? 's' : ''} registered
           </p>
         )}
@@ -108,10 +108,10 @@ export function ElementInspector({
       {/* Header */}
       <div className="px-3 py-2.5 border-b border-[var(--color-border,#2a2a32)] flex items-center gap-2">
         <Box size={12} className="text-[#e84545] flex-shrink-0" />
-        <span className="text-xs text-[var(--color-text-primary,#f0ece0)] font-medium truncate">
+        <span className="text-sm text-[var(--color-text-primary,#f0ece0)] font-medium truncate">
           {element.label || element.id}
         </span>
-        <span className="ml-auto text-[9px] font-mono text-[#4a4a52] bg-[#1a1a1f] px-1.5 py-0.5 rounded flex-shrink-0">
+        <span className="ml-auto text-[10px] font-mono text-[#4a4a52] bg-[#1a1a1f] px-1.5 py-0.5 rounded flex-shrink-0">
           {element.type}
         </span>
       </div>
@@ -186,7 +186,7 @@ function TypeProperties({
     if (['d3-chart', 'three-object', 'zdog-shape'].includes(element.type)) {
       return (
         <Section title="Note">
-          <p className="text-[10px] text-[#6b6b7a] leading-relaxed">
+          <p className="text-[11px] text-[#6b6b7a] leading-relaxed">
             This element type is best edited via the AI agent. Use the Edit button below to describe your changes.
           </p>
         </Section>
@@ -350,7 +350,7 @@ function LayerInspector({ layerId, sceneId }: { layerId: string; sceneId: string
     <div>
       <div className="px-3 py-2.5 border-b border-[var(--color-border,#2a2a32)] flex items-center gap-2">
         <Layers size={12} className="text-[#e84545] flex-shrink-0" />
-        <span className="text-xs text-[var(--color-text-primary,#f0ece0)] font-medium">Layer: {layerId}</span>
+        <span className="text-sm text-[var(--color-text-primary,#f0ece0)] font-medium">Layer: {layerId}</span>
       </div>
 
       <Section title="AI Edit">

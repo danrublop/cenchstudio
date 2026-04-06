@@ -1,0 +1,1964 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base href="http://localhost:3000/">
+  <!-- GSAP (free, commercial use — all plugins free as of 3.13) -->
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14/dist/gsap.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14/dist/DrawSVGPlugin.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14/dist/MorphSVGPlugin.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14/dist/MotionPathPlugin.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14/dist/SplitText.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14/dist/TextPlugin.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14/dist/CustomEase.min.js"></script>
+  <script>gsap.registerPlugin(DrawSVGPlugin, MorphSVGPlugin, MotionPathPlugin, SplitText, TextPlugin, CustomEase);</script>
+  <!-- Lottie-web for LottieFiles animations -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/bodymovin/5.12.2/lottie.min.js"></script>
+  <!-- CenchMotion component library -->
+  <script src="/sdk/cench-motion.js"></script>
+  <!-- CenchCamera cinematic camera motion -->
+  <script src="/sdk/cench-camera.js"></script>
+  <!-- CenchInteract interaction components -->
+  <script src="/sdk/interaction-components.js"></script>
+
+  <meta charset="UTF-8">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.183.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.183.0/examples/jsm/",
+      "@pmndrs/vanilla": "https://esm.sh/@pmndrs/vanilla@1.25.0?external=three"
+    }
+  }
+  </script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 1920px; height: 1080px; overflow: hidden; background: #fffef9;
+      transform-origin: top left;
+    }
+    canvas { display: block; }
+  </style>
+  <script>
+    // Scale 1920x1080 body to fit the actual viewport
+    function fitToViewport() {
+      var s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+      document.body.style.transform = 'scale(' + s + ')';
+    }
+    window.addEventListener('resize', fitToViewport);
+    document.addEventListener('DOMContentLoaded', fitToViewport);
+
+    // Force preserveDrawingBuffer so export can read WebGL canvas via drawImage.
+    // Without this, the buffer is cleared after compositing and reads return blank.
+    // Applied unconditionally — perf cost is negligible at 1920x1080.
+    (function() {
+      var origGetContext = HTMLCanvasElement.prototype.getContext;
+      HTMLCanvasElement.prototype.getContext = function(type, attrs) {
+        if (type === 'webgl' || type === 'webgl2') {
+          attrs = Object.assign({}, attrs || {}, { preserveDrawingBuffer: true });
+        }
+        return origGetContext.call(this, type, attrs);
+      };
+    })();
+
+    // Globals accessible from module scope via window.*
+    window.WIDTH = 1920;
+    window.HEIGHT = 1080;
+    window.PALETTE = ["#1a1a2e","#e84545","#16a34a","#2563eb"];
+    window.DURATION = 12;
+    window.SCENE_ID = '1b3c1bc0-a249-44c0-ae1c-32e6b3d64415';
+
+    window.MATERIALS = {
+      plastic: function(c) { var T = window.THREE; return new T.MeshStandardMaterial({ color: new T.Color(c), roughness: 0.6, metalness: 0 }); },
+      metal:   function(c) { var T = window.THREE; return new T.MeshStandardMaterial({ color: new T.Color(c), roughness: 0.2, metalness: 0.9 }); },
+      glass:   function(c) { var T = window.THREE; return new T.MeshPhysicalMaterial({ color: new T.Color(c), transparent: true, opacity: 0.3, roughness: 0, transmission: 0.9 }); },
+      matte:   function(c) { var T = window.THREE; return new T.MeshStandardMaterial({ color: new T.Color(c), roughness: 1, metalness: 0 }); },
+      glow:    function(c) { var T = window.THREE; return new T.MeshStandardMaterial({ color: new T.Color(c), emissive: new T.Color(c), emissiveIntensity: 0.8 }); },
+    };
+
+    window.mulberry32 = function(seed) {
+      return function() {
+        seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+        var t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+        t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+      };
+    };
+  </script>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="scene-camera" style="position:absolute;inset:0;transform-origin:center center;will-change:transform,filter;">
+  
+  <div id="e632632d-2043-4264-9eb2-7e2fb4604c05" class="cench-studio-layer" style="opacity:0;z-index:100;position:fixed;bottom:40px;right:40px;width:280px;height:280px;border-radius:50%;overflow:hidden;border:3px solid rgba(255,255,255,0.3);box-shadow:0 8px 32px rgba(0,0,0,0.4);background:#f59e0b;border:3px solid rgba(255,255,255,0.3);box-shadow:0 8px 32px rgba(0,0,0,0.4);transition:opacity 0.4s;">
+  <div id="e632632d-2043-4264-9eb2-7e2fb4604c05-talkinghead" style="width:100%;height:100%;position:absolute;inset:0;overflow:hidden;border-radius:inherit;z-index:0;transform:scale(1.15);transform-origin:center bottom;"></div>
+  <div id="e632632d-2043-4264-9eb2-7e2fb4604c05-fallback" style="width:100%;height:100%;position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;background:linear-gradient(135deg, #f59e0b, #f59e0bdd);z-index:1;border-radius:inherit;">
+    <div style="font-size:64px;line-height:1;animation:pulse-avatar 2s ease-in-out infinite;">⚡</div>
+    <div id="e632632d-2043-4264-9eb2-7e2fb4604c05-fallback-status" style="font-size:10px;color:rgba(255,255,255,0.6);margin-top:8px;font-family:system-ui;letter-spacing:0.5px;">Loading 3D...</div>
+  </div>
+  <style>
+    @keyframes pulse-avatar { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.08); } }
+  </style>
+  <script type="module">
+    (async function() {
+      const fallback = document.getElementById('e632632d-2043-4264-9eb2-7e2fb4604c05-fallback');
+      const statusEl = document.getElementById('e632632d-2043-4264-9eb2-7e2fb4604c05-fallback-status');
+      const container = document.getElementById('e632632d-2043-4264-9eb2-7e2fb4604c05-talkinghead');
+      const wrapper = document.getElementById('e632632d-2043-4264-9eb2-7e2fb4604c05');
+      if (!container) return;
+
+      // Wait for container to have dimensions (iframe may be display:none initially)
+      if (container.offsetWidth === 0 || container.offsetHeight === 0) {
+        if (statusEl) statusEl.textContent = 'Waiting for visibility...';
+        await new Promise((resolve) => {
+          if (typeof ResizeObserver !== 'undefined') {
+            const ro = new ResizeObserver((entries) => {
+              for (const entry of entries) {
+                if (entry.contentRect.width > 0 && entry.contentRect.height > 0) {
+                  ro.disconnect(); resolve(); return;
+                }
+              }
+            });
+            ro.observe(container);
+          } else {
+            const iv = setInterval(() => {
+              if (container.offsetWidth > 0 && container.offsetHeight > 0) { clearInterval(iv); resolve(); }
+            }, 200);
+          }
+        });
+      }
+
+      try {
+        if (statusEl) statusEl.textContent = 'Loading TalkingHead...';
+        const mod = await import('https://cdn.jsdelivr.net/gh/met4citizen/TalkingHead@1.7/modules/talkinghead.mjs');
+        const TalkingHead = mod.TalkingHead;
+        if (!TalkingHead) { console.error('[TalkingHead] Not in module exports'); return; }
+
+        if (statusEl) statusEl.textContent = 'Initializing 3D...';
+
+        // Restore native RAF — TalkingHead's Three.js loop must not be blocked
+        if (window.__nativeRAF) window.requestAnimationFrame = window.__nativeRAF;
+        if (window.__nativeCAF) window.cancelAnimationFrame = window.__nativeCAF;
+        window.__rafUnlocked = true;
+
+        const head = new TalkingHead(container, {
+          ttsEndpoint: null,
+          ttsLang: 'en-US',
+          cameraView: 'upper',
+          cameraRotateEnable: false,
+          avatarSpeakingEyeContact: 0.72,
+          avatarIdleEyeContact: 0.52,
+        });
+
+        const vrmUrl = "/avatars/brunette.glb";
+        if (statusEl) statusEl.textContent = 'Loading avatar model...';
+        await head.showAvatar({
+          url: vrmUrl, body: 'F', lipsyncLang: 'en',
+          lipsyncHeadMovement: true,
+        }, (e) => {
+          if (statusEl && e.total) statusEl.textContent = 'Loading ' + Math.round(100 * e.loaded / e.total) + '%';
+        });
+
+        // 3D loaded — remove fallback
+        if (fallback) fallback.style.display = 'none';
+
+        // Start in neutral idle (breathing/blinking). Active mood set on play.
+        head.setMood('neutral');
+
+        // Expose for playback controller + settings panel postMessage commands
+        window.__avatarHead = head;
+        window.__avatarMood = 'happy';
+        window.__avatarSpeechStarted = false;
+
+        // ── Entrance / exit via GSAP timeline ───────────────────
+        if (window.__tl) {
+          window.__tl.to(wrapper, { opacity: 1, duration: 0.4 }, 0);
+          
+        } else {
+          wrapper.style.opacity = '1';
+        }
+
+        // ── Speech with lip sync: speakAudio (server/URL) drives mouth; Web Speech + jaw fallback ──
+        function __cenchTraverseFaceMesh(root) {
+          if (!root || !root.traverse) return null;
+          var found = null;
+          var preferred = [
+            'jawOpen', 'mouthOpen', 'jaw_lower', 'Jaw_Open', 'aac', 'viseme_aa', 'viseme_A',
+            'viseme_E', 'viseme_I', 'viseme_O', 'viseme_U', 'mouthSmile', 'mouthFunnel',
+          ];
+          root.traverse(function (child) {
+            if (found || !child.isMesh || !child.morphTargetDictionary) return;
+            var d = child.morphTargetDictionary;
+            var i, k;
+            for (i = 0; i < preferred.length; i++) {
+              k = preferred[i];
+              if (k in d) { found = child; return; }
+            }
+            var names = Object.keys(d);
+            for (i = 0; i < names.length; i++) {
+              var n = names[i];
+              var lower = n.toLowerCase();
+              if (lower.indexOf('jaw') !== -1 || lower.indexOf('mouth') !== -1 || n.indexOf('viseme_') === 0) {
+                found = child;
+                return;
+              }
+            }
+          });
+          return found;
+        }
+
+        function __cenchFindFaceMeshForLipSync(h, domContainer) {
+          var roots = [h.nodeAvatar, h.scene, h.avatar, domContainer].filter(Boolean);
+          var ri;
+          for (ri = 0; ri < roots.length; ri++) {
+            var m = __cenchTraverseFaceMesh(roots[ri]);
+            if (m) return m;
+          }
+          return null;
+        }
+
+        function __cenchApplyMouthJaw(md, mt, jaw) {
+          var pairs = [
+            ['jawOpen', jaw],
+            ['mouthOpen', jaw],
+            ['jaw_lower', jaw * 0.92],
+            ['Jaw_Open', jaw],
+            ['aac', jaw * 0.7],
+            ['viseme_aa', jaw * 0.55],
+            ['viseme_A', jaw * 0.5],
+            ['viseme_E', jaw * 0.45],
+            ['viseme_I', jaw * 0.35],
+            ['viseme_O', jaw * 0.38],
+            ['viseme_U', jaw * 0.32],
+          ];
+          for (var pi = 0; pi < pairs.length; pi++) {
+            var nm = pairs[pi][0];
+            var v = pairs[pi][1];
+            if (nm in md) mt[md[nm]] = v;
+          }
+        }
+
+        async function __cenchSpeakServerTtsToHead(endpoint, txt) {
+          if (!endpoint || !txt) return false;
+          try {
+            var r = await fetch(endpoint, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                input: { text: txt },
+                voice: { languageCode: 'en-US', name: '' },
+                audioConfig: { audioEncoding: 'MP3' },
+              }),
+            });
+            if (!r.ok) return false;
+            var data = await r.json();
+            if (!data.audioContent) return false;
+            var binary = atob(data.audioContent);
+            var len = binary.length;
+            var bytes = new Uint8Array(len);
+            var i;
+            for (i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i);
+            var AC = window.AudioContext || window.webkitAudioContext;
+            var audioCtx = new AC();
+            try {
+              if (audioCtx.state === 'suspended') await audioCtx.resume();
+            } catch (e0) {}
+            var ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+            var audioBuf = await audioCtx.decodeAudioData(ab);
+            var words = txt.split(/\s+/).filter(Boolean);
+            if (!words.length) words = ['...'];
+            var totalMs = audioBuf.duration * 1000;
+            var perWord = totalMs / (words.length || 1);
+            head.speakAudio({
+              audio: audioBuf,
+              words: words,
+              wtimes: words.map(function (_, wi) { return Math.round(wi * perWord); }),
+              wdurations: words.map(function () { return Math.round(perWord * 0.9); }),
+            });
+            return true;
+          } catch (e) {
+            console.warn('[TalkingHead] server TTS speakAudio failed:', e);
+            return false;
+          }
+        }
+
+        const textToSpeak = decodeURIComponent('Scene%20five%3A%20WebGL%20canvas%20sits%20behind%20the%20presenter%20layer.%20Renderer%20mounts%20inside%20scene-camera%20at%20z-index%20zero.');
+        const audioUrl = decodeURIComponent('');
+
+        var faceMesh = __cenchFindFaceMeshForLipSync(head, container);
+        const FAKE_LIPSYNC = false;
+
+        function fakeTalkJawOnly(txt) {
+          if (!txt) return;
+          if (!faceMesh) faceMesh = __cenchFindFaceMeshForLipSync(head, container);
+          var mt = null;
+          var md = null;
+          if (faceMesh && faceMesh.morphTargetDictionary) {
+            mt = faceMesh.morphTargetInfluences;
+            md = faceMesh.morphTargetDictionary;
+          }
+          var estMs = Math.min(90000, Math.max(2000, (txt.length / 14) * 1000));
+          var endAt = Date.now() + estMs;
+          var phase = 0;
+          var loop = null;
+          function stopJaw() {
+            if (loop) clearInterval(loop);
+            loop = null;
+            if (md && mt) __cenchApplyMouthJaw(md, mt, 0);
+          }
+          function tickJaw() {
+            if (!md || !mt) return;
+            phase += 0.3;
+            var jaw = 0.2 + 0.3 * Math.abs(Math.sin(phase * 2.7)) + 0.15 * Math.sin(phase * 4.1);
+            __cenchApplyMouthJaw(md, mt, jaw);
+          }
+          if (md && mt) {
+            loop = setInterval(function () {
+              if (Date.now() >= endAt) { stopJaw(); return; }
+              tickJaw();
+            }, 80);
+          }
+        }
+
+        function speakWithBrowserTTS(txt) {
+          if (!txt) return;
+          if (!faceMesh) faceMesh = __cenchFindFaceMeshForLipSync(head, container);
+          var mt = null;
+          var md = null;
+          if (faceMesh && faceMesh.morphTargetDictionary) {
+            mt = faceMesh.morphTargetInfluences;
+            md = faceMesh.morphTargetDictionary;
+          }
+          var estMs = Math.min(90000, Math.max(2000, (txt.length / 14) * 1000));
+          var endAt = Date.now() + estMs;
+          var phase = 0;
+          var loop = null;
+          function stopJaw() {
+            if (loop) clearInterval(loop);
+            loop = null;
+            if (md && mt) __cenchApplyMouthJaw(md, mt, 0);
+          }
+          function tickJaw() {
+            if (!md || !mt) return;
+            phase += 0.3;
+            var jaw = 0.2 + 0.3 * Math.abs(Math.sin(phase * 2.7)) + 0.15 * Math.sin(phase * 4.1);
+            __cenchApplyMouthJaw(md, mt, jaw);
+          }
+          if (md && mt) {
+            loop = setInterval(function () {
+              var synth = window.speechSynthesis;
+              var speaking = synth && synth.speaking;
+              if (!speaking && Date.now() >= endAt) { stopJaw(); return; }
+              tickJaw();
+            }, 80);
+          }
+          if (window.speechSynthesis) {
+            try { window.speechSynthesis.cancel(); } catch (e1) {}
+            try { window.speechSynthesis.resume(); } catch (e2) {}
+            var u = new SpeechSynthesisUtterance(txt);
+            u.lang = 'en-US';
+            u.rate = 1;
+            u.onend = function () { stopJaw(); };
+            u.onerror = function () { /* jaw continues until endAt */ };
+            window.speechSynthesis.speak(u);
+          }
+        }
+
+        window.__avatarStartSpeech = async function () {
+          try {
+            if (FAKE_LIPSYNC) {
+              fakeTalkJawOnly(textToSpeak);
+              return;
+            }
+            if (audioUrl) {
+              const resp = await fetch(audioUrl);
+              const arrayBuf = await resp.arrayBuffer();
+              const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+              try {
+                if (audioCtx.state === 'suspended') await audioCtx.resume();
+              } catch (e3) {}
+              const audioBuf = await audioCtx.decodeAudioData(arrayBuf);
+              const words = textToSpeak ? textToSpeak.split(/\s+/) : ['...'];
+              const totalMs = audioBuf.duration * 1000;
+              const perWord = totalMs / (words.length || 1);
+              head.speakAudio({
+                audio: audioBuf,
+                words: words,
+                wtimes: words.map((_, i) => Math.round(i * perWord)),
+                wdurations: words.map(() => Math.round(perWord * 0.9)),
+              });
+              return;
+            }
+            var ep = head.opt && head.opt.ttsEndpoint;
+            if (textToSpeak && ep && (await __cenchSpeakServerTtsToHead(ep, textToSpeak))) return;
+            speakWithBrowserTTS(textToSpeak);
+          } catch (e) {
+            console.warn('[TalkingHead] Speech error:', e);
+            speakWithBrowserTTS(textToSpeak);
+          }
+        };
+
+        console.log('[TalkingHead] Ready — mood=happy, view=upper, eyeContact=0.72');
+
+      } catch(e) {
+        console.error('[TalkingHead] Fatal:', e);
+        if (statusEl) {
+          statusEl.textContent = 'Error: ' + (e.message || e);
+          statusEl.style.color = 'rgba(255,100,100,0.8)';
+        }
+      }
+    })();
+  </script>
+</div>
+  </div><!-- /scene-camera -->
+
+  <script>
+(function() {
+  // ── performance.now() interception ──────────────────────
+  // Canvas2D scenes compute animation time via:
+  //   getT() = (performance.now() - startWall) / 1000
+  // When RAF is blocked (paused), elapsed wall-clock time
+  // shouldn't count toward animation time. We subtract
+  // cumulative paused duration from performance.now().
+  var _perfNow = performance.now.bind(performance);
+  var _pauseOffset = 0;
+  var _pauseStart = _perfNow(); // starts paused
+
+  performance.now = function() {
+    return _perfNow() - _pauseOffset;
+  };
+
+  // ── RAF interception ─────────────────────────────────────
+  // Prevent old canvas2d/three.js scenes from auto-starting
+  // their requestAnimationFrame loops. We capture the callback
+  // and only start it when the parent sends 'play'.
+  var _realRAF = window.requestAnimationFrame.bind(window);
+  var _realCAF = window.cancelAnimationFrame.bind(window);
+  var _realSetTimeout = window.setTimeout.bind(window);
+  var _realClearTimeout = window.clearTimeout.bind(window);
+  var _realSetInterval = window.setInterval.bind(window);
+  var _realClearInterval = window.clearInterval.bind(window);
+  // Expose native RAF so overlay widgets (TalkingHead) can bypass interception.
+  // When __rafUnlocked is set, _blockRAF skips re-intercepting RAF so
+  // TalkingHead's Three.js animation loop keeps running during pause.
+  window.__nativeRAF = _realRAF;
+  window.__nativeCAF = _realCAF;
+  window.__rafUnlocked = false;
+  var _pendingRAFCallbacks = [];
+  var _rafBlocked = true;  // starts blocked
+  var _currentRAFId = null;
+  var _timersBlocked = true; // starts blocked (playback paused)
+  var _nextQueuedTimerId = 1;
+  var _queuedTimeouts = [];
+  var _queuedTimeoutMap = {};
+  var _activeTimeouts = {};
+  var _activeIntervals = {};
+
+  function _flushQueuedTimeouts() {
+    if (_timersBlocked || _queuedTimeouts.length === 0) return;
+    var queue = _queuedTimeouts.slice();
+    _queuedTimeouts = [];
+    queue.forEach(function(item) {
+      if (!item || !_queuedTimeoutMap[item.id]) return;
+      delete _queuedTimeoutMap[item.id];
+      var realId = _realSetTimeout(function() {
+        delete _activeTimeouts[item.id];
+        if (_timersBlocked) {
+          _queuedTimeoutMap[item.id] = item;
+          _queuedTimeouts.push(item);
+          return;
+        }
+        try { item.cb(); } catch(e) {}
+      }, Math.max(0, item.delay || 0));
+      _activeTimeouts[item.id] = realId;
+    });
+  }
+
+  window.setTimeout = function(cb, delay) {
+    if (typeof cb !== 'function') {
+      return _realSetTimeout(cb, delay);
+    }
+    var id = _nextQueuedTimerId++;
+    var item = { id: id, cb: cb, delay: Number(delay) || 0 };
+    if (_timersBlocked) {
+      _queuedTimeoutMap[id] = item;
+      _queuedTimeouts.push(item);
+      return -id;
+    }
+    var realId = _realSetTimeout(function() {
+      delete _activeTimeouts[id];
+      if (_timersBlocked) {
+        _queuedTimeoutMap[id] = item;
+        _queuedTimeouts.push(item);
+        return;
+      }
+      try { cb(); } catch(e) {}
+    }, Math.max(0, item.delay));
+    _activeTimeouts[id] = realId;
+    return id;
+  };
+
+  window.clearTimeout = function(id) {
+    var absId = Math.abs(Number(id));
+    if (!absId) {
+      _realClearTimeout(id);
+      return;
+    }
+    if (_queuedTimeoutMap[absId]) {
+      delete _queuedTimeoutMap[absId];
+      _queuedTimeouts = _queuedTimeouts.filter(function(item) { return item.id !== absId; });
+      return;
+    }
+    if (_activeTimeouts[absId]) {
+      _realClearTimeout(_activeTimeouts[absId]);
+      delete _activeTimeouts[absId];
+      return;
+    }
+    _realClearTimeout(id);
+  };
+
+  window.setInterval = function(cb, delay) {
+    if (typeof cb !== 'function') {
+      return _realSetInterval(cb, delay);
+    }
+    var id = _nextQueuedTimerId++;
+    var realId = _realSetInterval(function() {
+      if (_timersBlocked) return;
+      try { cb(); } catch(e) {}
+    }, Math.max(1, Number(delay) || 0));
+    _activeIntervals[id] = realId;
+    return id;
+  };
+
+  window.clearInterval = function(id) {
+    var absId = Math.abs(Number(id));
+    if (absId && _activeIntervals[absId]) {
+      _realClearInterval(_activeIntervals[absId]);
+      delete _activeIntervals[absId];
+      return;
+    }
+    _realClearInterval(id);
+  };
+
+  window.requestAnimationFrame = function(cb) {
+    if (_rafBlocked) {
+      // Queue the callback — multiple consumers (scene code + TalkingHead) may register
+      var queueId = -(_pendingRAFCallbacks.length + 1);
+      _pendingRAFCallbacks.push(cb);
+      return queueId;
+    }
+    _currentRAFId = _realRAF(cb);
+    return _currentRAFId;
+  };
+  window.cancelAnimationFrame = function(id) {
+    if (id < 0) {
+      // Remove from pending queue
+      var idx = (-id) - 1;
+      if (idx < _pendingRAFCallbacks.length) _pendingRAFCallbacks[idx] = null;
+      return;
+    }
+    _currentRAFId = null;
+    _realCAF(id);
+  };
+
+  function _unblockRAF() {
+    // Accumulate paused duration so performance.now() skips it
+    if (_pauseStart !== null) {
+      _pauseOffset += _perfNow() - _pauseStart;
+      _pauseStart = null;
+    }
+    _rafBlocked = false;
+    _timersBlocked = false;
+    // Restore native RAF for GSAP and future calls
+    window.requestAnimationFrame = _realRAF;
+    window.cancelAnimationFrame = _realCAF;
+    // Reset the time origin for old canvas2d code that uses
+    // window.startWall. (Local const startWall is handled by
+    // the performance.now() interception above.)
+    if (typeof window.startWall !== 'undefined') {
+      window.startWall = performance.now();
+    }
+    // Also reset _startTime (used by some old Zdog/Three scenes)
+    if (typeof window._startTime !== 'undefined') {
+      window._startTime = performance.now();
+    }
+    _flushQueuedTimeouts();
+    // Kick off all queued callbacks (scene code + TalkingHead, etc.)
+    var queued = _pendingRAFCallbacks.slice();
+    _pendingRAFCallbacks = [];
+    queued.forEach(function(cb) { if (cb) _realRAF(cb); });
+    // Also call legacy __resume if scene code defined it
+    if (window.__resume && window.__resume !== _legacyResume) {
+      try { window.__resume(); } catch(e) {}
+    }
+  }
+
+  function _blockRAF() {
+    // Record pause start for performance.now() offset tracking
+    if (_pauseStart === null) {
+      _pauseStart = _perfNow();
+    }
+    _timersBlocked = true;
+    // If RAF was permanently unlocked (TalkingHead present), skip blocking
+    // so the 3D avatar animation loop keeps running during pause
+    if (window.__rafUnlocked) {
+      // Still call legacy pause handlers
+      if (window.__pause && window.__pause !== _legacyPause) {
+        try { window.__pause(); } catch(e) {}
+      }
+      return;
+    }
+    _rafBlocked = true;
+    // Cancel any in-flight RAF
+    if (_currentRAFId) { _realCAF(_currentRAFId); _currentRAFId = null; }
+    // Override RAF again to block new calls
+    _pendingRAFCallbacks = [];
+    window.requestAnimationFrame = function(cb) {
+      var queueId = -(_pendingRAFCallbacks.length + 1);
+      _pendingRAFCallbacks.push(cb);
+      return queueId;
+    };
+    // Also call legacy __pause if scene code defined it
+    if (window.__pause && window.__pause !== _legacyPause) {
+      try { window.__pause(); } catch(e) {}
+    }
+  }
+
+  // ── Master timeline ──────────────────────────────────────
+  // Starts paused. Nothing plays until parent sends 'play'.
+  var masterTL = gsap.timeline({
+    paused: true,
+    onComplete: function() {
+      postToParent({ type: 'ended' });
+    },
+    onUpdate: function() {
+      postToParent({
+        type: 'timeupdate',
+        currentTime: masterTL.time(),
+      });
+    },
+  });
+
+  // Guarantee timeline duration matches scene duration.
+  // Scene code may not fill the full duration, but the timeline
+  // should always report the correct total length.
+  // Avatar / edge cases: if DURATION is missing or NaN, seek/play/scrub all break (duration 0).
+  var _rawDur =
+    typeof DURATION === 'number' && !isNaN(DURATION) && DURATION > 0
+      ? DURATION
+      : typeof window.DURATION === 'number' && !isNaN(window.DURATION) && window.DURATION > 0
+        ? window.DURATION
+        : 8;
+  var _cenchDuration = Math.max(0.1, _rawDur);
+  masterTL.to({}, { duration: _cenchDuration }, 0);
+
+  // Public API for scene code
+  window.__tl = masterTL;
+
+  // ── Multi-track audio integration ───────────────────────
+  var ttsAudio = null;
+  var sfxElements = [];
+  var musicAudio = null;
+  var legacyAudio = [];
+
+  window.addEventListener('load', function() {
+    ttsAudio = document.getElementById('scene-tts') || document.getElementById('scene-audio');
+    sfxElements = Array.from(document.querySelectorAll('[data-track="sfx"]'));
+    musicAudio = document.getElementById('scene-music');
+    legacyAudio = Array.from(document.querySelectorAll('audio')).filter(function(a) {
+      return !a.dataset.track && a.id !== 'scene-tts' && a.id !== 'scene-audio' && a.id !== 'scene-music';
+    });
+
+    // Set initial volumes (Layers panel / audioLayer.volume on TTS + legacy track)
+    if (ttsAudio) {
+      var ttsVol = parseFloat(ttsAudio.dataset.volume || '1');
+      ttsAudio.volume = Number.isFinite(ttsVol) ? Math.min(1, Math.max(0, ttsVol)) : 1;
+      var ttsOff = parseFloat(ttsAudio.dataset.startOffset || '0');
+      if (Number.isFinite(ttsOff) && ttsOff > 0) {
+        try { ttsAudio.currentTime = ttsOff; } catch(e) {}
+      }
+    }
+    if (musicAudio) {
+      musicAudio.volume = parseFloat(musicAudio.dataset.volume || '0.12');
+    }
+    sfxElements.forEach(function(el) {
+      el.volume = parseFloat(el.dataset.volume || '0.8');
+    });
+
+    // Schedule SFX triggers on the GSAP timeline
+    if (window.__tl) {
+      sfxElements.forEach(function(el) {
+        var triggerAt = parseFloat(el.dataset.triggerAt || '0');
+        window.__tl.call(function() {
+          el.currentTime = 0;
+          el.play().catch(function(){});
+        }, null, triggerAt);
+      });
+    }
+
+    // Music ducking: reduce music volume during TTS playback
+    if (musicAudio && ttsAudio && musicAudio.dataset.duck === 'true') {
+      var normalVol = parseFloat(musicAudio.dataset.volume || '0.12');
+      var duckLevel = parseFloat(musicAudio.dataset.duckLevel || '0.2');
+      var duckVol = normalVol * duckLevel;
+      ttsAudio.addEventListener('play', function() { musicAudio.volume = duckVol; });
+      ttsAudio.addEventListener('pause', function() { musicAudio.volume = normalVol; });
+      ttsAudio.addEventListener('ended', function() { musicAudio.volume = normalVol; });
+    }
+
+    // Web Speech API fallback
+    var ttsConfig = document.getElementById('scene-tts-config');
+    if (ttsConfig && !ttsAudio) {
+      window.__webSpeechConfig = {
+        provider: ttsConfig.dataset.provider,
+        text: ttsConfig.dataset.text,
+        voice: ttsConfig.dataset.voice,
+      };
+    }
+
+    // Initial sync: refs exist now; timeline starts paused — keep media paused too
+    try { syncMedia(false); } catch(e) {}
+  });
+
+  function syncMedia(playing) {
+    // TTS
+    if (ttsAudio) {
+      try {
+        if (playing) {
+          ttsAudio.play().catch(function(err) {
+            console.warn('[cench-playback] TTS play() failed (sandbox/autoplay?):', err);
+          });
+        } else {
+          ttsAudio.pause();
+        }
+      } catch(e) {}
+    }
+
+    // Web Speech API fallback
+    if (!ttsAudio && window.__webSpeechConfig && window.speechSynthesis) {
+      if (playing) {
+        if (!window.__webSpeechActive) {
+          var u = new SpeechSynthesisUtterance(window.__webSpeechConfig.text);
+          if (window.__webSpeechConfig.voice) {
+            var voices = speechSynthesis.getVoices();
+            var match = voices.find(function(v) { return v.name === window.__webSpeechConfig.voice; });
+            if (match) u.voice = match;
+          }
+          speechSynthesis.speak(u);
+          window.__webSpeechActive = true;
+          u.onend = function() { window.__webSpeechActive = false; };
+        }
+      } else {
+        speechSynthesis.cancel();
+        window.__webSpeechActive = false;
+      }
+    }
+
+    // Puter.js fallback
+    if (!ttsAudio && window.__webSpeechConfig && window.__webSpeechConfig.provider === 'puter' && window.puter) {
+      if (playing && !window.__puterAudioPlaying) {
+        window.puter.ai.txt2speech(window.__webSpeechConfig.text, {
+          provider: 'openai',
+          voice: window.__webSpeechConfig.voice || 'nova',
+        }).then(function(audioEl) {
+          audioEl.play();
+          window.__puterAudioPlaying = true;
+          audioEl.onended = function() { window.__puterAudioPlaying = false; };
+        }).catch(function(){});
+      }
+    }
+
+    // Music
+    if (musicAudio) {
+      try {
+        if (playing) musicAudio.play().catch(function(){});
+        else musicAudio.pause();
+      } catch(e) {}
+    }
+
+    // SFX are triggered by GSAP timeline callbacks, not play/pause
+    // But stop them on pause
+    if (!playing) {
+      sfxElements.forEach(function(el) {
+        try { el.pause(); } catch(e) {}
+      });
+    }
+
+    // Legacy audio elements
+    legacyAudio.forEach(function(a) {
+      try {
+        if (playing) a.play().catch(function(){});
+        else a.pause();
+      } catch(e) {}
+    });
+
+    // Videos (avatar, veo3 layers)
+    var videos = document.querySelectorAll('video');
+    videos.forEach(function(v) {
+      try {
+        if (playing) v.play().catch(function(){});
+        else v.pause();
+      } catch(e) {}
+    });
+
+    // CSS animations (legacy SVG scenes)
+    var cssCtrl = document.getElementById('__gsap_css_ctrl');
+    if (!cssCtrl) {
+      cssCtrl = document.createElement('style');
+      cssCtrl.id = '__gsap_css_ctrl';
+      document.head.appendChild(cssCtrl);
+    }
+    cssCtrl.textContent = playing
+      ? '*, *::before, *::after { animation-play-state: running !important; }'
+      : '*, *::before, *::after { animation-play-state: paused !important; }';
+    // After play(), WAAPI owns playback — CSS paused alone does not freeze animations.
+    if (!playing) {
+      _pauseCSSAnimations();
+    }
+  }
+
+  // ── CSS animation control via Web Animations API ─────────
+  // SVG scenes use CSS @keyframes which can't be seeked by GSAP.
+  // The Web Animations API gives us seekable Animation objects.
+  // After seeking (which calls anim.pause()), we MUST call anim.play()
+  // to resume — CSS animation-play-state alone can't override API pause.
+  function _pauseCSSAnimations() {
+    if (!document.getAnimations) return;
+    function pauseEach(list) {
+      list.forEach(function(anim) {
+        try {
+          anim.pause();
+        } catch(e) {}
+      });
+    }
+    var anims = document.getAnimations();
+    pauseEach(anims);
+    if (anims.length === 0) {
+      _realRAF(function() {
+        pauseEach(document.getAnimations ? document.getAnimations() : []);
+      });
+    }
+  }
+
+  function _seekCSSAnimations(timeMs) {
+    if (!document.getAnimations) return;
+    var anims = document.getAnimations();
+    if (anims.length > 0) {
+      anims.forEach(function(anim) {
+        try {
+          anim.currentTime = timeMs;
+          anim.pause();
+        } catch(e) {}
+      });
+    } else {
+      // Animations may not exist yet (iframe just became visible).
+      // Retry after the browser renders a frame.
+      _realRAF(function() {
+        var retryAnims = document.getAnimations ? document.getAnimations() : [];
+        retryAnims.forEach(function(anim) {
+          try {
+            anim.currentTime = timeMs;
+            anim.pause();
+          } catch(e) {}
+        });
+      });
+    }
+  }
+
+  function _resumeCSSAnimations() {
+    if (!document.getAnimations) return;
+    var anims = document.getAnimations();
+    if (anims.length > 0) {
+      anims.forEach(function(anim) {
+        try { anim.play(); } catch(e) {}
+      });
+    } else {
+      _realRAF(function() {
+        var retryAnims = document.getAnimations ? document.getAnimations() : [];
+        retryAnims.forEach(function(anim) {
+          try { anim.play(); } catch(e) {}
+        });
+      });
+    }
+  }
+
+  // ── postMessage bridge ───────────────────────────────────
+  function postToParent(msg) {
+    try {
+      window.parent.postMessage(
+        Object.assign({
+          source: 'cench-scene',
+          sceneId: typeof SCENE_ID !== 'undefined' ? SCENE_ID : null,
+        }, msg),
+        '*'
+      );
+    } catch(e) {}
+  }
+
+  function refreshMediaRefs() {
+    if (!ttsAudio) {
+      ttsAudio = document.getElementById('scene-tts') || document.getElementById('scene-audio');
+      if (ttsAudio) {
+        var rv = parseFloat(ttsAudio.dataset.volume || '1');
+        ttsAudio.volume = Number.isFinite(rv) ? Math.min(1, Math.max(0, rv)) : 1;
+        var ro = parseFloat(ttsAudio.dataset.startOffset || '0');
+        if (Number.isFinite(ro) && ro > 0) { try { ttsAudio.currentTime = ro; } catch(e) {} }
+      }
+    }
+    if (!musicAudio) {
+      musicAudio = document.getElementById('scene-music');
+      if (musicAudio) {
+        musicAudio.volume = parseFloat(musicAudio.dataset.volume || '0.12');
+      }
+    }
+  }
+
+  window.addEventListener('message', function(event) {
+    if (!event.data || event.data.target !== 'cench-scene') return;
+    // Ignore messages for other scenes
+    if (
+      event.data.sceneId &&
+      typeof SCENE_ID !== 'undefined' &&
+      event.data.sceneId !== SCENE_ID
+    ) return;
+
+    refreshMediaRefs();
+
+    var cmd = event.data;
+
+    switch (cmd.type) {
+
+      case 'play':
+        if (masterTL.time() >= masterTL.duration()) {
+          masterTL.seek(0);
+          _seekCSSAnimations(0);
+          if (ttsAudio) {
+            var rOff = parseFloat(ttsAudio.dataset.startOffset || '0');
+            try { ttsAudio.currentTime = Number.isFinite(rOff) ? rOff : 0; } catch(e) {}
+          }
+        }
+        _unblockRAF();   // let legacy RAF loops run
+        gsap.ticker.wake();  // ensure ticker is active after pause
+        masterTL.play();
+        syncMedia(true);
+        _resumeCSSAnimations();  // Must call anim.play() via API — CSS rule alone can't override API pause
+        // Avatar sync — restore active mood + start speech on first play
+        if (window.__avatarHead) {
+          try {
+            window.__avatarHead.setMood(window.__avatarMood || 'happy');
+            if (!window.__avatarSpeechStarted && window.__avatarStartSpeech) {
+              window.__avatarStartSpeech();
+              window.__avatarSpeechStarted = true;
+            }
+          } catch(e) {}
+        }
+        postToParent({ type: 'playing' });
+        break;
+
+      case 'pause':
+        _blockRAF();     // stop legacy RAF loops
+        masterTL.pause();
+        syncMedia(false);  // CSS animation-play-state: paused handles SVG scenes
+        // Avatar sync — go idle (still breathes/blinks, stops speaking)
+        if (window.__avatarHead) {
+          try {
+            if (window.__avatarHead.stopSpeaking) window.__avatarHead.stopSpeaking();
+            window.__avatarHead.setMood('neutral');
+            // Allow speech to restart on next play (stopSpeaking clears the queue)
+            window.__avatarSpeechStarted = false;
+          } catch(e) {}
+        }
+        postToParent({
+          type: 'paused',
+          currentTime: masterTL.time(),
+        });
+        break;
+
+      case 'seek':
+        var seekTime = Math.max(0, Math.min(cmd.time, masterTL.duration()));
+        masterTL.seek(seekTime);
+        // Force GSAP to re-evaluate all tweens and fire onUpdate
+        masterTL.progress(masterTL.progress());
+        // Belt-and-suspenders: call draw() directly for canvas2d scenes
+        if (typeof window.draw === 'function') {
+          try { window.draw(seekTime); } catch(e) {}
+        }
+        // Three.js / 3d_world / void / studio: RAF is blocked while paused, so one shot per seek
+        if (typeof window.__updateScene === 'function') {
+          try { window.__updateScene(seekTime); } catch(e) {}
+        }
+        // Sync all audio to seek position (optional startOffset skips into the file)
+        if (ttsAudio) {
+          var sOff = parseFloat(ttsAudio.dataset.startOffset || '0');
+          var ttsT = seekTime + (Number.isFinite(sOff) ? sOff : 0);
+          try { ttsAudio.currentTime = Math.max(0, ttsT); } catch(e) {}
+        }
+        if (musicAudio) { try { musicAudio.currentTime = seekTime; } catch(e) {} }
+        sfxElements.forEach(function(el) {
+          try { el.pause(); el.currentTime = 0; } catch(e) {}
+        });
+        legacyAudio.forEach(function(a) {
+          try { a.currentTime = seekTime; } catch(e) {}
+        });
+        document.querySelectorAll('video').forEach(function(v) {
+          try { v.currentTime = seekTime; } catch(e) {}
+        });
+        // Seek CSS animations (SVG scenes with @keyframes)
+        _seekCSSAnimations(seekTime * 1000);
+        // Pause after seeking (parent can send 'play' after if desired)
+        if (!masterTL.isActive()) {
+          masterTL.pause();
+        }
+        syncMedia(false);
+        postToParent({
+          type: 'seeked',
+          currentTime: masterTL.time(),
+        });
+        break;
+
+      case 'reset':
+        _blockRAF();
+        masterTL.seek(0).pause();
+        _seekCSSAnimations(0);
+        if (ttsAudio) {
+          var zOff = parseFloat(ttsAudio.dataset.startOffset || '0');
+          try { ttsAudio.currentTime = Number.isFinite(zOff) ? zOff : 0; } catch(e) {}
+        }
+        if (musicAudio) { try { musicAudio.currentTime = 0; } catch(e) {} }
+        legacyAudio.forEach(function(a) {
+          var lo = parseFloat(a.dataset.startOffset || '0');
+          try { a.currentTime = Number.isFinite(lo) ? lo : 0; } catch(e) {}
+        });
+        syncMedia(false);
+        // Avatar sync — reset to idle, allow speech restart
+        if (window.__avatarHead) {
+          try {
+            if (window.__avatarHead.stopSpeaking) window.__avatarHead.stopSpeaking();
+            window.__avatarHead.setMood('neutral');
+            window.__avatarSpeechStarted = false;
+          } catch(e) {}
+        }
+        postToParent({ type: 'reset' });
+        break;
+
+      // ── Avatar live control (from settings panel) ──────────
+      case 'avatar_command':
+        if (window.__avatarHead) {
+          try {
+            var h = window.__avatarHead;
+            switch (cmd.command) {
+              case 'setMood':
+                h.setMood(cmd.mood);
+                window.__avatarMood = cmd.mood;
+                break;
+              case 'playGesture':
+                h.playGesture(cmd.gesture, cmd.duration || 2, cmd.mirror);
+                break;
+              case 'setView':
+                if (h.setView) h.setView(cmd.view);
+                break;
+              case 'playAnimation':
+                if (h.playAnimation) h.playAnimation(cmd.url, null, cmd.duration || 10, cmd.index || 0);
+                break;
+              case 'stopAnimation':
+                if (h.stopAnimation) h.stopAnimation();
+                break;
+              case 'lookAt':
+                if (h.lookAt) h.lookAt(cmd.x, cmd.y, cmd.duration || 1000);
+                break;
+            }
+          } catch(e) { console.warn('[Playback] avatar_command error:', e); }
+        }
+        break;
+
+      case 'get_state':
+        postToParent({
+          type: 'state',
+          currentTime: masterTL.time(),
+          duration: masterTL.duration(),
+          status: masterTL.isActive()
+            ? 'playing'
+            : masterTL.time() >= masterTL.duration()
+            ? 'ended'
+            : 'paused',
+        });
+        break;
+    }
+  });
+
+  // ── Signal ready after all scripts execute ───────────────
+  window.addEventListener('load', function() {
+    _realSetTimeout(function() {
+      postToParent({
+        type: 'ready',
+        duration: masterTL.duration(),
+        sceneId: typeof SCENE_ID !== 'undefined' ? SCENE_ID : null,
+      });
+    }, 50);
+  });
+
+  // ── Legacy compatibility ─────────────────────────────────
+  // Old code may call __pause/__resume directly.
+  // Store refs so _blockRAF/_unblockRAF can detect our own functions.
+  var _legacyPause = function() { _blockRAF(); masterTL.pause(); syncMedia(false); };
+  var _legacyResume = function() { _unblockRAF(); masterTL.play(); syncMedia(true); };
+  window.__pause = _legacyPause;
+  window.__resume = _legacyResume;
+
+  // SVG (and other CSS @keyframes) scenes: each rule uses the animation shorthand,
+  // which sets animation-play-state back to running and wins over the scene's
+  // weak universal paused rule. Without this, animations run at load while the
+  // GSAP master timeline is still paused. Match initial state to paused timeline
+  // until parent sends play.
+  syncMedia(false);
+
+})();
+</script>
+<script>
+(function() {
+  // ── Element registry ────────────────────────────────────
+  window.__elements = {};
+  window.__selected = null;
+
+  window.__register = function(element) {
+    window.__elements[element.id] = element;
+  };
+
+  // ── Hit detection ───────────────────────────────────────
+  window.__hitTest = function(x, y) {
+    var elements = Object.values(window.__elements);
+    for (var i = elements.length - 1; i >= 0; i--) {
+      var el = elements[i];
+      if (!el.bbox || el.visible === false) continue;
+      if (
+        x >= el.bbox.x && x <= el.bbox.x + el.bbox.w &&
+        y >= el.bbox.y && y <= el.bbox.y + el.bbox.h
+      ) {
+        return el;
+      }
+    }
+    return null;
+  };
+
+  function __physicsCardBodyScale() {
+    var bodyStyle = document.body.style.transform || '';
+    var m = bodyStyle.match(/scale\(([^)]+)\)/);
+    if (m) return parseFloat(m[1]);
+    return Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+  }
+
+  var __PHYSICS_CARD_PRESETS = {
+    glass_dark: { bg: 'rgba(8,12,22,0.72)', border: 'rgba(255,255,255,0.18)', shadow: '0 14px 45px rgba(0,0,0,0.28)', text: '#ffffff', blur: 3 },
+    glass_light: { bg: 'rgba(255,255,255,0.78)', border: 'rgba(0,0,0,0.12)', shadow: '0 14px 45px rgba(0,0,0,0.2)', text: '#0f172a', blur: 3 },
+    neon: { bg: 'rgba(5,10,30,0.8)', border: 'rgba(56,189,248,0.55)', shadow: '0 0 0 1px rgba(56,189,248,0.4), 0 14px 45px rgba(56,189,248,0.24)', text: '#dbeafe', blur: 2 },
+    chalk: { bg: 'rgba(22,25,35,0.86)', border: 'rgba(203,213,225,0.35)', shadow: '0 10px 30px rgba(0,0,0,0.35)', text: '#e2e8f0', blur: 1 },
+  };
+
+  function __setCardVar(root, name, val) {
+    if (val === null || val === undefined || val === 'none' || val === '') root.style.removeProperty(name);
+    else root.style.setProperty(name, String(val));
+  }
+
+  function __patchPhysicsCardDOM(element, property, value) {
+    var root = document.getElementById('physics-explain-card-root');
+    var canvas = element.canvasId ? document.getElementById(element.canvasId) : null;
+    if (property === 'simScale' && canvas) {
+      canvas.style.setProperty('--sim-scale', String(value));
+      return;
+    }
+    if (property === 'visible') {
+      if (root) root.style.display = value ? '' : 'none';
+      return;
+    }
+    if (property === 'opacity') {
+      if (root) root.style.setProperty('--card-opacity', String(value));
+      return;
+    }
+    if (!root) return;
+    if (property === 'cardPreset') {
+      var pr = __PHYSICS_CARD_PRESETS[value] || __PHYSICS_CARD_PRESETS.glass_dark;
+      root.style.setProperty('--card-bg', pr.bg);
+      root.style.setProperty('--card-border', pr.border);
+      root.style.setProperty('--card-shadow', pr.shadow);
+      root.style.setProperty('--card-text', pr.text);
+      root.style.setProperty('--card-blur', pr.blur + 'px');
+      return;
+    }
+    if (property === 'cardX') root.style.left = value + '%';
+    else if (property === 'cardY') root.style.top = value + '%';
+    else if (property === 'cardWidth') root.style.width = value + '%';
+    else if (property === 'cardBg') __setCardVar(root, '--card-bg', value);
+    else if (property === 'cardBorder') __setCardVar(root, '--card-border', value);
+    else if (property === 'cardShadow') __setCardVar(root, '--card-shadow', value);
+    else if (property === 'cardText') __setCardVar(root, '--card-text', value);
+    else if (property === 'cardBlur') root.style.setProperty('--card-blur', value + 'px');
+    else if (property === 'cardRadius') root.style.setProperty('--card-radius', value + 'px');
+    else if (property === 'cardPadding') root.style.setProperty('--card-padding', value + 'px');
+    else if (property === 'titleSize') root.style.setProperty('--card-title-size', value + 'px');
+    else if (property === 'bodySize') root.style.setProperty('--card-body-size', value + 'px');
+    else if (property === 'equationSize') root.style.setProperty('--card-equation-size', value + 'px');
+    else if (property === 'textAlign') root.style.setProperty('--card-text-align', String(value));
+    else if (property === 'titleColor') {
+      var t = document.querySelector('.scene-title');
+      if (t) {
+        if (value === null || value === 'none' || value === '') t.style.removeProperty('color');
+        else t.style.color = String(value);
+      }
+    }
+    else if (property === 'bodyColor') {
+      var n = document.querySelector('.narration-text');
+      if (n) {
+        if (value === null || value === 'none' || value === '') n.style.removeProperty('color');
+        else n.style.color = String(value);
+      }
+    }
+  }
+
+  // ── Click handler ───────────────────────────────────────
+  document.addEventListener('click', function(e) {
+    // The scene body uses transform:scale(s) via fitToViewport().
+    // e.clientX/Y are in the *scaled* viewport, so we need to
+    // convert back to 1920x1080 scene coordinates.
+    // Use the body's current CSS transform scale factor.
+    var body = document.body;
+    var bodyStyle = body.style.transform || '';
+    var scaleMatch = bodyStyle.match(/scale\(([^)]+)\)/);
+    var bodyScale = scaleMatch ? parseFloat(scaleMatch[1]) : 1;
+    // If no body transform, fall back to viewport ratio
+    if (!bodyScale || isNaN(bodyScale)) {
+      bodyScale = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+    }
+    var x = e.clientX / bodyScale;
+    var y = e.clientY / bodyScale;
+
+    var hit = window.__hitTest(x, y);
+
+    if (hit) {
+      window.__selected = hit.id;
+      showSelectionHighlight(hit);
+      window.parent.postMessage({
+        source: 'cench-scene',
+        type: 'element_selected',
+        elementId: hit.id,
+        element: JSON.parse(JSON.stringify(hit)),
+      }, '*');
+    } else {
+      window.__selected = null;
+      clearSelectionHighlight();
+      window.parent.postMessage({
+        source: 'cench-scene',
+        type: 'element_deselected',
+      }, '*');
+    }
+  });
+
+  // ── Selection highlight overlay ─────────────────────────
+  var highlightCanvas = null;
+
+  function showSelectionHighlight(element) {
+    if (!element.bbox) return;
+
+    if (!highlightCanvas) {
+      highlightCanvas = document.createElement('canvas');
+      highlightCanvas.width = 1920;
+      highlightCanvas.height = 1080;
+      highlightCanvas.style.cssText =
+        'position:absolute;inset:0;pointer-events:none;z-index:9999;';
+      // Scale with the body
+      var bodyTransform = document.body.style.transform;
+      if (bodyTransform) {
+        highlightCanvas.style.transformOrigin = 'top left';
+      }
+      document.body.appendChild(highlightCanvas);
+    }
+
+    var ctx = highlightCanvas.getContext('2d');
+    ctx.clearRect(0, 0, 1920, 1080);
+
+    var bx = element.bbox.x;
+    var by = element.bbox.y;
+    var bw = element.bbox.w;
+    var bh = element.bbox.h;
+    var pad = 8;
+
+    // Dashed selection box
+    ctx.strokeStyle = '#e84545';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 3]);
+    ctx.strokeRect(bx - pad, by - pad, bw + pad * 2, bh + pad * 2);
+
+    // Corner handles
+    ctx.fillStyle = '#e84545';
+    ctx.setLineDash([]);
+    var corners = [
+      [bx - pad, by - pad],
+      [bx + bw + pad, by - pad],
+      [bx - pad, by + bh + pad],
+      [bx + bw + pad, by + bh + pad],
+    ];
+    corners.forEach(function(c) {
+      ctx.fillRect(c[0] - 4, c[1] - 4, 8, 8);
+    });
+
+    // Element label
+    ctx.fillStyle = '#e84545';
+    ctx.font = '20px DM Mono, monospace';
+    ctx.fillText(element.label || element.id, bx - pad, by - pad - 8);
+  }
+
+  function clearSelectionHighlight() {
+    if (highlightCanvas) {
+      var ctx = highlightCanvas.getContext('2d');
+      ctx.clearRect(0, 0, 1920, 1080);
+    }
+  }
+
+  // ── Highlight from parent (when selecting in layers panel) ──
+  window.__highlightElement = function(elementId) {
+    var el = window.__elements[elementId];
+    if (el) {
+      window.__selected = elementId;
+      showSelectionHighlight(el);
+    }
+  };
+
+  window.__clearHighlight = function() {
+    window.__selected = null;
+    clearSelectionHighlight();
+  };
+
+  // ── Property patching from parent ──────────────────────
+  window.addEventListener('message', function(e) {
+    if (!e.data || e.data.target !== 'cench-scene') return;
+
+    if (e.data.type === 'patch_element') {
+      var elementId = e.data.elementId;
+      var property = e.data.property;
+      var value = e.data.value;
+      var element = window.__elements[elementId];
+      if (!element) return;
+
+      element[property] = value;
+
+      if (element.type === 'physics-card') {
+        __patchPhysicsCardDOM(element, property, value);
+        var root = document.getElementById('physics-explain-card-root');
+        if (root && window.__selected === elementId) {
+          var r = root.getBoundingClientRect();
+          var s = __physicsCardBodyScale();
+          element.bbox = { x: r.left / s, y: r.top / s, w: r.width / s, h: r.height / s };
+          showSelectionHighlight(element);
+        }
+        if (window.__tl && !window.__tl.isActive()) {
+          try { window.__tl.seek(window.__tl.time()); } catch(ignore) {}
+        }
+        return;
+      }
+
+      // Re-render: for canvas2d, call redrawAll if it exists
+      if (window.__redrawAll) {
+        window.__redrawAll();
+      }
+      // For SVG, apply attribute directly to the DOM node
+      var domEl = document.getElementById(elementId);
+      if (domEl) {
+        // Map element properties to DOM attributes
+        if (property === 'fill' || property === 'stroke') {
+          domEl.setAttribute(property, value || 'none');
+        } else if (property === 'strokeWidth') {
+          domEl.setAttribute('stroke-width', value);
+        } else if (property === 'fillOpacity') {
+          domEl.setAttribute('fill-opacity', value);
+        } else if (property === 'opacity') {
+          domEl.setAttribute('opacity', value);
+        } else if (property === 'visible') {
+          domEl.style.display = value ? '' : 'none';
+        } else if (property === 'text') {
+          domEl.textContent = value;
+        } else if (property === 'fontSize') {
+          domEl.setAttribute('font-size', value);
+        } else if (property === 'fontFamily') {
+          domEl.setAttribute('font-family', value);
+        } else if (property === 'fontWeight') {
+          domEl.setAttribute('font-weight', value);
+        } else if (property === 'textAnchor') {
+          domEl.setAttribute('text-anchor', value);
+        } else if (['x','y','cx','cy','r','rx','ry','width','height','x1','y1','x2','y2'].indexOf(property) !== -1) {
+          domEl.setAttribute(property, value);
+          // Update bbox for selection highlight
+          try {
+            var nb = domEl.getBBox();
+            element.bbox = { x: nb.x, y: nb.y, w: nb.width, h: nb.height };
+          } catch(ignored) {}
+        }
+      }
+
+      // Update selection highlight if this element is selected
+      if (window.__selected === elementId && element.bbox) {
+        showSelectionHighlight(element);
+      }
+
+      // Re-seek timeline to current time to show the change
+      if (window.__tl && !window.__tl.isActive()) {
+        window.__tl.seek(window.__tl.time());
+      }
+    }
+
+    if (e.data.type === 'highlight_element') {
+      if (e.data.elementId) {
+        window.__highlightElement(e.data.elementId);
+      } else {
+        window.__clearHighlight();
+      }
+    }
+
+    if (e.data.type === 'get_elements') {
+      window.parent.postMessage({
+        source: 'cench-scene',
+        type: 'elements_list',
+        elements: JSON.parse(JSON.stringify(window.__elements)),
+      }, '*');
+    }
+  });
+
+  // ── Auto-register SVG elements on load ──────────────────
+  var SVG_SCAN_TAGS = 'rect,circle,ellipse,line,polyline,polygon,path,text,g,image,use';
+
+  window.addEventListener('load', function() {
+    // Scan ALL visible SVG elements (not just those with id)
+    var autoIdx = 0;
+    document.querySelectorAll('svg').forEach(function(svg) {
+      svg.querySelectorAll(SVG_SCAN_TAGS).forEach(function(el) {
+        // Assign stable id if missing
+        if (!el.id) {
+          el.id = 'auto-' + el.tagName.toLowerCase() + '-' + (autoIdx++);
+        }
+        // Skip if already registered by scene code
+        if (window.__elements[el.id]) return;
+
+        // Skip invisible or tiny elements
+        var bbox;
+        try {
+          var b = el.getBBox();
+          bbox = { x: b.x, y: b.y, w: b.width, h: b.height };
+          // Skip zero-size elements (markers, defs, clip-paths)
+          if (bbox.w < 2 && bbox.h < 2) return;
+        } catch(e) {
+          return; // Can't measure = not renderable
+        }
+
+        // Skip elements inside <defs>, <clipPath>, <mask>, <pattern>
+        var skip = false;
+        var parent = el.parentElement;
+        while (parent && parent !== svg) {
+          var pTag = parent.tagName.toLowerCase();
+          if (pTag === 'defs' || pTag === 'clippath' || pTag === 'mask' || pTag === 'pattern' || pTag === 'marker') { skip = true; break; }
+          parent = parent.parentElement;
+        }
+        if (skip) return;
+
+        var tagName = el.tagName.toLowerCase();
+        var type = 'svg-shape';
+        if (tagName === 'text' || tagName === 'tspan') type = 'svg-text';
+        else if (tagName === 'path') type = 'svg-path';
+        else if (tagName === 'rect') type = 'svg-shape';
+        else if (tagName === 'circle' || tagName === 'ellipse') type = 'svg-shape';
+        else if (tagName === 'line' || tagName === 'polyline' || tagName === 'polygon') type = 'svg-shape';
+        else if (tagName === 'image') type = 'svg-shape';
+        else if (tagName === 'g') type = 'svg-shape';
+
+        // Build readable label
+        var autoLabel = el.dataset ? el.dataset.label : null;
+        if (!autoLabel) {
+          if (type === 'svg-text') {
+            autoLabel = (el.textContent || '').trim().slice(0, 30) || 'Text';
+          } else {
+            autoLabel = tagName + (el.id && !el.id.startsWith('auto-') ? '#' + el.id : ' ' + (autoIdx));
+          }
+        }
+
+        // Extract computed style for inherited properties
+        var cs = window.getComputedStyle(el);
+
+        window.__register({
+          id: el.id,
+          type: type,
+          label: autoLabel,
+          bbox: bbox,
+          stroke: el.getAttribute('stroke') || cs.stroke || 'none',
+          strokeWidth: parseFloat(el.getAttribute('stroke-width') || cs.strokeWidth || '0'),
+          fill: el.getAttribute('fill') || cs.fill || 'none',
+          fillOpacity: parseFloat(el.getAttribute('fill-opacity') || '1'),
+          opacity: parseFloat(el.getAttribute('opacity') || cs.opacity || '1'),
+          visible: el.style.display !== 'none' && cs.display !== 'none',
+          animStartTime: 0,
+          animDuration: 0,
+          text: (type === 'svg-text') ? (el.textContent || '') : '',
+          fontSize: parseFloat(el.getAttribute('font-size') || cs.fontSize || '16'),
+          fontFamily: el.getAttribute('font-family') || cs.fontFamily || '',
+          x: parseFloat(el.getAttribute('x') || el.getAttribute('cx') || '0'),
+          y: parseFloat(el.getAttribute('y') || el.getAttribute('cy') || '0'),
+        });
+      });
+    });
+
+    // Report all registered elements to parent
+    setTimeout(function() {
+      window.parent.postMessage({
+        source: 'cench-scene',
+        type: 'elements_list',
+        elements: JSON.parse(JSON.stringify(window.__elements)),
+      }, '*');
+    }, 100);
+  });
+})();
+</script>
+
+  <!-- Template setup: import THREE, define globals + setupEnvironment on window -->
+  <script type="module">
+    import * as THREE from 'three';
+    window.THREE = THREE;
+
+    // Procedural studio environment map — makes all PBR materials look professional.
+    // Scene code calls: setupEnvironment(scene, renderer)
+    window.setupEnvironment = function(targetScene, renderer) {
+      try {
+        const pmrem = new THREE.PMREMGenerator(renderer);
+        const envScene = new THREE.Scene();
+
+        const skyGeo = new THREE.SphereGeometry(50, 32, 16);
+        const skyMat = new THREE.ShaderMaterial({
+          side: THREE.BackSide,
+          uniforms: {
+            topColor:    { value: new THREE.Color(0xddeeff) },
+            bottomColor: { value: new THREE.Color(0xfff8f0) },
+          },
+          vertexShader: `
+            varying vec3 vWorldPos;
+            void main() {
+              vec4 wp = modelMatrix * vec4(position, 1.0);
+              vWorldPos = wp.xyz;
+              gl_Position = projectionMatrix * viewMatrix * wp;
+            }
+          `,
+          fragmentShader: `
+            uniform vec3 topColor;
+            uniform vec3 bottomColor;
+            varying vec3 vWorldPos;
+            void main() {
+              float h = normalize(vWorldPos).y * 0.5 + 0.5;
+              gl_FragColor = vec4(mix(bottomColor, topColor, h), 1.0);
+            }
+          `,
+        });
+        envScene.add(new THREE.Mesh(skyGeo, skyMat));
+
+        const panelGeo = new THREE.PlaneGeometry(8, 4);
+        const panelMat = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+        const panel = new THREE.Mesh(panelGeo, panelMat);
+        panel.position.set(-6, 8, 5);
+        panel.lookAt(0, 0, 0);
+        envScene.add(panel);
+
+        const fillGeo = new THREE.PlaneGeometry(6, 3);
+        const fillMat = new THREE.MeshBasicMaterial({ color: 0xe0e8ff, side: THREE.DoubleSide });
+        const fillPanel = new THREE.Mesh(fillGeo, fillMat);
+        fillPanel.position.set(7, 3, 3);
+        fillPanel.lookAt(0, 0, 0);
+        envScene.add(fillPanel);
+
+        const envMap = pmrem.fromScene(envScene, 0.04).texture;
+        targetScene.environment = envMap;
+        pmrem.dispose();
+        envScene.clear();
+      } catch(e) {
+        console.warn('setupEnvironment failed:', e);
+      }
+    };
+
+    /**
+ * Injected into Three.js scene HTML (after window.THREE is set).
+ * API:
+ *   applyCenchThreeEnvironment(envId, scene, renderer, camera)
+ *   updateCenchThreeEnvironment(t)  // call each frame with seconds (e.g. __tl.time())
+ */
+(function initCenchThreeEnvironments() {
+  var THREE = window.THREE;
+  if (!THREE) return;
+
+  function det(i, seed) {
+    var x = Math.sin(i * 12.9898 + (seed || 0) * 78.233) * 43758.5453123;
+    return x - Math.floor(x);
+  }
+
+  function disposeGroup(g) {
+    if (!g) return;
+    g.traverse(function (obj) {
+      if (obj.geometry) obj.geometry.dispose();
+      if (obj.material) {
+        if (Array.isArray(obj.material)) obj.material.forEach(function (m) { m.dispose(); });
+        else obj.material.dispose();
+      }
+    });
+  }
+
+  function clearEnv(scene) {
+    var old = scene.getObjectByName('__cenchEnvRoot');
+    if (old) {
+      disposeGroup(old);
+      scene.remove(old);
+    }
+    scene.fog = null;
+    if (scene.background && scene.background.isTexture) {
+      /* leave user textures alone if any */
+    }
+    window.__cenchEnvState = { update: null, refs: {} };
+  }
+
+  window.CENCH_THREE_ENV_IDS = ['track_rolling_topdown'];
+
+  window.applyCenchThreeEnvironment = function (envId, scene, renderer, camera) {
+    if (!scene || !renderer) return;
+    clearEnv(scene);
+
+    var root = new THREE.Group();
+    root.name = '__cenchEnvRoot';
+    var refs = {};
+    var state = window.__cenchEnvState;
+    state.refs = refs;
+
+    if (envId !== 'track_rolling_topdown') {
+      console.warn('applyCenchThreeEnvironment: env "' + envId + '" is no longer available; using track_rolling_topdown');
+      envId = 'track_rolling_topdown';
+    }
+
+    switch (envId) {
+      case 'track_rolling_topdown': {
+        scene.background = new THREE.Color(0xf1f5f9);
+        renderer.setClearColor(0xeef2f6);
+        var table = new THREE.Mesh(
+          new THREE.PlaneGeometry(30, 18),
+          new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.22, metalness: 0.06 }),
+        );
+        table.rotation.x = -Math.PI / 2;
+        table.receiveShadow = true;
+        root.add(table);
+        var divMat = new THREE.MeshStandardMaterial({ color: 0xd1d9e6, roughness: 0.45, metalness: 0.12 });
+        [-2.7, 0, 2.7].forEach(function (dz) {
+          var div = new THREE.Mesh(new THREE.BoxGeometry(26, 0.045, 0.07), divMat);
+          div.position.set(0, 0.022, dz);
+          div.receiveShadow = true;
+          root.add(div);
+        });
+        [-5.35, 5.35].forEach(function (dz) {
+          var edge = new THREE.Mesh(
+            new THREE.BoxGeometry(26, 0.035, 0.055),
+            new THREE.MeshStandardMaterial({ color: 0xb8c5d6, roughness: 0.5, metalness: 0.08 }),
+          );
+          edge.position.set(0, 0.023, dz);
+          root.add(edge);
+        });
+        function makePatternTex(kind, hexA, hexB) {
+          var cnv = document.createElement('canvas');
+          cnv.width = 256;
+          cnv.height = 128;
+          var cx = cnv.getContext('2d');
+          cx.fillStyle = hexA;
+          cx.fillRect(0, 0, 256, 128);
+          cx.fillStyle = hexB;
+          if (kind === 0) {
+            for (var x = 0; x < 256; x += 32) cx.fillRect(x, 0, 14, 128);
+          } else if (kind === 1) {
+            for (var y = 0; y < 128; y += 20) cx.fillRect(0, y, 256, 8);
+          } else if (kind === 2) {
+            var r = 12;
+            for (var py = 0; py < 4; py++) {
+              for (var px = 0; px < 8; px++) {
+                cx.beginPath();
+                cx.arc(px * 32 + 16, py * 32 + 16, r, 0, Math.PI * 2);
+                cx.fill();
+              }
+            }
+          } else {
+            cx.strokeStyle = hexB;
+            cx.lineWidth = 6;
+            for (var g = 0; g < 10; g++) {
+              cx.beginPath();
+              cx.moveTo(g * 28, 0);
+              cx.lineTo(g * 28 + 80, 128);
+              cx.stroke();
+            }
+          }
+          var tex = new THREE.CanvasTexture(cnv);
+          tex.wrapS = THREE.RepeatWrapping;
+          tex.wrapT = THREE.RepeatWrapping;
+          tex.repeat.set(3, 2);
+          tex.colorSpace = THREE.SRGBColorSpace;
+          return tex;
+        }
+        var laneZ = [-4.05, -1.35, 1.35, 4.05];
+        var dirs = [-1, 1, -1, 1];
+        var pals = [
+          ['#f8fafc', '#e11d48'],
+          ['#fff7ed', '#c2410c'],
+          ['#eff6ff', '#2563eb'],
+          ['#f0fdf4', '#16a34a'],
+        ];
+        var span = 25;
+        var ballR = 0.5;
+        refs.trackBalls = [];
+        for (var li = 0; li < 4; li++) {
+          for (var bi = 0; bi < 3; bi++) {
+            var pk = (li + bi) % 4;
+            var tex = makePatternTex(pk, pals[pk][0], pals[pk][1]);
+            var bmat = new THREE.MeshStandardMaterial({
+              map: tex,
+              roughness: 0.32,
+              metalness: 0.18,
+            });
+            var ball = new THREE.Mesh(new THREE.SphereGeometry(ballR, 36, 28), bmat);
+            ball.castShadow = true;
+            var phase = -12.5 + det(li * 9 + bi, 88) * span;
+            ball.position.set(phase, ballR, laneZ[li]);
+            root.add(ball);
+            var spd = 2.1 + det(li * 7 + bi, 89) * 0.65;
+            refs.trackBalls.push({
+              mesh: ball,
+              dir: dirs[li],
+              speed: spd,
+              phase: phase,
+              r: ballR,
+            });
+          }
+        }
+        root.add(new THREE.AmbientLight(0xffffff, 0.42));
+        var tKey = new THREE.DirectionalLight(0xffffff, 1.05);
+        tKey.position.set(-5, 18, 10);
+        tKey.castShadow = true;
+        tKey.shadow.mapSize.set(2048, 2048);
+        tKey.shadow.camera.near = 2;
+        tKey.shadow.camera.far = 32;
+        tKey.shadow.camera.left = -16;
+        tKey.shadow.camera.right = 16;
+        tKey.shadow.camera.top = 16;
+        tKey.shadow.camera.bottom = -16;
+        tKey.shadow.bias = -0.0004;
+        root.add(tKey);
+        var tFill = new THREE.DirectionalLight(0xe2e8f0, 0.38);
+        tFill.position.set(10, 12, -8);
+        root.add(tFill);
+        var tRim = new THREE.DirectionalLight(0xfef9c3, 0.22);
+        tRim.position.set(0, 8, -12);
+        root.add(tRim);
+        camera.position.set(0, 17.2, 0.01);
+        camera.lookAt(0, 0, 0);
+        state.update = function (t) {
+          var tt = typeof t === 'number' ? t : 0;
+          refs.trackBalls.forEach(function (b) {
+            var u = b.phase + tt * b.dir * b.speed + 12.5;
+            u = ((u % span) + span) % span;
+            b.mesh.position.x = u - 12.5;
+            b.mesh.rotation.z = -b.dir * (tt * b.speed / b.r);
+          });
+        };
+        // Self-driving render loop using native RAF (bypasses playback controller
+        // interception) so the background always animates continuously.
+        var _envStart = Date.now();
+        var _nraf = window.__nativeRAF || requestAnimationFrame;
+        (function _envLoop() {
+          var t = (Date.now() - _envStart) / 1000;
+          state.update(t);
+          renderer.render(scene, camera);
+          _nraf(_envLoop);
+        })();
+        break;
+      }
+      default:
+        console.warn('applyCenchThreeEnvironment: unreachable envId', envId);
+    }
+
+    scene.add(root);
+  };
+
+  window.updateCenchThreeEnvironment = function (t) {
+    var st = window.__cenchEnvState;
+    if (st && typeof st.update === 'function') st.update(t || 0);
+  };
+})();
+
+    /**
+ * 3D data scatter — vanilla Three.js helper inspired by the CorticoAI 3d-react-demo
+ * (React + react-three-fiber scatterplot style). Original demo: MIT License —
+ * https://github.com/CorticoAI/3d-react-demo
+ *
+ * Injected in the Three template after stage environments. API:
+ *   createCenchDataScatterplot(scene, options)
+ *   updateCenchDataScatterplot(t)
+ */
+(function initCenchDataScatterplot() {
+  var THREE = window.THREE;
+  if (!THREE) return;
+
+  function disposeGroup(g) {
+    if (!g) return;
+    g.traverse(function (obj) {
+      if (obj.geometry) obj.geometry.dispose();
+      if (obj.material) {
+        if (Array.isArray(obj.material)) obj.material.forEach(function (m) { m.dispose(); });
+        else obj.material.dispose();
+      }
+    });
+  }
+
+  window.createCenchDataScatterplot = function (scene, options) {
+    var old = scene.getObjectByName('__cenchScatterRoot');
+    if (old) {
+      disposeGroup(old);
+      scene.remove(old);
+    }
+    window.__cenchScatterState = { update: null };
+
+    var opts = options || {};
+    var raw = opts.points;
+    if (!raw || !raw.length) {
+      console.warn('createCenchDataScatterplot: no points');
+      return;
+    }
+
+    var orbitSpeed = typeof opts.orbitSpeed === 'number' ? opts.orbitSpeed : 0.12;
+    var pointRadius = typeof opts.pointRadius === 'number' ? opts.pointRadius : 0.14;
+    var axisExtent = typeof opts.axisExtent === 'number' ? opts.axisExtent : 7;
+
+    var root = new THREE.Group();
+    root.name = '__cenchScatterRoot';
+
+    var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    var i;
+    for (i = 0; i < raw.length; i++) {
+      var p = raw[i];
+      var px = Number(p.x), py = Number(p.y), pz = Number(p.z);
+      if (px < minX) minX = px;
+      if (px > maxX) maxX = px;
+      if (py < minY) minY = py;
+      if (py > maxY) maxY = py;
+      if (pz < minZ) minZ = pz;
+      if (pz > maxZ) maxZ = pz;
+    }
+    var cx = (minX + maxX) / 2;
+    var cy = (minY + maxY) / 2;
+    var cz = (minZ + maxZ) / 2;
+    var dx = maxX - minX || 1;
+    var dy = maxY - minY || 1;
+    var dz = maxZ - minZ || 1;
+    var maxSpan = Math.max(dx, dy, dz);
+    var scale = (axisExtent * 0.42) / maxSpan;
+
+    var count = raw.length;
+    var geo = new THREE.IcosahedronGeometry(pointRadius, 1);
+    var mat = new THREE.MeshStandardMaterial({ metalness: 0.25, roughness: 0.45 });
+    var mesh = new THREE.InstancedMesh(geo, mat, count);
+    mesh.castShadow = true;
+
+    var dummy = new THREE.Object3D();
+    var col = new THREE.Color();
+    var zNorm = 0;
+    for (i = 0; i < count; i++) {
+      var q = raw[i];
+      var x = (Number(q.x) - cx) * scale;
+      var y = (Number(q.y) - cy) * scale;
+      var z = (Number(q.z) - cz) * scale;
+      dummy.position.set(x, y, z);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(i, dummy.matrix);
+      zNorm = maxZ > minZ ? (Number(q.z) - minZ) / (maxZ - minZ) : 0.5;
+      col.setHSL(0.55 + zNorm * 0.35, 0.75, 0.52);
+      mesh.setColorAt(i, col);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    root.add(mesh);
+
+    var ax = axisExtent * 0.5;
+    function axisLine(x0, y0, z0, x1, y1, z1, hex) {
+      var g = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(x0, y0, z0),
+        new THREE.Vector3(x1, y1, z1),
+      ]);
+      var m = new THREE.LineBasicMaterial({ color: hex, transparent: true, opacity: 0.75 });
+      return new THREE.Line(g, m);
+    }
+    root.add(axisLine(0, 0, 0, ax, 0, 0, 0xf87171));
+    root.add(axisLine(0, 0, 0, 0, ax, 0, 0x4ade80));
+    root.add(axisLine(0, 0, 0, 0, 0, ax, 0x60a5fa));
+
+    var grid = new THREE.GridHelper(axisExtent * 1.2, 14, 0x334155, 0x1e293b);
+    grid.position.y = -axisExtent * 0.35;
+    root.add(grid);
+
+    root.position.set(0, axisExtent * 0.08, 0);
+
+    scene.add(root);
+
+    window.__cenchScatterState = {
+      update: function (t) {
+        root.rotation.y = t * orbitSpeed;
+        root.rotation.x = Math.sin(t * 0.2) * 0.04;
+      },
+    };
+  };
+
+  window.updateCenchDataScatterplot = function (t) {
+    var st = window.__cenchScatterState;
+    if (st && typeof st.update === 'function') st.update(t || 0);
+  };
+})();
+
+  </script>
+
+  <!-- Scene code: separate module so it can have its own imports at the top -->
+  <script type="module">
+    import * as THREE from 'three';
+
+const camRoot = document.getElementById('scene-camera');
+const holder = document.createElement('div');
+holder.style.cssText = 'position:absolute;inset:0;z-index:0;pointer-events:none;';
+camRoot.insertBefore(holder, camRoot.firstChild);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: true });
+renderer.setSize(1920, 1080);
+renderer.setClearColor(0x0b1220);
+holder.appendChild(renderer.domElement);
+
+const scene3 = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(48, 1920 / 1080, 0.1, 200);
+camera.position.set(0, 0.35, 4.2);
+window.__threeCamera = camera;
+scene3.add(new THREE.AmbientLight(0x445566, 0.85));
+const key = new THREE.DirectionalLight(0xffffff, 1.05);
+key.position.set(4, 6, 5);
+scene3.add(key);
+
+const mesh = new THREE.Mesh(
+  new THREE.IcosahedronGeometry(1.15, 1),
+  new THREE.MeshStandardMaterial({ color: 0x818cf8, roughness: 0.4, metalness: 0.25 })
+);
+scene3.add(mesh);
+
+function tick() {
+  var u = window.__tl ? window.__tl.time() : 0;
+  mesh.rotation.x = u * 0.55;
+  mesh.rotation.y = u * 0.72;
+  renderer.render(scene3, camera);
+  if (u < DURATION) requestAnimationFrame(tick);
+}
+renderer.render(scene3, camera);
+requestAnimationFrame(tick);
+  </script>
+</body>
+</html>

@@ -19,6 +19,9 @@ import type { Set, Get, UndoableState } from './types'
 import { MAX_UNDO, normalizeScene, sceneHasRenderableContent } from './helpers'
 
 export function createAgentActions(set: Set, get: Get) {
+  let switchConversationCounter = 0
+  let renameDebounceTimer: ReturnType<typeof setTimeout> | null = null
+
   return {
     // ── Conversation actions ────────────────────────────────────────────────
 
@@ -62,6 +65,7 @@ export function createAgentActions(set: Set, get: Get) {
           conversations: [conv, ...state.conversations],
           activeConversationId: conv.id,
           chatMessages: [],
+          _persistedMessageIds: new Set<string>(),
         }))
         return conv.id
       } catch (err) {
@@ -71,36 +75,61 @@ export function createAgentActions(set: Set, get: Get) {
     },
 
     switchConversation: async (conversationId: string) => {
+      // Validate conversation belongs to the current project's list
+      const validIds = new Set(get().conversations.map((c) => c.id))
+      if (!validIds.has(conversationId)) return
+      const requestId = ++switchConversationCounter
       set({ activeConversationId: conversationId, chatMessages: [] })
       try {
         const res = await fetch(`/api/conversations/${conversationId}/messages`)
         if (!res.ok) return
+        // Bail if a newer switch happened while we were fetching
+        if (requestId !== switchConversationCounter) return
         const data = await res.json()
         // Map DB messages to ChatMessage format
-        const msgs: ChatMessage[] = (data.messages ?? []).map((m: any) => ({
-          id: m.id,
-          role: m.role as 'user' | 'assistant',
-          content: m.content,
-          agentType: m.agentType ?? undefined,
-          modelId: m.modelUsed ?? undefined,
-          thinking: m.thinkingContent ?? undefined,
-          toolCalls: m.toolCalls ?? [],
-          usage: m.inputTokens
-            ? {
-                inputTokens: m.inputTokens,
-                outputTokens: m.outputTokens ?? 0,
-                apiCalls: m.apiCalls ?? 1,
-                costUsd: m.costUsd ?? 0,
-                totalDurationMs: m.durationMs ?? 0,
-              }
-            : undefined,
-          userRating: m.userRating ?? undefined,
-          generationLogId: m.generationLogId ?? undefined,
-          timestamp: new Date(m.createdAt).getTime(),
-        }))
-        // Guard against stale switch
+        const orphanedIds: string[] = []
+        const msgs: ChatMessage[] = (data.messages ?? []).map((m: any) => {
+          const isOrphaned = m.status === 'streaming'
+          if (isOrphaned) orphanedIds.push(m.id)
+          return {
+            id: m.id,
+            role: m.role as 'user' | 'assistant',
+            content: isOrphaned ? (m.content || 'Generation interrupted.') : m.content,
+            agentType: m.agentType ?? undefined,
+            modelId: m.modelUsed ?? undefined,
+            thinking: m.thinkingContent ?? undefined,
+            toolCalls: m.toolCalls ?? [],
+            contentSegments: m.contentSegments ?? undefined,
+            usage: m.inputTokens
+              ? {
+                  inputTokens: m.inputTokens,
+                  outputTokens: m.outputTokens ?? 0,
+                  apiCalls: m.apiCalls ?? 1,
+                  costUsd: m.costUsd ?? 0,
+                  totalDurationMs: m.durationMs ?? 0,
+                }
+              : undefined,
+            userRating: m.userRating ?? undefined,
+            generationLogId: m.generationLogId ?? undefined,
+            timestamp: new Date(m.createdAt).getTime(),
+          }
+        })
+        // Guard against stale switch (belt-and-suspenders with counter above)
+        if (requestId !== switchConversationCounter) return
         if (get().activeConversationId === conversationId) {
-          set({ chatMessages: msgs })
+          // Track all loaded message IDs as persisted (for INSERT vs UPDATE discrimination)
+          set({
+            chatMessages: msgs,
+            _persistedMessageIds: new Set(msgs.map((m) => m.id)),
+          })
+          // Background: mark orphaned 'streaming' messages as 'aborted' in DB
+          for (const orphanId of orphanedIds) {
+            fetch(`/api/conversations/${conversationId}/messages`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ messageId: orphanId, status: 'aborted' }),
+            }).catch(() => {})
+          }
         }
       } catch (err) {
         console.error('[Conversations] Failed to load messages:', err)
@@ -108,14 +137,20 @@ export function createAgentActions(set: Set, get: Get) {
     },
 
     renameConversation: async (id: string, title: string) => {
+      // Optimistic UI update immediately
       set((state) => ({
         conversations: state.conversations.map((c) => (c.id === id ? { ...c, title } : c)),
       }))
-      fetch(`/api/conversations/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title }),
-      }).catch((err) => console.error('[Conversations] Failed to rename:', err))
+      // Debounce the API call to avoid firing on every keystroke
+      if (renameDebounceTimer) clearTimeout(renameDebounceTimer)
+      renameDebounceTimer = setTimeout(() => {
+        renameDebounceTimer = null
+        fetch(`/api/conversations/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title }),
+        }).catch((err) => console.error('[Conversations] Failed to rename:', err))
+      }, 400)
     },
 
     pinConversation: async (id: string, pinned: boolean) => {
@@ -152,19 +187,39 @@ export function createAgentActions(set: Set, get: Get) {
 
     addChatMessage: (msg: ChatMessage) => {
       set((state) => ({ chatMessages: [...state.chatMessages, msg] }))
-      // Persist user messages immediately via conversations API
+      // User messages are persisted via persistUserMessage (awaitable).
+      // Assistant messages are persisted via persistChatMessage after the agent run.
+    },
+
+    /** Persist a user message to the DB. Returns a promise so callers can await it. */
+    persistUserMessage: async (msg: ChatMessage) => {
       const projectId = get().project?.id
       const conversationId = get().activeConversationId
-      if (projectId && conversationId && msg.role === 'user' && msg.content) {
-        fetch(`/api/conversations/${conversationId}/messages`, {
+      if (!projectId || !conversationId || msg.role !== 'user' || !msg.content) return
+      const textContent = typeof msg.content === 'string' ? msg.content : messageContentToText(msg.content)
+      if (!textContent) return
+      try {
+        const res = await fetch(`/api/conversations/${conversationId}/messages`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            id: msg.id,
             projectId,
             role: msg.role,
-            content: msg.content,
+            content: textContent,
           }),
-        }).catch((err) => console.error('[Chat] Failed to persist user message:', err))
+        })
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}))
+          console.warn(`[Chat] persistUserMessage failed (${res.status}): ${errData.error ?? res.statusText}`)
+          return
+        }
+        // Track that this message has been INSERTed
+        const ids = new Set(get()._persistedMessageIds)
+        ids.add(msg.id)
+        set({ _persistedMessageIds: ids })
+      } catch (err) {
+        console.error('[Chat] Failed to persist user message:', err)
       }
     },
 
@@ -174,33 +229,69 @@ export function createAgentActions(set: Set, get: Get) {
       }))
     },
 
-    persistChatMessage: (id: string) => {
+    /** Persist a chat message to DB. INSERT on first call, UPDATE on subsequent calls. */
+    persistChatMessage: async (id: string, opts?: { status?: string }) => {
       const msg = get().chatMessages.find((m) => m.id === id)
       const projectId = get().project?.id
       const conversationId = get().activeConversationId
-      if (msg && projectId && conversationId && msg.content) {
-        // Persist text content only — images are ephemeral and too large for DB
-        const textContent = messageContentToText(msg.content)
-        fetch(`/api/conversations/${conversationId}/messages`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            projectId,
-            role: msg.role,
-            content: textContent,
-            agentType: msg.agentType,
-            modelUsed: msg.modelId,
-            thinkingContent: msg.thinking,
-            toolCalls: msg.toolCalls,
-            inputTokens: msg.usage?.inputTokens,
-            outputTokens: msg.usage?.outputTokens,
-            costUsd: msg.usage?.costUsd,
-            durationMs: msg.usage?.totalDurationMs,
-            apiCalls: msg.usage?.apiCalls,
-            userRating: msg.userRating,
-            generationLogId: msg.generationLogId,
-          }),
-        }).catch((err) => console.error('[Chat] Failed to persist message:', err))
+      if (!msg || !projectId || !conversationId) return
+
+      const textContent = typeof msg.content === 'string' ? msg.content : messageContentToText(msg.content)
+      const persisted = get()._persistedMessageIds
+
+      try {
+        if (persisted.has(id)) {
+          // UPDATE path — message already exists in DB
+          await fetch(`/api/conversations/${conversationId}/messages`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              messageId: id,
+              content: textContent || '',
+              status: opts?.status ?? 'complete',
+              agentType: msg.agentType,
+              modelUsed: msg.modelId,
+              thinkingContent: msg.thinking,
+              toolCalls: msg.toolCalls,
+              contentSegments: msg.contentSegments,
+              inputTokens: msg.usage?.inputTokens,
+              outputTokens: msg.usage?.outputTokens,
+              costUsd: msg.usage?.costUsd,
+              durationMs: msg.usage?.totalDurationMs,
+              apiCalls: msg.usage?.apiCalls,
+              generationLogId: msg.generationLogId,
+            }),
+          })
+        } else {
+          // INSERT path — first persist for this message
+          await fetch(`/api/conversations/${conversationId}/messages`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              id,
+              projectId,
+              role: msg.role,
+              content: textContent || '',
+              status: opts?.status ?? 'complete',
+              agentType: msg.agentType,
+              modelUsed: msg.modelId,
+              thinkingContent: msg.thinking,
+              toolCalls: msg.toolCalls,
+              contentSegments: msg.contentSegments,
+              inputTokens: msg.usage?.inputTokens,
+              outputTokens: msg.usage?.outputTokens,
+              costUsd: msg.usage?.costUsd,
+              durationMs: msg.usage?.totalDurationMs,
+              apiCalls: msg.usage?.apiCalls,
+              generationLogId: msg.generationLogId,
+            }),
+          })
+          const ids = new Set(get()._persistedMessageIds)
+          ids.add(id)
+          set({ _persistedMessageIds: ids })
+        }
+      } catch (err) {
+        console.error('[Chat] Failed to persist message:', err)
       }
     },
 
@@ -210,7 +301,7 @@ export function createAgentActions(set: Set, get: Get) {
       })),
 
     clearChat: () => {
-      set({ chatMessages: [] })
+      set({ chatMessages: [], _persistedMessageIds: new Set<string>() })
       const conversationId = get().activeConversationId
       if (conversationId) {
         fetch(`/api/conversations/${conversationId}/messages`, { method: 'DELETE' }).catch((err) =>
@@ -226,10 +317,15 @@ export function createAgentActions(set: Set, get: Get) {
         const safeScenes = scenes.map((s) =>
           s.d3Data !== null && s.d3Data !== undefined ? { ...s, d3Data: JSON.parse(JSON.stringify(s.d3Data)) } : s,
         )
-        const snapshot: UndoableState = structuredClone({ scenes: safeScenes, globalStyle, project })
-        const newStack = [..._undoStack, snapshot]
-        if (newStack.length > MAX_UNDO) newStack.shift()
-        set({ _undoStack: newStack, _redoStack: [], isAgentRunning: running })
+        try {
+          const snapshot: UndoableState = structuredClone({ scenes: safeScenes, globalStyle, project })
+          const newStack = [..._undoStack, snapshot]
+          if (newStack.length > MAX_UNDO) newStack.shift()
+          set({ _undoStack: newStack, _redoStack: [], isAgentRunning: running })
+        } catch (err) {
+          console.error('[Store] structuredClone failed for undo snapshot — skipping undo capture:', err)
+          set({ isAgentRunning: running })
+        }
         return
       }
       set({ isAgentRunning: running })
@@ -253,6 +349,8 @@ export function createAgentActions(set: Set, get: Get) {
     setModelOverride: (id: ModelId | null) => set({ modelOverride: id }),
     setModelTier: (tier: ModelTier) => set({ modelTier: tier }),
     setThinkingMode: (mode: ThinkingMode) => set({ thinkingMode: mode }),
+    setLocalMode: (enabled: boolean) => set({ localMode: enabled }),
+    setLocalModelId: (id: string | null) => set({ localModelId: id }),
     setSceneContext: (ctx: 'all' | 'selected' | 'auto' | string) => set({ sceneContext: ctx }),
     setActiveTools: (tools: string[]) => set({ activeTools: tools }),
 
@@ -275,7 +373,7 @@ export function createAgentActions(set: Set, get: Get) {
 
     setChatInputValue: (v: string) => set({ chatInputValue: v }),
 
-    syncScenesFromAgent: (updatedScenes: Scene[], updatedGlobalStyle: GlobalStyle) => {
+    syncScenesFromAgent: async (updatedScenes: Scene[], updatedGlobalStyle: GlobalStyle) => {
       // Undo snapshot already captured in setAgentRunning(true)
       console.log(`[Store] syncScenesFromAgent: ${updatedScenes.length} scenes`)
       for (const s of updatedScenes) {
@@ -290,6 +388,11 @@ export function createAgentActions(set: Set, get: Get) {
       set((state) => {
         // Check which existing scenes have chat messages worth preserving
         const scenesWithMessages = new Set(state.scenes.filter((s) => s.messages?.length).map((s) => s.id))
+        // Never remove scenes that already had content in the store — only remove newly-created empty ones
+        const existingSceneIds = new Set(state.scenes.map((s) => s.id))
+        const existingScenesWithContent = new Set(
+          state.scenes.filter((s) => sceneHasRenderableContent(s) || s.prompt).map((s) => s.id),
+        )
 
         const cleanedScenes = hasContentScene
           ? updatedScenes.filter((s) => {
@@ -297,16 +400,69 @@ export function createAgentActions(set: Set, get: Get) {
               if (s.prompt) return true
               // Keep scenes that have local chat messages (user was talking on this scene)
               if (scenesWithMessages.has(s.id)) return true
-              console.log(`[Store] Removing empty scene: ${s.id.slice(0, 8)}… "${s.name}"`)
-              return false
+              // Never remove scenes that previously had content — the agent may have just failed to update them
+              if (existingScenesWithContent.has(s.id)) {
+                console.log(`[Store] Keeping pre-existing scene (had content): ${s.id.slice(0, 8)}… "${s.name}"`)
+                return true
+              }
+              // Only remove scenes that were created by the agent in this run and have no content
+              if (!existingSceneIds.has(s.id)) {
+                console.log(`[Store] Removing empty agent-created scene: ${s.id.slice(0, 8)}… "${s.name}"`)
+                return false
+              }
+              return true
             })
           : updatedScenes
         const finalScenes = cleanedScenes.length > 0 ? cleanedScenes : updatedScenes
 
-        // Preserve per-scene messages — server-side scenes don't carry local chat history
+        // Preserve per-scene messages and content — server-side scenes don't carry local chat history.
+        // The agent request strips content for non-focused scenes (replaced with "[N chars]" placeholders).
+        // When the agent returns, those placeholders must NOT overwrite the real content in the store.
+        const isPlaceholderContent = (val: string | undefined | null): boolean =>
+          !!val && /^\[\d+ chars\]$/.test(val)
+
         const mergedScenes = finalScenes.map((newScene) => {
           const existing = state.scenes.find((s) => s.id === newScene.id)
-          const merged = existing?.messages?.length ? { ...newScene, messages: existing.messages } : newScene
+          if (!existing) return normalizeScene(newScene as Scene)
+
+          // Detect if the agent returned placeholder content — restore store's real content
+          const hasPlaceholder =
+            isPlaceholderContent(newScene.svgContent) ||
+            isPlaceholderContent(newScene.canvasCode) ||
+            isPlaceholderContent(newScene.sceneCode) ||
+            isPlaceholderContent(newScene.lottieSource)
+
+          if (hasPlaceholder) {
+            console.log(`[Store] Restoring real content for scene ${newScene.id.slice(0, 8)}… (had placeholder strings)`)
+            return normalizeScene({
+              ...newScene,
+              svgContent: isPlaceholderContent(newScene.svgContent) ? existing.svgContent : newScene.svgContent,
+              canvasCode: isPlaceholderContent(newScene.canvasCode) ? existing.canvasCode : newScene.canvasCode,
+              sceneCode: isPlaceholderContent(newScene.sceneCode) ? existing.sceneCode : newScene.sceneCode,
+              sceneHTML: isPlaceholderContent(newScene.sceneCode) || isPlaceholderContent(newScene.svgContent) || isPlaceholderContent(newScene.canvasCode)
+                ? existing.sceneHTML : newScene.sceneHTML,
+              lottieSource: isPlaceholderContent(newScene.lottieSource) ? existing.lottieSource : newScene.lottieSource,
+              messages: existing.messages,
+            } as Scene)
+          }
+
+          // If agent returned truly empty content but store has real content, preserve it
+          const agentHasContent = sceneHasRenderableContent(newScene)
+          const storeHasContent = sceneHasRenderableContent(existing)
+          if (storeHasContent && !agentHasContent) {
+            console.log(`[Store] Preserving existing content for scene ${newScene.id.slice(0, 8)}… (agent returned empty)`)
+            return normalizeScene({
+              ...newScene,
+              svgContent: existing.svgContent,
+              canvasCode: existing.canvasCode,
+              sceneCode: existing.sceneCode,
+              sceneHTML: existing.sceneHTML,
+              lottieSource: existing.lottieSource,
+              messages: existing.messages,
+            } as Scene)
+          }
+
+          const merged = existing.messages?.length ? { ...newScene, messages: existing.messages } : newScene
           return normalizeScene(merged as Scene)
         })
 
@@ -331,8 +487,8 @@ export function createAgentActions(set: Set, get: Get) {
           ...(!currentStillExists && firstWithContent ? { selectedSceneId: firstWithContent.id } : {}),
         }
       })
-      // Persist all updated scene HTMLs
-      const writePromises: Promise<void>[] = []
+      // Persist all updated scene HTMLs (awaited to prevent data loss on tab close)
+      const writeEntries: { sceneId: string; promise: Promise<void> }[] = []
       for (const scene of updatedScenes) {
         if (scene.sceneHTML) {
           const p = fetch('/api/scene', {
@@ -343,29 +499,41 @@ export function createAgentActions(set: Set, get: Get) {
             .then(async (r) => {
               if (!r.ok) {
                 console.error(`[Store] POST /api/scene failed for ${scene.id}: ${r.status}`)
-                // Retry once after a short delay (helps with 409 conflicts)
+                // Retry once after a short delay with timeout (helps with 409 conflicts)
                 await new Promise((resolve) => setTimeout(resolve, 100))
-                const r2 = await fetch('/api/scene', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ id: scene.id, html: scene.sceneHTML }),
-                })
-                if (!r2.ok) console.error(`[Store] Retry also failed for ${scene.id}: ${r2.status}`)
+                const retryController = new AbortController()
+                const retryTimeout = setTimeout(() => retryController.abort(), 15000)
+                try {
+                  const r2 = await fetch('/api/scene', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: scene.id, html: scene.sceneHTML }),
+                    signal: retryController.signal,
+                  })
+                  if (!r2.ok) throw new Error(`Save failed for scene ${scene.id} (${r2.status})`)
+                } finally {
+                  clearTimeout(retryTimeout)
+                }
               }
             })
-            .catch((err) => console.error('[Store] Failed to write scene HTML:', scene.id, err))
-          writePromises.push(p as Promise<void>)
+          writeEntries.push({ sceneId: scene.id, promise: p as Promise<void> })
         } else {
           console.warn(`[Store] Scene ${scene.id.slice(0, 8)}… has empty sceneHTML, skipping file write`)
         }
       }
-      // Wait for all writes to complete (or fail) before proceeding
-      Promise.allSettled(writePromises).then((results) => {
-        const failures = results.filter((r) => r.status === 'rejected')
-        if (failures.length > 0) {
-          console.error(`[Store] ${failures.length}/${results.length} scene HTML writes failed`)
+      // Await all writes — prevents data loss if browser closes before writes finish
+      const results = await Promise.allSettled(writeEntries.map((e) => e.promise))
+      const errorEntries: Record<string, string> = {}
+      for (let i = 0; i < results.length; i++) {
+        if (results[i].status === 'rejected') {
+          const sceneId = writeEntries[i].sceneId
+          console.error(`[Store] Scene HTML write failed for ${sceneId}:`, (results[i] as PromiseRejectedResult).reason)
+          errorEntries[sceneId] = 'Scene file write failed after agent run'
         }
-      })
+      }
+      if (Object.keys(errorEntries).length > 0) {
+        set({ sceneWriteErrors: { ...get().sceneWriteErrors, ...errorEntries } })
+      }
     },
 
     // ── Model configuration ────────────────────────────────────────────────

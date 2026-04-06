@@ -39,20 +39,24 @@ export async function routeMessage(
     hasStoryboard: false, // Will be true if storyboard exists (passed via scenes metadata)
   }
 
-  // Try heuristics first for obvious patterns — saves an LLM call (~500ms + cost)
+  // Try heuristics first for obvious patterns — saves an LLM call (~500ms + cost).
+  // Only trust high-confidence matches; low-confidence results still go to LLM.
   const heuristicResult = heuristicRoute(message, routeCtx)
-  if (heuristicResult !== 'editor') {
-    // Heuristics matched a specific pattern (not the default fallback)
-    logger?.log('route', `Heuristic match → ${heuristicResult}`, {
+  if (heuristicResult.confidence === 'high') {
+    logger?.log('route', `Heuristic match → ${heuristicResult.agent}`, {
       method: 'heuristic',
-      result: heuristicResult,
+      result: heuristicResult.agent,
+      confidence: heuristicResult.confidence,
       sceneCount: routeCtx.sceneCount,
     })
-    return heuristicResult
+    return heuristicResult.agent
   }
 
-  // Ambiguous — use LLM for accurate routing
-  logger?.log('route', 'Heuristic inconclusive, calling LLM router', { heuristicDefault: heuristicResult })
+  // Low-confidence or ambiguous — use LLM for accurate routing
+  logger?.log('route', 'Heuristic inconclusive, calling LLM router', {
+    heuristicSuggestion: heuristicResult.agent,
+    confidence: heuristicResult.confidence,
+  })
   const { systemPrompt, modelId, maxTokens } = buildRouterContext(
     scenes,
     globalStyle,
@@ -69,7 +73,7 @@ export async function routeMessage(
       method: 'heuristic',
       reason: 'non-anthropic-router',
     })
-    return heuristicResult
+    return heuristicResult.agent
   }
 
   try {
@@ -111,27 +115,37 @@ export async function routeMessage(
       .trim()
       .toLowerCase()
 
-    // Parse out the agent type from response
+    // Parse the agent type from response using last-occurrence matching.
+    // Models typically state their final answer last, so if the response says
+    // "NOT scene-maker, use director", we pick "director" (rightmost match).
+    let lastMatch: AgentType | null = null
+    let lastIndex = -1
     for (const agentType of VALID_AGENT_TYPES) {
-      if (rawText.includes(agentType)) {
-        logger?.log('route', `LLM routed → ${agentType}`, {
-          method: 'llm',
-          result: agentType,
-          modelId,
-          inputTokens,
-          outputTokens,
-          costUsd,
-        })
-        return agentType
+      const idx = rawText.lastIndexOf(agentType)
+      if (idx !== -1 && idx > lastIndex) {
+        lastIndex = idx
+        lastMatch = agentType
       }
+    }
+
+    if (lastMatch) {
+      logger?.log('route', `LLM routed → ${lastMatch}`, {
+        method: 'llm',
+        result: lastMatch,
+        modelId,
+        inputTokens,
+        outputTokens,
+        costUsd,
+      })
+      return lastMatch
     }
 
     logger?.warn('route', `LLM response unrecognized: "${rawText.slice(0, 50)}", falling back to heuristic`)
     // Fallback: use heuristic default
-    return heuristicResult
+    return heuristicResult.agent
   } catch (err) {
     console.error('[Router] Routing failed, using heuristics:', err)
-    return heuristicResult
+    return heuristicResult.agent
   }
 }
 
@@ -142,91 +156,101 @@ interface RouteContext {
   lastAgentType?: AgentType
 }
 
+interface HeuristicResult {
+  agent: AgentType
+  confidence: 'high' | 'low'
+}
+
 /**
- * Fallback routing via simple keyword heuristics.
+ * Fallback routing via keyword heuristics with confidence levels.
+ *
+ * Only returns confidence='high' for unambiguous patterns (multi-word phrases
+ * that clearly signal intent). Single keywords that could be part of an edit
+ * request (e.g. "make", "create") return confidence='low' to defer to the LLM.
+ *
  * Uses project state to make smarter routing decisions — e.g. if the project
  * already has 8 scenes, "make it better" should route to editor, not director.
  */
-function heuristicRoute(message: string, ctx?: RouteContext): AgentType {
+function heuristicRoute(message: string, ctx?: RouteContext): HeuristicResult {
   const lower = message.toLowerCase()
-  const hasScenes = (ctx?.sceneCount ?? 0) > 0
   const hasManyScenes = (ctx?.sceneCount ?? 0) >= 3
 
-  // Educational / explanatory / descriptive content → director
-  // These prompts describe a topic and imply multi-scene video creation
+  // ── High-confidence: Director ──
+  // Multi-word phrases that unambiguously signal video/project creation
   if (
-    /\b(explain|teach|lesson|tutorial|walkthrough|overview|introduction to|history of|how .+ works?|what (is|are) .+|compare .+ (and|vs|versus))\b/i.test(
-      lower,
-    ) ||
-    // Multi-topic detection: 3+ comma/and-separated concepts in a long message
-    (lower.split(/,\s*| and /).length >= 3 && lower.length > 50)
+    /\b(create a video|make a video|build a (video|presentation)|new project|plan the (video|scenes|project))\b/i.test(lower) ||
+    lower.includes('storyboard')
   ) {
-    return 'director'
+    return { agent: 'director', confidence: 'high' }
   }
 
-  // Director signals
+  // Educational prompts starting with clear intent verbs
   if (
-    lower.includes('create a video') ||
-    lower.includes('make a video') ||
-    lower.includes('build a presentation') ||
-    lower.includes('plan') ||
-    lower.includes('storyboard') ||
-    lower.includes('new project') ||
-    (lower.includes('scene') && (lower.includes('multiple') || lower.includes('all') || /\d+ scene/.test(lower)))
+    /^(explain|teach me|make a? ?(lesson|tutorial|walkthrough|overview) (about|on|for))\b/i.test(lower)
   ) {
-    return 'director'
+    return { agent: 'director', confidence: 'high' }
   }
 
-  // "Continue" / "keep going" after a storyboard was approved → director (to build remaining scenes)
+  // Explicit multi-scene requests
+  if (lower.includes('scene') && (lower.includes('multiple') || /\d+ scene/.test(lower))) {
+    return { agent: 'director', confidence: 'high' }
+  }
+
+  // "Continue" / "keep going" after a storyboard was approved → director
   if (
     ctx?.hasStoryboard &&
-    (lower.includes('continue') ||
-      lower.includes('keep going') ||
-      lower.includes('build it') ||
-      lower.includes('go ahead'))
+    /\b(continue|keep going|build it|go ahead|proceed)\b/i.test(lower)
   ) {
-    return 'director'
+    return { agent: 'director', confidence: 'high' }
   }
 
-  // DoP signals
+  // ── High-confidence: DoP ──
+  // Phrases that clearly target global/cross-scene styling
   if (
     lower.includes('global style') ||
     lower.includes('all scenes') ||
     lower.includes('color palette') ||
-    lower.includes('font for') ||
-    lower.includes('transition') ||
-    lower.includes('roughness') ||
-    lower.includes('theme') ||
-    lower.includes('cinematic') ||
-    lower.includes('visual style')
+    lower.includes('visual style') ||
+    /\b(font|roughness|transitions?) for (all|every|the (whole|entire))\b/i.test(lower)
   ) {
-    return 'dop'
+    return { agent: 'dop', confidence: 'high' }
   }
 
-  // Scene maker signals
+  // ── High-confidence: Scene-Maker ──
   if (
-    lower.includes('add a scene') ||
-    lower.includes('new scene') ||
-    lower.includes('make this scene') ||
-    lower.includes('generate scene') ||
-    lower.includes('create scene')
+    /\b(add a (new )?scene|new scene|generate ?(a )?scene|create ?(a )?scene)\b/i.test(lower)
   ) {
-    return 'scene-maker'
+    return { agent: 'scene-maker', confidence: 'high' }
   }
 
-  // Vague improvement requests on existing projects → editor (not director)
+  // ── Low-confidence hints (defer to LLM for final decision) ──
+
+  // Topic-like descriptions without explicit action verbs → probably director, but let LLM decide
+  if (
+    /\b(explain|teach|lesson|tutorial|walkthrough|overview|introduction to|history of|how .+ works?|compare .+ (and|vs|versus))\b/i.test(lower) ||
+    (lower.split(/,\s*| and /).length >= 3 && lower.length > 50)
+  ) {
+    return { agent: 'director', confidence: 'low' }
+  }
+
+  // Single keywords that could be edit requests or creation requests
+  if (/\b(plan|create|make|build)\b/i.test(lower)) {
+    return { agent: 'director', confidence: 'low' }
+  }
+
+  // Style-adjacent but could be scene-specific
+  if (/\b(theme|cinematic|roughness|transition)\b/i.test(lower)) {
+    return { agent: 'dop', confidence: 'low' }
+  }
+
+  // Vague improvement requests on existing projects → editor
   if (
     hasManyScenes &&
-    (lower.includes('make it better') ||
-      lower.includes('improve') ||
-      lower.includes('polish') ||
-      lower.includes('fix') ||
-      lower.includes('tweak') ||
-      lower.includes('adjust'))
+    /\b(make it better|improve|polish|fix|tweak|adjust)\b/i.test(lower)
   ) {
-    return 'editor'
+    return { agent: 'editor', confidence: 'low' }
   }
 
-  // Default to editor for targeted changes
-  return 'editor'
+  // Default: low-confidence editor (will go to LLM)
+  return { agent: 'editor', confidence: 'low' }
 }

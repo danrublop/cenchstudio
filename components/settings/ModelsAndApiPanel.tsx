@@ -16,14 +16,14 @@ function TierBadge({ tier }: { tier: ModelTierName }) {
     custom: 'text-yellow-400 bg-yellow-400/10 border-yellow-400/30',
   }
   return (
-    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${colors[tier]} uppercase tracking-tighter`}>
+    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${colors[tier]} uppercase tracking-tighter`}>
       {tier}
     </span>
   )
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
-  return <h4 className="text-[10px] uppercase tracking-widest text-[#6b6b7a] font-bold px-1 mb-2">{children}</h4>
+  return <h4 className="text-[11px] uppercase tracking-widest text-[#6b6b7a] font-bold px-1 mb-2">{children}</h4>
 }
 
 function ListContainer({ children }: { children: React.ReactNode }) {
@@ -58,7 +58,7 @@ function KeyInputRow({
   return (
     <div className="flex flex-col gap-1.5 mb-2 px-1">
       <div className="flex items-center gap-2">
-        <label className="text-[9px] text-[#6b6b7a] uppercase font-bold tracking-tight">{label}</label>
+        <label className="text-[10px] text-[#6b6b7a] uppercase font-bold tracking-tight">{label}</label>
         <code className="text-[8px] text-[#6b6b7a]/60 font-mono">{envVar}</code>
       </div>
       <div className="flex gap-2 items-center">
@@ -69,7 +69,7 @@ function KeyInputRow({
             updateProviderConfig(provider, isLocal ? { baseUrl: e.target.value } : { apiKey: e.target.value })
           }
           placeholder={isLocal ? 'http://localhost:11434' : `${envVar}`}
-          className="flex-1 text-xs px-3 py-1.5 rounded border focus:outline-none bg-[var(--color-input-bg)] border-[var(--color-border)] text-[var(--color-text-primary)] font-mono"
+          className="flex-1 text-sm px-3 py-1.5 rounded border focus:outline-none bg-[var(--color-input-bg)] border-[var(--color-border)] text-[var(--color-text-primary)] font-mono"
         />
         <div className="flex items-center gap-1.5">
           {!isLocal && (
@@ -206,9 +206,9 @@ export default function ModelsAndApiPanel() {
       {/* 2. API KEYS */}
       <div>
         <SectionLabel>API Keys</SectionLabel>
-        <p className="text-[10px] text-[#6b6b7a] px-1 mb-2 -mt-1">
+        <p className="text-[11px] text-[#6b6b7a] px-1 mb-2 -mt-1">
           Set in{' '}
-          <code className="text-[9px] px-1 py-0.5 rounded bg-white/5 border border-[var(--color-border)]">.env</code> —
+          <code className="text-[10px] px-1 py-0.5 rounded bg-white/5 border border-[var(--color-border)]">.env</code> —
           shown here for reference.
         </p>
         <div className="grid grid-cols-1 gap-1">
@@ -252,7 +252,7 @@ export default function ModelsAndApiPanel() {
               </div>
             ))}
           {modelConfigs.filter((m) => m.provider === 'local').length === 0 && (
-            <div className="py-6 text-center text-[11px] text-[#6b6b7a] italic">No local models configured.</div>
+            <div className="py-6 text-center text-[12px] text-[#6b6b7a] italic">No local models configured.</div>
           )}
         </ListContainer>
 
@@ -273,7 +273,7 @@ export default function ModelsAndApiPanel() {
 
           {detectedOllamaModels.length > 0 && (
             <div className="mt-6 animate-in fade-in slide-in-from-top-1 duration-200">
-              <h5 className="text-[9px] uppercase tracking-wider text-[#6b6b7a] font-bold mb-3 px-1">
+              <h5 className="text-[10px] uppercase tracking-wider text-[#6b6b7a] font-bold mb-3 px-1">
                 Discovered on System
               </h5>
               <ListContainer>

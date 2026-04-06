@@ -49,7 +49,7 @@ export function ConversationContextMenu({
           <span
             key={i}
             onClick={item.action}
-            className={`flex items-center gap-2 px-3 py-1.5 text-[11px] cursor-pointer transition-colors hover:bg-[var(--color-border)]/30 ${
+            className={`flex items-center gap-2 px-3 py-1.5 text-[12px] cursor-pointer transition-colors hover:bg-[var(--color-border)]/30 ${
               'danger' in item && item.danger ? 'text-red-400' : 'text-[var(--color-text-muted)]'
             }`}
           >

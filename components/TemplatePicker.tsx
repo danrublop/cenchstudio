@@ -75,7 +75,7 @@ export default function TemplatePicker({ onSelect, onSkip, onClose, suggestedCat
         <div className="px-5 pt-3 flex gap-1.5 flex-wrap">
           <button
             onClick={() => setCategory('all')}
-            className="rounded-full px-3 py-1 text-[11px] border transition-colors"
+            className="rounded-full px-3 py-1 text-[12px] border transition-colors"
             style={{
               background: category === 'all' ? '#e84545' : 'transparent',
               borderColor: category === 'all' ? '#e84545' : 'var(--color-border)',
@@ -88,7 +88,7 @@ export default function TemplatePicker({ onSelect, onSkip, onClose, suggestedCat
             <button
               key={cat.value}
               onClick={() => setCategory(cat.value)}
-              className="rounded-full px-3 py-1 text-[11px] border transition-colors"
+              className="rounded-full px-3 py-1 text-[12px] border transition-colors"
               style={{
                 background: category === cat.value ? '#e84545' : 'transparent',
                 borderColor: category === cat.value ? '#e84545' : 'var(--color-border)',
@@ -110,7 +110,7 @@ export default function TemplatePicker({ onSelect, onSkip, onClose, suggestedCat
               style={{ borderColor: 'var(--color-border)', aspectRatio: '16/9' }}
             >
               <span className="text-xl text-[#6b6b7a]">+</span>
-              <span className="text-[11px] text-[#6b6b7a] mt-1">Blank scene</span>
+              <span className="text-[12px] text-[#6b6b7a] mt-1">Blank scene</span>
             </div>
 
             {filteredTemplates.map((template) => (
@@ -135,14 +135,14 @@ export default function TemplatePicker({ onSelect, onSkip, onClose, suggestedCat
                       ))}
                     </div>
                   ) : (
-                    <span className="text-[10px] text-[#6b6b7a] uppercase tracking-wider">{template.category}</span>
+                    <span className="text-[11px] text-[#6b6b7a] uppercase tracking-wider">{template.category}</span>
                   )}
                 </div>
                 <div className="p-2">
-                  <div className="text-[11px] font-semibold text-[var(--color-text-primary)] truncate">
+                  <div className="text-[12px] font-semibold text-[var(--color-text-primary)] truncate">
                     {template.name}
                   </div>
-                  <div className="text-[9px] text-[#6b6b7a] mt-0.5 line-clamp-2">{template.description}</div>
+                  <div className="text-[10px] text-[#6b6b7a] mt-0.5 line-clamp-2">{template.description}</div>
                 </div>
               </div>
             ))}
@@ -155,7 +155,7 @@ export default function TemplatePicker({ onSelect, onSkip, onClose, suggestedCat
 
         {/* Footer */}
         <div className="px-5 py-3 border-t flex justify-end" style={{ borderColor: 'var(--color-border)' }}>
-          <button onClick={onSkip} className="text-[11px] text-[#6b6b7a] hover:text-[var(--color-text-primary)]">
+          <button onClick={onSkip} className="text-[12px] text-[#6b6b7a] hover:text-[var(--color-text-primary)]">
             Skip — start blank
           </button>
         </div>

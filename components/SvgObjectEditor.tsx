@@ -196,7 +196,7 @@ export default function SvgObjectEditor({ sceneId, canvasRef }: Props) {
           >
             {cornerHandles(obj.id, 'svg', obj.x, obj.y, obj.width, 0, isSelected)}
             {isSelected && (
-              <div className="absolute -top-5 left-0 text-[9px] text-[#e84545] bg-[#111114]/80 px-1 rounded whitespace-nowrap pointer-events-none">
+              <div className="absolute -top-5 left-0 text-[10px] text-[#e84545] bg-[#111114]/80 px-1 rounded whitespace-nowrap pointer-events-none">
                 {obj.prompt.slice(0, 30) || 'Object'}
               </div>
             )}
@@ -230,7 +230,7 @@ export default function SvgObjectEditor({ sceneId, canvasRef }: Props) {
           >
             {cornerHandles(t.id, 'text', t.x, t.y, widthPct, t.size, isSelected)}
             {isSelected && (
-              <div className="absolute -top-5 left-0 text-[9px] text-[#4a9eff] bg-[#111114]/80 px-1 rounded whitespace-nowrap pointer-events-none">
+              <div className="absolute -top-5 left-0 text-[10px] text-[#4a9eff] bg-[#111114]/80 px-1 rounded whitespace-nowrap pointer-events-none">
                 T · {t.content.slice(0, 20)}{t.content.length > 20 ? '…' : ''} · {t.size}px
               </div>
             )}

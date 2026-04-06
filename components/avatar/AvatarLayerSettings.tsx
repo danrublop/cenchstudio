@@ -183,7 +183,7 @@ export default function AvatarLayerSettings({ sceneId, layer, getIframe }: Props
               title={g.label}
             >
               <span className="text-base leading-none">{g.emoji}</span>
-              <span className="text-[9px] text-[#6b6b7a]">{g.label}</span>
+              <span className="text-[10px] text-[#6b6b7a]">{g.label}</span>
             </span>
           ))}
         </div>

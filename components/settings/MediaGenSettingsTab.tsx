@@ -21,7 +21,7 @@ function CategoryBadge({ category }: { category: string }) {
   }
   return (
     <span
-      className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${colors[category] || ''} uppercase tracking-tighter`}
+      className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${colors[category] || ''} uppercase tracking-tighter`}
     >
       {CATEGORY_LABELS[category] || category}
     </span>
@@ -66,9 +66,9 @@ export function MediaGenSettingsTab() {
       {/* API Keys */}
       <div>
         <SectionLabel>API Keys</SectionLabel>
-        <p className="text-[10px] text-[#6b6b7a] px-1 mb-2 -mt-1">
+        <p className="text-[11px] text-[#6b6b7a] px-1 mb-2 -mt-1">
           Set in{' '}
-          <code className="text-[9px] px-1 py-0.5 rounded bg-white/5 border border-[var(--color-border)]">.env</code>
+          <code className="text-[10px] px-1 py-0.5 rounded bg-white/5 border border-[var(--color-border)]">.env</code>
         </p>
         <div className="grid grid-cols-1 gap-1">
           {MEDIA_API_KEYS.map((k) => (

@@ -1,7 +1,6 @@
 import { v4 as uuidv4 } from 'uuid'
 import type { Scene, SceneType, ZdogPersonAsset, ZdogPersonFormula } from '@/lib/types'
 import type { AgentLogger } from '@/lib/agents/logger'
-import type { ToolResult } from '@/lib/agents/types'
 import type { WorldStateMutable } from '@/lib/agents/tool-executor'
 import { clearStaleCodeFields, generateLayerContent } from '@/lib/agents/tool-executor'
 import { resolveStyle } from '@/lib/styles/presets'
@@ -15,6 +14,7 @@ import {
   CANVAS_MOTION_TEMPLATE_IDS,
 } from '@/lib/templates/canvas-animation-templates'
 import { buildThreeDataScatterSceneCode } from '@/lib/three-environments/build-three-data-scatter-scene-code'
+import { ok, err, findScene, updateScene, type ToolResult } from './_shared'
 
 // ── Tool Names ───────────────────────────────────────────────────────────────
 
@@ -35,44 +35,6 @@ export const LAYER_TOOL_NAMES = [
   'patch_layer_code',
 ] as const
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-function ok(affectedSceneId: string | null, description: string, data?: unknown): ToolResult {
-  return {
-    success: true,
-    affectedSceneId,
-    changes: [
-      {
-        type: affectedSceneId ? 'scene_updated' : 'global_updated',
-        sceneId: affectedSceneId ?? undefined,
-        description,
-      },
-    ],
-    data,
-  }
-}
-
-function err(message: string): ToolResult {
-  return { success: false, error: message }
-}
-
-function findScene(world: WorldStateMutable, sceneId: string): Scene | undefined {
-  return world.scenes.find((s) => s.id === sceneId)
-}
-
-function updateScene(world: WorldStateMutable, sceneId: string, updates: Partial<Scene>): Scene | null {
-  const idx = world.scenes.findIndex((s) => s.id === sceneId)
-  if (idx === -1) return null
-  const updated = { ...world.scenes[idx], ...updates }
-  // Keep D3 structured data coherent when scene type changes.
-  if (updates.sceneType && updates.sceneType !== 'd3') {
-    updated.chartLayers = []
-    updated.d3Data = null
-  }
-  world.scenes[idx] = updated
-  return updated
-}
-
 // ── Factory ──────────────────────────────────────────────────────────────────
 
 export function createLayerToolHandler(deps: {
@@ -90,13 +52,15 @@ export function createLayerToolHandler(deps: {
       // ── add_layer ───────────────────────────────────────────────────────
 
       case 'add_layer': {
-        const { sceneId, layerType, prompt, zIndex, opacity, startAt } = args as {
+        const { sceneId, layerType, prompt, zIndex, opacity, startAt, generatedCode } = args as {
           sceneId: string
           layerType: SceneType
           prompt: string
           zIndex?: number
           opacity?: number
           startAt?: number
+          /** Pre-generated code — skips LLM generation (used by local model fallback) */
+          generatedCode?: string
         }
         const scene = findScene(world, sceneId)
         if (!scene) return err(`Scene ${sceneId} not found`)
@@ -105,16 +69,24 @@ export function createLayerToolHandler(deps: {
           return err(`add_layer(${layerType}) blocked in D3-only mode. Use layerType 'd3' or generate_chart.`)
         }
 
-        // Generate content via direct SDK call
-        const result = await generateLayerContent(
-          layerType,
-          prompt,
-          scene,
-          world.globalStyle,
-          world.modelId,
-          world.modelTier,
-          logger,
-        )
+        let result: { success: boolean; code?: string; error?: string }
+        if (generatedCode) {
+          // Skip LLM — use pre-generated code directly (local model fallback path)
+          logger?.log('generation', `Using pre-generated code (${generatedCode.length} chars)`)
+          result = { success: true, code: generatedCode }
+        } else {
+          // Generate content via direct SDK call
+          result = await generateLayerContent(
+            layerType,
+            prompt,
+            scene,
+            world.globalStyle,
+            world.modelId,
+            world.modelTier,
+            logger,
+            world.modelConfigs,
+          )
+        }
         if (!result.success) return err(result.error || 'Layer generation failed')
 
         const layerId = uuidv4()
@@ -518,6 +490,7 @@ export function createLayerToolHandler(deps: {
             world.modelId,
             world.modelTier,
             logger,
+            world.modelConfigs,
           )
           if (!result.success) return err(result.error || 'Regeneration failed')
           const updated = scene.svgObjects.map((o) =>
@@ -575,6 +548,7 @@ export function createLayerToolHandler(deps: {
           world.modelId,
           world.modelTier,
           logger,
+          world.modelConfigs,
         )
         if (!result.success) return err(result.error || 'Regeneration failed')
 
@@ -623,7 +597,25 @@ export function createLayerToolHandler(deps: {
           scene.sceneType === 'canvas2d' ? 'canvasCode' : scene.sceneType === 'lottie' ? 'lottieSource' : 'sceneCode'
         const code: string = (scene[codeField as keyof Scene] as string) || ''
         if (!code.includes(oldCode)) {
-          return err(`oldCode not found in ${codeField}. Make sure it's an exact substring match.`)
+          // Try whitespace-normalized matching as a fallback
+          const normalizeWs = (s: string) => s.replace(/\s+/g, ' ').trim()
+          const normalizedCode = normalizeWs(code)
+          const normalizedOld = normalizeWs(oldCode)
+          if (normalizedCode.includes(normalizedOld)) {
+            // Find the actual substring with original whitespace
+            const startHint = oldCode.trim().slice(0, 30)
+            return err(
+              `oldCode not found as-is in ${codeField}, but a whitespace-normalized match exists. ` +
+              `The code likely has different indentation/newlines. Try copying the exact code starting with "${startHint}…" from the scene.`,
+            )
+          }
+          // Show a nearby snippet for context
+          const firstLine = oldCode.split('\n')[0].trim().slice(0, 40)
+          const codeSnippetIdx = code.toLowerCase().indexOf(firstLine.toLowerCase())
+          const hint = codeSnippetIdx >= 0
+            ? ` Closest match near char ${codeSnippetIdx}: "${code.slice(Math.max(0, codeSnippetIdx - 10), codeSnippetIdx + 50).replace(/\n/g, '\\n')}…"`
+            : ` Code is ${code.length} chars. First 80: "${code.slice(0, 80).replace(/\n/g, '\\n')}…"`
+          return err(`oldCode not found in ${codeField}. Make sure it's an exact substring match.${hint}`)
         }
         const matchCount = code.split(oldCode).length - 1
         const patched = code.replace(oldCode, newCode)

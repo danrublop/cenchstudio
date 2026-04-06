@@ -16,17 +16,17 @@ export default function GeneralSettingsTab({ embedded }: GeneralSettingsTabProps
       {!embedded && (
         <div>
           <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">General Settings</h2>
-          <p className="text-xs text-[var(--color-text-muted)] mt-0.5">Default project and editor preferences</p>
+          <p className="text-sm text-[var(--color-text-muted)] mt-0.5">Default project and editor preferences</p>
         </div>
       )}
 
       <div className="border border-[var(--color-border)] rounded-lg divide-y divide-[var(--color-border)] overflow-hidden">
         {/* Default scene duration */}
         <div className="px-4 py-3 bg-[var(--color-panel)]">
-          <label className="block text-xs font-medium text-[var(--color-text-primary)] mb-1">
+          <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
             Default Scene Duration
           </label>
-          <p className="text-[11px] text-[var(--color-text-muted)] mb-2">Duration applied to new scenes (seconds)</p>
+          <p className="text-[12px] text-[var(--color-text-muted)] mb-2">Duration applied to new scenes (seconds)</p>
           <div className="flex items-center gap-3">
             <input
               type="range"
@@ -45,8 +45,8 @@ export default function GeneralSettingsTab({ embedded }: GeneralSettingsTabProps
 
         {/* UI typography */}
         <div className="px-4 py-3 bg-[var(--color-panel)]">
-          <label className="block text-xs font-medium text-[var(--color-text-primary)] mb-1">UI typography</label>
-          <p className="text-[11px] text-[var(--color-text-muted)] mb-2">
+          <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-1">UI typography</label>
+          <p className="text-[12px] text-[var(--color-text-muted)] mb-2">
             Font for the header, panels, timeline, and settings. Does not change text inside generated scenes.
           </p>
           <div className="flex gap-2 mt-2 flex-wrap">
@@ -55,7 +55,7 @@ export default function GeneralSettingsTab({ embedded }: GeneralSettingsTabProps
                 key={key}
                 type="button"
                 onClick={() => updateGlobalStyle({ uiTypography: key })}
-                className={`flex-1 min-w-[5.5rem] py-1.5 text-xs rounded border transition-colors ${
+                className={`flex-1 min-w-[5.5rem] py-1.5 text-sm rounded border transition-colors ${
                   (globalStyle.uiTypography ?? 'app') === key
                     ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]'
                     : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)]'
@@ -83,15 +83,42 @@ export default function GeneralSettingsTab({ embedded }: GeneralSettingsTabProps
           )}
         </div>
 
+        {/* UI Text Size */}
+        <div className="px-4 py-3 bg-[var(--color-panel)]">
+          <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-1">Text Size</label>
+          <p className="text-[12px] text-[var(--color-text-muted)] mb-2">Scale all UI text across the editor</p>
+          <div className="flex gap-2 mt-2">
+            {([
+              [0, 'Compact'],
+              [1, 'Default'],
+              [2, 'Large'],
+              [3, 'Extra Large'],
+            ] as const).map(([val, label]) => (
+              <button
+                key={val}
+                type="button"
+                onClick={() => updateGlobalStyle({ uiTextSize: val })}
+                className={`flex-1 py-1.5 text-sm rounded border transition-colors ${
+                  (globalStyle.uiTextSize ?? 1) === val
+                    ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]'
+                    : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)]'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* Theme */}
         <div className="px-4 py-3 bg-[var(--color-panel)]">
-          <label className="block text-xs font-medium text-[var(--color-text-primary)] mb-1">Editor Theme</label>
+          <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-1">Editor Theme</label>
           <div className="flex gap-2 mt-2">
-            {(['dark', 'light'] as const).map((t) => (
+            {(['dark', 'light', 'blue'] as const).map((t) => (
               <button
                 key={t}
                 onClick={() => updateGlobalStyle({ theme: t })}
-                className={`flex-1 py-1.5 text-xs rounded border transition-colors capitalize ${
+                className={`flex-1 py-1.5 text-sm rounded border transition-colors capitalize ${
                   globalStyle.theme === t
                     ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]'
                     : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)]'

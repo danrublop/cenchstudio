@@ -4,6 +4,8 @@ import { Loader2 } from 'lucide-react'
 import type { ChatMessage, AgentType, ImageAttachment } from '@/lib/agents/types'
 import { messageContentToText } from '@/lib/agents/types'
 import { AGENT_COLORS, AGENT_LABELS } from '@/lib/agents/prompts'
+import { resolveAgentModelDisplayName } from '@/lib/agents/model-config'
+import { useVideoStore } from '@/lib/store'
 import { ThinkingBlock } from '../ThinkingBlock'
 import { ToolCallItem } from './ToolCallItem'
 import { UsageBadge } from './UsageBadge'
@@ -28,6 +30,7 @@ export interface MessageBubbleProps {
 }
 
 export function MessageBubble({ msg, isStreaming, activeToolName, onRate, onPermission }: MessageBubbleProps) {
+  const modelConfigs = useVideoStore((s) => s.modelConfigs)
   const isUser = msg.role === 'user'
 
   const borderColor = msg.agentType ? AGENT_BORDER_COLORS[msg.agentType] : '#4b5563'
@@ -36,7 +39,7 @@ export function MessageBubble({ msg, isStreaming, activeToolName, onRate, onPerm
   if (isUser) {
     return (
       <div className="flex justify-center mb-3">
-        <div className="w-full max-w-[92%] rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] px-3.5 py-2.5">
+        <div className="w-full max-w-[92%] rounded-xl border border-[var(--color-border)] bg-[var(--agent-chat-user-surface)] px-3.5 py-2.5">
           {typeof msg.content === 'string' ? (
             <p className="text-sm text-[var(--color-text-primary)] leading-relaxed whitespace-pre-wrap">
               {msg.content}
@@ -83,17 +86,16 @@ export function MessageBubble({ msg, isStreaming, activeToolName, onRate, onPerm
   return (
     <div className="flex justify-center mb-3">
       <div
-        className="relative w-full max-w-[92%] rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] hover:z-50 shadow-sm transition-[z-index]"
-        style={{ zIndex: 1 }}
+        className="relative w-full max-w-[92%]"
       >
         {/* Agent badge bar */}
-        <div className="flex items-center gap-2 px-3 py-1.5 border-b border-[var(--color-border)] rounded-t-xl">
-          <span className="text-[11px] font-semibold" style={{ color: borderColor }}>
+        <div className="flex items-center gap-2 px-3 py-1.5">
+          <span className="text-[12px] font-semibold" style={{ color: borderColor }}>
             {agentLabel}
           </span>
           {msg.modelId && (
-            <span className="text-[10px] text-[var(--color-text-muted)] bg-[var(--color-bg)] px-1.5 py-0.5 rounded font-mono">
-              {msg.modelId.replace('claude-', '')}
+            <span className="text-[11px] text-[var(--color-text-muted)] px-1.5 py-0.5 rounded">
+              {resolveAgentModelDisplayName(msg.modelId, modelConfigs)}
             </span>
           )}
           {isStreaming && <Loader2 size={10} className="ml-auto animate-spin text-[var(--color-text-muted)]" />}
@@ -126,7 +128,7 @@ export function MessageBubble({ msg, isStreaming, activeToolName, onRate, onPerm
         {/* Tool calls */}
         {msg.toolCalls && msg.toolCalls.length > 0 && (
           <div className="px-3 pb-2">
-            <div className="text-[10px] text-[var(--color-text-muted)] mb-1 uppercase tracking-wide">
+            <div className="text-[11px] text-[var(--color-text-muted)] mb-1 uppercase tracking-wide">
               {msg.toolCalls.length} tool call{msg.toolCalls.length > 1 ? 's' : ''}
             </div>
             {msg.toolCalls.map((call) => (
@@ -156,8 +158,8 @@ export function MessageBubble({ msg, isStreaming, activeToolName, onRate, onPerm
               className="w-2 h-2 rounded-full bg-blue-400 flex-shrink-0"
               style={{ animation: 'cursorPulse 1.2s ease-in-out infinite' }}
             />
-            <span className="text-xs text-[var(--color-text-primary)] font-mono truncate">{activeToolName}</span>
-            <span className="text-[10px] text-blue-400 ml-auto flex-shrink-0">Running</span>
+            <span className="text-sm text-[var(--color-text-primary)] font-mono truncate">{activeToolName}</span>
+            <span className="text-[11px] text-blue-400 ml-auto flex-shrink-0">Running</span>
           </div>
         )}
 

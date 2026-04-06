@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { updateGenerationLog, getGenerationLogs, getQualityByDimension } from '@/lib/db/queries/generation-logs'
 import { computeQualityScore } from '@/lib/generation-logs/score'
+import { getOptionalUser } from '@/lib/auth-helpers'
+import { UUID_RE, VALID_USER_ACTIONS, LIMITS } from '@/lib/api/constants'
 
 /**
  * PATCH /api/generation-log
@@ -8,11 +10,28 @@ import { computeQualityScore } from '@/lib/generation-logs/score'
  */
 export async function PATCH(req: NextRequest) {
   try {
+    await getOptionalUser()
     const body = await req.json()
     const { logId, userAction, timeToActionMs, editDistance, userRating, exportSucceeded, exportErrorMessage } = body
 
-    if (!logId || typeof logId !== 'string') {
-      return NextResponse.json({ error: 'Missing logId' }, { status: 400 })
+    if (!logId || typeof logId !== 'string' || !UUID_RE.test(logId)) {
+      return NextResponse.json({ error: 'Valid logId (UUID) is required' }, { status: 400 })
+    }
+
+    // Validate userAction against allowed enum
+    if (userAction && !(VALID_USER_ACTIONS as readonly string[]).includes(userAction)) {
+      return NextResponse.json({ error: `userAction must be one of: ${VALID_USER_ACTIONS.join(', ')}` }, { status: 400 })
+    }
+
+    // Validate numeric fields
+    if (timeToActionMs != null && (typeof timeToActionMs !== 'number' || timeToActionMs < 0 || !Number.isFinite(timeToActionMs))) {
+      return NextResponse.json({ error: 'timeToActionMs must be a non-negative number' }, { status: 400 })
+    }
+    if (editDistance != null && (typeof editDistance !== 'number' || editDistance < 0 || !Number.isInteger(editDistance))) {
+      return NextResponse.json({ error: 'editDistance must be a non-negative integer' }, { status: 400 })
+    }
+    if (userRating != null && (typeof userRating !== 'number' || userRating < 0 || userRating > 5)) {
+      return NextResponse.json({ error: 'userRating must be between 0 and 5' }, { status: 400 })
     }
 
     const updates: Record<string, unknown> = {}
@@ -40,7 +59,7 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('[generation-log] PATCH error:', error)
-    return NextResponse.json({ error: error instanceof Error ? error.message : 'Unknown error' }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to update generation log' }, { status: 500 })
   }
 }
 
@@ -50,6 +69,7 @@ export async function PATCH(req: NextRequest) {
  */
 export async function GET(req: NextRequest) {
   try {
+    await getOptionalUser()
     const { searchParams } = new URL(req.url)
     const projectId = searchParams.get('projectId') ?? undefined
     const sceneId = searchParams.get('sceneId') ?? undefined
@@ -62,12 +82,12 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ data })
     }
 
-    const limit = parseInt(searchParams.get('limit') ?? '50', 10)
-    const offset = parseInt(searchParams.get('offset') ?? '0', 10)
+    const limit = Math.min(Math.max(parseInt(searchParams.get('limit') ?? '50', 10) || 50, 1), LIMITS.MAX_QUERY_RESULTS)
+    const offset = Math.max(parseInt(searchParams.get('offset') ?? '0', 10) || 0, 0)
     const logs = await getGenerationLogs({ projectId, sceneId, limit, offset })
     return NextResponse.json({ logs })
   } catch (error) {
     console.error('[generation-log] GET error:', error)
-    return NextResponse.json({ error: error instanceof Error ? error.message : 'Unknown error' }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to fetch generation logs' }, { status: 500 })
   }
 }

@@ -1,10 +1,10 @@
 import { v4 as uuidv4 } from 'uuid'
-import type { Scene, PhysicsLayer } from '@/lib/types'
+import type { PhysicsLayer } from '@/lib/types'
 import type { AgentLogger } from '@/lib/agents/logger'
-import type { ToolResult } from '@/lib/agents/types'
 import type { WorldStateMutable } from '@/lib/agents/tool-executor'
 import { clearStaleCodeFields } from '@/lib/agents/tool-executor'
 import { compilePhysicsSceneFromLayers } from '@/lib/physics/compile'
+import { ok, err, findScene, updateScene, type ToolResult } from './_shared'
 
 // ── Tool Names ───────────────────────────────────────────────────────────────
 
@@ -14,44 +14,6 @@ export const PHYSICS_TOOL_NAMES = [
   'annotate_simulation',
   'set_simulation_params',
 ] as const
-
-// ── Standard Helpers ─────────────────────────────────────────────────────────
-
-function ok(affectedSceneId: string | null, description: string, data?: unknown): ToolResult {
-  return {
-    success: true,
-    affectedSceneId,
-    changes: [
-      {
-        type: affectedSceneId ? 'scene_updated' : 'global_updated',
-        sceneId: affectedSceneId ?? undefined,
-        description,
-      },
-    ],
-    data,
-  }
-}
-
-function err(message: string): ToolResult {
-  return { success: false, error: message }
-}
-
-function findScene(world: WorldStateMutable, sceneId: string): Scene | undefined {
-  return world.scenes.find((s) => s.id === sceneId)
-}
-
-function updateScene(world: WorldStateMutable, sceneId: string, updates: Partial<Scene>): Scene | null {
-  const idx = world.scenes.findIndex((s) => s.id === sceneId)
-  if (idx === -1) return null
-  const updated = { ...world.scenes[idx], ...updates }
-  // Keep D3 structured data coherent when scene type changes.
-  if (updates.sceneType && updates.sceneType !== 'd3') {
-    updated.chartLayers = []
-    updated.d3Data = null
-  }
-  world.scenes[idx] = updated
-  return updated
-}
 
 // ── Physics-Specific Helpers ─────────────────────────────────────────────────
 

@@ -18,14 +18,7 @@ export function HomeScrollAnimations() {
     const onLoad = () => ScrollTrigger.refresh()
 
     const ctx = gsap.context(() => {
-      const header = document.querySelector<HTMLElement>('header')
-      if (header) {
-        ScrollTrigger.create({
-          start: 'top -2',
-          end: 999999,
-          toggleClass: { className: 'site-header-scrolled', targets: header },
-        })
-      }
+
 
       const heroSection = document.querySelector<HTMLElement>('[data-sr-hero-section]')
       if (heroSection) {

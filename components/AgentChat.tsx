@@ -64,6 +64,7 @@ import GenerationConfirmCard from './GenerationConfirmCard'
 import StoryboardReviewCard from './StoryboardReviewCard'
 import { v4 as uuidv4 } from 'uuid'
 import { syncSceneGraphWithScenes } from '@/lib/scene-graph-sync'
+import { resolveAgentModelDisplayName } from '@/lib/agents/model-config'
 
 type BrowserSpeechRecognition = {
   continuous: boolean
@@ -182,7 +183,7 @@ function ImageLightbox({ image, onClose }: { image: PreviewImage; onClose: () =>
           alt={image.alt ?? 'Preview'}
           className="max-w-[90vw] max-h-[80vh] object-contain rounded-lg shadow-2xl"
         />
-        <div className="flex items-center gap-3 text-white/60 text-xs">
+        <div className="flex items-center gap-3 text-white/60 text-sm">
           {image.alt && <span>{image.alt}</span>}
           {image.width && image.height && (
             <span>
@@ -459,10 +460,10 @@ function SpeechWaveformLangControl({
                 role="option"
                 aria-selected={l.code === speechLang}
                 onClick={() => onSelectLang(l.code)}
-                className="w-full flex items-center gap-2 px-2.5 py-1.5 text-left text-[11px] text-[var(--color-text-primary)] hover:bg-white/10 no-style cursor-pointer"
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 text-left text-[12px] text-[var(--color-text-primary)] hover:bg-white/10 no-style cursor-pointer"
               >
                 <span className="flex-1 min-w-0">{l.label}</span>
-                <span className="text-[9px] text-[var(--color-text-muted)] shrink-0 font-mono">{l.code}</span>
+                <span className="text-[10px] text-[var(--color-text-muted)] shrink-0 font-mono">{l.code}</span>
                 {l.code === speechLang && (
                   <Check size={12} className="shrink-0 text-[var(--color-accent)]" strokeWidth={2.5} />
                 )}
@@ -547,7 +548,7 @@ function MessageActions({
   }
 
   return (
-    <div className="flex items-center justify-end gap-2.5 px-1 mt-1.5">
+    <div className="flex shrink-0 items-center justify-end gap-2.5 px-1 mt-1.5">
       <span
         onClick={() => onRate(msg.id, rating === 5 ? 0 : 5)}
         className="cursor-pointer select-none"
@@ -556,8 +557,12 @@ function MessageActions({
       >
         <ThumbsUp
           size={12}
-          strokeWidth={rating === 5 ? 3 : 1.5}
-          className="text-[var(--color-text-muted)] opacity-50 hover:opacity-100 transition-opacity"
+          strokeWidth={1.5}
+          stroke="currentColor"
+          fill={rating === 5 ? 'currentColor' : 'none'}
+          className={`text-[var(--color-text-muted)] transition-opacity ${
+            rating === 5 ? 'opacity-100' : 'opacity-50 hover:opacity-100'
+          }`}
         />
       </span>
       <span
@@ -568,8 +573,12 @@ function MessageActions({
       >
         <ThumbsDown
           size={12}
-          strokeWidth={rating === 1 ? 3 : 1.5}
-          className="text-[var(--color-text-muted)] opacity-50 hover:opacity-100 transition-opacity"
+          strokeWidth={1.5}
+          stroke="currentColor"
+          fill={rating === 1 ? 'currentColor' : 'none'}
+          className={`text-[var(--color-text-muted)] transition-opacity ${
+            rating === 1 ? 'opacity-100' : 'opacity-50 hover:opacity-100'
+          }`}
         />
       </span>
       <div className="relative" ref={menuRef}>
@@ -588,21 +597,21 @@ function MessageActions({
           <div className="absolute top-full right-0 mt-1 px-2 py-1 rounded-md border border-[var(--color-border)] bg-[var(--color-panel)] shadow-lg z-50 space-y-0.5">
             <span
               onClick={handleCopy}
-              className="block cursor-pointer text-[10px] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors select-none whitespace-nowrap"
+              className="block cursor-pointer text-[11px] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors select-none whitespace-nowrap"
             >
               {copied === 'msg' ? 'Copied!' : 'Copy message'}
             </span>
             {conversationId && (
               <span
                 onClick={handleCopyConversationId}
-                className="block cursor-pointer text-[10px] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors select-none whitespace-nowrap"
+                className="block cursor-pointer text-[11px] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors select-none whitespace-nowrap"
               >
                 {copied === 'id' ? 'Copied!' : 'Copy conversation ID'}
               </span>
             )}
             <span
               onClick={handleDetails}
-              className="block cursor-pointer text-[10px] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors select-none whitespace-nowrap"
+              className="block cursor-pointer text-[11px] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors select-none whitespace-nowrap"
             >
               Details
             </span>
@@ -621,7 +630,7 @@ function ToolCallItem({ call }: { call: ToolCallRecord }) {
   const isError = call.output && !call.output.success
 
   return (
-    <div className="mt-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] overflow-hidden text-[11px]">
+    <div className="mt-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] overflow-hidden text-[12px]">
       <span
         onClick={() => setOpen((o) => !o)}
         className="w-full flex items-center gap-2 px-2.5 py-1.5 text-left hover:bg-[var(--color-border)]/20 transition-colors cursor-pointer select-none"
@@ -630,17 +639,17 @@ function ToolCallItem({ call }: { call: ToolCallRecord }) {
         {isSuccess && (
           <span className="flex items-center gap-1 text-emerald-400">
             <CheckCircle2 size={10} />
-            <span className="text-[10px]">Done</span>
+            <span className="text-[11px]">Done</span>
           </span>
         )}
         {isError && (
           <span className="flex items-center gap-1 text-red-400">
             <XCircle size={10} />
-            <span className="text-[10px]">Error</span>
+            <span className="text-[11px]">Error</span>
           </span>
         )}
         {call.durationMs !== undefined && (
-          <span className="text-[var(--color-text-muted)] text-[10px]">
+          <span className="text-[var(--color-text-muted)] text-[11px]">
             {call.durationMs > 1000 ? `${(call.durationMs / 1000).toFixed(1)}s` : `${call.durationMs}ms`}
           </span>
         )}
@@ -653,16 +662,16 @@ function ToolCallItem({ call }: { call: ToolCallRecord }) {
       {open && (
         <div className="px-2.5 pb-2 space-y-1.5 border-t border-[var(--color-border)]">
           <div>
-            <div className="text-[var(--color-text-muted)] text-[9px] mb-0.5 mt-1.5 uppercase tracking-wide">Input</div>
-            <pre className="text-[10px] text-[var(--color-text-muted)] whitespace-pre-wrap font-mono overflow-x-auto max-h-28 bg-[var(--color-panel)] rounded p-1.5">
+            <div className="text-[var(--color-text-muted)] text-[10px] mb-0.5 mt-1.5 uppercase tracking-wide">Input</div>
+            <pre className="text-[11px] text-[var(--color-text-muted)] whitespace-pre-wrap font-mono overflow-x-auto max-h-28 bg-[var(--color-panel)] rounded p-1.5">
               {JSON.stringify(call.input, null, 2)}
             </pre>
           </div>
           {call.output && (
             <div>
-              <div className="text-[var(--color-text-muted)] text-[9px] mb-0.5 uppercase tracking-wide">Output</div>
+              <div className="text-[var(--color-text-muted)] text-[10px] mb-0.5 uppercase tracking-wide">Output</div>
               <pre
-                className={`text-[10px] whitespace-pre-wrap font-mono overflow-x-auto max-h-28 bg-[var(--color-panel)] rounded p-1.5 ${
+                className={`text-[11px] whitespace-pre-wrap font-mono overflow-x-auto max-h-28 bg-[var(--color-panel)] rounded p-1.5 ${
                   call.output.success ? 'text-emerald-400/80' : 'text-red-400/80'
                 }`}
               >
@@ -688,7 +697,7 @@ function UsageBadge({ usage }: { usage: UsageStats }) {
   }
 
   return (
-    <div className="flex items-center gap-2 px-1 mt-1.5 text-[10px] text-[var(--color-text-muted)] font-mono opacity-60">
+    <div className="flex items-center gap-2 px-1 mt-1.5 text-[11px] text-[var(--color-text-muted)] font-mono opacity-60">
       <span>{usage.inputTokens.toLocaleString()} in</span>
       <span className="opacity-40">/</span>
       <span>{usage.outputTokens.toLocaleString()} out</span>
@@ -802,10 +811,16 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
     setPlanFirstMode,
     pausedAgentRun,
     setPausedAgentRun,
+    localMode,
+    setLocalMode,
+    localModelId,
+    setLocalModelId,
     runCheckpoint,
     setRunCheckpoint,
     chatMessages,
+    pendingStoryboard,
     addChatMessage,
+    persistUserMessage,
     updateChatMessage,
     persistChatMessage,
     clearChat,
@@ -823,6 +838,10 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
   const [keywordWarning, setKeywordWarning] = useState<{ capability: string; label: string } | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
   const [streamingText, setStreamingText] = useState('')
+  /** Chronologically ordered segments of text and tool calls for interleaved display */
+  const [streamingSegments, setStreamingSegments] = useState<Array<{ type: 'text'; text: string } | { type: 'tool'; call: ToolCallRecord }>>([])
+  /** Tracks the text accumulated before the current batch of tool calls */
+  const lastSnapshotTextRef = useRef('')
   const [showHistory, setShowHistory] = useState(false)
   const [showEllipsisMenu, setShowEllipsisMenu] = useState(false)
   const [showConfigModal, setShowConfigModal] = useState(false)
@@ -833,6 +852,7 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
   const [isThinkingStreaming, setIsThinkingStreaming] = useState(false)
   const [streamingToolCalls, setStreamingToolCalls] = useState<ToolCallRecord[]>([])
   const [currentIteration, setCurrentIteration] = useState<{ iteration: number; max: number } | null>(null)
+  const [runProgress, setRunProgress] = useState<{ toolCallsUsed: number; toolCallsMax: number; costUsd: number; costMax: number } | null>(null)
   const [pendingImages, setPendingImages] = useState<ImageAttachment[]>([])
   const [previewImage, setPreviewImage] = useState<PreviewImage | null>(null)
   const [isDraggingImage, setIsDraggingImage] = useState(false)
@@ -956,7 +976,10 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
       const u = msg.usage
       const lines: string[] = ['--- Generation Details ---']
       if (msg.agentType) lines.push(`Agent: ${msg.agentType}`)
-      if (msg.modelId) lines.push(`Model: ${msg.modelId}`)
+      if (msg.modelId) {
+        const st = useVideoStore.getState()
+        lines.push(`Model: ${resolveAgentModelDisplayName(msg.modelId, st.modelConfigs)}`)
+      }
       if (u) {
         lines.push(`Input tokens: ${u.inputTokens.toLocaleString()}`)
         lines.push(`Output tokens: ${u.outputTokens.toLocaleString()}`)
@@ -977,13 +1000,82 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
     [addChatMessage],
   )
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }
+  const scrollRafRef = useRef<number | null>(null)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  /** True when the user has manually scrolled away from the bottom */
+  const userScrolledUpRef = useRef(false)
+
+  const scrollToBottom = useCallback((force?: boolean) => {
+    if (!force && userScrolledUpRef.current) return
+    if (scrollRafRef.current !== null) return
+    scrollRafRef.current = requestAnimationFrame(() => {
+      scrollRafRef.current = null
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    })
+  }, [])
+
+  /** Detect if user scrolled away from bottom */
+  const handleScroll = useCallback(() => {
+    const el = scrollContainerRef.current
+    if (!el) return
+    // Consider "near bottom" if within 80px of the bottom
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+    userScrolledUpRef.current = !nearBottom
+  }, [])
 
   useEffect(() => {
-    scrollToBottom()
-  }, [messages, streamingText])
+    // Reset scroll lock when generation starts or new messages arrive
+    userScrolledUpRef.current = false
+    scrollToBottom(true)
+  }, [messages, pendingStoryboard, isGenerating, scrollToBottom])
+
+  // Debounced scroll for streaming text — avoids 60+ scrolls/sec
+  const streamScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    if (!streamingText) return
+    if (streamScrollTimerRef.current) return // already scheduled
+    streamScrollTimerRef.current = setTimeout(() => {
+      streamScrollTimerRef.current = null
+      scrollToBottom()
+    }, 120)
+  }, [streamingText, scrollToBottom])
+
+  // ── Persist on page unload ──────────────────────────────────────────────────
+  // Best-effort flush via sendBeacon upsert. Uses _method:'PUT' to trigger the
+  // upsert path on the server. The SQL WHERE status='streaming' guard prevents
+  // overwriting a message that the finally block already marked 'complete'.
+  useEffect(() => {
+    const onBeforeUnload = () => {
+      if (!isGenerating) return
+      const st = useVideoStore.getState()
+      if (!st.activeConversationId || !st.project?.id) return
+      const lastAssistant = [...st.chatMessages].reverse().find((m) => m.role === 'assistant')
+      if (!lastAssistant) return
+      const textContent = typeof lastAssistant.content === 'string'
+        ? lastAssistant.content
+        : messageContentToText(lastAssistant.content)
+      navigator.sendBeacon(
+        `/api/conversations/${st.activeConversationId}/messages`,
+        new Blob(
+          [JSON.stringify({
+            _method: 'PUT',
+            messageId: lastAssistant.id,
+            projectId: st.project.id,
+            role: 'assistant',
+            content: textContent || 'Interrupted — page closed during generation.',
+            status: 'aborted',
+            agentType: lastAssistant.agentType,
+            modelUsed: lastAssistant.modelId,
+            toolCalls: lastAssistant.toolCalls,
+            contentSegments: lastAssistant.contentSegments,
+          })],
+          { type: 'application/json' },
+        ),
+      )
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [isGenerating])
 
   // ── Keyword guard ──────────────────────────────────────────────────────────
 
@@ -1053,6 +1145,9 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
       setStreamingToolCalls([])
       setCurrentIteration(null)
 
+      // INSERT placeholder in DB immediately — survives page refresh during streaming
+      await persistChatMessage(pendingAssistantMsg.id, { status: 'streaming' })
+
       const st = useVideoStore.getState()
       const historyMsgs = st.chatMessages.slice(-10).map((m) => ({
         id: m.id,
@@ -1065,13 +1160,36 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
       abortRef.current = controller
 
       let accumulatedText = ''
+      let lastSegmentSnapshotText = ''
       let thinkingAccumulated = ''
       let finalAgentType: AgentType | undefined
       let finalModelId: string | undefined
       let finalUsage: UsageStats | undefined
       let finalGenerationLogId: string | undefined
       const toolCalls: ToolCallRecord[] = []
+      const segments: import('@/lib/agents/types').MessageSegment[] = []
       const pendingPermissions: import('@/lib/agents/types').PendingPermission[] = []
+      let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
+
+      // Incremental persist: debounced save during streaming
+      let lastPersistTime = Date.now()
+      let persistTimer: ReturnType<typeof setTimeout> | null = null
+      const PERSIST_INTERVAL_MS = 15_000
+      const PERSIST_DEBOUNCE_MS = 2_000
+      const debouncedPersist = () => {
+        if (persistTimer) clearTimeout(persistTimer)
+        persistTimer = setTimeout(() => {
+          updateChatMessage(pendingAssistantMsg.id, {
+            content: accumulatedText,
+            toolCalls: [...toolCalls],
+            contentSegments: [...segments],
+            thinking: thinkingAccumulated || undefined,
+          })
+          persistChatMessage(pendingAssistantMsg.id, { status: 'streaming' })
+          lastPersistTime = Date.now()
+          persistTimer = null
+        }, PERSIST_DEBOUNCE_MS)
+      }
 
       try {
         const lightScenes = st.scenes.map((s) => {
@@ -1089,12 +1207,17 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
 
         const apiAgentOverride = forceAgentOverride ?? st.agentOverride ?? undefined
 
+        // When local mode is on, override the model to the selected local model
+        const effectiveModelOverride = st.localMode && st.localModelId
+          ? st.localModelId
+          : (st.modelOverride ?? undefined)
+
         const fetchBody = JSON.stringify({
           message: messageContent,
           agentOverride: apiAgentOverride,
-          modelOverride: st.modelOverride ?? undefined,
+          modelOverride: effectiveModelOverride,
           modelTier: st.modelTier,
-          thinkingMode: st.thinkingMode,
+          thinkingMode: st.localMode ? 'off' : st.thinkingMode,
           sceneContext: st.sceneContext,
           activeTools: st.activeTools,
           history: historyMsgs,
@@ -1108,10 +1231,13 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
           selectedSceneId: scene.id,
           audioProviderEnabled: st.audioProviderEnabled,
           mediaGenEnabled: st.mediaGenEnabled,
+          enabledModelIds: st.modelConfigs.filter((m) => m.enabled).flatMap((m) => m.id !== m.modelId ? [m.modelId, m.id] : [m.modelId]),
           apiPermissions: st.project.apiPermissions,
           sessionPermissions: Object.fromEntries(st.sessionPermissions),
           generationOverrides: st.generationOverrides,
           autoChooseDefaults: st.autoChooseDefaults,
+          localMode: st.localMode,
+          ...(st.localMode ? { modelConfigs: st.modelConfigs.filter((m) => m.provider === 'local') } : {}),
           ...(initialStoryboard ? { initialStoryboard } : {}),
           ...(resumeToolCall ? { resumeToolCall } : {}),
           ...(extraBody ?? {}),
@@ -1140,12 +1266,21 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
           throw new Error(`Agent error: ${response.statusText}`)
         }
 
-        const reader = response.body!.getReader()
+        reader = response.body!.getReader()
         const decoder = new TextDecoder()
         let buffer = ''
+        const SSE_TIMEOUT_MS = 90_000 // 90s — generous for long tool calls
 
         while (true) {
-          const { done, value } = await reader.read()
+          let timeoutId: ReturnType<typeof setTimeout> | undefined
+          const readResult = await Promise.race([
+            reader.read(),
+            new Promise<never>((_, reject) => {
+              timeoutId = setTimeout(() => reject(new Error('Agent connection timed out — no data received for 90s')), SSE_TIMEOUT_MS)
+            }),
+          ])
+          clearTimeout(timeoutId)
+          const { done, value } = readResult
           if (done) break
 
           buffer += decoder.decode(value, { stream: true })
@@ -1190,12 +1325,27 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                 if (event.token) {
                   accumulatedText += event.token
                   setStreamingText(accumulatedText)
+                  // Time-based incremental persist for long text-only streams
+                  if (Date.now() - lastPersistTime > PERSIST_INTERVAL_MS) {
+                    debouncedPersist()
+                  }
                 }
                 break
 
               case 'iteration_start':
                 if (event.iteration && event.maxIterations) {
                   setCurrentIteration({ iteration: event.iteration, max: event.maxIterations })
+                }
+                break
+
+              case 'run_progress':
+                if (event.runProgress) {
+                  setRunProgress({
+                    toolCallsUsed: event.runProgress.toolCallsUsed,
+                    toolCallsMax: event.runProgress.toolCallsMax,
+                    costUsd: event.runProgress.costUsd,
+                    costMax: event.runProgress.costMax,
+                  })
                 }
                 break
 
@@ -1213,6 +1363,25 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                   }
                   toolCalls.push(callRecord)
                   setStreamingToolCalls((prev) => [...prev, callRecord])
+                  // Build interleaved segments: snapshot any new text before this tool call
+                  {
+                    const newText = accumulatedText.slice(lastSegmentSnapshotText.length).trim()
+                    if (newText) {
+                      segments.push({ type: 'text', text: newText })
+                    }
+                    lastSegmentSnapshotText = accumulatedText
+                    segments.push({ type: 'tool', toolCallId: callRecord.id })
+                  }
+                  setStreamingSegments((prev) => {
+                    const newSegments = [...prev]
+                    const newText = accumulatedText.slice(lastSnapshotTextRef.current.length).trim()
+                    if (newText) {
+                      newSegments.push({ type: 'text', text: newText })
+                    }
+                    lastSnapshotTextRef.current = accumulatedText
+                    newSegments.push({ type: 'tool', call: callRecord })
+                    return newSegments
+                  })
                   if (
                     event.toolName === 'plan_scenes' &&
                     event.toolResult.success &&
@@ -1287,6 +1456,8 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                   }
                 }
                 setActiveToolName(null)
+                // Incremental persist after tool calls
+                debouncedPersist()
                 break
 
               case 'storyboard_proposed':
@@ -1309,6 +1480,13 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                     event.updatedSceneGraph ?? useVideoStore.getState().project.sceneGraph,
                   )
                   updateSceneGraph(mergedGraph)
+                }
+                // Sync recording commands from agent tools
+                if ((event as any).recordingCommand) {
+                  const store = useVideoStore.getState()
+                  if ((event as any).recordingConfig) store.setRecordingConfig((event as any).recordingConfig)
+                  if ((event as any).recordingAttachSceneId !== undefined) store.setRecordingAttachSceneId((event as any).recordingAttachSceneId)
+                  store.setRecordingCommand((event as any).recordingCommand)
                 }
                 break
 
@@ -1334,33 +1512,58 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
           }
         }
       } catch (err) {
-        if ((err as Error).name !== 'AbortError') {
+        // Cancel the stream reader on any error (including timeout) to free the connection
+        try { reader?.cancel() } catch {}
+        if ((err as Error).name === 'AbortError') {
+          // User-initiated abort — set sentinel text if nothing was accumulated
+          if (!accumulatedText && toolCalls.length === 0) {
+            accumulatedText = 'Stopped by user.'
+          }
+        } else {
           accumulatedText = `Failed: ${(err as Error).message}`
         }
       } finally {
+        // Cancel any pending debounced persist
+        if (persistTimer) clearTimeout(persistTimer)
+
         setIsGenerating(false)
         setStreamingText('')
         setStreamingThinking('')
         setIsThinkingStreaming(false)
         setStreamingToolCalls([])
+        setStreamingSegments([])
+        lastSnapshotTextRef.current = ''
         setCurrentIteration(null)
+        setRunProgress(null)
         abortRef.current = null
 
+        // Capture any trailing text after the last tool call as a final segment
+        if (segments.length > 0) {
+          const trailingText = accumulatedText.slice(lastSegmentSnapshotText.length).trim()
+          if (trailingText) {
+            segments.push({ type: 'text', text: trailingText })
+          }
+        }
+
         updateChatMessage(pendingAssistantMsg.id, {
-          content: accumulatedText || 'Done.',
+          content: accumulatedText || (toolCalls.length > 0 || thinkingAccumulated ? '' : 'Done.'),
           generationLogId: finalGenerationLogId,
           usage: finalUsage,
           agentType: finalAgentType,
           modelId: finalModelId as any,
           ...(toolCalls.length > 0 ? { toolCalls } : {}),
+          ...(segments.length > 0 ? { contentSegments: segments } : {}),
           ...(pendingPermissions.length > 0 ? { pendingPermissions } : {}),
           ...(thinkingAccumulated ? { thinking: thinkingAccumulated } : {}),
         })
-        persistChatMessage(pendingAssistantMsg.id)
-        void useVideoStore.getState().refreshProjectFromServer()
-        setTimeout(() => {
-          void useVideoStore.getState().refreshProjectFromServer()
-        }, 2500)
+        // Final persist — awaited to ensure it completes before any page navigation
+        await persistChatMessage(pendingAssistantMsg.id, { status: 'complete' })
+        void useVideoStore.getState().refreshProjectFromServer().catch(() => {
+          // Retry once after a delay if the first refresh fails
+          setTimeout(() => {
+            void useVideoStore.getState().refreshProjectFromServer()
+          }, 2500)
+        })
       }
     },
     [scene.id, updateChatMessage, persistChatMessage, persistPausedAgentRun],
@@ -1482,6 +1685,7 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
       timestamp: Date.now(),
     }
     addChatMessage(userMsg)
+    await persistUserMessage(userMsg)
     const pendingAssistantMsg: ChatMessage = {
       id: uuidv4(),
       role: 'assistant',
@@ -1496,7 +1700,7 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
       initialStoryboard: sb,
       clearPendingStoryboardOnDone: false,
     })
-  }, [isGenerating, addChatMessage, runAgentStream])
+  }, [isGenerating, addChatMessage, persistUserMessage, runAgentStream])
 
   const handleSend = useCallback(async () => {
     if ((!input.trim() && pendingImages.length === 0) || isGenerating) return
@@ -1507,12 +1711,10 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
     speechRecognitionRef.current = null
     setIsListening(false)
 
-    if (!keywordWarning) {
-      const warning = checkKeywordGuard(input)
-      if (warning) {
-        setKeywordWarning(warning)
-        return
-      }
+    const warning = checkKeywordGuard(input)
+    if (warning && !keywordWarning) {
+      setKeywordWarning(warning)
+      return
     }
     setKeywordWarning(null)
 
@@ -1543,6 +1745,9 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
       timestamp: Date.now(),
     }
     addChatMessage(userMsg)
+    // Await user message persistence — ensures it's in the DB before the agent starts,
+    // so it survives page refresh/kill during long agent runs.
+    await persistUserMessage(userMsg)
 
     if (chatMessages.length === 0 && activeConversationId) {
       const autoTitle = userText.slice(0, 40) + (userText.length > 40 ? '...' : '')
@@ -1578,6 +1783,7 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
     keywordWarning,
     checkKeywordGuard,
     addChatMessage,
+    persistUserMessage,
     updateChatMessage,
     renameConversation,
     activeConversationId,
@@ -1586,9 +1792,10 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
   ])
 
   const handleAbort = () => {
+    // Just signal the abort — the catch/finally in runAgentStream handles
+    // setting "Stopped by user." text and persisting with status:'complete'.
+    // No manual persist here avoids race conditions and duplicates.
     abortRef.current?.abort()
-    setIsGenerating(false)
-    setStreamingText('')
 
     try {
       speechRecognitionRef.current?.abort()
@@ -1596,12 +1803,6 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
     speechRecognitionRef.current = null
     setIsListening(false)
     setShowSpeechLangMenu(false)
-
-    // Finalize any pending messages
-    const pending = useVideoStore.getState().chatMessages.filter((m) => !m.content)
-    for (const m of pending) {
-      updateChatMessage(m.id, { content: 'Aborted.' })
-    }
   }
 
   const stopVoiceInput = useCallback(() => {
@@ -1702,10 +1903,13 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
   // ── Derived state ──────────────────────────────────────────────────────────────
 
   // If user picked a specific model override, show that; otherwise show tier
-  const overrideModel = modelOverride ? modelConfigs.find((m) => m.modelId === modelOverride) : null
-  const currentModel = overrideModel
-    ? { id: 'override' as ModelTier, modelName: overrideModel.displayName, tierLabel: 'Override' }
-    : (MODEL_OPTIONS.find((m) => m.id === modelTier) ?? MODEL_OPTIONS[0])
+  const localModel = localMode && localModelId ? modelConfigs.find((m) => m.id === localModelId) : null
+  const overrideModel = !localMode && modelOverride ? modelConfigs.find((m) => m.modelId === modelOverride) : null
+  const currentModel = localMode
+    ? { id: 'local' as any, modelName: localModel?.displayName ?? 'Local', tierLabel: 'Free' }
+    : overrideModel
+      ? { id: 'override' as ModelTier, modelName: overrideModel.displayName, tierLabel: 'Override' }
+      : (MODEL_OPTIONS.find((m) => m.id === modelTier) ?? MODEL_OPTIONS[0])
 
   const currentAgent = AGENT_OPTIONS.find((a) => a.id === agentOverride) ?? AGENT_OPTIONS[0]
   const AgentIcon = currentAgent.icon
@@ -1735,7 +1939,7 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
   return (
     <div className="flex flex-col h-full bg-[var(--color-bg)] overflow-hidden relative">
       {/* ── Chat Header: conversation tabs ── */}
-      <div className="flex items-center px-2 py-1 flex-shrink-0 border-b border-[var(--color-border)] bg-[var(--color-bg)]">
+      <div className="flex items-center px-2 py-1 flex-shrink-0 bg-[var(--color-bg)]">
         <div className="flex-1 flex items-center gap-0.5 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
           {conversations.map((conv) => (
             <span
@@ -1745,15 +1949,16 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                 setRenamingId(conv.id)
                 setRenameValue(conv.title)
               }}
-              className={`chat-tab relative overflow-hidden px-2 py-1 rounded text-[10px] whitespace-nowrap cursor-pointer select-none transition-all flex-shrink-0 outline-none ${
+              className={`chat-tab relative overflow-hidden px-2 py-1 rounded text-[11px] whitespace-nowrap cursor-pointer select-none transition-all flex-shrink-0 outline-none ${
                 conv.id === activeConversationId
-                  ? 'bg-[var(--color-panel)] text-[var(--kbd-text)] border border-[var(--color-border)]'
-                  : 'text-[var(--color-text-muted)] hover:text-[var(--kbd-text)] hover:bg-[var(--color-panel)]/50 border border-transparent'
+                  ? 'bg-[var(--agent-chat-user-surface)] text-[var(--color-text-primary)]'
+                  : 'text-[var(--color-text-muted)] hover:text-[var(--kbd-text)] hover:bg-[var(--color-panel)]/50'
               }`}
               style={
                 {
                   maxWidth: 120,
-                  '--tab-bg': conv.id === activeConversationId ? 'var(--color-panel)' : 'var(--color-bg)',
+                  '--tab-bg':
+                    conv.id === activeConversationId ? 'var(--agent-chat-user-surface)' : 'var(--color-bg)',
                 } as React.CSSProperties
               }
             >
@@ -1775,7 +1980,7 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                     if (e.key === 'Escape') setRenamingId(null)
                   }}
                   onClick={(e) => e.stopPropagation()}
-                  className="bg-transparent border-b border-[var(--color-accent)] outline-none text-[10px] text-[var(--kbd-text)] w-20"
+                  className="bg-transparent border-b border-[var(--color-accent)] outline-none text-[11px] text-[var(--color-text-primary)] w-20"
                 />
               ) : (
                 <span
@@ -1799,7 +2004,9 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                 <span
                   onClick={(e) => {
                     e.stopPropagation()
-                    deleteConversation(conv.id)
+                    if (window.confirm('Delete this conversation? This cannot be undone.')) {
+                      deleteConversation(conv.id)
+                    }
                   }}
                   className="chat-tab-x"
                 >
@@ -1840,7 +2047,7 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                     setShowConfigModal(true)
                     setShowEllipsisMenu(false)
                   }}
-                  className="flex items-center px-3 py-1.5 text-[11px] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-border)]/30 cursor-pointer transition-colors"
+                  className="flex items-center px-3 py-1.5 text-[12px] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-border)]/30 cursor-pointer transition-colors"
                 >
                   Configure
                 </span>
@@ -1849,7 +2056,7 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                     setShowHistory(true)
                     setShowEllipsisMenu(false)
                   }}
-                  className="flex items-center px-3 py-1.5 text-[11px] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-border)]/30 cursor-pointer transition-colors"
+                  className="flex items-center px-3 py-1.5 text-[12px] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-border)]/30 cursor-pointer transition-colors"
                 >
                   History
                 </span>
@@ -1868,7 +2075,7 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
             style={{ boxShadow: '0 8px 24px rgba(0,0,0,0.4)' }}
           >
             <div className="flex items-center gap-2 px-4 py-3 border-b border-[var(--color-border)] flex-shrink-0">
-              <span className="text-[11px] font-bold text-[var(--kbd-text)] flex-1 uppercase tracking-widest">
+              <span className="text-[12px] font-bold text-[var(--kbd-text)] flex-1 uppercase tracking-widest">
                 History
               </span>
               <span
@@ -1876,14 +2083,14 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                   handleNewChat()
                   setShowHistory(false)
                 }}
-                className="text-[10px] px-2 py-0.5 rounded cursor-pointer bg-[var(--kbd-bg)] border border-[var(--kbd-border)] text-[var(--kbd-text)] hover:brightness-110 transition-all"
+                className="text-[11px] px-2 py-0.5 rounded cursor-pointer bg-[var(--kbd-bg)] border border-[var(--kbd-border)] text-[var(--kbd-text)] hover:brightness-110 transition-all"
               >
                 New Chat
               </span>
             </div>
             <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
               {conversations.length === 0 && (
-                <div className="flex items-center justify-center h-20 text-[10px] text-[var(--color-text-muted)]">
+                <div className="flex items-center justify-center h-20 text-[11px] text-[var(--color-text-muted)]">
                   No chats yet
                 </div>
               )}
@@ -1899,13 +2106,13 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                     }}
                     className={`group/hist rounded-lg px-3 py-2 cursor-pointer transition-all ${
                       isActive
-                        ? 'bg-[var(--color-bg)] text-[var(--kbd-text)]'
+                        ? 'bg-[var(--agent-chat-user-surface)] text-[var(--color-text-primary)]'
                         : 'text-[var(--color-text-muted)] hover:bg-[var(--color-bg)]/50'
                     }`}
                   >
                     <div className="flex items-center gap-2">
                       <span
-                        className={`text-[11px] overflow-hidden whitespace-nowrap flex-1 ${isActive ? 'font-medium' : ''}`}
+                        className={`text-[12px] overflow-hidden whitespace-nowrap flex-1 ${isActive ? 'font-medium' : ''}`}
                         style={{
                           WebkitMaskImage: 'linear-gradient(to right, black calc(100% - 20px), transparent 100%)',
                           maskImage: 'linear-gradient(to right, black calc(100% - 20px), transparent 100%)',
@@ -1916,7 +2123,9 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                       <span
                         onClick={(e) => {
                           e.stopPropagation()
-                          deleteConversation(conv.id)
+                          if (window.confirm('Delete this conversation? This cannot be undone.')) {
+                            deleteConversation(conv.id)
+                          }
                         }}
                         className="hidden group-hover/hist:flex items-center justify-center w-4 h-4 rounded hover:bg-[var(--color-border)]/50 flex-shrink-0"
                       >
@@ -1924,7 +2133,7 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                       </span>
                     </div>
                     {preview && (
-                      <div className="text-[9px] text-[var(--color-text-muted)] mt-0.5 truncate opacity-50">
+                      <div className="text-[10px] text-[var(--color-text-muted)] mt-0.5 truncate opacity-50">
                         {preview.content.slice(0, 50)}
                       </div>
                     )}
@@ -1948,7 +2157,7 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
               {/* Presets — category-level batch toggles */}
               <div className="flex-1">
                 <div className="px-1 mb-3 border-b border-[var(--color-border)] pb-2">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--color-text-muted)]">
+                  <span className="text-[11px] font-bold uppercase tracking-widest text-[var(--color-text-muted)]">
                     Presets
                   </span>
                 </div>
@@ -2006,7 +2215,7 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                           className="flex items-center justify-between py-1.5 cursor-pointer select-none"
                         >
                           <span
-                            className={`text-[11px] font-medium ${allOn ? 'text-[var(--color-text-primary)]' : 'text-[var(--color-text-muted)]'}`}
+                            className={`text-[12px] font-medium ${allOn ? 'text-[var(--color-text-primary)]' : 'text-[var(--color-text-muted)]'}`}
                           >
                             {preset.label}
                           </span>
@@ -2025,7 +2234,7 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
               {/* Audio */}
               <div className="flex-1 border-l border-[var(--color-border)] pl-4">
                 <div className="px-1 mb-3 border-b border-[var(--color-border)] pb-2">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--color-text-muted)]">
+                  <span className="text-[11px] font-bold uppercase tracking-widest text-[var(--color-text-muted)]">
                     Audio
                   </span>
                 </div>
@@ -2036,7 +2245,7 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                       onClick={() => toggleAudioProvider(p.id)}
                       className="flex items-center justify-between py-1.5 cursor-pointer select-none"
                     >
-                      <span className="text-[11px] font-medium text-[var(--color-text-primary)]">{p.name}</span>
+                      <span className="text-[12px] font-medium text-[var(--color-text-primary)]">{p.name}</span>
                       <ToggleRight size={18} className="text-[var(--color-accent)]" />
                     </span>
                   ))}
@@ -2048,7 +2257,7 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                           onClick={() => toggleAudioProvider(p.id)}
                           className="flex items-center justify-between py-1.5 cursor-pointer select-none"
                         >
-                          <span className="text-[11px] font-medium text-[var(--color-text-muted)]">{p.name}</span>
+                          <span className="text-[12px] font-medium text-[var(--color-text-muted)]">{p.name}</span>
                           <ToggleLeft size={18} className="text-[var(--color-text-muted)]" />
                         </span>
                       ))}
@@ -2060,7 +2269,7 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                     setShowConfigModal(false)
                     setSettingsTab('models')
                   }}
-                  className="inline-block mt-3 text-[10px] text-[var(--color-accent)] hover:underline cursor-pointer"
+                  className="inline-block mt-3 text-[11px] text-[var(--color-accent)] hover:underline cursor-pointer"
                 >
                   + Add audio model
                 </span>
@@ -2069,7 +2278,7 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
               {/* Media — all media gen providers (image, video, avatar, utility) */}
               <div className="flex-1 border-x border-[var(--color-border)] px-4">
                 <div className="px-1 mb-3 border-b border-[var(--color-border)] pb-2">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--color-text-muted)]">
+                  <span className="text-[11px] font-bold uppercase tracking-widest text-[var(--color-text-muted)]">
                     Media
                   </span>
                 </div>
@@ -2080,7 +2289,7 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                       onClick={() => toggleMediaGen(p.id)}
                       className="flex items-center justify-between py-1.5 cursor-pointer select-none"
                     >
-                      <span className="text-[11px] font-medium text-[var(--color-text-primary)]">{p.name}</span>
+                      <span className="text-[12px] font-medium text-[var(--color-text-primary)]">{p.name}</span>
                       <ToggleRight size={18} className="text-[var(--color-accent)]" />
                     </span>
                   ))}
@@ -2092,7 +2301,7 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                           onClick={() => toggleMediaGen(p.id)}
                           className="flex items-center justify-between py-1.5 cursor-pointer select-none"
                         >
-                          <span className="text-[11px] font-medium text-[var(--color-text-muted)]">{p.name}</span>
+                          <span className="text-[12px] font-medium text-[var(--color-text-muted)]">{p.name}</span>
                           <ToggleLeft size={18} className="text-[var(--color-text-muted)]" />
                         </span>
                       ))}
@@ -2104,7 +2313,7 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                     setShowConfigModal(false)
                     setSettingsTab('models')
                   }}
-                  className="inline-block mt-3 text-[10px] text-[var(--color-accent)] hover:underline cursor-pointer"
+                  className="inline-block mt-3 text-[11px] text-[var(--color-accent)] hover:underline cursor-pointer"
                 >
                   + Add media model
                 </span>
@@ -2113,7 +2322,7 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
               {/* Animation — scene rendering styles (tool filter chips) */}
               <div className="flex-1 pl-4">
                 <div className="px-1 mb-3 border-b border-[var(--color-border)] pb-2">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--color-text-muted)]">
+                  <span className="text-[11px] font-bold uppercase tracking-widest text-[var(--color-text-muted)]">
                     Animation
                   </span>
                 </div>
@@ -2129,7 +2338,7 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                         className="flex items-center justify-between py-1.5 cursor-pointer select-none"
                       >
                         <span
-                          className={`text-[11px] font-medium ${isOn ? 'text-[var(--color-text-primary)]' : 'text-[var(--color-text-muted)]'}`}
+                          className={`text-[12px] font-medium ${isOn ? 'text-[var(--color-text-primary)]' : 'text-[var(--color-text-muted)]'}`}
                         >
                           {chip.label}
                         </span>
@@ -2148,22 +2357,23 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
         </>
       )}
 
-      {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6 scrollbar-hide">
+      {/* Messages Area — centered column (Cursor-style), not iMessage L/R lanes */}
+      <div ref={scrollContainerRef} onScroll={handleScroll} className="flex-1 min-h-0 overflow-y-auto px-4 py-4 scrollbar-hide">
+        <div className="mx-auto w-full max-w-2xl space-y-4">
         {pausedAgentRun && (
           <div className="rounded-lg border border-amber-500/35 bg-amber-500/10 px-3 py-2.5 flex items-center gap-2">
-            <span className="text-[11px] text-amber-300">
+            <span className="text-[12px] text-amber-300">
               Paused run: <span className="font-semibold">{pausedAgentRun.toolName}</span> is waiting for permission.
             </span>
             <span
               onClick={() => void handleResumePausedRun()}
-              className={`ml-auto text-[11px] font-semibold px-2.5 py-1 rounded-md bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 ${isGenerating ? 'opacity-40' : 'cursor-pointer hover:bg-emerald-500/25'}`}
+              className={`ml-auto text-[12px] font-semibold px-2.5 py-1 rounded-md bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 ${isGenerating ? 'opacity-40' : 'cursor-pointer hover:bg-emerald-500/25'}`}
             >
               Continue
             </span>
             <span
               onClick={() => void persistPausedAgentRun(null)}
-              className="text-[11px] font-semibold px-2.5 py-1 rounded-md border border-[var(--color-border)] cursor-pointer hover:bg-[var(--color-border)]/25"
+              className="text-[12px] font-semibold px-2.5 py-1 rounded-md border border-[var(--color-border)] cursor-pointer hover:bg-[var(--color-border)]/25"
             >
               Dismiss
             </span>
@@ -2172,20 +2382,20 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
         {runCheckpoint && !isGenerating && (
           <div className="mx-2 mb-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
             <div className="text-sm font-medium text-amber-200 mb-1">Interrupted run detected</div>
-            <div className="text-xs text-[var(--color-text-secondary)] mb-2">
+            <div className="text-sm text-[var(--color-text-secondary)] mb-2">
               {runCheckpoint.completedSceneIds.length} of {runCheckpoint.storyboard?.scenes.length ?? '?'} scenes were
               built before the run was interrupted.
             </div>
             <div className="flex gap-2">
               <span
                 onClick={handleResumeCheckpoint}
-                className="text-xs px-3 py-1 rounded bg-amber-500/20 text-amber-200 hover:bg-amber-500/30 cursor-pointer transition-colors"
+                className="text-sm px-3 py-1 rounded bg-amber-500/20 text-amber-200 hover:bg-amber-500/30 cursor-pointer transition-colors"
               >
                 Resume
               </span>
               <span
                 onClick={handleDiscardCheckpoint}
-                className="text-xs px-3 py-1 rounded bg-[var(--color-panel)] text-[var(--color-text-secondary)] hover:bg-[var(--color-border)] cursor-pointer transition-colors"
+                className="text-sm px-3 py-1 rounded bg-[var(--color-panel)] text-[var(--color-text-secondary)] hover:bg-[var(--color-border)] cursor-pointer transition-colors"
               >
                 Discard
               </span>
@@ -2193,18 +2403,21 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
           </div>
         )}
         {messages
-          .filter((m) => m.content)
+          .filter((m) => m.content || m.toolCalls?.length || m.thinking)
           .map((msg) => (
-            <div key={msg.id}>
+            <div key={msg.id} className="w-full">
               {msg.role === 'user' ? (
-                <div className="flex flex-col items-center">
-                  <div className="w-full rounded-xl px-3 py-2.5 text-sm leading-relaxed transition-all bg-[var(--color-panel)] border border-[var(--color-border)] text-[var(--color-text-primary)]">
+                <div className="flex w-full justify-center">
+                  <div
+                    className="w-full rounded-lg px-3.5 py-2.5 text-sm leading-relaxed text-[var(--color-text-primary)]"
+                    style={{ backgroundColor: 'var(--agent-chat-user-surface)' }}
+                  >
                     {typeof msg.content === 'string' ? (
                       <span className="whitespace-pre-wrap break-words">{msg.content}</span>
                     ) : (
                       <div className="space-y-2">
                         {msg.content.some((b) => b.type === 'image') && (
-                          <div className="flex gap-2 flex-wrap">
+                          <div className="flex gap-2 flex-wrap justify-start">
                             {msg.content
                               .filter((b) => b.type === 'image')
                               .map((b, i) => {
@@ -2245,158 +2458,212 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                   </div>
                 </div>
               ) : (
-                <div className="relative space-y-1">
-                  {/* Agent badge */}
-                  {msg.agentType && (
-                    <div className="flex items-center gap-2">
-                      <span
-                        className="text-[11px] font-semibold"
-                        style={{ color: AGENT_COLORS[msg.agentType] ?? '#6b7280' }}
-                      >
-                        {AGENT_LABELS[msg.agentType] ?? 'Agent'}
-                      </span>
-                      {msg.modelId && (
-                        <span className="text-[10px] text-[var(--color-text-muted)] bg-[var(--color-panel)] px-1.5 py-0.5 rounded font-mono">
-                          {String(msg.modelId).replace('claude-', '').replace('-20251001', '')}
+                <div className="flex w-full justify-center">
+                  <div className="relative w-full space-y-1.5">
+                    {/* Agent badge */}
+                    {msg.agentType && (
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="text-[12px] font-semibold"
+                          style={{ color: AGENT_COLORS[msg.agentType] ?? '#6b7280' }}
+                        >
+                          {AGENT_LABELS[msg.agentType] ?? 'Agent'}
                         </span>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Thinking block */}
-                  {msg.thinking && <ThinkingBlock thinking={msg.thinking} />}
-
-                  {/* Message text */}
-                  <div className="text-sm leading-relaxed text-[var(--color-text-primary)] whitespace-pre-wrap break-words">
-                    {renderMarkdown(typeof msg.content === 'string' ? msg.content : messageContentToText(msg.content))}
-                  </div>
-
-                  {/* Tool calls */}
-                  {msg.toolCalls && msg.toolCalls.length > 0 && (
-                    <div>
-                      <div className="text-[10px] text-[var(--color-text-muted)] mb-1 uppercase tracking-wide">
-                        {msg.toolCalls.length} tool call{msg.toolCalls.length > 1 ? 's' : ''}
+                        {msg.modelId && (
+                          <span className="text-[11px] text-[var(--color-text-muted)] bg-[var(--color-panel)] px-1.5 py-0.5 rounded">
+                            {resolveAgentModelDisplayName(msg.modelId, modelConfigs)}
+                          </span>
+                        )}
                       </div>
-                      {msg.toolCalls.map((call) => (
-                        <ToolCallItem key={call.id} call={call} />
-                      ))}
-                    </div>
-                  )}
+                    )}
 
-                  {/* Permission / Generation confirmation cards */}
-                  {msg.pendingPermissions && msg.pendingPermissions.length > 0 && (
-                    <div className="space-y-2">
-                      {msg.pendingPermissions.map((perm, i) => (
-                        <GenerationConfirmCard
-                          key={`${perm.api}-${i}`}
-                          perm={perm}
-                          onAllow={(overrides) => {
-                            if (overrides) {
-                              setGenerationOverride(perm.api, overrides)
-                            }
-                            handlePermission(msg.id, perm.api, 'allow')
-                            void continueAfterPermission(msg, perm.api)
-                          }}
-                          onDeny={() => handlePermission(msg.id, perm.api, 'deny')}
-                          onAutoChoose={(genType, defaults) => {
-                            setAutoChooseDefault(genType, defaults)
-                            // Also set session permission to always allow this API
-                            setSessionPermission(perm.api, 'allow')
-                          }}
-                        />
-                      ))}
-                    </div>
-                  )}
+                    {/* Thinking block */}
+                    {msg.thinking && <ThinkingBlock thinking={msg.thinking} />}
 
-                  {/* Usage + feedback row */}
-                  <div className="flex items-center gap-2 pt-0.5">
-                    {msg.usage && <UsageBadge usage={msg.usage} />}
-                    <MessageActions
-                      msg={msg}
-                      onRate={handleRate}
-                      onDetails={handleDetails}
-                      conversationId={activeConversationId}
-                    />
+                    {/* Interleaved content: text and tool calls in chronological order */}
+                    {msg.contentSegments && msg.contentSegments.length > 0 ? (
+                      <div className="space-y-1.5">
+                        {msg.contentSegments.map((seg, i) => {
+                          if (seg.type === 'text') {
+                            return (
+                              <div key={`seg-${i}`} className="px-3 py-1 text-sm leading-relaxed text-[var(--color-text-primary)] whitespace-pre-wrap break-words">
+                                {renderMarkdown(seg.text)}
+                              </div>
+                            )
+                          }
+                          const toolCall = msg.toolCalls?.find((tc) => tc.id === seg.toolCallId)
+                          return toolCall ? <ToolCallItem key={toolCall.id} call={toolCall} /> : null
+                        })}
+                      </div>
+                    ) : (
+                      <>
+                        {/* Message text */}
+                        <div
+                          className="px-3 py-2 text-sm leading-relaxed text-[var(--color-text-primary)] whitespace-pre-wrap break-words"
+                        >
+                          {renderMarkdown(typeof msg.content === 'string' ? msg.content : messageContentToText(msg.content))}
+                        </div>
+
+                        {/* Tool calls (legacy: not interleaved) */}
+                        {msg.toolCalls && msg.toolCalls.length > 0 && (
+                          <div>
+                            <div className="text-[11px] text-[var(--color-text-muted)] mb-1 uppercase tracking-wide">
+                              {msg.toolCalls.length} tool call{msg.toolCalls.length > 1 ? 's' : ''}
+                            </div>
+                            {msg.toolCalls.map((call) => (
+                              <ToolCallItem key={call.id} call={call} />
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    )}
+
+                    {/* Permission / Generation confirmation cards */}
+                    {msg.pendingPermissions && msg.pendingPermissions.length > 0 && (
+                      <div className="space-y-2">
+                        {msg.pendingPermissions.map((perm, i) => (
+                          <GenerationConfirmCard
+                            key={`${perm.api}-${i}`}
+                            perm={perm}
+                            onAllow={(overrides) => {
+                              if (overrides) {
+                                setGenerationOverride(perm.api, overrides)
+                              }
+                              handlePermission(msg.id, perm.api, 'allow')
+                              void continueAfterPermission(msg, perm.api)
+                            }}
+                            onDeny={() => handlePermission(msg.id, perm.api, 'deny')}
+                            onAutoChoose={(genType, defaults) => {
+                              setAutoChooseDefault(genType, defaults)
+                              // Also set session permission to always allow this API
+                              setSessionPermission(perm.api, 'allow')
+                            }}
+                          />
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Usage + feedback row — actions pinned right */}
+                    <div className="flex w-full min-w-0 items-center justify-between gap-2 pt-0.5">
+                      <div className="min-w-0">{msg.usage ? <UsageBadge usage={msg.usage} /> : null}</div>
+                      <MessageActions
+                        msg={msg}
+                        onRate={handleRate}
+                        onDetails={handleDetails}
+                        conversationId={activeConversationId}
+                      />
+                    </div>
                   </div>
                 </div>
               )}
             </div>
           ))}
 
-        <StoryboardReviewCard disabled={isGenerating} onApprove={handleApproveStoryboard} />
+        {/* Storyboard + live stream: same column as assistant, after your messages (feels like one reply) */}
+        {(!!pendingStoryboard || isGenerating) && (
+          <div className="flex w-full justify-center">
+            <div className="w-full space-y-3">
+              <StoryboardReviewCard disabled={isGenerating} onApprove={handleApproveStoryboard} />
 
-        {/* ── Live streaming area ── */}
-        {isGenerating && (
-          <div className="space-y-2">
-            {/* Iteration progress */}
-            {currentIteration && currentIteration.iteration > 1 && (
-              <div className="flex items-center gap-2 px-1">
-                <Loader2 size={11} className="text-[var(--color-text-muted)] animate-spin" />
-                <span className="text-[10px] text-[var(--color-text-muted)] font-mono">
-                  Step {currentIteration.iteration}/{currentIteration.max}
-                </span>
-              </div>
-            )}
+              {isGenerating && (
+                <div className="space-y-2">
+                  {/* Iteration + run progress */}
+                  {(currentIteration && currentIteration.iteration > 1 || runProgress) && (
+                    <div className="flex items-center gap-3">
+                      <Loader2 size={11} className="text-[var(--color-text-muted)] animate-spin" />
+                      {currentIteration && currentIteration.iteration > 1 && (
+                        <span className="text-[11px] text-[var(--color-text-muted)] font-mono">
+                          Step {currentIteration.iteration}/{currentIteration.max}
+                        </span>
+                      )}
+                      {runProgress && (
+                        <span className={`text-[11px] font-mono ${
+                          runProgress.toolCallsUsed / runProgress.toolCallsMax > 0.8
+                            ? 'text-red-400'
+                            : runProgress.toolCallsUsed / runProgress.toolCallsMax > 0.5
+                              ? 'text-yellow-400'
+                              : 'text-[var(--color-text-muted)]'
+                        }`}>
+                          {runProgress.toolCallsUsed}/{runProgress.toolCallsMax} tools
+                          {' | '}
+                          ${runProgress.costUsd.toFixed(3)} / ${runProgress.costMax.toFixed(2)}
+                        </span>
+                      )}
+                    </div>
+                  )}
 
-            {/* Extended thinking block (streaming) */}
-            {(isThinkingStreaming || streamingThinking) && (
-              <div className="px-1">
-                <ThinkingBlock thinking={streamingThinking} isStreaming={isThinkingStreaming} />
-              </div>
-            )}
+                  {/* Extended thinking block (streaming) */}
+                  {(isThinkingStreaming || streamingThinking) && (
+                    <div>
+                      <ThinkingBlock thinking={streamingThinking} isStreaming={isThinkingStreaming} />
+                    </div>
+                  )}
 
-            {/* Streaming text */}
-            {streamingText && (
-              <div className="px-1 text-sm leading-relaxed text-[var(--color-text-primary)] whitespace-pre-wrap">
-                {renderMarkdown(streamingText)}
-                <span className="inline-block w-1.5 h-1.5 bg-[var(--color-text-primary)] ml-1 animate-pulse rounded-full align-middle" />
-              </div>
-            )}
+                  {/* Interleaved text + tool calls in chronological order */}
+                  {streamingSegments.map((seg, i) =>
+                    seg.type === 'text' ? (
+                      <div key={`seg-${i}`} className="text-sm leading-relaxed text-[var(--color-text-primary)] whitespace-pre-wrap">
+                        {renderMarkdown(seg.text)}
+                      </div>
+                    ) : (
+                      <ToolCallItem key={seg.call.id} call={seg.call} />
+                    ),
+                  )}
 
-            {/* Completed tool calls (live) */}
-            {streamingToolCalls.length > 0 && (
-              <div className="px-1">
-                <div className="text-[10px] text-[var(--color-text-muted)] mb-1 uppercase tracking-wide">
-                  {streamingToolCalls.length} tool call{streamingToolCalls.length > 1 ? 's' : ''} completed
+                  {/* Trailing streaming text (text after the last tool call, still being typed) */}
+                  {(() => {
+                    const trailingText = streamingText.slice(lastSnapshotTextRef.current.length).trim()
+                    return trailingText ? (
+                      <div className="text-sm leading-relaxed text-[var(--color-text-primary)] whitespace-pre-wrap">
+                        {renderMarkdown(trailingText)}
+                        <span className="inline-block w-1.5 h-1.5 bg-[var(--color-text-primary)] ml-1 animate-pulse rounded-full align-middle" />
+                      </div>
+                    ) : streamingText && streamingSegments.length === 0 ? (
+                      <div className="text-sm leading-relaxed text-[var(--color-text-primary)] whitespace-pre-wrap">
+                        {renderMarkdown(streamingText)}
+                        <span className="inline-block w-1.5 h-1.5 bg-[var(--color-text-primary)] ml-1 animate-pulse rounded-full align-middle" />
+                      </div>
+                    ) : null
+                  })()}
+
+                  {/* Active tool indicator */}
+                  {activeToolName && (
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="w-1.5 h-1.5 rounded-full bg-blue-400 flex-shrink-0"
+                        style={{ animation: 'cursorPulse 1.2s ease-in-out infinite' }}
+                      />
+                      <span className="text-[12px] text-[var(--color-text-primary)] font-mono truncate">
+                        {activeToolName}
+                      </span>
+                      <span className="text-[11px] text-blue-400">Running</span>
+                    </div>
+                  )}
+
+                  {/* Pending indicator — only when nothing else is showing */}
+                  {!streamingText && !activeToolName && !isThinkingStreaming && !streamingThinking && (
+                    <div>
+                      <span className="text-sm text-[var(--color-text-muted)]">
+                        Thinking
+                        <ThinkingDots />
+                      </span>
+                    </div>
+                  )}
                 </div>
-                {streamingToolCalls.map((call) => (
-                  <ToolCallItem key={call.id} call={call} />
-                ))}
-              </div>
-            )}
-
-            {/* Active tool indicator */}
-            {activeToolName && (
-              <div className="flex items-center gap-2 px-1">
-                <span
-                  className="w-1.5 h-1.5 rounded-full bg-blue-400 flex-shrink-0"
-                  style={{ animation: 'cursorPulse 1.2s ease-in-out infinite' }}
-                />
-                <span className="text-[11px] text-[var(--color-text-primary)] font-mono truncate">
-                  {activeToolName}
-                </span>
-                <span className="text-[10px] text-blue-400">Running</span>
-              </div>
-            )}
-
-            {/* Pending indicator — only when nothing else is showing */}
-            {!streamingText && !activeToolName && !isThinkingStreaming && !streamingThinking && (
-              <div className="px-1">
-                <span className="text-xs text-[var(--color-text-muted)]">
-                  Thinking
-                  <ThinkingDots />
-                </span>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         )}
 
         <div ref={messagesEndRef} />
+        </div>
       </div>
 
       {/* Keyword warning */}
       {keywordWarning && (
-        <div className="mx-4 mb-1 px-3 py-2 rounded-lg bg-amber-900/30 border border-amber-700/40 flex items-center gap-2 text-[11px]">
+        <div className="flex-shrink-0 px-4">
+        <div className="mx-auto mb-1 w-full max-w-2xl">
+        <div className="px-3 py-2 rounded-lg bg-amber-900/30 border border-amber-700/40 flex items-center gap-2 text-[12px]">
           <span className="text-amber-300 flex-1">
             <strong>{keywordWarning.label}</strong> is disabled for this chat.
           </span>
@@ -2405,7 +2672,7 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
               toggleActiveTool(keywordWarning.capability)
               setKeywordWarning(null)
             }}
-            className="text-[10px] font-medium text-amber-200 hover:text-white px-2 py-0.5 rounded bg-amber-800/50 hover:bg-amber-700/60 transition-colors"
+            className="text-[11px] font-medium text-amber-200 hover:text-white px-2 py-0.5 rounded bg-amber-800/50 hover:bg-amber-700/60 transition-colors"
           >
             Enable
           </button>
@@ -2414,7 +2681,7 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
               setKeywordWarning(null)
               handleSend()
             }}
-            className="text-[10px] text-amber-400/70 hover:text-amber-200 transition-colors"
+            className="text-[11px] text-amber-400/70 hover:text-amber-200 transition-colors"
           >
             Dismiss
           </button>
@@ -2425,16 +2692,20 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
             <X size={12} />
           </button>
         </div>
+        </div>
+        </div>
       )}
 
       {/* Input Area */}
-      <div className="p-4 bg-gradient-to-t from-[var(--color-bg)] via-[var(--color-bg)] to-transparent pt-8">
+      <div className="flex-shrink-0 p-4 bg-gradient-to-t from-[var(--color-bg)] via-[var(--color-bg)] to-transparent pt-8">
+        <div className="mx-auto w-full max-w-2xl">
         <div
-          className={`relative bg-[var(--color-panel)] border rounded-xl shadow-2xl transition-all p-1 ${
+          className={`relative border rounded-xl transition-all p-1 ${
             isDraggingImage
-              ? 'border-[var(--color-accent)] border-dashed bg-[var(--color-accent)]/5'
+              ? 'border-[var(--color-accent)] border-dashed ring-2 ring-[var(--color-accent)]/25'
               : 'border-[var(--color-border)]'
           }`}
+          style={{ backgroundColor: 'var(--agent-chat-user-surface)' }}
           onDragOver={(e) => {
             e.preventDefault()
             e.stopPropagation()
@@ -2470,7 +2741,7 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                     className="h-7 w-7 object-cover rounded cursor-pointer"
                     alt={img.fileName ?? 'Attached'}
                   />
-                  <span className="text-[10px] text-[var(--color-text-primary)] truncate max-w-[80px]">
+                  <span className="text-[11px] text-[var(--color-text-primary)] truncate max-w-[80px]">
                     {img.fileName ?? 'Image'}
                   </span>
                   <span
@@ -2486,7 +2757,12 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
 
           <textarea
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              setInput(e.target.value)
+              const ta = e.target
+              ta.style.height = 'auto'
+              ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault()
@@ -2506,22 +2782,13 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
             }}
             placeholder={pendingImages.length > 0 ? 'Add a message or send images...' : 'Talk to Agent...'}
             disabled={isGenerating}
-            className="w-full bg-transparent border-none focus:ring-0 focus:outline-none text-sm text-[var(--color-text-primary)] px-4 py-2 min-h-[44px] max-h-[200px] resize-none scrollbar-hide disabled:opacity-50"
+            className="w-full bg-transparent border-none focus:ring-0 focus:outline-none text-sm text-[var(--color-text-primary)] px-4 pt-2 pb-0 min-h-0 max-h-[200px] resize-none scrollbar-hide disabled:opacity-50"
             rows={1}
           />
 
-          <div className="flex items-center justify-between px-3 py-2 mt-1 gap-2">
+          <div className="flex items-center justify-between px-3 pt-1 pb-1 gap-2">
             {!isListening ? (
               <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                <span
-                  onClick={() => imageInputRef.current?.click()}
-                  className="flex items-center justify-center p-1 h-7 w-7 cursor-pointer"
-                  style={{ color: 'var(--color-text-muted)' }}
-                  data-tooltip="Attach image"
-                  data-tooltip-pos="top"
-                >
-                  <Plus size={14} strokeWidth={2.5} />
-                </span>
                 <input
                   ref={imageInputRef}
                   type="file"
@@ -2534,22 +2801,170 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                   }}
                 />
 
-                <span
-                  onClick={() => !isGenerating && setPlanFirstMode(!planFirstMode)}
-                  className={`flex items-center gap-1 px-2 h-7 rounded-md text-[10px] font-medium cursor-pointer border select-none transition-colors ${
-                    planFirstMode
-                      ? 'border-cyan-500/45 bg-cyan-500/10 text-cyan-300'
-                      : 'border-[var(--color-border)]/50 text-[var(--color-text-muted)] hover:border-[var(--color-border)]'
-                  } ${isGenerating ? 'opacity-40 pointer-events-none' : ''}`}
-                  data-tooltip="Next text-only message runs Planner — review storyboard before Director builds"
-                  data-tooltip-pos="top"
-                >
-                  <ListOrdered size={12} strokeWidth={2.2} />
-                  Plan first
-                </span>
-
                 <div className="flex items-center gap-2">
-                  {/* ── 1. Model Selection ── */}
+                  {/* ── 1. Agent Mode Selection ── */}
+                  <div className="relative">
+                    <button
+                      onClick={() => {
+                        setShowAgentMenu(!showAgentMenu)
+                        setShowModelMenu(false)
+                        setShowSpeechLangMenu(false)
+                      }}
+                      className={`no-style !flex items-center gap-1 px-2.5 transition-all rounded-full whitespace-nowrap h-7 box-border ${
+                        showAgentMenu
+                          ? 'bg-[var(--color-bg)] border border-[var(--color-border)]/50'
+                          : 'bg-[var(--color-bg)]/80 border border-[var(--color-border)]/30 hover:border-[var(--color-border)]'
+                      }`}
+                      style={{
+                        color: showAgentMenu
+                          ? 'var(--color-text-primary)'
+                          : agentOverride
+                            ? currentAgent.color
+                            : 'var(--color-text-muted)',
+                      }}
+                    >
+                      <AgentIcon size={14} strokeWidth={2.5} />
+                      <ChevronDown size={10} strokeWidth={2.5} className="opacity-70" />
+                    </button>
+
+                    {showAgentMenu && (
+                      <>
+                        <div className="fixed inset-0 z-[90]" onClick={() => setShowAgentMenu(false)} />
+                        <div className="absolute bottom-[calc(100%+8px)] left-0 z-[100] bg-[var(--color-panel)] border border-[var(--color-border)] rounded-xl shadow-2xl p-1.5 flex flex-col w-max min-w-[190px] gap-0.5 animate-in slide-in-from-bottom-1 duration-150">
+                          {/* Core agents */}
+                          {coreAgents.map((a) => (
+                            <button
+                              key={a.id ?? 'auto'}
+                              onClick={() => {
+                                setAgentOverride(a.id)
+                                setShowAgentMenu(false)
+                              }}
+                              className="w-full !flex !flex-row items-center px-3 py-2.5 !rounded-[8px] transition-colors no-style hover:bg-white/10 cursor-pointer"
+                            >
+                              <a.icon
+                                size={14}
+                                strokeWidth={2}
+                                style={{ color: a.color }}
+                                className="flex-shrink-0 mr-2.5"
+                              />
+                              <div className="flex flex-col items-start flex-1 min-w-0">
+                                <span
+                                  className="text-[13px] font-medium leading-none whitespace-nowrap"
+                                  style={{ color: agentOverride === a.id ? a.color : 'var(--color-text-primary)' }}
+                                >
+                                  {a.label}
+                                </span>
+                                <span className="text-[11px] text-[var(--color-text-muted)] mt-1">{a.desc}</span>
+                              </div>
+                              {agentOverride === a.id && (
+                                <Check
+                                  size={14}
+                                  strokeWidth={2}
+                                  className="ml-2 flex-shrink-0"
+                                  style={{ color: a.color }}
+                                />
+                              )}
+                            </button>
+                          ))}
+
+                          {/* Specialized agents divider */}
+                          <div className="border-t border-[var(--color-border)] mt-1 pt-1">
+                            <div className="px-3 py-1">
+                              <span className="text-[10px] uppercase tracking-widest text-[var(--color-text-muted)] font-semibold">
+                                Specialists
+                              </span>
+                            </div>
+                          </div>
+
+                          {specializedAgents.map((a, i) => (
+                            <button
+                              key={`spec-${i}`}
+                              onClick={() => {
+                                setAgentOverride(a.id)
+                                setShowAgentMenu(false)
+                              }}
+                              className="w-full !flex !flex-row items-center px-3 py-2.5 !rounded-[8px] transition-colors no-style hover:bg-white/10 cursor-pointer"
+                            >
+                              <a.icon
+                                size={14}
+                                strokeWidth={2}
+                                style={{ color: a.color }}
+                                className="flex-shrink-0 mr-2.5"
+                              />
+                              <div className="flex flex-col items-start flex-1 min-w-0">
+                                <span className="text-[13px] font-medium leading-none whitespace-nowrap text-[var(--color-text-primary)]">
+                                  {a.label}
+                                </span>
+                                <span className="text-[11px] text-[var(--color-text-muted)] mt-1">{a.desc}</span>
+                              </div>
+                            </button>
+                          ))}
+
+                          {/* Plan first toggle */}
+                          <div className="border-t border-[var(--color-border)] mt-1 pt-1">
+                            <button
+                              onClick={() => {
+                                setPlanFirstMode(!planFirstMode)
+                                setShowAgentMenu(false)
+                              }}
+                              className="w-full !flex !flex-row items-center px-3 py-2.5 !rounded-[8px] transition-colors no-style hover:bg-white/10 cursor-pointer"
+                            >
+                              <ListOrdered
+                                size={14}
+                                strokeWidth={2}
+                                style={{ color: planFirstMode ? '#22d3ee' : 'var(--color-text-muted)' }}
+                                className="flex-shrink-0 mr-2.5"
+                              />
+                              <div className="flex flex-col items-start flex-1 min-w-0">
+                                <span
+                                  className="text-[13px] font-medium leading-none whitespace-nowrap"
+                                  style={{ color: planFirstMode ? '#22d3ee' : 'var(--color-text-primary)' }}
+                                >
+                                  Plan first
+                                </span>
+                                <span className="text-[11px] text-[var(--color-text-muted)] mt-1">Review storyboard before building</span>
+                              </div>
+                              {planFirstMode && (
+                                <Check
+                                  size={14}
+                                  strokeWidth={2}
+                                  className="ml-2 flex-shrink-0"
+                                  style={{ color: '#22d3ee' }}
+                                />
+                              )}
+                            </button>
+                          </div>
+
+                          {/* Add Agent button */}
+                          <div className="border-t border-[var(--color-border)] mt-1 pt-1">
+                            <button
+                              onClick={() => {
+                                setShowAgentMenu(false)
+                                setSettingsTab('agents')
+                              }}
+                              className="w-full !flex !flex-row items-center px-3 py-2.5 !rounded-[8px] transition-colors no-style hover:bg-white/10 cursor-pointer"
+                            >
+                              <Plus
+                                size={14}
+                                strokeWidth={2}
+                                className="flex-shrink-0 mr-2.5 text-[var(--color-text-muted)]"
+                              />
+                              <div className="flex flex-col items-start flex-1 min-w-0">
+                                <span className="text-[13px] font-medium leading-none whitespace-nowrap text-[var(--color-text-primary)]">
+                                  Add Agent
+                                </span>
+                                <span className="text-[11px] text-[var(--color-text-muted)] mt-1">
+                                  Configure in settings
+                                </span>
+                              </div>
+                            </button>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {/* ── 2. Model Selection ── */}
                   <div className="relative">
                     <button
                       onClick={() => {
@@ -2560,8 +2975,11 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                       className="no-style !flex items-center gap-1 px-1.5 transition-all rounded-md whitespace-nowrap h-7 border border-transparent box-border"
                       style={{ color: showModelMenu ? 'var(--color-text-primary)' : 'var(--color-text-muted)' }}
                     >
-                      <span className="font-semibold text-xs leading-none">{currentModel.modelName}</span>
-                      <ChevronUp size={10} strokeWidth={2.5} className="opacity-70 ml-0.5" />
+                      {localMode && (
+                        <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 4px', borderRadius: 3, background: 'rgba(74,222,128,0.15)', color: '#4ade80', border: '1px solid rgba(74,222,128,0.3)', lineHeight: 1 }}>LOCAL</span>
+                      )}
+                      <span className="font-semibold text-sm leading-none">{currentModel.modelName}</span>
+                      <ChevronDown size={10} strokeWidth={2.5} className="opacity-70" />
                     </button>
 
                     {showModelMenu && (
@@ -2588,11 +3006,12 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                               </div>
                               <div
                                 onClick={() => {
-                                  if (modelTier === 'auto' && !modelOverride) {
+                                  if (modelTier === 'auto' && !modelOverride && !localMode) {
                                     setModelTier('budget')
                                   } else {
                                     setModelTier('auto')
                                     setModelOverride(null)
+                                    setLocalMode(false)
                                   }
                                 }}
                                 style={{
@@ -2605,7 +3024,7 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                                   flexShrink: 0,
                                   marginLeft: 8,
                                   background:
-                                    modelTier === 'auto' && !modelOverride
+                                    modelTier === 'auto' && !modelOverride && !localMode
                                       ? 'var(--color-accent)'
                                       : 'var(--color-border)',
                                 }}
@@ -2618,7 +3037,7 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                                     background: 'white',
                                     position: 'absolute',
                                     top: 2,
-                                    left: modelTier === 'auto' && !modelOverride ? 16 : 2,
+                                    left: modelTier === 'auto' && !modelOverride && !localMode ? 16 : 2,
                                     transition: 'left 0.2s',
                                     boxShadow: '0 1px 2px rgba(0,0,0,0.2)',
                                   }}
@@ -2628,9 +3047,9 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                           </div>
 
                           {/* Expanded options — only when auto is off */}
-                          {!(modelTier === 'auto' && !modelOverride) && (
+                          {!(modelTier === 'auto' && !modelOverride && !localMode) && (
                             <>
-                              {/* Tier options (premium + budget only, auto is the switch above) */}
+                              {/* Tier options (premium + budget + local) */}
                               <div style={{ borderTop: '1px solid var(--color-border)', padding: '2px 3px 1px' }}>
                                 {MODEL_OPTIONS.filter((opt) => opt.id !== 'auto').map((opt) => (
                                   <div
@@ -2638,6 +3057,7 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                                     onClick={() => {
                                       setModelTier(opt.id)
                                       setModelOverride(null)
+                                      setLocalMode(false)
                                     }}
                                     style={{
                                       display: 'flex',
@@ -2655,7 +3075,7 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                                         {opt.tierLabel}
                                       </div>
                                     </div>
-                                    {modelTier === opt.id && !modelOverride && (
+                                    {modelTier === opt.id && !modelOverride && !localMode && (
                                       <Check
                                         size={14}
                                         strokeWidth={2}
@@ -2664,9 +3084,117 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                                     )}
                                   </div>
                                 ))}
+
+                                {/* Local option — same level as Premium/Budget */}
+                                <div
+                                  onClick={() => {
+                                    setLocalMode(true)
+                                    setModelOverride(null)
+                                    // Auto-select first local model if none selected
+                                    if (!localModelId) {
+                                      const firstLocal = modelConfigs.find((m) => m.provider === 'local' && m.enabled)
+                                      if (firstLocal) setLocalModelId(firstLocal.id)
+                                    }
+                                  }}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    padding: '3px 6px',
+                                    borderRadius: 6,
+                                    cursor: 'pointer',
+                                    color: 'var(--color-text-primary)',
+                                  }}
+                                  className="hover:bg-white/10 transition-colors"
+                                >
+                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ fontSize: 13, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                      Local
+                                      <span style={{ fontSize: 9, fontWeight: 600, padding: '1px 4px', borderRadius: 3, background: 'rgba(74,222,128,0.15)', color: '#4ade80', border: '1px solid rgba(74,222,128,0.3)' }}>FREE</span>
+                                    </div>
+                                    <div style={{ fontSize: 10, color: 'var(--color-text-muted)', marginTop: 1 }}>
+                                      Ollama — runs on your machine
+                                    </div>
+                                  </div>
+                                  {localMode && (
+                                    <Check
+                                      size={14}
+                                      strokeWidth={2}
+                                      style={{ flexShrink: 0, color: '#4ade80' }}
+                                    />
+                                  )}
+                                </div>
                               </div>
 
-                              {/* Enabled models */}
+                              {/* Local model sub-selector — shown when local mode is active */}
+                              {localMode && (
+                                <div style={{ borderTop: '1px solid var(--color-border)', padding: '2px 3px 1px' }}>
+                                  <div
+                                    style={{
+                                      padding: '0 6px 1px',
+                                      fontSize: 10,
+                                      color: '#4ade80',
+                                      textTransform: 'uppercase',
+                                      letterSpacing: '0.05em',
+                                    }}
+                                  >
+                                    Local Models
+                                  </div>
+                                  {modelConfigs
+                                    .filter((m) => m.provider === 'local' && m.enabled)
+                                    .map((m) => (
+                                      <div
+                                        key={m.id}
+                                        onClick={() => {
+                                          setLocalModelId(m.id)
+                                          setShowModelMenu(false)
+                                        }}
+                                        style={{
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          padding: '3px 6px',
+                                          borderRadius: 6,
+                                          cursor: 'pointer',
+                                          color: 'var(--color-text-primary)',
+                                        }}
+                                        className="hover:bg-white/10 transition-colors"
+                                      >
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                          <div style={{ fontSize: 13, fontWeight: 500 }}>{m.displayName}</div>
+                                          <div style={{ fontSize: 10, color: 'var(--color-text-muted)', marginTop: 1 }}>
+                                            {m.localModelName ?? m.modelId}
+                                          </div>
+                                        </div>
+                                        {localModelId === m.id && (
+                                          <Check
+                                            size={14}
+                                            strokeWidth={2}
+                                            style={{ flexShrink: 0, color: '#4ade80' }}
+                                          />
+                                        )}
+                                      </div>
+                                    ))}
+                                  {modelConfigs.filter((m) => m.provider === 'local' && m.enabled).length === 0 && (
+                                    <div
+                                      onClick={() => {
+                                        setShowModelMenu(false)
+                                        setSettingsTab('models')
+                                      }}
+                                      style={{
+                                        padding: '4px 6px',
+                                        fontSize: 11,
+                                        color: 'var(--color-text-muted)',
+                                        cursor: 'pointer',
+                                      }}
+                                      className="hover:text-[var(--color-text-primary)] transition-colors"
+                                    >
+                                      No local models — click to detect Ollama
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Enabled cloud models — hidden when local mode */}
+                              {!localMode && (
                               <div style={{ borderTop: '1px solid var(--color-border)', padding: '2px 3px 1px' }}>
                                 <div
                                   style={{
@@ -2680,7 +3208,7 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                                   Models
                                 </div>
                                 {modelConfigs
-                                  .filter((m) => m.enabled)
+                                  .filter((m) => m.enabled && m.provider !== 'local')
                                   .map((m) => (
                                     <div
                                       key={m.id}
@@ -2714,8 +3242,9 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                                     </div>
                                   ))}
                               </div>
-                              {/* Thinking section */}
-                              <div style={{ borderTop: '1px solid var(--color-border)', padding: '1px 3px 1px' }}>
+                              )}
+                              {/* Thinking section — hidden for local models (no thinking support) */}
+                              {!localMode && <div style={{ borderTop: '1px solid var(--color-border)', padding: '1px 3px 1px' }}>
                                 <div
                                   style={{
                                     display: 'flex',
@@ -2801,7 +3330,7 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                                       )}
                                     </div>
                                   ))}
-                              </div>
+                              </div>}
 
                               {/* Add Model */}
                               <div style={{ borderTop: '1px solid var(--color-border)', padding: '1px 3px 2px' }}>
@@ -2836,132 +3365,6 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                     )}
                   </div>
 
-                  {/* ── 2. Agent Mode Selection ── */}
-                  <div className="relative">
-                    <button
-                      onClick={() => {
-                        setShowAgentMenu(!showAgentMenu)
-                        setShowModelMenu(false)
-                        setShowSpeechLangMenu(false)
-                      }}
-                      className={`no-style !flex items-center gap-1.5 px-2.5 transition-all rounded-full border box-border ${
-                        showAgentMenu
-                          ? 'border-[var(--color-border)]/50 bg-[var(--color-bg)]'
-                          : 'border-[var(--color-border)]/30 hover:border-[var(--color-border)] bg-[var(--color-bg)]/50'
-                      } whitespace-nowrap h-7`}
-                      style={{
-                        color: showAgentMenu
-                          ? 'var(--color-text-primary)'
-                          : agentOverride
-                            ? currentAgent.color
-                            : 'var(--color-text-muted)',
-                      }}
-                    >
-                      <AgentIcon size={14} strokeWidth={2.5} />
-                      <ChevronUp size={10} strokeWidth={2.5} className="opacity-70 ml-0.5 translate-y-[1px]" />
-                    </button>
-
-                    {showAgentMenu && (
-                      <>
-                        <div className="fixed inset-0 z-[90]" onClick={() => setShowAgentMenu(false)} />
-                        <div className="absolute bottom-[calc(100%+8px)] left-0 z-[100] bg-[var(--color-panel)] border border-[var(--color-border)] rounded-xl shadow-2xl p-1.5 flex flex-col w-max min-w-[190px] gap-0.5 animate-in slide-in-from-bottom-1 duration-150">
-                          {/* Core agents */}
-                          {coreAgents.map((a) => (
-                            <button
-                              key={a.id ?? 'auto'}
-                              onClick={() => {
-                                setAgentOverride(a.id)
-                                setShowAgentMenu(false)
-                              }}
-                              className="w-full !flex !flex-row items-center px-3 py-2.5 !rounded-[8px] transition-colors no-style hover:bg-white/10 cursor-pointer"
-                            >
-                              <a.icon
-                                size={14}
-                                strokeWidth={2}
-                                style={{ color: a.color }}
-                                className="flex-shrink-0 mr-2.5"
-                              />
-                              <div className="flex flex-col items-start flex-1 min-w-0">
-                                <span
-                                  className="text-[13px] font-medium leading-none whitespace-nowrap"
-                                  style={{ color: agentOverride === a.id ? a.color : 'var(--color-text-primary)' }}
-                                >
-                                  {a.label}
-                                </span>
-                                <span className="text-[10px] text-[var(--color-text-muted)] mt-1">{a.desc}</span>
-                              </div>
-                              {agentOverride === a.id && (
-                                <Check
-                                  size={14}
-                                  strokeWidth={2}
-                                  className="ml-2 flex-shrink-0"
-                                  style={{ color: a.color }}
-                                />
-                              )}
-                            </button>
-                          ))}
-
-                          {/* Specialized agents divider */}
-                          <div className="border-t border-[var(--color-border)] mt-1 pt-1">
-                            <div className="px-3 py-1">
-                              <span className="text-[9px] uppercase tracking-widest text-[var(--color-text-muted)] font-semibold">
-                                Specialists
-                              </span>
-                            </div>
-                          </div>
-
-                          {specializedAgents.map((a, i) => (
-                            <button
-                              key={`spec-${i}`}
-                              onClick={() => {
-                                setAgentOverride(a.id)
-                                setShowAgentMenu(false)
-                              }}
-                              className="w-full !flex !flex-row items-center px-3 py-2.5 !rounded-[8px] transition-colors no-style hover:bg-white/10 cursor-pointer"
-                            >
-                              <a.icon
-                                size={14}
-                                strokeWidth={2}
-                                style={{ color: a.color }}
-                                className="flex-shrink-0 mr-2.5"
-                              />
-                              <div className="flex flex-col items-start flex-1 min-w-0">
-                                <span className="text-[13px] font-medium leading-none whitespace-nowrap text-[var(--color-text-primary)]">
-                                  {a.label}
-                                </span>
-                                <span className="text-[10px] text-[var(--color-text-muted)] mt-1">{a.desc}</span>
-                              </div>
-                            </button>
-                          ))}
-
-                          {/* Add Agent button — same row style as agent options */}
-                          <div className="border-t border-[var(--color-border)] mt-1 pt-1">
-                            <button
-                              onClick={() => {
-                                setShowAgentMenu(false)
-                                setSettingsTab('agents')
-                              }}
-                              className="w-full !flex !flex-row items-center px-3 py-2.5 !rounded-[8px] transition-colors no-style hover:bg-white/10 cursor-pointer"
-                            >
-                              <Plus
-                                size={14}
-                                strokeWidth={2}
-                                className="flex-shrink-0 mr-2.5 text-[var(--color-text-muted)]"
-                              />
-                              <div className="flex flex-col items-start flex-1 min-w-0">
-                                <span className="text-[13px] font-medium leading-none whitespace-nowrap text-[var(--color-text-primary)]">
-                                  Add Agent
-                                </span>
-                                <span className="text-[10px] text-[var(--color-text-muted)] mt-1">
-                                  Configure in settings
-                                </span>
-                              </div>
-                            </button>
-                          </div>
-                        </div>
-                      </>
-                    )}
-                  </div>
                 </div>
               </div>
             ) : (
@@ -2978,21 +3381,36 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                     setShowAgentMenu(false)
                   }}
                 />
-                <span className="text-[11px] text-[var(--color-text-muted)] truncate">Listening…</span>
+                <span className="text-[12px] text-[var(--color-text-muted)] truncate">Listening…</span>
               </div>
             )}
 
             {/* Send / voice / stop */}
-            <div className="flex items-center flex-shrink-0 relative gap-2">
+            <div className="flex items-center flex-shrink-0 relative gap-1.5">
+              <span
+                onClick={() => imageInputRef.current?.click()}
+                className="flex items-center justify-center cursor-pointer"
+                style={{ width: '26px', height: '26px', color: '#9a9a9a' }}
+                data-tooltip="Attach image"
+                data-tooltip-pos="top"
+              >
+                <svg width={17} height={17} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21.1935 16.793C20.8437 19.2739 20.6689 20.5143 19.7717 21.2572C18.8745 22 17.5512 22 14.9046 22H9.09536C6.44881 22 5.12553 22 4.22834 21.2572C3.33115 20.5143 3.15626 19.2739 2.80648 16.793L2.38351 13.793C1.93748 10.6294 1.71447 9.04765 2.66232 8.02383C3.61017 7 5.29758 7 8.67239 7H15.3276C18.7024 7 20.3898 7 21.3377 8.02383C22.0865 8.83268 22.1045 9.98979 21.8592 12" />
+                  <path d="M19.5617 7C19.7904 5.69523 18.7863 4.5 17.4617 4.5H6.53788C5.21323 4.5 4.20922 5.69523 4.43784 7" />
+                  <path d="M17.4999 4.5C17.5283 4.24092 17.5425 4.11135 17.5427 4.00435C17.545 2.98072 16.7739 2.12064 15.7561 2.01142C15.6497 2 15.5194 2 15.2588 2H8.74099C8.48035 2 8.35002 2 8.24362 2.01142C7.22584 2.12064 6.45481 2.98072 6.45704 4.00434C6.45727 4.11135 6.47146 4.2409 6.49983 4.5" />
+                  <circle cx="16.5" cy="11.5" r="1.5" />
+                  <path d="M19.9999 20L17.1157 17.8514C16.1856 17.1586 14.8004 17.0896 13.7766 17.6851L13.5098 17.8403C12.7984 18.2542 11.8304 18.1848 11.2156 17.6758L7.37738 14.4989C6.6113 13.8648 5.38245 13.8309 4.5671 14.4214L3.24316 15.3803" />
+                </svg>
+              </span>
               {isGenerating ? (
                 <span
                   onClick={handleAbort}
-                  className="flex items-center justify-center cursor-pointer"
-                  style={{ width: '32px', height: '32px', borderRadius: '9999px', backgroundColor: 'var(--color-bg)' }}
+                  className="flex items-center justify-center cursor-pointer rounded-full"
+                  style={{ width: '26px', height: '26px', backgroundColor: '#4a4a4a' }}
                 >
                   <span
                     className="animate-pulse"
-                    style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: 'var(--color-text-primary)' }}
+                    style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: '#9a9a9a' }}
                   />
                 </span>
               ) : isListening ? (
@@ -3001,48 +3419,32 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                     <button
                       type="button"
                       onClick={handleSend}
-                      className="flex items-center justify-center transition-all cursor-pointer no-style"
+                      className="flex items-center justify-center transition-all cursor-pointer no-style rounded-full relative"
                       style={{
-                        width: '32px',
-                        height: '32px',
-                        borderRadius: '9999px',
-                        backgroundColor: 'var(--color-bg)',
-                        border: 'none',
-                        outline: 'none',
-                        boxShadow: 'none',
+                        width: '30px',
+                        height: '30px',
+                        backgroundColor: 'var(--color-accent)',
                         padding: 0,
-                        position: 'relative',
                       }}
                       data-tooltip="Send"
                       data-tooltip-pos="top"
                     >
-                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        <img
-                          src="/icons/send.png"
-                          alt="Send"
-                          className="transition-all duration-200 dark-send-icon"
-                          style={{
-                            width: '26px',
-                            height: '26px',
-                            objectFit: 'contain',
-                            opacity: 1,
-                          }}
-                        />
-                      </div>
+                      <img
+                        src="/icons/send.png"
+                        alt="Send"
+                        className="transition-all duration-200 dark-send-icon"
+                        style={{ width: '18px', height: '18px', objectFit: 'contain', opacity: 0.6 }}
+                      />
                     </button>
                   )}
                   <button
                     type="button"
                     onClick={() => toggleVoiceInput()}
-                    className="flex items-center justify-center transition-all cursor-pointer no-style"
+                    className="flex items-center justify-center transition-all cursor-pointer no-style rounded-full"
                     style={{
-                      width: '32px',
-                      height: '32px',
-                      borderRadius: '9999px',
-                      backgroundColor: 'var(--color-bg)',
-                      border: 'none',
-                      outline: 'none',
-                      boxShadow: 'none',
+                      width: '30px',
+                      height: '30px',
+                      backgroundColor: '#4a4a4a',
                       padding: 0,
                     }}
                     data-tooltip="Stop listening"
@@ -3051,7 +3453,7 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                     <Square
                       size={11}
                       strokeWidth={2.5}
-                      className="text-[var(--color-text-primary)]"
+                      style={{ color: '#9a9a9a' }}
                       fill="currentColor"
                     />
                   </button>
@@ -3060,66 +3462,62 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                 <button
                   type="button"
                   onClick={handleSend}
-                  className="flex items-center justify-center transition-all cursor-pointer no-style"
+                  className="flex items-center justify-center transition-all cursor-pointer no-style rounded-full relative"
                   style={{
-                    width: '32px',
-                    height: '32px',
-                    borderRadius: '9999px',
-                    backgroundColor: 'var(--color-bg)',
-                    border: 'none',
-                    outline: 'none',
-                    boxShadow: 'none',
+                    width: '26px',
+                    height: '26px',
+                    backgroundColor: '#4a4a4a',
                     padding: 0,
-                    position: 'relative',
                   }}
                   data-tooltip="Send"
                   data-tooltip-pos="top"
                 >
-                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                    <img
-                      src="/icons/send.png"
-                      alt="Send"
-                      className="transition-all duration-200 dark-send-icon"
-                      style={{
-                        width: '26px',
-                        height: '26px',
-                        objectFit: 'contain',
-                        opacity: 1,
-                      }}
-                    />
-                  </div>
+                  <img
+                    src="/icons/send.png"
+                    alt="Send"
+                    className="transition-all duration-200 dark-send-icon"
+                    style={{ width: '18px', height: '18px', objectFit: 'contain', opacity: 0.6 }}
+                  />
                 </button>
               ) : (
                 <button
                   type="button"
                   onClick={() => speechSupported && toggleVoiceInput()}
                   disabled={!speechSupported}
-                  className={`flex items-center justify-center transition-all no-style ${
+                  className={`flex items-center justify-center transition-all no-style rounded-full ${
                     speechSupported ? 'cursor-pointer' : 'cursor-not-allowed opacity-40'
                   }`}
                   style={{
-                    width: '32px',
-                    height: '32px',
-                    borderRadius: '9999px',
-                    backgroundColor: 'var(--color-bg)',
-                    border: 'none',
-                    outline: 'none',
-                    boxShadow: 'none',
+                    width: '26px',
+                    height: '26px',
+                    backgroundColor: '#4a4a4a',
                     padding: 0,
                   }}
                   data-tooltip={speechSupported ? 'Voice input' : 'Voice input not supported in this browser'}
                   data-tooltip-pos="top"
                 >
                   <Mic
-                    size={20}
-                    strokeWidth={2.25}
-                    className="text-[var(--color-text-primary)]"
-                    style={{ opacity: speechSupported ? 0.9 : 0.35 }}
+                    size={16}
+                    strokeWidth={2}
+                    style={{ color: '#9a9a9a', opacity: speechSupported ? 0.9 : 0.35 }}
                   />
                 </button>
               )}
             </div>
           </div>
+        </div>
+        <div className="flex items-center gap-1.5 mt-2 text-[12px] text-[var(--color-text-muted)] px-1">
+          {isGenerating ? (
+            <Loader2 size={12} strokeWidth={2} className="animate-spin opacity-60" />
+          ) : (
+            <svg width={16} height={16} viewBox="0 0 24 24" fill="currentColor" className="opacity-60 shrink-0">
+              <path fillRule="evenodd" clipRule="evenodd" d="M2.92377 10.2064C2.80976 10.7866 2.75 11.3863 2.75 12C2.75 12.2264 2.75814 12.451 2.77413 12.6733C2.79516 12.6904 2.81728 12.7083 2.84044 12.7268C3.06058 12.9028 3.37094 13.1369 3.73188 13.3698C4.4894 13.8584 5.33178 14.25 6 14.25C6.43561 14.25 6.9638 14.0813 7.51796 13.8023C7.85469 13.6327 8.17653 13.435 8.46068 13.2423C8.32421 12.8535 8.25 12.4354 8.25 12C8.25 9.92893 9.92893 8.25 12 8.25C14.0711 8.25 15.75 9.92893 15.75 12C15.75 12.7595 15.5242 13.4662 15.1361 14.0568C15.1836 14.0826 15.2334 14.1095 15.2856 14.1377C15.3054 14.1484 15.3255 14.1592 15.3459 14.1703C15.6383 14.3283 16.013 14.5325 16.3261 14.7866C16.9868 14.6782 17.6623 14.7793 18.216 15.1298C18.4093 14.7699 18.6888 14.4463 19.0327 14.1919C19.6351 13.7465 20.3998 13.5477 21.0993 13.6723C21.1983 13.1303 21.25 12.5715 21.25 12C21.25 11.5465 21.2174 11.1007 21.1543 10.6647L19.4953 12.1257C19.1845 12.3995 18.7106 12.3694 18.4368 12.0586C18.163 11.7477 18.1931 11.2738 18.504 11L20.182 9.52217C20.3764 9.351 20.6345 9.29861 20.8676 9.35938C20.6364 8.58192 20.3058 7.84726 19.8905 7.17018L19.5303 7.53033C19.2374 7.82322 18.7626 7.82322 18.4697 7.53033C18.1768 7.23744 18.1768 6.76256 18.4697 6.46967L18.9936 5.94571C17.2976 3.98821 14.7934 2.75 12 2.75C10.2299 2.75 8.57597 3.24718 7.17018 4.10952L7.53033 4.46967C7.82322 4.76256 7.82322 5.23744 7.53033 5.53033C7.23744 5.82322 6.76256 5.82322 6.46967 5.53033L5.94571 5.00637C4.94041 5.87741 4.12481 6.9616 3.56922 8.18863C3.97992 8.16934 4.33019 8.48475 4.3531 8.89609L4.43177 10.3081C4.45481 10.7217 4.13822 11.0756 3.72465 11.0987C3.31107 11.1217 2.95713 10.8051 2.93409 10.3916L2.92377 10.2064ZM14.7095 15.5316C14.6844 15.5179 14.6587 15.5039 14.6326 15.4898C14.5981 15.4712 14.5623 15.4519 14.5252 15.4321C14.3717 15.3497 14.1982 15.2567 14.0279 15.1549C13.4433 15.5315 12.7472 15.75 12 15.75C10.9043 15.75 9.91838 15.2801 9.23274 14.5308C8.92219 14.7382 8.56885 14.9526 8.19255 15.142C7.55133 15.4649 6.77639 15.75 6 15.75C4.98743 15.75 3.95347 15.2623 3.1792 14.7932C4.31219 18.3744 7.56585 21.013 11.4663 21.2349C11.4162 20.421 11.77 19.563 12.498 19.0246C12.8438 18.7689 13.2344 18.5971 13.6339 18.5182C13.3438 17.4575 13.8257 16.275 14.7095 15.5316ZM1.25 12C1.25 6.06294 6.06294 1.25 12 1.25C17.9371 1.25 22.75 6.06294 22.75 12C22.75 13.0111 22.6102 13.9907 22.3484 14.9201C22.2792 15.1662 22.0893 15.36 21.8447 15.4343C21.6002 15.5087 21.3346 15.4534 21.14 15.2876C20.9259 15.105 20.4213 15.0306 19.9246 15.398C19.5124 15.7028 19.3792 16.1229 19.4251 16.3974C19.4651 16.6365 19.3871 16.8801 19.2157 17.0515L19.1143 17.153C18.9599 17.3073 18.746 17.3868 18.5283 17.3706C18.3106 17.3544 18.1107 17.2441 17.9809 17.0686L17.6465 16.6163C17.351 16.2168 16.5445 16.0321 15.7654 16.6083C14.9862 17.1845 14.9266 18.0097 15.2221 18.4092L15.4074 18.6598C15.6282 18.9583 15.5973 19.3735 15.3347 19.6361L15.1494 19.8213C14.9517 20.019 14.6605 20.0904 14.3938 20.0064C14.1352 19.9249 13.747 19.9665 13.3899 20.2306C12.9028 20.5909 12.8699 21.2389 13.103 21.554C13.2677 21.7768 13.2963 22.0721 13.1772 22.3222C13.0582 22.5724 12.811 22.7365 12.5343 22.7492C12.4074 22.755 12.2412 22.7528 12.1175 22.7512C12.0709 22.7505 12.0302 22.75 12 22.75C6.06294 22.75 1.25 17.9371 1.25 12ZM12 9.75C10.7574 9.75 9.75 10.7574 9.75 12C9.75 13.2426 10.7574 14.25 12 14.25C13.2426 14.25 14.25 13.2426 14.25 12C14.25 10.7574 13.2426 9.75 12 9.75Z" />
+            </svg>
+          )}
+          <span className="opacity-60">
+            ${messages.reduce((sum, m) => sum + (m.usage?.costUsd ?? 0), 0).toFixed(4)} session usage
+          </span>
+        </div>
         </div>
       </div>
 

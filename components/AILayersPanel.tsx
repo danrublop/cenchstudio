@@ -113,16 +113,16 @@ export default function AILayersPanel({ scene }: Props) {
     return (
       <div className="px-3 py-2">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-[10px] text-[#6b6b7a] uppercase tracking-wider font-semibold">AI Layers</span>
+          <span className="text-[11px] text-[#6b6b7a] uppercase tracking-wider font-semibold">AI Layers</span>
           <button
             onClick={() => setShowQuickAdd(true)}
-            className="text-[10px] px-2 py-0.5 rounded transition-colors hover:bg-white/10"
+            className="text-[11px] px-2 py-0.5 rounded transition-colors hover:bg-white/10"
             style={{ color: 'var(--color-accent, #e84545)' }}
           >
             + Add
           </button>
         </div>
-        <p className="text-[11px] text-[#6b6b7a] italic">No AI-generated layers yet</p>
+        <p className="text-[12px] text-[#6b6b7a] italic">No AI-generated layers yet</p>
       </div>
     )
   }
@@ -130,10 +130,10 @@ export default function AILayersPanel({ scene }: Props) {
   return (
     <div className="px-3 py-2 space-y-2">
       <div className="flex items-center justify-between mb-1">
-        <span className="text-[10px] text-[#6b6b7a] uppercase tracking-wider font-semibold">AI Layers</span>
+        <span className="text-[11px] text-[#6b6b7a] uppercase tracking-wider font-semibold">AI Layers</span>
         <button
           onClick={() => setShowQuickAdd(!showQuickAdd)}
-          className="text-[10px] px-2 py-0.5 rounded transition-colors hover:bg-white/10"
+          className="text-[11px] px-2 py-0.5 rounded transition-colors hover:bg-white/10"
           style={{ color: 'var(--color-accent, #e84545)' }}
         >
           + Add
@@ -152,7 +152,7 @@ export default function AILayersPanel({ scene }: Props) {
           <div className="flex gap-1">
             <button
               onClick={() => setQuickType('avatar')}
-              className={`text-[10px] px-2 py-1 rounded transition-colors ${
+              className={`text-[11px] px-2 py-1 rounded transition-colors ${
                 quickType === 'avatar' ? 'bg-white/10 font-medium' : 'opacity-60'
               }`}
             >
@@ -160,7 +160,7 @@ export default function AILayersPanel({ scene }: Props) {
             </button>
             <button
               onClick={() => setQuickType('sticker')}
-              className={`text-[10px] px-2 py-1 rounded transition-colors ${
+              className={`text-[11px] px-2 py-1 rounded transition-colors ${
                 quickType === 'sticker' ? 'bg-white/10 font-medium' : 'opacity-60'
               }`}
             >
@@ -168,7 +168,7 @@ export default function AILayersPanel({ scene }: Props) {
             </button>
             <button
               onClick={() => setQuickType('image')}
-              className={`text-[10px] px-2 py-1 rounded transition-colors ${
+              className={`text-[11px] px-2 py-1 rounded transition-colors ${
                 quickType === 'image' ? 'bg-white/10 font-medium' : 'opacity-60'
               }`}
             >
@@ -187,7 +187,7 @@ export default function AILayersPanel({ scene }: Props) {
             value={quickPrompt}
             onChange={(e) => setQuickPrompt(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleQuickGenerate()}
-            className="w-full text-xs px-2 py-1.5 rounded border focus:outline-none"
+            className="w-full text-sm px-2 py-1.5 rounded border focus:outline-none"
             style={{
               backgroundColor: 'var(--color-panel-bg, #1e1e2e)',
               borderColor: 'var(--color-border, #2a2a3a)',
@@ -199,7 +199,7 @@ export default function AILayersPanel({ scene }: Props) {
             <button
               onClick={handleQuickGenerate}
               disabled={quickType !== 'avatar' && !quickPrompt.trim()}
-              className="flex-1 text-[10px] px-2 py-1 rounded font-medium transition-colors disabled:opacity-30"
+              className="flex-1 text-[11px] px-2 py-1 rounded font-medium transition-colors disabled:opacity-30"
               style={{ backgroundColor: 'var(--color-accent, #e84545)', color: '#fff' }}
             >
               {quickType === 'avatar' ? 'Add Avatar' : 'Generate'}
@@ -209,7 +209,7 @@ export default function AILayersPanel({ scene }: Props) {
                 setShowQuickAdd(false)
                 setQuickPrompt('')
               }}
-              className="text-[10px] px-2 py-1 rounded opacity-60 hover:opacity-100 transition-opacity"
+              className="text-[11px] px-2 py-1 rounded opacity-60 hover:opacity-100 transition-opacity"
             >
               Cancel
             </button>
@@ -236,8 +236,8 @@ export default function AILayersPanel({ scene }: Props) {
             >
               <Icon size={14} className="shrink-0 opacity-60" />
               <div className="flex-1 min-w-0">
-                <div className="text-xs font-medium truncate">{layer.label || layer.type}</div>
-                <div className={`text-[10px] ${statusColor} flex items-center gap-1`}>
+                <div className="text-sm font-medium truncate">{layer.label || layer.type}</div>
+                <div className={`text-[11px] ${statusColor} flex items-center gap-1`}>
                   {layer.status === 'generating' && <Loader2 size={10} className="animate-spin" />}
                   {layer.status}
                   {'prompt' in layer && layer.prompt && (

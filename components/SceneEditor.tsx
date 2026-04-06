@@ -17,7 +17,7 @@ export default function SceneEditor() {
 
   if (!selectedScene && activeTab !== 'media') {
     return (
-      <div className="flex items-center justify-center h-32 text-[#6b6b7a] text-xs p-4 text-center">
+      <div className="flex items-center justify-center h-32 text-[#6b6b7a] text-sm p-4 text-center">
         Select or create a scene to edit
       </div>
     )
@@ -42,7 +42,7 @@ export default function SceneEditor() {
                 type="button"
                 onClick={() => setActiveTab(tab.key)}
                 className={`kbd h-7 transition-all duration-200 ${
-                  isIconOnly ? 'w-7 px-0 flex-shrink-0' : 'flex-1 px-0 text-xs'
+                  isIconOnly ? 'w-7 px-0 flex-shrink-0' : 'flex-1 px-0 text-sm'
                 } ${
                   activeTab === tab.key
                     ? 'bg-[#e84545] border-[#e84545] text-white shadow-[#800]'
@@ -57,8 +57,8 @@ export default function SceneEditor() {
           })}
         </div>
       )}
-      {/* Tab content: Layers fills height and scrolls internally so layer stack stays at bottom */}
-      <div className={`flex min-h-0 flex-1 flex-col ${activeTab === 'layers' ? 'overflow-hidden' : 'overflow-y-auto'}`}>
+      {/* Tab content: clip here; each tab (Layers, Agent, Media) scrolls inside its own panel */}
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {activeTab === 'prompt' && selectedScene && <PromptTab scene={selectedScene} />}
         {activeTab === 'layers' && selectedScene && <LayersTab scene={selectedScene} />}
         {activeTab === 'media' && <MediaLibrary />}

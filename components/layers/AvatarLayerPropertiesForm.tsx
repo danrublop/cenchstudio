@@ -35,7 +35,7 @@ function SubLink({ label, onClick }: { label: string; onClick: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      className="no-style w-full rounded-lg border px-2.5 py-2 text-left text-[11px] transition-colors hover:bg-white/[0.04]"
+      className="no-style w-full rounded-lg border px-2.5 py-2 text-left text-[12px] transition-colors hover:bg-white/[0.04]"
       style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
     >
       {label}
@@ -54,7 +54,7 @@ export default function AvatarLayerPropertiesForm({ scene, layerId, onCommit, op
   const { updateAILayer } = useVideoStore()
   const layer = (scene.aiLayers ?? []).find((l) => l.id === layerId) as AvatarLayer | undefined
   if (!layer || layer.type !== 'avatar') {
-    return <p className="text-[10px] text-[var(--color-text-muted)]">Avatar layer not found.</p>
+    return <p className="text-[11px] text-[var(--color-text-muted)]">Avatar layer not found.</p>
   }
 
   const asc = layer.avatarSceneConfig
@@ -97,8 +97,8 @@ export default function AvatarLayerPropertiesForm({ scene, layerId, onCommit, op
       >
         <Mic size={14} className="mt-0.5 shrink-0 text-[var(--color-accent)]" />
         <div className="min-w-0 space-y-1">
-          <p className="text-[10px] font-medium text-[var(--color-text-primary)]">Play preview to speak</p>
-          <p className="text-[9px] leading-relaxed text-[var(--color-text-muted)]">
+          <p className="text-[11px] font-medium text-[var(--color-text-primary)]">Play preview to speak</p>
+          <p className="text-[10px] leading-relaxed text-[var(--color-text-muted)]">
             Press play in the preview. The avatar uses lip sync (cloud TTS if configured, otherwise browser speech).
             Pause resets speech so you can play again.
           </p>
@@ -108,25 +108,25 @@ export default function AvatarLayerPropertiesForm({ scene, layerId, onCommit, op
       {isTalkingHead && (
         <>
           <div className="space-y-1">
-            <label className="text-[9px] font-medium text-[var(--color-text-muted)]">Narration</label>
+            <label className="text-[10px] font-medium text-[var(--color-text-muted)]">Narration</label>
             <textarea
               value={narrationText}
               onChange={(e) => setNarrationText(e.target.value)}
               onBlur={onCommit}
               rows={4}
-              className="kbd w-full resize-y px-2 py-1.5 font-mono text-[10px] leading-relaxed"
+              className="kbd w-full resize-y px-2 py-1.5 font-mono text-[11px] leading-relaxed"
               placeholder="What the avatar says…"
             />
           </div>
 
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="text-[9px] text-[var(--color-text-muted)]">Character</label>
+              <label className="text-[10px] text-[var(--color-text-muted)]">Character</label>
               <select
                 value={ns.character ?? 'friendly'}
                 onChange={(e) => patchNs({ character: e.target.value as NarrationScript['character'] })}
                 onBlur={onCommit}
-                className="kbd mt-0.5 w-full px-1.5 py-1 text-[10px]"
+                className="kbd mt-0.5 w-full px-1.5 py-1 text-[11px]"
               >
                 <option value="friendly">Friendly</option>
                 <option value="professional">Professional</option>
@@ -134,12 +134,12 @@ export default function AvatarLayerPropertiesForm({ scene, layerId, onCommit, op
               </select>
             </div>
             <div>
-              <label className="text-[9px] text-[var(--color-text-muted)]">Placement</label>
+              <label className="text-[10px] text-[var(--color-text-muted)]">Placement</label>
               <select
                 value={ns.position}
                 onChange={(e) => patchNs({ position: e.target.value as AvatarPosition })}
                 onBlur={onCommit}
-                className="kbd mt-0.5 w-full px-1.5 py-1 text-[10px]"
+                className="kbd mt-0.5 w-full px-1.5 py-1 text-[11px]"
               >
                 {PLACEMENTS.map((p) => (
                   <option key={p} value={p}>
@@ -151,7 +151,7 @@ export default function AvatarLayerPropertiesForm({ scene, layerId, onCommit, op
           </div>
 
           <div>
-            <label className="text-[9px] text-[var(--color-text-muted)]">3D presenter model</label>
+            <label className="text-[10px] text-[var(--color-text-muted)]">3D presenter model</label>
             <select
               value={
                 ns.avatarModelId && isTalkingHeadModelId(ns.avatarModelId)
@@ -160,7 +160,7 @@ export default function AvatarLayerPropertiesForm({ scene, layerId, onCommit, op
               }
               onChange={(e) => patchNs({ avatarModelId: e.target.value as TalkingHeadAvatarModelId })}
               onBlur={onCommit}
-              className="kbd mt-0.5 w-full px-1.5 py-1 text-[10px]"
+              className="kbd mt-0.5 w-full px-1.5 py-1 text-[11px]"
             >
               <optgroup label="Local (add GLB to public/avatars/)">
                 {TALKING_HEAD_MODELS_LOCAL.map((m) => (
@@ -181,7 +181,7 @@ export default function AvatarLayerPropertiesForm({ scene, layerId, onCommit, op
 
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="text-[9px] text-[var(--color-text-muted)]">PIP size (px)</label>
+              <label className="text-[10px] text-[var(--color-text-muted)]">PIP size (px)</label>
               <input
                 type="number"
                 min={120}
@@ -190,16 +190,16 @@ export default function AvatarLayerPropertiesForm({ scene, layerId, onCommit, op
                 value={ns.pipSize ?? 280}
                 onChange={(e) => patchNs({ pipSize: Math.max(80, parseInt(e.target.value, 10) || 280) })}
                 onBlur={onCommit}
-                className="kbd mt-0.5 w-full px-1.5 py-1 text-[10px]"
+                className="kbd mt-0.5 w-full px-1.5 py-1 text-[11px]"
               />
             </div>
             <div>
-              <label className="text-[9px] text-[var(--color-text-muted)]">PIP shape</label>
+              <label className="text-[10px] text-[var(--color-text-muted)]">PIP shape</label>
               <select
                 value={ns.pipShape ?? 'circle'}
                 onChange={(e) => patchNs({ pipShape: e.target.value as PipShape })}
                 onBlur={onCommit}
-                className="kbd mt-0.5 w-full px-1.5 py-1 text-[10px]"
+                className="kbd mt-0.5 w-full px-1.5 py-1 text-[11px]"
               >
                 {SHAPES.map((s) => (
                   <option key={s} value={s}>
@@ -211,7 +211,7 @@ export default function AvatarLayerPropertiesForm({ scene, layerId, onCommit, op
           </div>
 
           <div>
-            <label className="text-[9px] text-[var(--color-text-muted)]">Avatar scale</label>
+            <label className="text-[10px] text-[var(--color-text-muted)]">Avatar scale</label>
             <input
               type="number"
               min={0.5}
@@ -220,12 +220,12 @@ export default function AvatarLayerPropertiesForm({ scene, layerId, onCommit, op
               value={ns.avatarScale ?? 1.15}
               onChange={(e) => patchNs({ avatarScale: Math.max(0.3, parseFloat(e.target.value) || 1.15) })}
               onBlur={onCommit}
-              className="kbd mt-0.5 w-full px-1.5 py-1 text-[10px]"
+              className="kbd mt-0.5 w-full px-1.5 py-1 text-[11px]"
             />
           </div>
 
           <div className="space-y-2 rounded-lg border p-2" style={{ borderColor: 'var(--color-border)' }}>
-            <label className="flex cursor-pointer items-center gap-2 text-[10px] text-[var(--color-text-primary)]">
+            <label className="flex cursor-pointer items-center gap-2 text-[11px] text-[var(--color-text-primary)]">
               <input
                 type="checkbox"
                 checked={ns.containerEnabled !== false}
@@ -236,7 +236,7 @@ export default function AvatarLayerPropertiesForm({ scene, layerId, onCommit, op
             </label>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="text-[9px] text-[var(--color-text-muted)]">Backdrop blur (px)</label>
+                <label className="text-[10px] text-[var(--color-text-muted)]">Backdrop blur (px)</label>
                 <input
                   type="number"
                   min={0}
@@ -244,11 +244,11 @@ export default function AvatarLayerPropertiesForm({ scene, layerId, onCommit, op
                   value={ns.containerBlur ?? 0}
                   onChange={(e) => patchNs({ containerBlur: Math.max(0, parseInt(e.target.value, 10) || 0) })}
                   onBlur={onCommit}
-                  className="kbd mt-0.5 w-full px-1.5 py-1 text-[10px]"
+                  className="kbd mt-0.5 w-full px-1.5 py-1 text-[11px]"
                 />
               </div>
               <div>
-                <label className="text-[9px] text-[var(--color-text-muted)]">Card background</label>
+                <label className="text-[10px] text-[var(--color-text-muted)]">Card background</label>
                 <input
                   type="color"
                   value={/^#[0-9a-fA-F]{6}$/.test(ns.background ?? '') ? (ns.background as string) : '#6366f1'}
@@ -261,7 +261,7 @@ export default function AvatarLayerPropertiesForm({ scene, layerId, onCommit, op
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="text-[9px] text-[var(--color-text-muted)]">Border color</label>
+                <label className="text-[10px] text-[var(--color-text-muted)]">Border color</label>
                 <input
                   type="color"
                   value={
@@ -276,7 +276,7 @@ export default function AvatarLayerPropertiesForm({ scene, layerId, onCommit, op
                 />
               </div>
               <div>
-                <label className="text-[9px] text-[var(--color-text-muted)]">Border opacity</label>
+                <label className="text-[10px] text-[var(--color-text-muted)]">Border opacity</label>
                 <input
                   type="number"
                   min={0}
@@ -287,13 +287,13 @@ export default function AvatarLayerPropertiesForm({ scene, layerId, onCommit, op
                     patchNs({ containerBorderOpacity: Math.max(0, Math.min(1, parseFloat(e.target.value) || 0)) })
                   }
                   onBlur={onCommit}
-                  className="kbd mt-0.5 w-full px-1.5 py-1 text-[10px]"
+                  className="kbd mt-0.5 w-full px-1.5 py-1 text-[11px]"
                 />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="text-[9px] text-[var(--color-text-muted)]">Border width (px)</label>
+                <label className="text-[10px] text-[var(--color-text-muted)]">Border width (px)</label>
                 <input
                   type="number"
                   min={0}
@@ -301,11 +301,11 @@ export default function AvatarLayerPropertiesForm({ scene, layerId, onCommit, op
                   value={ns.containerBorderWidth ?? 3}
                   onChange={(e) => patchNs({ containerBorderWidth: Math.max(0, parseInt(e.target.value, 10) || 0) })}
                   onBlur={onCommit}
-                  className="kbd mt-0.5 w-full px-1.5 py-1 text-[10px]"
+                  className="kbd mt-0.5 w-full px-1.5 py-1 text-[11px]"
                 />
               </div>
               <div>
-                <label className="text-[9px] text-[var(--color-text-muted)]">Shadow opacity</label>
+                <label className="text-[10px] text-[var(--color-text-muted)]">Shadow opacity</label>
                 <input
                   type="number"
                   min={0}
@@ -316,13 +316,13 @@ export default function AvatarLayerPropertiesForm({ scene, layerId, onCommit, op
                     patchNs({ containerShadowOpacity: Math.max(0, Math.min(1, parseFloat(e.target.value) || 0)) })
                   }
                   onBlur={onCommit}
-                  className="kbd mt-0.5 w-full px-1.5 py-1 text-[10px]"
+                  className="kbd mt-0.5 w-full px-1.5 py-1 text-[11px]"
                 />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="text-[9px] text-[var(--color-text-muted)]">Inner glow</label>
+                <label className="text-[10px] text-[var(--color-text-muted)]">Inner glow</label>
                 <input
                   type="number"
                   min={0}
@@ -333,11 +333,11 @@ export default function AvatarLayerPropertiesForm({ scene, layerId, onCommit, op
                     patchNs({ containerInnerGlow: Math.max(0, Math.min(1, parseFloat(e.target.value) || 0)) })
                   }
                   onBlur={onCommit}
-                  className="kbd mt-0.5 w-full px-1.5 py-1 text-[10px]"
+                  className="kbd mt-0.5 w-full px-1.5 py-1 text-[11px]"
                 />
               </div>
               <div>
-                <label className="text-[9px] text-[var(--color-text-muted)]">Fill opacity</label>
+                <label className="text-[10px] text-[var(--color-text-muted)]">Fill opacity</label>
                 <input
                   type="number"
                   min={0}
@@ -348,7 +348,7 @@ export default function AvatarLayerPropertiesForm({ scene, layerId, onCommit, op
                     patchNs({ containerBgOpacity: Math.max(0, Math.min(1, parseFloat(e.target.value) || 0)) })
                   }
                   onBlur={onCommit}
-                  className="kbd mt-0.5 w-full px-1.5 py-1 text-[10px]"
+                  className="kbd mt-0.5 w-full px-1.5 py-1 text-[11px]"
                 />
               </div>
             </div>
@@ -356,12 +356,12 @@ export default function AvatarLayerPropertiesForm({ scene, layerId, onCommit, op
 
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="text-[9px] text-[var(--color-text-muted)]">Mood (when speaking)</label>
+              <label className="text-[10px] text-[var(--color-text-muted)]">Mood (when speaking)</label>
               <select
                 value={ns.mood}
                 onChange={(e) => patchNs({ mood: e.target.value as AvatarMood })}
                 onBlur={onCommit}
-                className="kbd mt-0.5 w-full px-1.5 py-1 text-[10px]"
+                className="kbd mt-0.5 w-full px-1.5 py-1 text-[11px]"
               >
                 {MOODS.map((m) => (
                   <option key={m} value={m}>
@@ -371,12 +371,12 @@ export default function AvatarLayerPropertiesForm({ scene, layerId, onCommit, op
               </select>
             </div>
             <div>
-              <label className="text-[9px] text-[var(--color-text-muted)]">Camera view</label>
+              <label className="text-[10px] text-[var(--color-text-muted)]">Camera view</label>
               <select
                 value={ns.view}
                 onChange={(e) => patchNs({ view: e.target.value as AvatarView })}
                 onBlur={onCommit}
-                className="kbd mt-0.5 w-full px-1.5 py-1 text-[10px]"
+                className="kbd mt-0.5 w-full px-1.5 py-1 text-[11px]"
               >
                 {VIEWS.map((v) => (
                   <option key={v} value={v}>
@@ -388,7 +388,7 @@ export default function AvatarLayerPropertiesForm({ scene, layerId, onCommit, op
           </div>
 
           <div>
-            <label className="text-[9px] text-[var(--color-text-muted)]">
+            <label className="text-[10px] text-[var(--color-text-muted)]">
               Eye contact ({ns.eyeContact?.toFixed(2) ?? '0.70'})
             </label>
             <input
@@ -404,7 +404,7 @@ export default function AvatarLayerPropertiesForm({ scene, layerId, onCommit, op
             />
           </div>
 
-          <label className="flex cursor-pointer items-center gap-2 text-[10px] text-[var(--color-text-primary)]">
+          <label className="flex cursor-pointer items-center gap-2 text-[11px] text-[var(--color-text-primary)]">
             <input
               type="checkbox"
               checked={ns.lipsyncHeadMovement !== false}
@@ -416,12 +416,12 @@ export default function AvatarLayerPropertiesForm({ scene, layerId, onCommit, op
 
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="text-[9px] text-[var(--color-text-muted)]">Entrance</label>
+              <label className="text-[10px] text-[var(--color-text-muted)]">Entrance</label>
               <select
                 value={ns.entranceAnimation ?? 'fade'}
                 onChange={(e) => patchNs({ entranceAnimation: e.target.value as NarrationScript['entranceAnimation'] })}
                 onBlur={onCommit}
-                className="kbd mt-0.5 w-full px-1.5 py-1 text-[10px]"
+                className="kbd mt-0.5 w-full px-1.5 py-1 text-[11px]"
               >
                 {ENTRANCE.map((a) => (
                   <option key={a} value={a}>
@@ -431,7 +431,7 @@ export default function AvatarLayerPropertiesForm({ scene, layerId, onCommit, op
               </select>
             </div>
             <div>
-              <label className="text-[9px] text-[var(--color-text-muted)]">Enter at (s)</label>
+              <label className="text-[10px] text-[var(--color-text-muted)]">Enter at (s)</label>
               <input
                 type="number"
                 min={0}
@@ -439,18 +439,18 @@ export default function AvatarLayerPropertiesForm({ scene, layerId, onCommit, op
                 value={ns.enterAt ?? layer.startAt ?? 0}
                 onChange={(e) => patchNs({ enterAt: Math.max(0, parseFloat(e.target.value) || 0) })}
                 onBlur={onCommit}
-                className="kbd mt-0.5 w-full px-1.5 py-1 text-[10px]"
+                className="kbd mt-0.5 w-full px-1.5 py-1 text-[11px]"
               />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="text-[9px] text-[var(--color-text-muted)]">Exit</label>
+              <label className="text-[10px] text-[var(--color-text-muted)]">Exit</label>
               <select
                 value={ns.exitAnimation ?? 'fade'}
                 onChange={(e) => patchNs({ exitAnimation: e.target.value as NarrationScript['exitAnimation'] })}
                 onBlur={onCommit}
-                className="kbd mt-0.5 w-full px-1.5 py-1 text-[10px]"
+                className="kbd mt-0.5 w-full px-1.5 py-1 text-[11px]"
               >
                 {EXIT.map((a) => (
                   <option key={a} value={a}>
@@ -460,7 +460,7 @@ export default function AvatarLayerPropertiesForm({ scene, layerId, onCommit, op
               </select>
             </div>
             <div>
-              <label className="text-[9px] text-[var(--color-text-muted)]">Exit at (s)</label>
+              <label className="text-[10px] text-[var(--color-text-muted)]">Exit at (s)</label>
               <input
                 type="number"
                 min={0}
@@ -471,7 +471,7 @@ export default function AvatarLayerPropertiesForm({ scene, layerId, onCommit, op
                   patchNs({ exitAt: v === '' ? undefined : Math.max(0, parseFloat(v) || 0) })
                 }}
                 onBlur={onCommit}
-                className="kbd mt-0.5 w-full px-1.5 py-1 text-[10px]"
+                className="kbd mt-0.5 w-full px-1.5 py-1 text-[11px]"
                 placeholder="optional"
               />
             </div>
@@ -480,19 +480,19 @@ export default function AvatarLayerPropertiesForm({ scene, layerId, onCommit, op
       )}
 
       {!isTalkingHead && (
-        <p className="text-[10px] text-[var(--color-text-muted)] leading-relaxed">
-          This avatar uses a video file (e.g. HeyGen). Trim and opacity are below; replace the source from the Scene tab
+        <p className="text-[11px] text-[var(--color-text-muted)] leading-relaxed">
+          This avatar uses a video file (e.g. HeyGen). Trim and opacity are below; replace the source from the Setup tab
           if needed.
         </p>
       )}
 
       {scene.sceneType === 'avatar_scene' && asc && (
         <div className="space-y-2 rounded-lg border p-2" style={{ borderColor: 'var(--color-border)' }}>
-          <p className="text-[9px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
             Full avatar scene layout
           </p>
           <div>
-            <label className="text-[9px] text-[var(--color-text-muted)]">Backdrop</label>
+            <label className="text-[10px] text-[var(--color-text-muted)]">Backdrop</label>
             <div className="mt-0.5 flex gap-2">
               <input
                 type="color"
@@ -511,13 +511,13 @@ export default function AvatarLayerPropertiesForm({ scene, layerId, onCommit, op
                 value={asc.backdrop}
                 onChange={(e) => patch({ avatarSceneConfig: { ...asc, backdrop: e.target.value } })}
                 onBlur={onCommit}
-                className="kbd min-w-0 flex-1 px-2 py-1 font-mono text-[10px]"
+                className="kbd min-w-0 flex-1 px-2 py-1 font-mono text-[11px]"
               />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="text-[9px] text-[var(--color-text-muted)]">Presenter width (%)</label>
+              <label className="text-[10px] text-[var(--color-text-muted)]">Presenter width (%)</label>
               <input
                 type="number"
                 min={20}
@@ -532,11 +532,11 @@ export default function AvatarLayerPropertiesForm({ scene, layerId, onCommit, op
                   })
                 }
                 onBlur={onCommit}
-                className="kbd mt-0.5 w-full px-1.5 py-1 text-[10px]"
+                className="kbd mt-0.5 w-full px-1.5 py-1 text-[11px]"
               />
             </div>
             <div>
-              <label className="text-[9px] text-[var(--color-text-muted)]">Side</label>
+              <label className="text-[10px] text-[var(--color-text-muted)]">Side</label>
               <select
                 value={asc.avatarPosition}
                 onChange={(e) =>
@@ -548,7 +548,7 @@ export default function AvatarLayerPropertiesForm({ scene, layerId, onCommit, op
                   })
                 }
                 onBlur={onCommit}
-                className="kbd mt-0.5 w-full px-1.5 py-1 text-[10px]"
+                className="kbd mt-0.5 w-full px-1.5 py-1 text-[11px]"
               >
                 <option value="left">Left</option>
                 <option value="right">Right</option>
@@ -561,7 +561,7 @@ export default function AvatarLayerPropertiesForm({ scene, layerId, onCommit, op
 
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <label className="text-[9px] text-[var(--color-text-muted)]">Opacity</label>
+          <label className="text-[10px] text-[var(--color-text-muted)]">Opacity</label>
           <input
             type="number"
             min={0}
@@ -570,23 +570,23 @@ export default function AvatarLayerPropertiesForm({ scene, layerId, onCommit, op
             value={layer.opacity}
             onChange={(e) => patch({ opacity: Math.max(0, Math.min(1, parseFloat(e.target.value) || 0)) })}
             onBlur={onCommit}
-            className="kbd mt-0.5 w-full px-1.5 py-1 text-[10px]"
+            className="kbd mt-0.5 w-full px-1.5 py-1 text-[11px]"
           />
         </div>
         <div>
-          <label className="text-[9px] text-[var(--color-text-muted)]">z-index</label>
+          <label className="text-[10px] text-[var(--color-text-muted)]">z-index</label>
           <input
             type="number"
             step={1}
             value={layer.zIndex}
             onChange={(e) => patch({ zIndex: parseInt(e.target.value, 10) || 0 })}
             onBlur={onCommit}
-            className="kbd mt-0.5 w-full px-1.5 py-1 text-[10px]"
+            className="kbd mt-0.5 w-full px-1.5 py-1 text-[11px]"
           />
         </div>
       </div>
       <div>
-        <label className="text-[9px] text-[var(--color-text-muted)]">Start at (s)</label>
+        <label className="text-[10px] text-[var(--color-text-muted)]">Start at (s)</label>
         <input
           type="number"
           min={0}
@@ -594,11 +594,11 @@ export default function AvatarLayerPropertiesForm({ scene, layerId, onCommit, op
           value={layer.startAt ?? 0}
           onChange={(e) => patch({ startAt: Math.max(0, parseFloat(e.target.value) || 0) })}
           onBlur={onCommit}
-          className="kbd mt-0.5 w-full px-1.5 py-1 text-[10px]"
+          className="kbd mt-0.5 w-full px-1.5 py-1 text-[11px]"
         />
       </div>
 
-      <SubLink label="Scene tab — more layers & tools" onClick={() => openLayersSection('scene')} />
+      <SubLink label="Setup tab — more layers & tools" onClick={() => openLayersSection('scene')} />
     </section>
   )
 }

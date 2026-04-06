@@ -2,9 +2,9 @@ import fs from 'fs/promises'
 import path from 'path'
 import type { SceneType } from '@/lib/types'
 import type { AgentLogger } from '@/lib/agents/logger'
-import type { ToolResult } from '@/lib/agents/types'
 import type { WorldStateMutable } from '@/lib/agents/tool-executor'
 import { clearStaleCodeFields } from '@/lib/agents/tool-executor'
+import { ok, err, findScene, updateScene, type ToolResult } from './_shared'
 
 export const THREE_WORLD_TOOL_NAMES = [
   'search_3d_models',
@@ -13,43 +13,6 @@ export const THREE_WORLD_TOOL_NAMES = [
   'create_world_scene',
   'list_3d_assets',
 ] as const
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-function ok(affectedSceneId: string | null, description: string, data?: unknown): ToolResult {
-  return {
-    success: true,
-    affectedSceneId,
-    changes: [
-      {
-        type: affectedSceneId ? 'scene_updated' : 'global_updated',
-        sceneId: affectedSceneId ?? undefined,
-        description,
-      },
-    ],
-    data,
-  }
-}
-
-function err(message: string): ToolResult {
-  return { success: false, error: message }
-}
-
-function findScene(world: WorldStateMutable, sceneId: string) {
-  return world.scenes.find((s) => s.id === sceneId)
-}
-
-function updateScene(world: WorldStateMutable, sceneId: string, updates: Record<string, unknown>) {
-  const idx = world.scenes.findIndex((s) => s.id === sceneId)
-  if (idx === -1) return null
-  // If switching away from d3, clear chart-specific fields
-  if (updates.sceneType && updates.sceneType !== 'd3') {
-    updates.chartLayers = []
-    updates.d3Data = null
-  }
-  world.scenes[idx] = { ...world.scenes[idx], ...updates }
-  return world.scenes[idx]
-}
 
 // ── Handler Factory ──────────────────────────────────────────────────────────
 

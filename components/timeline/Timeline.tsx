@@ -371,7 +371,7 @@ export default function Timeline({ currentTime, totalDuration, onSeek, trackHeig
 
   return (
     <div
-      className="w-full border-t border-[var(--color-border)] bg-[var(--color-panel)] flex flex-col"
+      className="w-full border-t border-[var(--color-border)] bg-[var(--color-timeline-bg,var(--color-panel))] flex flex-col"
       style={{ height: trackHeight, position: 'relative', overflow: 'hidden' }}
       ref={containerRef}
     >
@@ -487,19 +487,19 @@ export default function Timeline({ currentTime, totalDuration, onSeek, trackHeig
       {/* Zoom controls */}
       <div className="absolute top-0 flex items-center gap-1 z-20 p-0.5" style={{ right: SCROLLBAR_WIDTH }}>
         <span
-          className="cursor-pointer px-1.5 py-0.5 rounded text-xs hover:bg-white/10 text-[var(--color-text-muted)]"
+          className="cursor-pointer px-1.5 py-0.5 rounded text-sm hover:bg-white/10 text-[var(--color-text-muted)]"
           onClick={zoomOut}
         >
           −
         </span>
         <span
-          className="cursor-pointer px-1.5 py-0.5 rounded text-xs hover:bg-white/10 text-[var(--color-text-muted)]"
+          className="cursor-pointer px-1.5 py-0.5 rounded text-sm hover:bg-white/10 text-[var(--color-text-muted)]"
           onClick={fitAll}
         >
           Fit
         </span>
         <span
-          className="cursor-pointer px-1.5 py-0.5 rounded text-xs hover:bg-white/10 text-[var(--color-text-muted)]"
+          className="cursor-pointer px-1.5 py-0.5 rounded text-sm hover:bg-white/10 text-[var(--color-text-muted)]"
           onClick={zoomIn}
         >
           +

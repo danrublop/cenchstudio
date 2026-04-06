@@ -34,6 +34,8 @@ export interface AgentToolsConfig {
 export interface AgentLimitsConfig {
   /** Max tool-loop iterations per run (default: 15) */
   maxIterations: number
+  /** Max total tool calls per run including sub-agents (default: 50) */
+  maxToolCalls?: number
   /** Max spend per session in USD */
   maxSessionSpend?: number
   /** Max spend per month in USD */

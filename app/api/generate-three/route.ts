@@ -62,7 +62,7 @@ export async function POST(req: NextRequest) {
     })
   } catch (err: unknown) {
     console.error('Three.js generate error:', err)
-    const message = err instanceof Error ? err.message : 'Internal error'
+    const message = err instanceof Error ? err.message.replace(/[a-zA-Z0-9_\-]{20,}/g, '[REDACTED]').slice(0, 200) : 'Internal error'
     return NextResponse.json({ error: message }, { status: 500 })
   }
 }

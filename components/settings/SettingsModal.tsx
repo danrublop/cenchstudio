@@ -60,7 +60,7 @@ export default function SettingsModal() {
             <button
               key={id}
               onClick={() => setSettingsTab(id)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md transition-colors ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-colors ${
                 activeTab === id
                   ? 'bg-[var(--color-panel)] text-[var(--color-text-primary)] font-medium shadow-sm border border-[var(--color-border)]'
                   : 'text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-border)]/30'

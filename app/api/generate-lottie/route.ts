@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ result: text, usage })
   } catch (err: unknown) {
     console.error('Lottie overlay generate error:', err)
-    const message = err instanceof Error ? err.message : 'Internal error'
+    const message = err instanceof Error ? err.message.replace(/[a-zA-Z0-9_\-]{20,}/g, '[REDACTED]').slice(0, 200) : 'Internal error'
     return NextResponse.json({ error: message }, { status: 500 })
   }
 }

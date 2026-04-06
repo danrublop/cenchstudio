@@ -31,7 +31,7 @@ import type {
   Storyboard,
   RunProgress,
 } from './types'
-import { MODEL_PRICING, getModelProvider, messageContentToText, serializeRunProgress } from './types'
+import { getModelPricing, getModelProvider, messageContentToText, serializeRunProgress } from './types'
 import { THINKING_BUDGETS } from './context-builder'
 import { routeMessage } from './router'
 import {
@@ -63,12 +63,53 @@ function getGoogleClient(): GoogleGenAI {
   return _googleClient
 }
 
-const MAX_TOOL_ITERATIONS = 15
-const TOOL_TIMEOUT_MS = 60_000 // 60s per tool execution (default)
-const GENERATION_TOOL_TIMEOUT_MS = 120_000 // 120s for tools that invoke LLM generation
-const FINAL_MSG_TIMEOUT_MS = 10_000 // 10s for stream.finalMessage()
-/** Refresh world state context every N tool-bearing iterations to prevent staleness */
-const CONTEXT_REFRESH_INTERVAL = 3
+const _localClients = new Map<string, OpenAI>()
+function getLocalClient(endpoint: string): OpenAI {
+  if (!_localClients.has(endpoint)) {
+    _localClients.set(endpoint, new OpenAI({ baseURL: `${endpoint}/v1`, apiKey: 'ollama' }))
+  }
+  return _localClients.get(endpoint)!
+}
+
+/** Tunable parameters for a single agent run.
+ *  Override via RunnerOptions.runConfig for per-project or per-agent customization. */
+export interface RunConfig {
+  /** Max tool-bearing iterations before forced stop */
+  maxToolIterations: number
+  /** Default timeout per tool execution in ms */
+  toolTimeoutMs: number
+  /** Timeout for LLM-backed generation tools in ms */
+  generationToolTimeoutMs: number
+  /** Timeout for stream.finalMessage() in ms */
+  finalMessageTimeoutMs: number
+  /** Refresh world state context every N tool-bearing iterations */
+  contextRefreshInterval: number
+  /** Maximum cost in USD for a single run before circuit breaker fires */
+  maxRunCostUsd: number
+  /** Maximum total tool calls (across all iterations + sub-agents) before forced stop */
+  maxToolCalls: number
+  /** Max tokens for in-flight message compaction */
+  compactionMaxTokens: number
+  /** Number of recent messages to preserve during compaction */
+  compactionPreserveRecent: number
+}
+
+const DEFAULT_RUN_CONFIG: RunConfig = {
+  maxToolIterations: 15,
+  toolTimeoutMs: 60_000,
+  generationToolTimeoutMs: 120_000,
+  finalMessageTimeoutMs: 10_000,
+  contextRefreshInterval: 3,
+  maxRunCostUsd: 2.0,
+  maxToolCalls: 50,
+  compactionMaxTokens: 6000,
+  compactionPreserveRecent: 8,
+}
+
+// Tool timeout constants — used by withRetry() and getToolTimeout() which run
+// outside the per-request RunConfig scope (module-level utilities).
+const TOOL_TIMEOUT_MS = DEFAULT_RUN_CONFIG.toolTimeoutMs
+const GENERATION_TOOL_TIMEOUT_MS = DEFAULT_RUN_CONFIG.generationToolTimeoutMs
 
 /** Tools that invoke LLM code generation and need a longer timeout */
 const GENERATION_TOOLS = new Set(['add_layer', 'regenerate_layer', 'edit_layer'])
@@ -101,10 +142,12 @@ function isRetryableError(err: Error): boolean {
   )
 }
 
-/** Execute a tool with 1 automatic retry for transient failures (timeout, empty code, rate limit).
- *  Uses exponential backoff (1s, 2s). Never retries validation or permission errors. */
+/** Execute a tool with automatic retry for transient failures (timeout, empty code, rate limit).
+ *  Generation tools get 2 retries (they're expensive to fail); others get 1.
+ *  Uses exponential backoff with jitter (prevents thundering herd).
+ *  Never retries validation or permission errors. */
 async function withRetry(fn: () => Promise<ToolResult>, toolName: string, logger?: AgentLogger): Promise<ToolResult> {
-  const MAX_RETRIES = 1
+  const MAX_RETRIES = GENERATION_TOOLS.has(toolName) ? 2 : 1
   const BASE_DELAY_MS = 1000
 
   let lastResult: ToolResult
@@ -118,7 +161,8 @@ async function withRetry(fn: () => Promise<ToolResult>, toolName: string, logger
           lastResult.error.toLowerCase().includes('timeout') ||
           lastResult.error.toLowerCase().includes('rate limit')
         if (isRetryable && attempt < MAX_RETRIES) {
-          const delay = BASE_DELAY_MS * Math.pow(2, attempt)
+          // Exponential backoff with jitter: base * 2^attempt * (0.5–1.5)
+          const delay = Math.round(BASE_DELAY_MS * Math.pow(2, attempt) * (0.5 + Math.random()))
           logger?.log('retry', `Retrying ${toolName} after soft failure (attempt ${attempt + 1})`, {
             error: lastResult.error,
             delayMs: delay,
@@ -130,7 +174,7 @@ async function withRetry(fn: () => Promise<ToolResult>, toolName: string, logger
       return lastResult
     } catch (err) {
       if (attempt < MAX_RETRIES && isRetryableError(err as Error)) {
-        const delay = BASE_DELAY_MS * Math.pow(2, attempt)
+        const delay = Math.round(BASE_DELAY_MS * Math.pow(2, attempt) * (0.5 + Math.random()))
         logger?.log('retry', `Retrying ${toolName} after error (attempt ${attempt + 1})`, {
           error: (err as Error).message,
           delayMs: delay,
@@ -259,8 +303,8 @@ function calculateCost(
   cacheCreationTokens = 0,
   cacheReadTokens = 0,
 ): number {
-  const pricing = MODEL_PRICING[modelId]
-  if (!pricing) return 0
+  const pricing = getModelPricing(modelId)
+  if (!pricing || (pricing.inputPer1M === 0 && pricing.outputPer1M === 0)) return 0
   // input_tokens is already the non-cached portion; cache tokens are separate
   const inputCost =
     (inputTokens / 1_000_000) * pricing.inputPer1M +
@@ -317,6 +361,10 @@ export interface RunnerOptions {
   parentRunId?: string
   /** When set, SceneMaker gets a focused prompt with only this scene type's guidance. */
   focusedSceneType?: string
+  /** Override default run configuration (timeouts, cost cap, compaction, etc.) */
+  runConfig?: Partial<RunConfig>
+  /** Model configs for resolving local model endpoints */
+  modelConfigs?: import('./model-config').ModelConfig[]
 }
 
 // ── Vision content formatters ──────────────────────────────────────────────
@@ -381,6 +429,11 @@ export async function runAgent(opts: RunnerOptions): Promise<{
   updatedStoryboard?: Storyboard | null
   updatedZdogLibrary?: any[]
   updatedZdogStudioLibrary?: any[]
+  // Recording state (from agent tools)
+  recordingCommand?: import('@/types/electron').RecordingCommand
+  recordingCommandNonce?: number
+  recordingConfig?: import('@/types/electron').RecordingConfig
+  recordingAttachSceneId?: string | null
   usage: UsageStats
   logger: AgentLogger
 }> {
@@ -406,6 +459,7 @@ export async function runAgent(opts: RunnerOptions): Promise<{
     emit,
   } = opts
   const logger = opts.logger ?? new AgentLogger()
+  const rc: RunConfig = { ...DEFAULT_RUN_CONFIG, ...opts.runConfig }
 
   // Declare tracking variables outside try so catch can access them for partial usage logging
   const pid = opts.projectId ?? 'unknown'
@@ -441,6 +495,26 @@ export async function runAgent(opts: RunnerOptions): Promise<{
     if (agentOverride) {
       agentType = agentOverride
       logger.log('route', `Agent override: ${agentType}`)
+    } else if (opts.modelConfigs && opts.modelConfigs.length > 0) {
+      // Local models: skip LLM routing, use heuristic only (avoids calling Anthropic API)
+      logger.log('route', 'Local mode — using heuristic routing (no LLM router)')
+      try {
+        agentType = await routeMessage(
+          messageText,
+          scenes,
+          globalStyle,
+          projectName,
+          outputMode,
+          opts.projectId,
+          logger,
+          [], // empty enabledModelIds forces heuristic fallback
+        )
+        const routeMs = logger.endPhase('route')
+        logger.log('route', `Heuristic routed to ${agentType}`, { durationMs: routeMs })
+      } catch {
+        logger.endPhase('route')
+        agentType = 'scene-maker'
+      }
     } else {
       try {
         agentType = await routeMessage(
@@ -556,6 +630,7 @@ export async function runAgent(opts: RunnerOptions): Promise<{
       ...(sessionPermissions ? { sessionPermissions } : {}),
       ...(opts.generationOverrides ? { generationOverrides: opts.generationOverrides } : {}),
       ...(opts.autoChooseDefaults ? { autoChooseDefaults: opts.autoChooseDefaults } : {}),
+      ...(opts.modelConfigs ? { modelConfigs: opts.modelConfigs, localMode: true } : {}),
     }
 
     // ── 4.5 Resume a blocked tool call (permission flow) ───────────────────────
@@ -615,6 +690,10 @@ export async function runAgent(opts: RunnerOptions): Promise<{
               updatedStoryboard: world.storyboard ?? null,
               updatedZdogLibrary: world.zdogLibrary,
               updatedZdogStudioLibrary: (world as any).zdogStudioLibrary,
+              recordingCommand: (world as any).recordingCommand,
+              recordingCommandNonce: (world as any).recordingCommandNonce,
+              recordingConfig: (world as any).recordingConfig,
+              recordingAttachSceneId: (world as any).recordingAttachSceneId,
               usage: {
                 inputTokens: totalInputTokens,
                 outputTokens: totalOutputTokens,
@@ -637,29 +716,36 @@ export async function runAgent(opts: RunnerOptions): Promise<{
       storyboardScenesPlanned: opts.initialStoryboard?.scenes?.length ?? 0,
       storyboardScenesBuilt: 0,
       iterationsUsed: 0,
-      iterationsMax: opts.maxIterations ?? MAX_TOOL_ITERATIONS,
+      iterationsMax: opts.maxIterations ?? rc.maxToolIterations,
       toolCallsTotal: 0,
       errors: [],
       scenesCreated: [],
       scenesVerified: [],
+      scenesWithNarration: [],
     }
 
     let iteration = 0
     let toolBearingIterations = 0 // tracks iterations that executed tools (for context refresh)
     let storyboardContextInjected = !!opts.initialStoryboard
-    let permissionPauseEmitted = false
+    const permissionPausesEmitted = new Set<string>()
     const emitPermissionPause = (api: string) => {
-      if (permissionPauseEmitted) return
-      permissionPauseEmitted = true
+      if (permissionPausesEmitted.has(api)) return
+      permissionPausesEmitted.add(api)
       const msg = `\n\nPermission required for ${api}. Please approve/deny in the permission card to continue.`
       fullText += msg
       emit({ type: 'token', token: msg })
     }
 
-    const provider = getModelProvider(modelId)
+    const provider = getModelProvider(modelId, opts.modelConfigs)
+    if (provider === 'local') {
+      const localConfig = opts.modelConfigs?.find((m) => m.id === modelId || m.modelId === modelId)
+      logger.log('run', `Local mode: provider=${provider} model=${modelId} endpoint=${localConfig?.endpoint ?? 'http://localhost:11434'} localModelName=${localConfig?.localModelName ?? modelId}`)
+    } else {
+      logger.log('run', `Provider: ${provider} model=${modelId}`)
+    }
 
     /** Build a world state refresh message to inject into conversation history.
-     *  Called every CONTEXT_REFRESH_INTERVAL tool-bearing iterations so the agent
+     *  Called every rc.contextRefreshInterval tool-bearing iterations so the agent
      *  always has an accurate view of what it has built so far. */
     function buildContextRefreshMessage(): string {
       const ws = buildWorldState(world.scenes, world.globalStyle, projectName, outputMode, null)
@@ -676,6 +762,8 @@ export async function runAgent(opts: RunnerOptions): Promise<{
       // Track phase transitions
       if (toolName === 'plan_scenes' && result.success) {
         runProgress.phase = 'style'
+        // Reset so the context refresh check re-triggers with the new storyboard
+        storyboardContextInjected = false
         if (world.storyboard) {
           runProgress.storyboardScenesPlanned = world.storyboard.scenes?.length ?? 0
         }
@@ -691,6 +779,10 @@ export async function runAgent(opts: RunnerOptions): Promise<{
         runProgress.phase = 'build'
       } else if (toolName === 'verify_scene' && result.affectedSceneId) {
         runProgress.scenesVerified.push(result.affectedSceneId)
+      } else if (toolName === 'add_narration' && result.success && result.affectedSceneId) {
+        if (!runProgress.scenesWithNarration.includes(result.affectedSceneId)) {
+          runProgress.scenesWithNarration.push(result.affectedSceneId)
+        }
       }
 
       // Track errors
@@ -708,7 +800,7 @@ export async function runAgent(opts: RunnerOptions): Promise<{
       }
     }
 
-    const effectiveMaxIterations = opts.maxIterations ?? MAX_TOOL_ITERATIONS
+    const effectiveMaxIterations = opts.maxIterations ?? rc.maxToolIterations
 
     while (iteration < effectiveMaxIterations) {
       // Check if the client disconnected before starting another iteration
@@ -734,7 +826,7 @@ export async function runAgent(opts: RunnerOptions): Promise<{
               progress: { ...runProgress },
               worldSnapshot: {
                 scenes: JSON.parse(JSON.stringify(world.scenes)),
-                globalStyle: { ...world.globalStyle },
+                globalStyle: JSON.parse(JSON.stringify(world.globalStyle)),
                 sceneGraph: JSON.parse(JSON.stringify(world.sceneGraph)),
               },
               originalMessage: messageContentToText(message),
@@ -780,8 +872,46 @@ export async function runAgent(opts: RunnerOptions): Promise<{
       }
       iteration++
       totalApiCalls++
+
+      // Cost guardrail: abort if accumulated LLM cost exceeds the per-run cap
+      const runningCost = calculateCost(modelId, totalInputTokens, totalOutputTokens, totalCacheCreationTokens, totalCacheReadTokens)
+      if (runningCost > rc.maxRunCostUsd) {
+        logger.warn('cost', `Run cost $${runningCost.toFixed(3)} exceeds cap $${rc.maxRunCostUsd} — stopping`, {
+          iteration,
+          inputTokens: totalInputTokens,
+          outputTokens: totalOutputTokens,
+        })
+        const msg = `\n\n⚠ Cost limit reached ($${runningCost.toFixed(2)} / $${rc.maxRunCostUsd.toFixed(2)} cap). Stopping to prevent overspend.`
+        fullText += msg
+        emit({ type: 'token', token: msg })
+        break
+      }
+
+      // Tool call guardrail: abort if total tool calls exceed the per-run cap
+      if (allToolCalls.length >= rc.maxToolCalls) {
+        logger.warn('tools', `Tool call limit reached (${allToolCalls.length}/${rc.maxToolCalls}) — stopping`, {
+          iteration,
+          toolCalls: allToolCalls.length,
+        })
+        const msg = `\n\n⚠ Tool call limit reached (${allToolCalls.length} calls). Stopping to prevent runaway execution.`
+        fullText += msg
+        emit({ type: 'token', token: msg })
+        break
+      }
+
       emit({ type: 'iteration_start', iteration, maxIterations: effectiveMaxIterations })
-      logger.log('iteration', `Start iteration ${iteration}/${MAX_TOOL_ITERATIONS}`, { iteration, provider, modelId })
+      emit({
+        type: 'run_progress',
+        runProgress: {
+          toolCallsUsed: allToolCalls.length,
+          toolCallsMax: rc.maxToolCalls,
+          costUsd: calculateCost(modelId, totalInputTokens, totalOutputTokens, totalCacheCreationTokens, totalCacheReadTokens),
+          costMax: rc.maxRunCostUsd,
+          iteration,
+          iterationMax: effectiveMaxIterations,
+        },
+      })
+      logger.log('iteration', `Start iteration ${iteration}/${rc.maxToolIterations}`, { iteration, provider, modelId })
       logger.startPhase(`iter_${iteration}`)
 
       // Separate text from previous iterations with line breaks
@@ -1006,14 +1136,14 @@ export async function runAgent(opts: RunnerOptions): Promise<{
         // Progressive context refresh — keep agent aware of accumulated changes
         if (toolCallBlocks.length > 0) {
           toolBearingIterations++
-          if (toolBearingIterations > 0 && toolBearingIterations % CONTEXT_REFRESH_INTERVAL === 0) {
+          if (toolBearingIterations > 0 && toolBearingIterations % rc.contextRefreshInterval === 0) {
             const refreshMsg = buildContextRefreshMessage()
             messages.push({ role: 'user', content: [{ text: refreshMsg }] } as any)
             logger.log('context', `Progressive context refresh at iteration ${iteration}`, { toolBearingIterations })
 
             // Compact messages to prevent unbounded growth during long builds
             const before = messages.length
-            const compacted = compactInFlightMessages(messages, { maxTokens: 6000, preserveRecent: 8 })
+            const compacted = compactInFlightMessages(messages, { maxTokens: rc.compactionMaxTokens, preserveRecent: rc.compactionPreserveRecent })
             if (compacted.length < before) {
               messages.length = 0
               messages.push(...compacted)
@@ -1039,6 +1169,9 @@ export async function runAgent(opts: RunnerOptions): Promise<{
             parentOpts: opts,
             emit,
             logger,
+            toolBudgetRemaining: rc.maxToolCalls - allToolCalls.length,
+            parentCostUsd: calculateCost(modelId, totalInputTokens, totalOutputTokens, totalCacheCreationTokens, totalCacheReadTokens),
+            maxRunCostUsd: rc.maxRunCostUsd,
           })
           for (const sr of subResults) {
             totalInputTokens += sr.usage.inputTokens
@@ -1070,8 +1203,8 @@ export async function runAgent(opts: RunnerOptions): Promise<{
           break
         }
         if (toolCallBlocks.length === 0) break
-      } else if (provider === 'openai') {
-        // ── OpenAI execution path ────────────────────────────────────────
+      } else if (provider === 'openai' || provider === 'local') {
+        // ── OpenAI / Local execution path (OpenAI-compatible API) ────────
         const openaiMessages: OpenAI.ChatCompletionMessageParam[] = [
           { role: 'system', content: ctx.systemPrompt },
           ...messages.map((m) => {
@@ -1120,14 +1253,44 @@ export async function runAgent(opts: RunnerOptions): Promise<{
           function: { name: t.name, description: t.description, parameters: t.input_schema as any },
         }))
 
-        const stream = await getOpenAIClient().chat.completions.create({
-          model: modelId,
-          max_tokens: ctx.maxTokens,
-          messages: openaiMessages,
-          tools: openaiTools.length > 0 ? openaiTools : undefined,
-          stream: true,
-          stream_options: { include_usage: true },
-        })
+        // Resolve the correct client: OpenAI SDK for cloud, or local Ollama endpoint
+        let oaiClient: OpenAI
+        let oaiModelId = modelId
+        if (provider === 'local') {
+          const localConfig = opts.modelConfigs?.find((m) => m.id === modelId || m.modelId === modelId)
+          const endpoint = localConfig?.endpoint ?? process.env.OLLAMA_ENDPOINT ?? 'http://localhost:11434'
+          logger.log('iteration', `Local LLM: endpoint=${endpoint} model=${localConfig?.localModelName ?? modelId}`)
+          oaiClient = getLocalClient(endpoint)
+          oaiModelId = (localConfig?.localModelName ?? modelId) as any
+        } else {
+          oaiClient = getOpenAIClient()
+        }
+
+        // Local models may not support tools — skip tool parameter if supportsTools is false
+        const localConfig = provider === 'local' ? opts.modelConfigs?.find((m) => m.id === modelId || m.modelId === modelId) : null
+        const supportsTools = localConfig ? localConfig.supportsTools !== false : true
+
+        let stream: any
+        try {
+          stream = await oaiClient.chat.completions.create({
+            model: oaiModelId as string,
+            max_tokens: ctx.maxTokens,
+            messages: openaiMessages,
+            tools: supportsTools && openaiTools.length > 0 ? openaiTools : undefined,
+            stream: true,
+            // Ollama may not support stream_options — only send for OpenAI cloud
+            ...(provider !== 'local' ? { stream_options: { include_usage: true } } : {}),
+          })
+        } catch (connectErr) {
+          const errMsg = (connectErr as Error).message ?? 'Unknown error'
+          logger.error('iteration', `Failed to connect to ${provider === 'local' ? 'Ollama' : 'OpenAI'}: ${errMsg}`)
+          const userMsg = provider === 'local'
+            ? `Failed to connect to Ollama at ${(oaiClient as any)?.baseURL ?? 'localhost:11434'}. Make sure Ollama is running (\`ollama serve\`) and the model is pulled.`
+            : `Failed to connect to OpenAI: ${errMsg}`
+          fullText += `\n\n${userMsg}`
+          emit({ type: 'token', token: `\n\n${userMsg}` })
+          break
+        }
 
         let chunkText = ''
         const toolCallAccum: Record<number, { id: string; name: string; args: string }> = {}
@@ -1173,7 +1336,7 @@ export async function runAgent(opts: RunnerOptions): Promise<{
         const toolUseBlocks = Object.values(toolCallAccum)
 
         // Execute tools
-        logger.log('iteration', `OpenAI: ${toolUseBlocks.length} tool calls to execute`, {
+        logger.log('iteration', `${provider === 'local' ? 'Local' : 'OpenAI'}: ${toolUseBlocks.length} tool calls to execute`, {
           toolCallCount: toolUseBlocks.length,
         })
         const toolResultMsgs: OpenAI.ChatCompletionToolMessageParam[] = []
@@ -1313,14 +1476,14 @@ export async function runAgent(opts: RunnerOptions): Promise<{
         // Progressive context refresh — keep agent aware of accumulated changes
         if (toolUseBlocks.length > 0) {
           toolBearingIterations++
-          if (toolBearingIterations > 0 && toolBearingIterations % CONTEXT_REFRESH_INTERVAL === 0) {
+          if (toolBearingIterations > 0 && toolBearingIterations % rc.contextRefreshInterval === 0) {
             const refreshMsg = buildContextRefreshMessage()
             messages.push({ role: 'user' as const, content: refreshMsg } as any)
             logger.log('context', `Progressive context refresh at iteration ${iteration}`, { toolBearingIterations })
 
             // Compact messages to prevent unbounded growth during long builds
             const before = messages.length
-            const compacted = compactInFlightMessages(messages, { maxTokens: 6000, preserveRecent: 8 })
+            const compacted = compactInFlightMessages(messages, { maxTokens: rc.compactionMaxTokens, preserveRecent: rc.compactionPreserveRecent })
             if (compacted.length < before) {
               messages.length = 0
               messages.push(...compacted)
@@ -1338,7 +1501,7 @@ export async function runAgent(opts: RunnerOptions): Promise<{
           allToolCalls.some((tc) => tc.toolName === 'set_global_style' || tc.toolName === 'set_all_transitions') &&
           !allToolCalls.some((tc) => tc.toolName === 'add_layer')
         ) {
-          logger.log('orchestrator', `Handing off to orchestrator (OpenAI): ${world.storyboard.scenes.length} scenes`)
+          logger.log('orchestrator', `Handing off to orchestrator (${provider}): ${world.storyboard.scenes.length} scenes`)
           const { runOrchestrated } = await import('./orchestrator')
           const subResults = await runOrchestrated({
             storyboard: world.storyboard,
@@ -1346,6 +1509,9 @@ export async function runAgent(opts: RunnerOptions): Promise<{
             parentOpts: opts,
             emit,
             logger,
+            toolBudgetRemaining: rc.maxToolCalls - allToolCalls.length,
+            parentCostUsd: calculateCost(modelId, totalInputTokens, totalOutputTokens, totalCacheCreationTokens, totalCacheReadTokens),
+            maxRunCostUsd: rc.maxRunCostUsd,
           })
           for (const sr of subResults) {
             totalInputTokens += sr.usage.inputTokens
@@ -1377,6 +1543,70 @@ export async function runAgent(opts: RunnerOptions): Promise<{
           logger.log('planner', 'Plan-only run: storyboard saved, stopping loop')
           break
         }
+        // ── Local model fallback: generate scene code directly ─────────
+        // Many local models can't use tool calling. When the model outputs text
+        // but no tool calls, make a second call with a focused code-generation
+        // prompt and inject the result directly into the scene.
+        if (provider === 'local' && toolUseBlocks.length === 0 && chunkText.trim().length > 10 && iteration === 1) {
+          const focusedScene = world.scenes.find((s: any) => s.id === selectedSceneId) ?? world.scenes[0]
+          if (focusedScene) {
+            logger.log('tool', 'Local fallback: model did not use tools — generating scene code directly')
+            emit({ type: 'token', token: '\n\n_Generating scene code..._\n' })
+            fullText += '\n\n_Generating scene code..._\n'
+
+            try {
+              const { generateCode: genCode } = await import('../generation/generate')
+              const userPrompt = messageContentToText(message)
+              const genResult = await genCode('motion', userPrompt, {
+                palette: world.globalStyle.palette,
+                bgColor: focusedScene.bgColor,
+                duration: focusedScene.duration,
+                font: world.globalStyle.font,
+                modelId: modelId,
+                modelTier: opts.modelTier,
+                modelConfigs: opts.modelConfigs,
+              })
+
+              if (genResult.code && genResult.code.length > 20) {
+                // Update scene directly
+                const { updateScene } = await import('./tool-handlers/_shared')
+                const { generateSceneHTML } = await import('../sceneTemplate')
+                const fs = await import('fs/promises')
+                const path = await import('path')
+
+                updateScene(world, focusedScene.id, {
+                  sceneType: 'motion',
+                  sceneCode: genResult.code,
+                  sceneStyles: genResult.styles || '',
+                  prompt: userPrompt,
+                })
+                // Generate and write HTML
+                const updatedScene = world.scenes.find((s) => s.id === focusedScene.id)!
+                const html = generateSceneHTML(updatedScene, world.globalStyle)
+                updateScene(world, focusedScene.id, { sceneHTML: html })
+                const scenesDir = path.join(process.cwd(), 'public', 'scenes')
+                await fs.mkdir(scenesDir, { recursive: true })
+                await fs.writeFile(path.join(scenesDir, `${focusedScene.id}.html`), html, 'utf-8')
+
+                emit({ type: 'preview_update', sceneId: focusedScene.id, changes: [{ type: 'scene_updated', sceneId: focusedScene.id, description: 'Generated scene code (local)' }] })
+                emit({ type: 'state_change', changes: [{ type: 'scene_updated', sceneId: focusedScene.id, description: 'Generated scene code (local)' }] })
+
+                const doneMsg = `_Scene generated successfully._`
+                fullText += doneMsg
+                emit({ type: 'token', token: doneMsg })
+                logger.log('tool', `Local fallback: scene code generated (${genResult.code.length} chars)`)
+              } else {
+                logger.warn('tool', 'Local fallback: generateCode returned empty/short code')
+              }
+            } catch (genErr) {
+              logger.error('tool', `Local fallback code generation failed: ${(genErr as Error).message}`)
+              const errMsg = `\n_Code generation failed: ${(genErr as Error).message}_`
+              fullText += errMsg
+              emit({ type: 'token', token: errMsg })
+            }
+          }
+        }
+
         if (toolUseBlocks.length === 0 || finishReason === 'stop') break
       } else {
         // ── Anthropic execution path (default) ───────────────────────────
@@ -1532,12 +1762,15 @@ export async function runAgent(opts: RunnerOptions): Promise<{
         let finalMsg: Anthropic.Message
         try {
           console.log('[Agent] Awaiting finalMessage...')
-          finalMsg = await withTimeout(stream.finalMessage(), FINAL_MSG_TIMEOUT_MS, 'stream.finalMessage()')
+          finalMsg = await withTimeout(stream.finalMessage(), rc.finalMessageTimeoutMs, 'stream.finalMessage()')
           console.log(
             `[Agent] finalMessage received: ${finalMsg.content.length} content blocks, stop_reason=${finalMsg.stop_reason}`,
           )
         } catch (err) {
           console.error('[Agent] finalMessage() failed:', err)
+          // Abort the stream to release the underlying HTTP connection
+          // instead of leaving it in a partially-consumed state.
+          try { stream.abort() } catch { /* best-effort cleanup */ }
           finalMsg = {
             id: '',
             type: 'message',
@@ -1722,13 +1955,13 @@ export async function runAgent(opts: RunnerOptions): Promise<{
 
           const parallelStart = Date.now()
           const baseStyleSnapshot = JSON.parse(JSON.stringify(world.globalStyle))
-          const isolatedWorlds = batch.map(() => ({
-            ...world,
-            scenes: JSON.parse(JSON.stringify(world.scenes)),
-            globalStyle: JSON.parse(JSON.stringify(world.globalStyle)),
-            sceneGraph: JSON.parse(JSON.stringify(world.sceneGraph)),
-          }))
+          // Deep-clone the entire world for each parallel batch to prevent
+          // cross-batch mutations on any property (storyboard, timeline, etc.)
+          const isolatedWorlds = batch.map(() => JSON.parse(JSON.stringify(world)) as typeof world)
           const results = await Promise.all(batch.map((b, idx) => executeAndEmit(b, isolatedWorlds[idx])))
+
+          // Serialize base style once for comparison (not per-property)
+          const baseStyleStr = JSON.stringify(baseStyleSnapshot)
 
           for (let k = 0; k < results.length; k++) {
             const { result } = results[k]
@@ -1741,14 +1974,15 @@ export async function runAgent(opts: RunnerOptions): Promise<{
               }
             }
 
+            // Merge style changes: only apply if the isolated world's style diverged.
+            // Full replacement (clear + assign) so nested objects like palette are reverted.
             const isoStyle = isolatedWorlds[k].globalStyle
-            if (JSON.stringify(isoStyle) !== JSON.stringify(baseStyleSnapshot)) {
-              for (const [key, value] of Object.entries(isoStyle as Record<string, unknown>)) {
-                const baseVal = (baseStyleSnapshot as Record<string, unknown>)[key]
-                if (JSON.stringify(value) !== JSON.stringify(baseVal)) {
-                  ;(world.globalStyle as unknown as Record<string, unknown>)[key] = value
-                }
+            if (JSON.stringify(isoStyle) !== baseStyleStr) {
+              const cloned = JSON.parse(JSON.stringify(isoStyle))
+              for (const key of Object.keys(world.globalStyle)) {
+                delete (world.globalStyle as unknown as Record<string, unknown>)[key]
               }
+              Object.assign(world.globalStyle, cloned)
             }
 
             recordToolResult(results[k])
@@ -1763,6 +1997,19 @@ export async function runAgent(opts: RunnerOptions): Promise<{
         }
 
         if (stopBecausePermission || stopBecauseInvalidToolArgs) {
+          break
+        }
+
+        // Post-tool cost check: catch single-tool overspend that the pre-iteration
+        // check at the top of the loop can't see (it only fires before the next iteration).
+        const postToolCost = calculateCost(modelId, totalInputTokens, totalOutputTokens, totalCacheCreationTokens, totalCacheReadTokens)
+        if (postToolCost > rc.maxRunCostUsd) {
+          logger.warn('cost', `Post-tool cost $${postToolCost.toFixed(3)} exceeds cap — stopping after this iteration`, {
+            iteration,
+          })
+          const costMsg = `\n\n⚠ Cost limit reached ($${postToolCost.toFixed(2)} / $${rc.maxRunCostUsd.toFixed(2)} cap). Stopping to prevent overspend.`
+          fullText += costMsg
+          emit({ type: 'token', token: costMsg })
           break
         }
 
@@ -1800,14 +2047,14 @@ export async function runAgent(opts: RunnerOptions): Promise<{
         // Progressive context refresh — keep agent aware of accumulated changes
         if (toolUseBlocks.length > 0) {
           toolBearingIterations++
-          if (toolBearingIterations > 0 && toolBearingIterations % CONTEXT_REFRESH_INTERVAL === 0) {
+          if (toolBearingIterations > 0 && toolBearingIterations % rc.contextRefreshInterval === 0) {
             const refreshMsg = buildContextRefreshMessage()
             messages.push({ role: 'user', content: [{ type: 'text', text: refreshMsg }] })
             logger.log('context', `Progressive context refresh at iteration ${iteration}`, { toolBearingIterations })
 
             // Compact messages to prevent unbounded growth during long builds
             const before = messages.length
-            const compacted = compactInFlightMessages(messages, { maxTokens: 6000, preserveRecent: 8 })
+            const compacted = compactInFlightMessages(messages, { maxTokens: rc.compactionMaxTokens, preserveRecent: rc.compactionPreserveRecent })
             if (compacted.length < before) {
               messages.length = 0
               messages.push(...compacted)
@@ -1838,6 +2085,9 @@ export async function runAgent(opts: RunnerOptions): Promise<{
             parentOpts: opts,
             emit,
             logger,
+            toolBudgetRemaining: rc.maxToolCalls - allToolCalls.length,
+            parentCostUsd: calculateCost(modelId, totalInputTokens, totalOutputTokens, totalCacheCreationTokens, totalCacheReadTokens),
+            maxRunCostUsd: rc.maxRunCostUsd,
           })
 
           // Aggregate sub-agent usage into parent totals
@@ -1956,6 +2206,10 @@ export async function runAgent(opts: RunnerOptions): Promise<{
       updatedStoryboard: world.storyboard ?? null,
       updatedZdogLibrary: world.zdogLibrary,
       updatedZdogStudioLibrary: (world as any).zdogStudioLibrary,
+      recordingCommand: (world as any).recordingCommand,
+      recordingCommandNonce: (world as any).recordingCommandNonce,
+      recordingConfig: (world as any).recordingConfig,
+      recordingAttachSceneId: (world as any).recordingAttachSceneId,
       logger,
       usage,
     }
@@ -2001,6 +2255,38 @@ export async function runAgent(opts: RunnerOptions): Promise<{
         )
       } catch (logErr) {
         console.error('[Agent] Failed to log partial usage:', logErr)
+      }
+    }
+
+    // Save checkpoint on error too — not just disconnect — so progress isn't lost.
+    // Note: world/runProgress are try-block scoped, so checkpoint on error is best-effort
+    // via opts.scenes (which are mutated in-place during execution).
+    if (opts.projectId && opts.initialStoryboard && opts.scenes.length > 0) {
+      try {
+        const storyboard = opts.initialStoryboard
+        await persistRunCheckpoint(opts.projectId, {
+          runId: logger.runId,
+          agentType,
+          modelId,
+          storyboard,
+          completedSceneIds: opts.scenes.map((s) => s.id),
+          remainingSceneIndexes: storyboard.scenes
+            .map((_, i) => i)
+            .filter((i) => !opts.scenes.some((s) => s.name.toLowerCase() === storyboard.scenes[i].name.toLowerCase())),
+          progress: { scenesCreated: opts.scenes.map((s) => s.id), toolCallsTotal: allToolCalls.length, iterationsUsed: 0, phase: 'unknown', storyboardScenesPlanned: storyboard.scenes.length, errors: [], scenesWithNarration: [] },
+          worldSnapshot: {
+            scenes: JSON.parse(JSON.stringify(opts.scenes)),
+            globalStyle: JSON.parse(JSON.stringify(opts.globalStyle)),
+            sceneGraph: JSON.parse(JSON.stringify(opts.sceneGraph ?? { nodes: [], edges: [] })),
+          },
+          originalMessage: messageContentToText(message),
+          partialUsage: usage,
+          createdAt: new Date().toISOString(),
+          reason: 'error',
+        })
+        logger.log('checkpoint', `Error checkpoint saved: ${opts.scenes.length} scenes preserved`)
+      } catch (cpErr) {
+        logger.error('checkpoint', `Error checkpoint save failed: ${(cpErr as Error).message}`)
       }
     }
 

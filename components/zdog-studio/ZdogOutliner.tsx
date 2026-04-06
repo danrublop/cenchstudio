@@ -117,7 +117,7 @@ export default function ZdogOutliner({ projectId }: ZdogOutlinerProps) {
       <div>
         <div
           onClick={() => select(shape.id)}
-          className={`flex items-center gap-1 py-[3px] px-1.5 cursor-pointer transition-colors group text-[10px] ${
+          className={`flex items-center gap-1 py-[3px] px-1.5 cursor-pointer transition-colors group text-[11px] ${
             isSelected ? 'bg-blue-600/80 text-white' : 'hover:bg-[var(--color-bg-hover)]'
           }`}
           style={{ paddingLeft: `${6 + depth * 12}px` }}
@@ -160,7 +160,7 @@ export default function ZdogOutliner({ projectId }: ZdogOutlinerProps) {
       <div className="flex border-b border-[var(--color-border)] flex-shrink-0">
         <span
           onClick={() => setActiveTab('outliner')}
-          className={`flex-1 text-center py-1.5 text-[10px] font-medium cursor-pointer ${
+          className={`flex-1 text-center py-1.5 text-[11px] font-medium cursor-pointer ${
             activeTab === 'outliner'
               ? 'text-[var(--color-text)] border-b-2 border-blue-500'
               : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)]'
@@ -170,7 +170,7 @@ export default function ZdogOutliner({ projectId }: ZdogOutlinerProps) {
         </span>
         <span
           onClick={() => setActiveTab('library')}
-          className={`flex-1 text-center py-1.5 text-[10px] font-medium cursor-pointer ${
+          className={`flex-1 text-center py-1.5 text-[11px] font-medium cursor-pointer ${
             activeTab === 'library'
               ? 'text-[var(--color-text)] border-b-2 border-teal-500'
               : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)]'
@@ -187,7 +187,7 @@ export default function ZdogOutliner({ projectId }: ZdogOutlinerProps) {
               <TreeItem key={s.id} shape={s} />
             ))}
             {scene.shapes.length === 0 && (
-              <div className="p-3 text-center text-[9px] text-[var(--color-text-muted)]">
+              <div className="p-3 text-center text-[10px] text-[var(--color-text-muted)]">
                 No shapes. Add from toolbar.
               </div>
             )}
@@ -199,11 +199,11 @@ export default function ZdogOutliner({ projectId }: ZdogOutlinerProps) {
               value={assetName}
               onChange={(e) => setAssetName(e.target.value)}
               placeholder="Save as..."
-              className="flex-1 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded px-1.5 py-0.5 text-[10px] focus:border-teal-500 outline-none"
+              className="flex-1 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded px-1.5 py-0.5 text-[11px] focus:border-teal-500 outline-none"
             />
             <span
               onClick={saveToLibrary}
-              className={`flex items-center gap-0.5 px-2 py-0.5 rounded text-[10px] font-medium cursor-pointer ${
+              className={`flex items-center gap-0.5 px-2 py-0.5 rounded text-[11px] font-medium cursor-pointer ${
                 assetName.trim() && !saving
                   ? 'bg-teal-600 hover:bg-teal-500 text-white'
                   : 'bg-[var(--color-bg-hover)] text-[var(--color-text-muted)] cursor-not-allowed'
@@ -224,7 +224,7 @@ export default function ZdogOutliner({ projectId }: ZdogOutlinerProps) {
               loadShapes(DEFAULT_PERSON_SHAPES)
               setActiveTab('outliner')
             }}
-            className="block text-[10px] px-2 py-1 rounded hover:bg-[var(--color-bg-hover)] cursor-pointer"
+            className="block text-[11px] px-2 py-1 rounded hover:bg-[var(--color-bg-hover)] cursor-pointer"
           >
             Person Rig
           </span>
@@ -233,7 +233,7 @@ export default function ZdogOutliner({ projectId }: ZdogOutlinerProps) {
               loadShapes([])
               setActiveTab('outliner')
             }}
-            className="block text-[10px] px-2 py-1 rounded hover:bg-[var(--color-bg-hover)] cursor-pointer"
+            className="block text-[11px] px-2 py-1 rounded hover:bg-[var(--color-bg-hover)] cursor-pointer"
           >
             Empty Scene
           </span>
@@ -253,7 +253,7 @@ export default function ZdogOutliner({ projectId }: ZdogOutlinerProps) {
                       loadShapes(asset.shapes || [])
                       setActiveTab('outliner')
                     }}
-                    className="text-[10px] cursor-pointer hover:text-teal-400 truncate flex-1"
+                    className="text-[11px] cursor-pointer hover:text-teal-400 truncate flex-1"
                   >
                     {asset.name}
                   </span>

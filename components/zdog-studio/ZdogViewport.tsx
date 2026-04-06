@@ -312,7 +312,7 @@ export default function ZdogViewport() {
         {/* Spin */}
         <span
           onClick={() => setSpinning(!isSpinning)}
-          className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium cursor-pointer ${isSpinning ? 'bg-blue-600 text-white' : 'bg-[var(--color-bg-hover)] text-[var(--color-text-muted)]'}`}
+          className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium cursor-pointer ${isSpinning ? 'bg-blue-600 text-white' : 'bg-[var(--color-bg-hover)] text-[var(--color-text-muted)]'}`}
         >
           {isSpinning ? <Pause size={10} /> : <Play size={10} />}
           {isSpinning ? 'Spin' : 'Stop'}
@@ -344,7 +344,7 @@ export default function ZdogViewport() {
                 setView(v.r)
                 setSpinning(false)
               }}
-              className="px-1 py-0.5 hover:bg-[var(--color-bg-hover)] rounded text-[9px] font-bold cursor-pointer"
+              className="px-1 py-0.5 hover:bg-[var(--color-bg-hover)] rounded text-[10px] font-bold cursor-pointer"
               title={v.l}
             >
               {v.l}
@@ -368,7 +368,7 @@ export default function ZdogViewport() {
                   illoRef.current.updateRenderGraph()
                 }
               }}
-              className="px-1 py-0.5 hover:bg-[var(--color-bg-hover)] rounded text-[9px] font-bold cursor-pointer"
+              className="px-1 py-0.5 hover:bg-[var(--color-bg-hover)] rounded text-[10px] font-bold cursor-pointer"
             >
               {s.l}°
             </span>
@@ -377,7 +377,7 @@ export default function ZdogViewport() {
 
         {/* Zoom */}
         <div className="flex items-center gap-1 ml-1">
-          <span className="text-[9px] text-[var(--color-text-muted)] font-bold">Z</span>
+          <span className="text-[10px] text-[var(--color-text-muted)] font-bold">Z</span>
           <input
             type="range"
             min="1"
@@ -387,14 +387,14 @@ export default function ZdogViewport() {
             onChange={(e) => pushToHistory({ ...scene, zoom: parseFloat(e.target.value) })}
             className="w-14 h-1 bg-[var(--color-border)] rounded-lg appearance-none cursor-pointer accent-blue-500"
           />
-          <span className="text-[9px] text-[var(--color-text-muted)] font-mono">{scene.zoom}x</span>
+          <span className="text-[10px] text-[var(--color-text-muted)] font-mono">{scene.zoom}x</span>
         </div>
 
         <div className="flex-1" />
 
         <span
           onClick={() => setShowCode(true)}
-          className="flex items-center gap-1 px-2 py-0.5 bg-[var(--color-bg-hover)] hover:bg-[var(--color-border)] rounded text-[10px] font-medium cursor-pointer"
+          className="flex items-center gap-1 px-2 py-0.5 bg-[var(--color-bg-hover)] hover:bg-[var(--color-border)] rounded text-[11px] font-medium cursor-pointer"
         >
           <Download size={11} /> Export
         </span>
@@ -421,19 +421,19 @@ export default function ZdogViewport() {
                 <X size={16} />
               </span>
             </div>
-            <pre className="flex-1 overflow-auto p-4 text-[11px] font-mono text-blue-300 bg-[#111]">
+            <pre className="flex-1 overflow-auto p-4 text-[12px] font-mono text-blue-300 bg-[#111]">
               {generateZdogCode(scene.shapes, scene.zoom)}
             </pre>
             <div className="p-3 border-t border-[var(--color-border)] flex justify-end gap-2">
               <span
                 onClick={() => navigator.clipboard.writeText(generateZdogCode(scene.shapes, scene.zoom))}
-                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded text-[11px] font-bold cursor-pointer"
+                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded text-[12px] font-bold cursor-pointer"
               >
                 Copy
               </span>
               <span
                 onClick={() => setShowCode(false)}
-                className="px-3 py-1.5 bg-[var(--color-bg-hover)] rounded text-[11px] font-bold cursor-pointer"
+                className="px-3 py-1.5 bg-[var(--color-bg-hover)] rounded text-[12px] font-bold cursor-pointer"
               >
                 Close
               </span>

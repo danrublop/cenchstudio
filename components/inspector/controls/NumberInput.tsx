@@ -22,7 +22,7 @@ export function NumberInput({ label, value, min, max, step = 1, suffix, onChange
           role="button"
           tabIndex={0}
           onClick={() => onChange(clamp(value - step))}
-          className="w-5 h-5 flex items-center justify-center rounded text-[10px] text-[#6b6b7a] hover:text-[var(--color-text-primary,#f0ece0)] hover:bg-[#2a2a32] cursor-pointer select-none transition-colors"
+          className="w-5 h-5 flex items-center justify-center rounded text-[11px] text-[#6b6b7a] hover:text-[var(--color-text-primary,#f0ece0)] hover:bg-[#2a2a32] cursor-pointer select-none transition-colors"
         >
           -
         </span>
@@ -36,17 +36,17 @@ export function NumberInput({ label, value, min, max, step = 1, suffix, onChange
             const v = parseFloat(e.target.value)
             if (!isNaN(v)) onChange(clamp(v))
           }}
-          className="w-[56px] bg-[var(--color-input-bg,#1a1a1f)] border border-[var(--color-border,#2a2a32)] rounded text-[var(--color-text-primary,#f0ece0)] text-[10px] font-mono px-1.5 py-0.5 text-center [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+          className="w-[56px] bg-[var(--color-input-bg,#1a1a1f)] border border-[var(--color-border,#2a2a32)] rounded text-[var(--color-text-primary,#f0ece0)] text-[11px] font-mono px-1.5 py-0.5 text-center [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
         />
         <span
           role="button"
           tabIndex={0}
           onClick={() => onChange(clamp(value + step))}
-          className="w-5 h-5 flex items-center justify-center rounded text-[10px] text-[#6b6b7a] hover:text-[var(--color-text-primary,#f0ece0)] hover:bg-[#2a2a32] cursor-pointer select-none transition-colors"
+          className="w-5 h-5 flex items-center justify-center rounded text-[11px] text-[#6b6b7a] hover:text-[var(--color-text-primary,#f0ece0)] hover:bg-[#2a2a32] cursor-pointer select-none transition-colors"
         >
           +
         </span>
-        {suffix && <span className="text-[9px] text-[#4a4a52] ml-0.5">{suffix}</span>}
+        {suffix && <span className="text-[10px] text-[#4a4a52] ml-0.5">{suffix}</span>}
       </div>
     </ControlRow>
   )

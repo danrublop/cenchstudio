@@ -109,7 +109,7 @@ export default function ScrubBar({
         {/* Jump to previous scene */}
         <button
           onClick={() => onJumpScene(-1)}
-          className="kbd w-6 h-6 p-0 flex items-center justify-center text-[10px]"
+          className="kbd w-6 h-6 p-0 flex items-center justify-center text-[11px]"
           title="Previous scene boundary"
         >
           |◀
@@ -118,7 +118,7 @@ export default function ScrubBar({
         {/* Step back 1 frame */}
         <button
           onClick={() => onStepFrame(-1)}
-          className="kbd w-6 h-6 p-0 flex items-center justify-center text-[10px]"
+          className="kbd w-6 h-6 p-0 flex items-center justify-center text-[11px]"
           title="Step back 1 frame (←)"
         >
           ◀
@@ -127,7 +127,7 @@ export default function ScrubBar({
         {/* Play/Pause */}
         <button
           onClick={onPlayPause}
-          className="kbd w-7 h-7 p-0 flex items-center justify-center text-[11px]"
+          className="kbd w-7 h-7 p-0 flex items-center justify-center text-[12px]"
           title="Play/Pause (Space)"
         >
           {isPlaying ? '⏸' : '▶'}
@@ -136,7 +136,7 @@ export default function ScrubBar({
         {/* Step forward 1 frame */}
         <button
           onClick={() => onStepFrame(1)}
-          className="kbd w-6 h-6 p-0 flex items-center justify-center text-[10px]"
+          className="kbd w-6 h-6 p-0 flex items-center justify-center text-[11px]"
           title="Step forward 1 frame (→)"
         >
           ▶
@@ -145,7 +145,7 @@ export default function ScrubBar({
         {/* Jump to next scene */}
         <button
           onClick={() => onJumpScene(1)}
-          className="kbd w-6 h-6 p-0 flex items-center justify-center text-[10px]"
+          className="kbd w-6 h-6 p-0 flex items-center justify-center text-[11px]"
           title="Next scene boundary"
         >
           ▶|
@@ -153,11 +153,11 @@ export default function ScrubBar({
 
         {/* Timecodes */}
         <div className="flex-1 flex items-center justify-between px-2">
-          <span className="text-[10px] font-mono text-[#6b6b7a]">{formatTimecode(currentTime)}</span>
+          <span className="text-[11px] font-mono text-[#6b6b7a]">{formatTimecode(currentTime)}</span>
           {hoverTime !== null && (
-            <span className="text-[10px] font-mono text-[#e84545]">▼ {formatTimecode(hoverTime)}</span>
+            <span className="text-[11px] font-mono text-[#e84545]">▼ {formatTimecode(hoverTime)}</span>
           )}
-          <span className="text-[10px] font-mono text-[#6b6b7a]">{formatTimecode(totalDuration)}</span>
+          <span className="text-[11px] font-mono text-[#6b6b7a]">{formatTimecode(totalDuration)}</span>
         </div>
       </div>
 

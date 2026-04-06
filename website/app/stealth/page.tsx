@@ -112,7 +112,7 @@ function StackingSections({ accent }: { accent: string }) {
           className="relative bg-white"
           style={{ zIndex: i + 1, minHeight: `calc(100vh - ${i * TITLE_ROW_H}px)` }}
         >
-          <div className="mx-auto max-w-[1400px] px-16 sm:px-24 lg:px-36">
+          <div className="mx-auto max-w-[1400px] px-3 sm:px-5 lg:px-8">
             <div className="border-x border-neutral-200">
               <div className="-mx-px h-px bg-neutral-200" />
               {/* Title row — fixed height so stacking math works */}
@@ -150,7 +150,7 @@ export default function StealthPage() {
     <div className="min-h-screen bg-white text-[#1a1a1a]">
       {/* Nav */}
       <header className="sticky top-0 z-50 border-b border-neutral-200 bg-white">
-        <div className="mx-auto flex max-w-[1400px] items-center px-8 py-3">
+        <div className="mx-auto flex max-w-[1400px] items-center px-3 py-3 sm:px-5">
           {/* Left — logo */}
           <a href="/stealth" className="flex shrink-0 items-center gap-2.5 text-[#1a1a1a]">
             <Image src="/blacklogo.png" alt="Cench" width={26} height={26} />
@@ -191,7 +191,7 @@ export default function StealthPage() {
 
       <main>
         {/* Hero — bordered column layout with vertical divider lines */}
-        <section className="mx-auto max-w-[1400px] px-16 sm:px-24 lg:px-36">
+        <section className="mx-auto max-w-[1400px] px-3 sm:px-5 lg:px-8">
           <div className="border-x border-neutral-200">
             {/* Pixel art area */}
             <div className="relative overflow-hidden bg-[#f7f7f7] px-3 pt-10 pb-6">
@@ -265,7 +265,7 @@ export default function StealthPage() {
         <StackingSections accent={accent} />
 
         {/* Renderers */}
-        <section className="mx-auto max-w-[1400px] px-16 sm:px-24 lg:px-36">
+        <section className="mx-auto max-w-[1400px] px-3 sm:px-5 lg:px-8">
           <div className="border-x border-neutral-200">
             <div className="-mx-px h-px bg-neutral-200" />
             <div className="px-3 py-20 sm:py-28">
@@ -302,7 +302,7 @@ export default function StealthPage() {
         </section>
 
         {/* Agents */}
-        <section id="agents" className="mx-auto max-w-[1400px] px-16 sm:px-24 lg:px-36">
+        <section id="agents" className="mx-auto max-w-[1400px] px-3 sm:px-5 lg:px-8">
           <div className="border-x border-neutral-200">
             <div className="-mx-px h-px bg-neutral-200" />
             <div className="px-3 py-20 sm:py-28">
@@ -330,7 +330,7 @@ export default function StealthPage() {
         </section>
 
         {/* CTA */}
-        <section className="mx-auto max-w-[1400px] px-16 sm:px-24 lg:px-36">
+        <section className="mx-auto max-w-[1400px] px-3 sm:px-5 lg:px-8">
           <div className="border-x border-neutral-200">
             <div className="-mx-px h-px bg-neutral-200" />
             <div className="px-3 py-20 sm:py-28">
@@ -366,7 +366,7 @@ export default function StealthPage() {
       </main>
 
       {/* Footer */}
-      <footer className="mx-auto max-w-[1400px] px-16 sm:px-24 lg:px-36">
+      <footer className="mx-auto max-w-[1400px] px-3 sm:px-5 lg:px-8">
         <div className="border-x border-neutral-200">
           <div className="-mx-px h-px bg-neutral-200" />
           <div className="px-3 py-10">

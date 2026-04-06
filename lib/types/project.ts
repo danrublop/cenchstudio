@@ -20,12 +20,14 @@ export interface GlobalStyle {
   strokeWidth?: number
   font?: string
   duration?: number
-  theme?: 'dark' | 'light'
+  theme?: 'dark' | 'light' | 'blue'
 
   /** App chrome typography (panels, settings). Not used for generated scene text. */
   uiTypography?: 'system' | 'app' | 'custom'
   /** When `uiTypography` is `custom`, font family from the studio catalog. */
   uiFontFamily?: string | null
+  /** UI text size scale: 0 = compact, 1 = default, 2 = large, 3 = extra-large */
+  uiTextSize?: number
 }
 
 export type ExportResolution = '720p' | '1080p' | '4k'

@@ -30,12 +30,12 @@ export function AudioSettingsTab() {
                     {p.name}
                   </span>
                   {p.type === 'client' && (
-                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded border text-blue-400 bg-blue-400/10 border-blue-400/30 uppercase tracking-tighter">
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded border text-blue-400 bg-blue-400/10 border-blue-400/30 uppercase tracking-tighter">
                       browser
                     </span>
                   )}
                   {p.type === 'local' && (
-                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded border text-green-400 bg-green-400/10 border-green-400/30 uppercase tracking-tighter">
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded border text-green-400 bg-green-400/10 border-green-400/30 uppercase tracking-tighter">
                       local
                     </span>
                   )}
@@ -113,9 +113,9 @@ export function AudioSettingsTab() {
       {/* API Keys */}
       <div>
         <SectionLabel>API Keys</SectionLabel>
-        <p className="text-[10px] text-[#6b6b7a] px-1 mb-2 -mt-1">
+        <p className="text-[11px] text-[#6b6b7a] px-1 mb-2 -mt-1">
           Set in{' '}
-          <code className="text-[9px] px-1 py-0.5 rounded bg-white/5 border border-[var(--color-border)]">.env</code>
+          <code className="text-[10px] px-1 py-0.5 rounded bg-white/5 border border-[var(--color-border)]">.env</code>
         </p>
         <div className="grid grid-cols-1 gap-1">
           {AUDIO_API_KEYS.map((k) => (
@@ -162,14 +162,14 @@ export function AudioSettingsTab() {
           }
         />
         {edgeStatus === 'fail' && (
-          <p className="text-[10px] text-red-400 px-1 mt-1">
+          <p className="text-[11px] text-red-400 px-1 mt-1">
             Edge TTS server not reachable. Run:{' '}
-            <code className="text-[9px] px-1 py-0.5 rounded bg-white/5 border border-[var(--color-border)]">
+            <code className="text-[10px] px-1 py-0.5 rounded bg-white/5 border border-[var(--color-border)]">
               docker run -p 5050:5050 travisvn/openai-edge-tts
             </code>
           </p>
         )}
-        {edgeStatus === 'ok' && <p className="text-[10px] text-green-400 px-1 mt-1">Edge TTS server connected.</p>}
+        {edgeStatus === 'ok' && <p className="text-[11px] text-green-400 px-1 mt-1">Edge TTS server connected.</p>}
       </div>
 
       {/* Settings */}
@@ -185,7 +185,7 @@ export function AudioSettingsTab() {
               onChange={(e) => updateAudioSettings({ globalMusicDucking: e.target.checked })}
             />
             <label className="tgl-btn" htmlFor="settings-music-ducking" />
-            <span className="text-[11px]" style={{ color: 'var(--color-text-primary)' }}>
+            <span className="text-[12px]" style={{ color: 'var(--color-text-primary)' }}>
               Duck music during narration
             </span>
           </div>
@@ -201,7 +201,7 @@ export function AudioSettingsTab() {
                 onChange={(e) => updateAudioSettings({ globalMusicDuckLevel: parseFloat(e.target.value) })}
                 className="flex-1 accent-[var(--color-accent)]"
               />
-              <span className="text-[10px] w-8" style={{ color: 'var(--color-text-muted)' }}>
+              <span className="text-[11px] w-8" style={{ color: 'var(--color-text-muted)' }}>
                 {Math.round(audioSettings.globalMusicDuckLevel * 100)}%
               </span>
             </div>

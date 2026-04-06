@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { GeistSans } from 'geist/font/sans'
 import { DM_Mono, Caveat } from 'next/font/google'
+import { Providers } from '@/components/Providers'
 import './globals.css'
 import '@/lib/fonts/imports'
 
@@ -23,8 +24,11 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${GeistSans.variable} ${dmMono.variable} ${caveat.variable}`}>
+      <head>
+        <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&display=swap" rel="stylesheet" />
+      </head>
       <body className="font-sans antialiased overflow-hidden" suppressHydrationWarning>
-        {children}
+        <Providers>{children}</Providers>
       </body>
     </html>
   )

@@ -35,6 +35,7 @@ import { createElementToolHandler, ELEMENT_TOOL_NAMES } from './tool-handlers/el
 import { createAILayerToolHandler, AI_LAYER_TOOL_NAMES } from './tool-handlers/ai-layer-tools'
 import { createParentingToolHandler, PARENTING_TOOL_NAMES } from './tool-handlers/parenting-tools'
 import { createAssetMediaToolHandler, ASSET_MEDIA_TOOL_NAMES } from './tool-handlers/asset-media-tools'
+import { createRecordingToolHandler, RECORDING_TOOL_NAMES } from './tool-handlers/recording-tools'
 import { createTemplateToolHandler, TEMPLATE_TOOL_NAMES } from './tool-handlers/template-tools'
 import { createPlanningExportToolHandler, PLANNING_EXPORT_TOOL_NAMES } from './tool-handlers/planning-export-tools'
 import { createThreeWorldToolHandler, THREE_WORLD_TOOL_NAMES } from './tool-handlers/three-world-tools'
@@ -52,7 +53,7 @@ export function createSnapshot(scenes: Scene[], globalStyle: GlobalStyle, descri
     description,
     // Deep clone
     scenes: JSON.parse(JSON.stringify(scenes)),
-    globalStyle: { ...globalStyle },
+    globalStyle: JSON.parse(JSON.stringify(globalStyle)),
   }
   snapshots.push(snapshot)
   if (snapshots.length > MAX_SNAPSHOTS) {
@@ -67,6 +68,48 @@ export function getSnapshots(): StateSnapshot[] {
 
 export function getLastSnapshot(): StateSnapshot | null {
   return snapshots.length > 0 ? snapshots[snapshots.length - 1] : null
+}
+
+/** Restore world state from a snapshot. Used for rollback when a tool throws.
+ *  Replaces scenes and globalStyle entirely (not shallow merge) to ensure
+ *  nested objects like palette arrays are fully reverted. */
+export function restoreSnapshot(world: WorldStateMutable, snapshot: StateSnapshot): void {
+  world.scenes = JSON.parse(JSON.stringify(snapshot.scenes))
+  // Clear all existing keys then apply snapshot to avoid stale nested refs
+  for (const key of Object.keys(world.globalStyle)) {
+    delete (world.globalStyle as unknown as Record<string, unknown>)[key]
+  }
+  Object.assign(world.globalStyle, JSON.parse(JSON.stringify(snapshot.globalStyle)))
+}
+
+// ── Tool timeouts ────────────────────────────────────────────────────────────
+const TOOL_TIMEOUT_MS = 60_000 // 60s default per tool
+const GENERATION_TOOL_TIMEOUT_MS = 120_000 // 120s for LLM-backed generation tools
+
+// ── Generation tools that benefit from auto-validation ───────────────────────
+const GENERATION_TOOL_SET = new Set([
+  'add_layer', 'regenerate_layer', 'edit_layer', 'generate_chart', 'generate_physics_scene',
+  'create_world_scene',
+])
+
+/** Quick validation checks run automatically after generation tools succeed.
+ *  Returns a list of warning strings (empty = no issues detected). */
+function quickValidateScene(scene: Scene): string[] {
+  const warnings: string[] = []
+  const hasContent = !!(scene.svgContent || scene.canvasCode || scene.sceneCode || scene.lottieSource)
+  const layerCount = (scene.svgObjects?.length ?? 0) + (scene.aiLayers?.length ?? 0)
+  if (!hasContent && layerCount === 0) {
+    warnings.push('EMPTY: Scene has no visual content after generation.')
+  }
+  if (scene.duration < 3) {
+    warnings.push(`SHORT: Duration is ${scene.duration}s — minimum recommended is 6s.`)
+  }
+  // Check for suspiciously short generated code (likely failed generation)
+  const codeLength = (scene.sceneCode?.length ?? 0) + (scene.canvasCode?.length ?? 0) + (scene.svgContent?.length ?? 0)
+  if (hasContent && codeLength < 100) {
+    warnings.push(`MINIMAL: Generated code is only ${codeLength} chars — may be incomplete.`)
+  }
+  return warnings
 }
 
 // ── World State Container ─────────────────────────────────────────────────────
@@ -89,12 +132,25 @@ export interface WorldStateMutable {
   modelId?: string
   /** Model tier — forwarded to generateCode so it respects the user's tier choice */
   modelTier?: 'auto' | 'premium' | 'budget'
+  /** When true, prefer free/local providers for TTS and generation */
+  localMode?: boolean
+  /** Model configs for resolving local model endpoints */
+  modelConfigs?: import('./model-config').ModelConfig[]
   /** Storyboard set by plan_scenes — provides narrative context for downstream generation */
   storyboard?: import('./types').Storyboard
   zdogLibrary?: ZdogPersonAsset[]
   zdogStudioLibrary?: import('@/lib/types/zdog-studio').ZdogStudioAsset[]
   /** NLE timeline with clips on tracks */
   timeline?: import('../types').Timeline | null
+  // Recording state (agent-controlled)
+  recordingState?: import('@/types/electron').RecordingStoreState
+  recordingConfig?: import('@/types/electron').RecordingConfig
+  recordingCommand?: import('@/types/electron').RecordingCommand
+  recordingCommandNonce?: number
+  recordingResult?: import('@/types/electron').RecordingSessionManifest | null
+  recordingError?: string | null
+  recordingElapsed?: number
+  recordingAttachSceneId?: string | null
 }
 
 // ── Tool Hook Pipeline ───────────────────────────────────────────────────────
@@ -486,6 +542,12 @@ function ensureAllHandlersRegistered(): void {
     assetMediaHandler(toolName, args, world as WorldStateMutable, logger),
   )
 
+  // ── Recording tools ──
+  const recordingHandler = createRecordingToolHandler()
+  toolRegistry.registerMany([...RECORDING_TOOL_NAMES], (toolName, args, world, logger) =>
+    recordingHandler(toolName, args, world as WorldStateMutable, logger),
+  )
+
   // ── Template tools ──
   const templateHandler = createTemplateToolHandler()
   toolRegistry.registerMany([...TEMPLATE_TOOL_NAMES], (toolName, args, world) =>
@@ -576,6 +638,26 @@ function ensureAllHandlersRegistered(): void {
       layers.push(`Camera: ${scene.cameraMotion.map((m: any) => m.type).join(' → ')}`)
     }
 
+    // Code-level checks for common issues
+    const codeIssues: string[] = []
+    const code = scene.sceneCode || scene.canvasCode || scene.svgContent || ''
+    if (code.length > 0) {
+      if (code.includes('Math.random()') && !code.includes('mulberry32') && scene.sceneType === 'canvas2d') {
+        codeIssues.push('Uses Math.random() instead of seeded PRNG — will produce different results each render')
+      }
+      if (code.includes('setInterval') || code.includes('requestAnimationFrame')) {
+        if (!code.includes('clearInterval') && !code.includes('cancelAnimationFrame')) {
+          codeIssues.push('Has setInterval/rAF without cleanup — may leak when scene ends')
+        }
+      }
+      if (scene.sceneType === 'svg' && code.includes('<svg') && !code.includes('viewBox')) {
+        codeIssues.push('SVG missing viewBox attribute — may not scale correctly')
+      }
+      if (scene.sceneType === 'd3' && code.includes('d3.event')) {
+        codeIssues.push('Uses d3.event (removed in D3 v7) — use event parameter in callbacks instead')
+      }
+    }
+
     const description = [
       `Scene "${scene.name}" (${scene.id.slice(0, 8)}…)`,
       `Type: ${scene.sceneType ?? 'svg'} | Duration: ${scene.duration}s | BG: ${scene.bgColor}`,
@@ -584,6 +666,9 @@ function ensureAllHandlersRegistered(): void {
       '',
       `Layers (${layers.length}):`,
       ...layers.map((l) => `  • ${l}`),
+      ...(codeIssues.length > 0
+        ? ['', `Code issues (${codeIssues.length}):`, ...codeIssues.map((i) => `  ⚠ ${i}`)]
+        : []),
     ].join('\n')
 
     return {
@@ -594,6 +679,7 @@ function ensureAllHandlersRegistered(): void {
         sceneId,
         time: t,
         description,
+        codeIssueCount: codeIssues.length,
       },
     }
   })
@@ -1186,11 +1272,48 @@ export async function executeTool(
   const finalArgs = preResult.modifiedArgs ?? args
 
   // Snapshot before every execution for undo/recovery
-  createSnapshot(world.scenes, world.globalStyle, `before:${toolName}`)
+  const preSnapshot = createSnapshot(world.scenes, world.globalStyle, `before:${toolName}`)
 
+  const timeoutMs = GENERATION_TOOL_SET.has(toolName) ? GENERATION_TOOL_TIMEOUT_MS : TOOL_TIMEOUT_MS
   const startMs = Date.now()
-  const result = await toolRegistry.execute(toolName, finalArgs, world, logger)
+  let result: ToolResult
+  try {
+    let timer: ReturnType<typeof setTimeout>
+    result = await Promise.race([
+      toolRegistry.execute(toolName, finalArgs, world, logger),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`Tool ${toolName} timed out after ${timeoutMs}ms`)), timeoutMs)
+      }),
+    ]).finally(() => clearTimeout(timer!))
+  } catch (thrown) {
+    // Rollback world state to the pre-execution snapshot so partial
+    // mutations from a failed/timed-out tool don't persist.
+    restoreSnapshot(world, preSnapshot)
+    const message = thrown instanceof Error ? thrown.message : String(thrown)
+    logger?.error('tool_exec', `Tool ${toolName} threw: ${message}`)
+    result = { success: false, error: `Tool ${toolName} failed: ${message}` }
+  }
   const durationMs = Date.now() - startMs
+
+  // Auto-validate after generation tools — append quick checks to the result
+  // so the agent gets immediate feedback without needing a separate verify_scene call.
+  if (result.success && result.affectedSceneId && GENERATION_TOOL_SET.has(toolName)) {
+    const scene = world.scenes.find((s) => s.id === result.affectedSceneId)
+    if (scene) {
+      const warnings = quickValidateScene(scene)
+      if (warnings.length > 0) {
+        result.data = {
+          ...(typeof result.data === 'object' && result.data !== null ? result.data : {}),
+          _autoValidation: {
+            status: 'warnings',
+            issues: warnings,
+            hint: 'Fix these issues with patch_layer_code or regenerate_layer, then call verify_scene.',
+          },
+        }
+        logger?.warn('auto_validate', `${toolName} succeeded but scene has issues`, { sceneId: result.affectedSceneId, warnings })
+      }
+    }
+  }
 
   // Run post-tool hooks (can augment or flag results)
   return runPostToolHooks({ toolName, args: finalArgs, result, world, durationMs }, logger)
@@ -1205,6 +1328,12 @@ async function regenerateHTML(
 ): Promise<{ htmlWritten: boolean }> {
   const scene = findScene(world, sceneId)
   if (!scene) return { htmlWritten: false }
+  // Sanitize sceneId to prevent path traversal — must match the same
+  // pattern enforced in app/api/scene/route.ts POST handler.
+  if (!/^[a-zA-Z0-9-]+$/.test(sceneId)) {
+    logger?.error('html', `Invalid sceneId rejected: ${sceneId}`)
+    return { htmlWritten: false }
+  }
   try {
     const start = Date.now()
     const html = generateSceneHTML(scene, world.globalStyle)
@@ -1239,6 +1368,7 @@ export async function generateLayerContent(
   modelId?: string,
   modelTier?: 'auto' | 'premium' | 'budget',
   logger?: AgentLogger,
+  modelConfigs?: import('./model-config').ModelConfig[],
 ): Promise<GenerationResult> {
   try {
     const resolved = resolveStyle(globalStyle.presetId, globalStyle)
@@ -1253,6 +1383,7 @@ export async function generateLayerContent(
       d3Data: scene.d3Data ?? undefined,
       modelId,
       modelTier,
+      modelConfigs,
     })
     const genMs = Date.now() - genStart
 

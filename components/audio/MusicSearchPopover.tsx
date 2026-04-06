@@ -77,7 +77,7 @@ export function MusicSearchPopover({ onSelect, onClose }: MusicSearchPopoverProp
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
           placeholder="Search music..."
-          className="flex-1 border rounded px-2 py-1 text-[11px]"
+          className="flex-1 border rounded px-2 py-1 text-[12px]"
           style={{
             borderColor: 'var(--color-border)',
             backgroundColor: 'var(--color-input-bg)',
@@ -93,7 +93,7 @@ export function MusicSearchPopover({ onSelect, onClose }: MusicSearchPopoverProp
           {results.map((r) => (
             <div
               key={r.id}
-              className="flex items-center gap-2 px-1 py-1 rounded hover:bg-white/5 text-[11px]"
+              className="flex items-center gap-2 px-1 py-1 rounded hover:bg-white/5 text-[12px]"
               style={{ color: 'var(--color-text-primary)' }}
             >
               <span onClick={() => togglePreview(r)} className="cursor-pointer hover:text-[var(--color-accent)]">
@@ -101,7 +101,7 @@ export function MusicSearchPopover({ onSelect, onClose }: MusicSearchPopoverProp
               </span>
               <span className="flex-1 truncate">{r.name}</span>
               {r.duration && (
-                <span className="text-[9px]" style={{ color: 'var(--color-text-muted)' }}>
+                <span className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>
                   {r.duration.toFixed(0)}s
                 </span>
               )}

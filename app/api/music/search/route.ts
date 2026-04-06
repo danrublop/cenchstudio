@@ -2,12 +2,22 @@ import { NextRequest, NextResponse } from 'next/server'
 import type { MusicProvider } from '@/lib/types'
 import { getBestMusicProvider, getMusicProvider } from '@/lib/audio/router'
 import { downloadToLocal } from '@/lib/audio/download'
+import { getOptionalUser } from '@/lib/auth-helpers'
+import { validateQueryLength, sanitizeErrorMessage } from '@/lib/audio/sanitize'
 
 export async function POST(req: NextRequest) {
-  const { query, provider: requestedProvider, limit = 10, download = false } = await req.json()
+  await getOptionalUser()
+  const { query, provider: requestedProvider, limit: rawLimit = 10, download = false } = await req.json()
+  const limit = Math.min(Math.max(Number(rawLimit) || 10, 1), 50)
 
   if (!query) {
     return NextResponse.json({ error: 'query is required' }, { status: 400 })
+  }
+
+  try {
+    validateQueryLength(query)
+  } catch {
+    return NextResponse.json({ error: 'Query too long' }, { status: 400 })
   }
 
   const providerId: MusicProvider = requestedProvider ?? getBestMusicProvider()
@@ -33,7 +43,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ results, provider: providerId })
   } catch (err: unknown) {
     console.error('Music search error:', err)
-    const message = err instanceof Error ? err.message : 'Music search failed'
-    return NextResponse.json({ error: message }, { status: 500 })
+    return NextResponse.json({ error: sanitizeErrorMessage(err) }, { status: 500 })
   }
 }

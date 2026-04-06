@@ -18,7 +18,7 @@ export function Section({ title, children, defaultOpen = true }: Props) {
         role="button"
         tabIndex={0}
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-1 px-3 py-2 cursor-pointer select-none text-[10px] uppercase tracking-wider text-[#6b6b7a] hover:text-[var(--color-text-primary,#f0ece0)] transition-colors"
+        className="flex items-center gap-1 px-3 py-2 cursor-pointer select-none text-[11px] uppercase tracking-wider text-[#6b6b7a] hover:text-[var(--color-text-primary,#f0ece0)] transition-colors"
       >
         <ChevronDown size={10} className={`transition-transform ${open ? '' : '-rotate-90'}`} />
         {title}

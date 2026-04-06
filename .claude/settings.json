@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "cench-studio": {
+      "command": "npx",
+      "args": ["tsx", "scripts/mcp-server.ts"],
+      "cwd": "/Users/daniellopez/SVG.vide.new"
+    }
+  }
+}

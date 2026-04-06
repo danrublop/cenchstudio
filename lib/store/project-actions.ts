@@ -123,6 +123,11 @@ export function createProjectActions(set: Set, get: Get) {
         chatMessages: [],
         conversations: [],
         activeConversationId: null,
+        _persistedMessageIds: new Set<string>(),
+        pendingStoryboard: null,
+        storyboardProposed: null,
+        pausedAgentRun: null,
+        runCheckpoint: null,
         publishedUrl: null,
         _dbLoadComplete: true,
       })
@@ -247,6 +252,19 @@ export function createProjectActions(set: Set, get: Get) {
     },
 
     loadProject: async (projectId: string) => {
+      // Immediately clear per-project state so nothing from the old project
+      // is visible while the new project loads from DB.
+      set({
+        pendingStoryboard: null,
+        storyboardProposed: null,
+        pausedAgentRun: null,
+        runCheckpoint: null,
+        conversations: [],
+        chatMessages: [],
+        activeConversationId: null,
+        _persistedMessageIds: new Set<string>(),
+      })
+
       // Save current project before switching — auto-save may not have fired yet.
       // Only save if scenes actually have content (avoids overwriting DB with empty
       // localStorage-hydrated scenes on initial page load).
@@ -304,6 +322,11 @@ export function createProjectActions(set: Set, get: Get) {
           project: loadedProject,
           scenes: (data.scenes || []).map(normalizeScene),
           selectedSceneId: data.scenes?.[0]?.id || null,
+          // Clear conversation state immediately so old project's messages don't bleed through
+          conversations: [],
+          chatMessages: [],
+          activeConversationId: null,
+          _persistedMessageIds: new Set<string>(),
           globalStyle: {
             ...loadedStyle,
             theme: currentTheme ?? loadedStyle.theme,
@@ -334,6 +357,26 @@ export function createProjectActions(set: Set, get: Get) {
 
         // Mark DB load complete — auto-save is now safe
         set({ _dbLoadComplete: true })
+
+        // Guard against persist middleware clobbering rich scenes with stripped
+        // localStorage data. If after a short delay the store's scenes lost their
+        // code fields, re-fetch from the server.
+        const richSceneIds = loadedScenes
+          .filter((s: any) => sceneHasRenderableContent(s))
+          .map((s: any) => s.id)
+        if (richSceneIds.length > 0) {
+          setTimeout(() => {
+            const current = get().scenes
+            const clobbered = richSceneIds.some((id: string) => {
+              const s = current.find((cs) => cs.id === id)
+              return s && !sceneHasRenderableContent(s)
+            })
+            if (clobbered) {
+              console.warn('[loadProject] Persist merge clobbered scene code — refreshing from server')
+              get().refreshProjectFromServer()
+            }
+          }, 500)
+        }
       } catch (e) {
         console.error('Failed to load project:', e)
       }
@@ -403,34 +446,56 @@ export function createProjectActions(set: Set, get: Get) {
           }
         }
 
-        // PATCH the project
-        const res = await fetch(`/api/projects/${project.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: project.name,
-            outputMode: project.outputMode,
-            globalStyle,
-            mp4Settings: project.mp4Settings,
-            interactiveSettings: project.interactiveSettings,
-            apiPermissions: project.apiPermissions,
-            audioSettings: project.audioSettings,
-            audioProviderEnabled,
-            mediaGenEnabled,
-            watermark: project.watermark,
-            scenes,
-            sceneGraph: project.sceneGraph,
-            timeline: project.timeline ?? null,
-          }),
+        // PATCH the project with retry on 409 conflict
+        const patchBody = JSON.stringify({
+          name: project.name,
+          outputMode: project.outputMode,
+          globalStyle,
+          mp4Settings: project.mp4Settings,
+          interactiveSettings: project.interactiveSettings,
+          apiPermissions: project.apiPermissions,
+          audioSettings: project.audioSettings,
+          audioProviderEnabled,
+          mediaGenEnabled,
+          watermark: project.watermark,
+          scenes,
+          sceneGraph: project.sceneGraph,
+          timeline: project.timeline ?? null,
         })
-        if (res.ok) {
+
+        let res: Response | null = null
+        for (let attempt = 0; attempt < 3; attempt++) {
+          res = await fetch(`/api/projects/${project.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: patchBody,
+          })
+          if (res.status === 409 && attempt < 2) {
+            // Version conflict — refresh server timestamp and retry with backoff
+            console.warn(`[saveProjectToDb] 409 conflict on attempt ${attempt + 1}, retrying…`)
+            await new Promise((r) => setTimeout(r, 200 * Math.pow(2, attempt)))
+            // Re-read server version so next attempt has correct updatedAt
+            try {
+              const refresh = await fetch(`/api/projects/${project.id}`, { method: 'GET' })
+              if (refresh.ok) {
+                const freshProject = await refresh.json()
+                if (freshProject.updatedAt) {
+                  set({ project: { ...get().project, updatedAt: freshProject.updatedAt } })
+                }
+              }
+            } catch { /* proceed with retry anyway */ }
+            continue
+          }
+          break
+        }
+        if (res && res.ok) {
           // Sync local updatedAt so subsequent auto-saves aren't blocked
           // by the conflict check (DB timestamp would be newer otherwise)
           const saved = await res.json()
           if (saved.updatedAt) {
             set({ project: { ...get().project, updatedAt: saved.updatedAt } })
           }
-        } else if (res.status === 404) {
+        } else if (res && res.status === 404) {
           // Project doesn't exist in DB yet — create it
           await fetch('/api/projects', {
             method: 'POST',

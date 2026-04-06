@@ -48,7 +48,7 @@ export default function UsageSection() {
 
   if (loading) {
     return (
-      <div className="text-xs text-[var(--color-text-muted)] py-1">
+      <div className="text-sm text-[var(--color-text-muted)] py-1">
         Loading usage data...
       </div>
     )
@@ -56,7 +56,7 @@ export default function UsageSection() {
 
   if (error) {
     return (
-      <div className="text-xs text-red-400 py-1">
+      <div className="text-sm text-red-400 py-1">
         Failed to load usage data.
       </div>
     )
@@ -64,7 +64,7 @@ export default function UsageSection() {
 
   if (!data) {
     return (
-      <div className="text-xs text-[var(--color-text-muted)] py-1">
+      <div className="text-sm text-[var(--color-text-muted)] py-1">
         No usage data yet.
       </div>
     )
@@ -75,7 +75,7 @@ export default function UsageSection() {
 
   if (!hasData) {
     return (
-      <div className="text-xs text-[var(--color-text-muted)] py-1">
+      <div className="text-sm text-[var(--color-text-muted)] py-1">
         No usage data yet.
       </div>
     )
@@ -88,34 +88,34 @@ export default function UsageSection() {
       {/* Totals grid */}
       <div className="grid grid-cols-2 gap-x-4 gap-y-2">
         <div>
-          <div className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mb-0.5">
+          <div className="text-[11px] uppercase tracking-wider text-[var(--color-text-muted)] mb-0.5">
             Total tokens
           </div>
-          <div className="text-xs text-[var(--color-text-primary)] font-medium tabular-nums">
+          <div className="text-sm text-[var(--color-text-primary)] font-medium tabular-nums">
             {formatNumber(totalTokens)}
           </div>
         </div>
         <div>
-          <div className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mb-0.5">
+          <div className="text-[11px] uppercase tracking-wider text-[var(--color-text-muted)] mb-0.5">
             Total cost
           </div>
-          <div className="text-xs text-[var(--color-text-primary)] font-medium tabular-nums">
+          <div className="text-sm text-[var(--color-text-primary)] font-medium tabular-nums">
             {formatCost(data.totalCostUsd)}
           </div>
         </div>
         <div>
-          <div className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mb-0.5">
+          <div className="text-[11px] uppercase tracking-wider text-[var(--color-text-muted)] mb-0.5">
             API calls
           </div>
-          <div className="text-xs text-[var(--color-text-primary)] font-medium tabular-nums">
+          <div className="text-sm text-[var(--color-text-primary)] font-medium tabular-nums">
             {formatNumber(data.totalApiCalls)}
           </div>
         </div>
         <div>
-          <div className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mb-0.5">
+          <div className="text-[11px] uppercase tracking-wider text-[var(--color-text-muted)] mb-0.5">
             Tool calls
           </div>
-          <div className="text-xs text-[var(--color-text-primary)] font-medium tabular-nums">
+          <div className="text-sm text-[var(--color-text-primary)] font-medium tabular-nums">
             {formatNumber(data.totalToolCalls)}
           </div>
         </div>
@@ -124,14 +124,14 @@ export default function UsageSection() {
       {/* Per-agent breakdown */}
       {agentEntries.length > 0 && (
         <div>
-          <div className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mb-1.5">
+          <div className="text-[11px] uppercase tracking-wider text-[var(--color-text-muted)] mb-1.5">
             By agent
           </div>
           <div
             className="rounded border overflow-hidden"
             style={{ borderColor: 'var(--color-border)' }}
           >
-            <table className="w-full text-[11px]">
+            <table className="w-full text-[12px]">
               <thead>
                 <tr style={{ backgroundColor: 'var(--color-panel)' }}>
                   <th className="text-left px-2 py-1 font-normal text-[var(--color-text-muted)]">

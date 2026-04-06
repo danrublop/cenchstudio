@@ -3,6 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import type { PublishedProject, PublishedScene } from '@/lib/types'
 import { normalizeTransition } from '@/lib/transitions'
+import { assertProjectAccess } from '@/lib/auth-helpers'
 
 export async function POST(req: NextRequest) {
   try {
@@ -12,6 +13,9 @@ export async function POST(req: NextRequest) {
     if (!project?.id || !scenes?.length) {
       return NextResponse.json({ error: 'Missing project or scenes' }, { status: 400 })
     }
+
+    const access = await assertProjectAccess(project.id)
+    if (access.error) return access.error
 
     const publishDir = path.join(process.cwd(), 'public', 'published', project.id)
     const scenesDir = path.join(publishDir, 'scenes')
@@ -113,7 +117,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ publishedUrl, version })
   } catch (err: unknown) {
     console.error('Publish error:', err)
-    const message = err instanceof Error ? err.message : 'Internal error'
+    const message = err instanceof Error ? err.message.replace(/[a-zA-Z0-9_\-]{20,}/g, '[REDACTED]').slice(0, 200) : 'Internal error'
     return NextResponse.json({ error: message }, { status: 500 })
   }
 }

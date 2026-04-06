@@ -4,10 +4,19 @@ import { avatarConfigs, avatarVideos, scenes } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
 import { AvatarService } from '@/lib/avatar'
 import { getBestTTSProvider, getTTSProvider } from '@/lib/audio/router'
+import { assertProjectAccess } from '@/lib/auth-helpers'
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ projectId: string }> }) {
   const { projectId } = await params
-  const body = await req.json()
+  const access = await assertProjectAccess(projectId)
+  if (access.error) return access.error
+
+  let body: any
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+  }
   const { text, sceneId, avatarConfigId, audioUrl, sourceImageUrl } = body
 
   if (!text) {

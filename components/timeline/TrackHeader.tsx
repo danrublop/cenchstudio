@@ -110,7 +110,7 @@ export default function TrackHeader({ track, height }: Props) {
           onMouseLeave={() => setShowMenu(false)}
         >
           <div
-            className="px-3 py-1 text-xs cursor-pointer hover:bg-white/10 text-[var(--color-text-primary)]"
+            className="px-3 py-1 text-sm cursor-pointer hover:bg-white/10 text-[var(--color-text-primary)]"
             onClick={() => {
               addTrack(track.type, track.type === 'audio' ? 'A' : 'V')
               setShowMenu(false)
@@ -119,7 +119,7 @@ export default function TrackHeader({ track, height }: Props) {
             Add {track.type} track
           </div>
           <div
-            className="px-3 py-1 text-xs cursor-pointer hover:bg-white/10 text-red-400"
+            className="px-3 py-1 text-sm cursor-pointer hover:bg-white/10 text-red-400"
             onClick={() => {
               removeTrack(track.id)
               setShowMenu(false)

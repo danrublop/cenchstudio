@@ -1,6 +1,7 @@
 import fs from 'fs/promises'
 import path from 'path'
 import type { TTSProviderInterface, TTSParams, TTSResult, Voice } from '../types'
+import { safeAudioFilename } from '../sanitize'
 
 const API_URL = 'https://api.openai.com/v1/audio/speech'
 const DEFAULT_MODEL = 'tts-1'
@@ -67,7 +68,7 @@ export const openaiTTS: TTSProviderInterface = {
     const audioDir = path.join(process.cwd(), 'public', 'audio')
     await fs.mkdir(audioDir, { recursive: true })
 
-    const filename = `tts-${params.sceneId}-${Date.now()}.mp3`
+    const filename = safeAudioFilename('tts', params.sceneId, 'mp3')
     const filePath = path.join(audioDir, filename)
     await fs.writeFile(filePath, audioBuffer)
 

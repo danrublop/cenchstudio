@@ -1789,13 +1789,95 @@ export const ADD_WATERMARK: ClaudeToolDefinition = {
 
 export const MEDIA_LIBRARY_TOOLS: ClaudeToolDefinition[] = [USE_ASSET_IN_SCENE, ADD_WATERMARK]
 
+// ── Recording Tools ──────────────────────────────────────────────────────────
+
+export const START_RECORDING: ClaudeToolDefinition = {
+  name: 'start_recording',
+  description:
+    'Start screen recording via Electron. Optionally specify a source ID (from list_recording_sources), device toggles, and a scene to auto-attach the result to. If sourceId is omitted, the first available screen is selected automatically.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      sourceId: { type: 'string', description: 'Desktop source ID from list_recording_sources. Omit to auto-select first screen.' },
+      sceneId: { type: 'string', description: 'Scene ID to auto-attach the recorded video to when recording stops' },
+      micEnabled: { type: 'boolean', description: 'Enable microphone capture (default true)' },
+      systemAudioEnabled: { type: 'boolean', description: 'Enable system audio capture (default true)' },
+      webcamEnabled: { type: 'boolean', description: 'Enable webcam capture (default false)' },
+      fps: { type: 'number', description: 'Preferred capture frame rate (e.g. 30, 60)' },
+      resolution: {
+        type: 'string',
+        enum: ['720p', '1080p', '1440p', '2160p', 'source'],
+        description: 'Preferred capture resolution',
+      },
+    },
+    required: [],
+  },
+}
+
+export const STOP_RECORDING: ClaudeToolDefinition = {
+  name: 'stop_recording',
+  description:
+    'Stop the current screen recording and save the file. Optionally specify a scene to attach the resulting video to.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      sceneId: { type: 'string', description: 'Scene ID to attach the recorded video to (overrides the one set at start)' },
+    },
+    required: [],
+  },
+}
+
+export const PAUSE_RECORDING: ClaudeToolDefinition = {
+  name: 'pause_recording',
+  description: 'Pause the current screen recording. Can be resumed later.',
+  input_schema: { type: 'object', properties: {}, required: [] },
+}
+
+export const RESUME_RECORDING: ClaudeToolDefinition = {
+  name: 'resume_recording',
+  description: 'Resume a paused screen recording.',
+  input_schema: { type: 'object', properties: {}, required: [] },
+}
+
+export const CANCEL_RECORDING: ClaudeToolDefinition = {
+  name: 'cancel_recording',
+  description: 'Cancel the current screen recording without saving.',
+  input_schema: { type: 'object', properties: {}, required: [] },
+}
+
+export const GET_RECORDING_STATUS: ClaudeToolDefinition = {
+  name: 'get_recording_status',
+  description:
+    'Get the current recording state, elapsed time, configuration, and result (if recording completed). Use this to poll for recording completion after calling start/stop.',
+  input_schema: { type: 'object', properties: {}, required: [] },
+}
+
+export const LIST_RECORDING_SOURCES: ClaudeToolDefinition = {
+  name: 'list_recording_sources',
+  description:
+    'List available screens and windows that can be recorded. Returns source IDs, names, and thumbnails from Electron desktopCapturer. Requires the desktop app.',
+  input_schema: { type: 'object', properties: {}, required: [] },
+}
+
+export const RECORDING_TOOLS: ClaudeToolDefinition[] = [
+  START_RECORDING,
+  STOP_RECORDING,
+  PAUSE_RECORDING,
+  RESUME_RECORDING,
+  CANCEL_RECORDING,
+  GET_RECORDING_STATUS,
+  LIST_RECORDING_SOURCES,
+]
+
+// REQUEST_SCREEN_RECORDING is already exported at its declaration (line 874)
+
 /** Asset / media tools */
 export const ASSET_TOOLS: ClaudeToolDefinition[] = [
   SEARCH_IMAGES,
   PLACE_IMAGE,
   SET_AUDIO_LAYER,
   SET_VIDEO_LAYER,
-  REQUEST_SCREEN_RECORDING,
+  ...RECORDING_TOOLS,
   ...MEDIA_LIBRARY_TOOLS,
 ]
 
@@ -1896,9 +1978,9 @@ use CenchMotion components for those instead.`,
 /** Export tools */
 export const CAPTURE_FRAME: ClaudeToolDefinition = {
   name: 'capture_frame',
-  description: `Capture a screenshot of a scene at a specific time. Returns a base64 JPEG image so you can see what the scene looks like at that moment.
-Use this to verify your work — check layout, colors, timing, text placement, and animation state after generating or editing a scene.
-The capture is taken from the live preview iframe, so the scene must exist and have content.`,
+  description: `Inspect a scene's visual state at a specific time. Returns a detailed structural description of all layers, elements, positions, and content at that moment.
+Use this to verify your work — check layout completeness, element counts, text content, animation state, and layer positioning after generating or editing a scene.
+Note: this returns a text description of the scene structure, not a pixel-level screenshot.`,
   input_schema: {
     type: 'object',
     properties: {
@@ -2548,14 +2630,18 @@ export const AGENT_TOOLS: Record<string, ClaudeToolDefinition[]> = {
     ...TIMELINE_TOOLS,
   ]),
   editor: dedup([
-    ...LAYER_TOOLS,
+    // Core editing tools — surgical changes only
+    REGENERATE_LAYER,
+    PATCH_LAYER_CODE,
+    REMOVE_LAYER,
+    SET_LAYER_OPACITY,
+    SET_LAYER_VISIBILITY,
+    SET_LAYER_TIMING,
     ...PARENTING_TOOLS,
-    ...AI_LAYER_TOOLS,
     ...ELEMENT_TOOLS,
     SET_SCENE_BACKGROUND,
     SET_TRANSITION,
     SET_SCENE_STYLE,
-    ...MODEL_LIBRARY_TOOLS,
     CAPTURE_FRAME,
     VERIFY_SCENE,
   ]),

@@ -42,6 +42,10 @@ export const useVideoStore = create<VideoStore>()(
       _dbLoadComplete: false,
       _setDbLoadComplete: (v: boolean) => set({ _dbLoadComplete: v }),
 
+      // Auth
+      currentUser: null,
+      setCurrentUser: (user) => set({ currentUser: user }),
+
       // Undo/Redo
       _undoStack: [],
       _redoStack: [],
@@ -50,15 +54,49 @@ export const useVideoStore = create<VideoStore>()(
 
       isGenerating: false,
       generatingSceneId: null,
+      lastGenerationError: null,
       isExporting: false,
       isExportModalOpen: false,
       exportProgress: null,
+
+      // Recording
+      recordingState: 'idle' as const,
+      recordingConfig: {
+        micEnabled: true,
+        micDeviceId: null,
+        systemAudioEnabled: true,
+        webcamEnabled: false,
+        webcamDeviceId: null,
+        fps: 30,
+        resolution: '1080p' as const,
+      },
+      recordingCommand: null,
+      recordingCommandNonce: 0,
+      recordingResult: null,
+      recordingError: null,
+      recordingElapsed: 0,
+      recordingAttachSceneId: null,
+      setRecordingCommand: (cmd) => set((s) => ({
+        recordingCommand: cmd,
+        // Only increment nonce for real commands, not for null (consuming)
+        recordingCommandNonce: cmd ? s.recordingCommandNonce + 1 : s.recordingCommandNonce,
+      })),
+      setRecordingConfig: (config) => set((s) => ({ recordingConfig: { ...s.recordingConfig, ...config } })),
+      setRecordingState: (state) => set({ recordingState: state }),
+      setRecordingResult: (result) => set({ recordingResult: result }),
+      setRecordingError: (error) => set({ recordingError: error }),
+      setRecordingElapsed: (ms) => set({ recordingElapsed: ms }),
+      setRecordingAttachSceneId: (sceneId) => set({ recordingAttachSceneId: sceneId }),
       timelineHeight: 200,
       isPreviewFullscreen: false,
       compositorPreview: false,
       setCompositorPreview: (active) => set({ compositorPreview: active }),
       zdogStudioMode: false,
       setZdogStudioMode: (active) => set({ zdogStudioMode: active }),
+      studioRecordMode: false,
+      setStudioRecordMode: (active) => set({ studioRecordMode: active }),
+      studioRecordStream: null,
+      setStudioRecordStream: (stream) => set({ studioRecordStream: stream }),
       previewZoom: 1,
       setPreviewZoom: (z) => set({ previewZoom: z }),
       timelineZoom: 0,
@@ -66,6 +104,8 @@ export const useVideoStore = create<VideoStore>()(
       timelineAutoScroll: true,
       selectedClipIds: [],
       sceneHtmlVersion: 0,
+      sceneWriteErrors: {},
+      projectLoadFailed: false,
       gridConfig: DEFAULT_GRID_CONFIG,
       project: createDefaultProject(),
       isPublishing: false,
@@ -87,6 +127,7 @@ export const useVideoStore = create<VideoStore>()(
 
       // Chat / Agent initial state
       chatMessages: [],
+      _persistedMessageIds: new Set<string>(),
       isChatOpen: false,
       isAgentRunning: false,
       agentType: null,
@@ -100,6 +141,8 @@ export const useVideoStore = create<VideoStore>()(
       modelOverride: null,
       modelTier: 'auto' as ModelTier,
       thinkingMode: 'adaptive' as ThinkingMode,
+      localMode: false,
+      localModelId: null,
       sceneContext: 'auto',
       activeTools: ['svg', 'canvas2d', 'd3', 'three', 'lottie', 'zdog', 'assets', 'audio', 'video'],
       chatInputValue: '',
@@ -368,11 +411,23 @@ export const useVideoStore = create<VideoStore>()(
         const base = { ...current, ...p }
         const pcs = p?.scenes
         const ccs = (current as any)?.scenes
-        if (Array.isArray(pcs) && Array.isArray(ccs) && pcs.length > 0) {
+        if (Array.isArray(pcs) && Array.isArray(ccs)) {
           const persistedEmpty = !pcs.some(sceneHasRenderableContent)
           const currentRich = ccs.some(sceneHasRenderableContent)
-          if (persistedEmpty && currentRich) {
+          // Always prefer current (in-memory) scenes when they have renderable content
+          // but persisted (localStorage) scenes have been stripped of code fields.
+          // This prevents partialize's stripped scenes from overwriting rich scenes
+          // loaded by loadProject() from Postgres.
+          if (currentRich && persistedEmpty) {
             base.scenes = ccs
+          } else if (currentRich) {
+            // Even if persisted has some content, if current scenes are from a
+            // different project (loaded via loadProject), prefer current.
+            const sameProject = pcs.length > 0 && ccs.length > 0 &&
+              ccs.every((s: any) => pcs.some((ps: any) => ps.id === s.id))
+            if (!sameProject) {
+              base.scenes = ccs
+            }
           }
         }
         return base
@@ -393,7 +448,6 @@ export const useVideoStore = create<VideoStore>()(
         selectedSceneId: state.selectedSceneId,
         globalStyle: state.globalStyle,
         project: state.project,
-        activeConversationId: state.activeConversationId,
         publishedUrl: state.publishedUrl,
         showPublishPanel: state.showPublishPanel,
         modelConfigs: state.modelConfigs,

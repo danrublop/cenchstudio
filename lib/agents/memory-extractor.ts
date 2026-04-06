@@ -155,5 +155,38 @@ export function extractMemories(
     })
   }
 
+  // ── Failure patterns ────────────────────────────────────────────────
+
+  // Track scene types that consistently fail generation
+  const failedLayers = toolCalls.filter((tc) => tc.toolName === 'add_layer' && !tc.output?.success)
+  if (failedLayers.length >= 2) {
+    const failTypeCounts = new Map<string, number>()
+    for (const fl of failedLayers) {
+      const sceneType = (fl.input as Record<string, unknown>).sceneType as string
+      if (sceneType) failTypeCounts.set(sceneType, (failTypeCounts.get(sceneType) || 0) + 1)
+    }
+    for (const [type, count] of failTypeCounts) {
+      if (count >= 2) {
+        memories.push({
+          category: 'feedback',
+          key: `scene_type_failure_${type}`,
+          value: `${type} generation failed ${count} times in this run — consider alternative renderer`,
+          confidence: Math.min(0.7, 0.3 + count * 0.1),
+        })
+      }
+    }
+  }
+
+  // Track if regenerate_layer was called often (indicates quality issues)
+  const regenCalls = toolCalls.filter((tc) => tc.toolName === 'regenerate_layer')
+  if (regenCalls.length >= 3) {
+    memories.push({
+      category: 'feedback',
+      key: 'high_regeneration_rate',
+      value: `${regenCalls.length} regeneration calls in one run — prompts may need refinement`,
+      confidence: 0.5,
+    })
+  }
+
   return memories
 }

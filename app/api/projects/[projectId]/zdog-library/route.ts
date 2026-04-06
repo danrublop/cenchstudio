@@ -5,6 +5,7 @@ import { and, eq } from 'drizzle-orm'
 import { v4 as uuidv4 } from 'uuid'
 import type { ZdogPersonAsset, ZdogPersonFormula } from '@/lib/types'
 import type { ZdogStudioAsset, ZdogStudioShape } from '@/lib/types/zdog-studio'
+import { assertProjectAccess } from '@/lib/auth-helpers'
 
 type ProjectBlob = {
   scenes?: any[]
@@ -26,6 +27,9 @@ function parseBlob(description: string | null): ProjectBlob {
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ projectId: string }> }) {
   try {
     const { projectId } = await params
+    const access = await assertProjectAccess(projectId)
+    if (access.error) return access.error
+
     const [project] = await db
       .select({ description: projects.description })
       .from(projects)
@@ -47,6 +51,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
 export async function POST(req: NextRequest, { params }: { params: Promise<{ projectId: string }> }) {
   try {
     const { projectId } = await params
+    const access = await assertProjectAccess(projectId)
+    if (access.error) return access.error
+
     const body = await req.json()
     const { name, assetType, tags = [] } = body as { name: string; assetType?: string; tags?: string[] }
 
@@ -142,6 +149,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ projectId: string }> }) {
   try {
     const { projectId } = await params
+    const access = await assertProjectAccess(projectId)
+    if (access.error) return access.error
+
     const body = (await req.json().catch(() => ({}))) as { id?: string }
     const id = typeof body.id === 'string' ? body.id.trim() : ''
     if (!id) {

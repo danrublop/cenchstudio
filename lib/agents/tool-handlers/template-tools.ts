@@ -1,34 +1,10 @@
-import type { ToolResult } from '@/lib/agents/types'
 import type { WorldStateMutable } from '@/lib/agents/tool-executor'
 import { getBuiltInTemplate } from '@/lib/templates/built-in'
 import { instantiateTemplate } from '@/lib/templates/instantiate'
-import type { Scene } from '@/lib/types'
 import type { TemplateCategory } from '@/lib/templates/types'
+import { ok, err, findScene, type ToolResult } from './_shared'
 
 export const TEMPLATE_TOOL_NAMES = ['pick_template', 'use_template', 'save_as_template'] as const
-
-function ok(affectedSceneId: string | null, description: string, data?: unknown): ToolResult {
-  return {
-    success: true,
-    affectedSceneId,
-    changes: [
-      {
-        type: affectedSceneId ? 'scene_updated' : 'global_updated',
-        sceneId: affectedSceneId ?? undefined,
-        description,
-      },
-    ],
-    data,
-  }
-}
-
-function err(message: string): ToolResult {
-  return { success: false, error: message }
-}
-
-function findScene(world: WorldStateMutable, sceneId: string): Scene | undefined {
-  return world.scenes.find((s) => s.id === sceneId)
-}
 
 export function createTemplateToolHandler() {
   return async function handleTemplateTools(

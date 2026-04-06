@@ -28,7 +28,7 @@ export default function ShadcnChartsShowcase() {
     <div className="mx-auto flex max-w-4xl flex-col gap-10 py-8">
       <header className="space-y-1">
         <h1 className="text-lg font-semibold text-[var(--color-text-primary)]">shadcn/ui charts (Recharts)</h1>
-        <p className="text-[11px] leading-relaxed text-[var(--color-text-muted)]">
+        <p className="text-[12px] leading-relaxed text-[var(--color-text-muted)]">
           Primitives from{' '}
           <a
             href="https://github.com/shadcn-ui/ui"
@@ -38,16 +38,16 @@ export default function ShadcnChartsShowcase() {
           >
             shadcn/ui
           </a>{' '}
-          — use <code className="rounded bg-[var(--color-input-bg)] px-1 font-mono text-[10px]">ChartContainer</code>,{' '}
-          <code className="rounded bg-[var(--color-input-bg)] px-1 font-mono text-[10px]">ChartTooltipContent</code>,
+          — use <code className="rounded bg-[var(--color-input-bg)] px-1 font-mono text-[11px]">ChartContainer</code>,{' '}
+          <code className="rounded bg-[var(--color-input-bg)] px-1 font-mono text-[11px]">ChartTooltipContent</code>,
           and Recharts in the app. For <strong className="text-[var(--color-text-primary)]">video scenes</strong>, pick
-          chart type <code className="rounded bg-[var(--color-input-bg)] px-1 font-mono text-[10px]">recharts</code> on
+          chart type <code className="rounded bg-[var(--color-input-bg)] px-1 font-mono text-[11px]">recharts</code> on
           a D3 scene — the same bar/line/area look is mounted inside the scene iframe.
         </p>
       </header>
 
       <section className="space-y-2">
-        <h2 className="text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Bar</h2>
+        <h2 className="text-[12px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Bar</h2>
         <ChartContainer config={dualConfig} className="h-[260px] w-full">
           <BarChart accessibilityLayer data={sample}>
             <CartesianGrid vertical={false} strokeDasharray="3 3" />
@@ -61,7 +61,7 @@ export default function ShadcnChartsShowcase() {
       </section>
 
       <section className="space-y-2">
-        <h2 className="text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Line</h2>
+        <h2 className="text-[12px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Line</h2>
         <ChartContainer config={singleConfig} className="h-[220px] w-full">
           <LineChart accessibilityLayer data={lineData}>
             <CartesianGrid vertical={false} strokeDasharray="3 3" />
@@ -74,7 +74,7 @@ export default function ShadcnChartsShowcase() {
       </section>
 
       <section className="space-y-2">
-        <h2 className="text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Area</h2>
+        <h2 className="text-[12px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Area</h2>
         <ChartContainer config={singleConfig} className="h-[220px] w-full">
           <AreaChart accessibilityLayer data={lineData}>
             <CartesianGrid vertical={false} strokeDasharray="3 3" />

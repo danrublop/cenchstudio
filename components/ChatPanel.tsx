@@ -63,6 +63,7 @@ export default function ChatPanel() {
   const {
     chatMessages,
     addChatMessage,
+    persistUserMessage,
     updateChatMessage,
     persistChatMessage,
     clearChat,
@@ -170,6 +171,16 @@ export default function ChatPanel() {
     setShowModelMenu(false)
     setShowAgentMenu(false)
 
+    // Ensure we have an active conversation before sending
+    let convId = activeConversationId
+    if (!convId && project?.id) {
+      convId = await newConversation(project.id)
+    }
+    if (!convId) {
+      sendingRef.current = false
+      return
+    }
+
     // Add user message
     const userMsg: ChatMessage = {
       id: uuidv4(),
@@ -178,6 +189,7 @@ export default function ChatPanel() {
       timestamp: Date.now(),
     }
     addChatMessage(userMsg)
+    await persistUserMessage(userMsg)
 
     // Auto-title conversation from first message
     if (chatMessages.length === 0 && activeConversationId) {
@@ -226,6 +238,7 @@ export default function ChatPanel() {
 
     let accumulatedText = ''
     let accumulatedThinking = ''
+    let accumulatedToolCalls = 0
     const toolCalls: ToolCallRecord[] = []
     let currentToolCall: Partial<ToolCallRecord> | null = null
 
@@ -297,6 +310,7 @@ export default function ChatPanel() {
                 output: event.toolResult,
               }
               toolCalls.push(completed)
+              accumulatedToolCalls++
               updateChatMessage(assistantMsgId, { toolCalls: [...toolCalls] })
               currentToolCall = null
             }
@@ -387,8 +401,17 @@ export default function ChatPanel() {
     } catch (err) {
       if ((err as Error).name === 'AbortError') {
         // If aborted before any content arrived, remove the empty message
+        const hadChanges = accumulatedToolCalls > 0
         if (!accumulatedText) {
-          updateChatMessage(assistantMsgId, { content: '*(cancelled)*' })
+          updateChatMessage(assistantMsgId, {
+            content: hadChanges
+              ? '*(cancelled — partial changes may have been applied. Use Ctrl+Z to undo.)*'
+              : '*(cancelled)*',
+          })
+        } else if (hadChanges) {
+          updateChatMessage(assistantMsgId, {
+            content: accumulatedText + '\n\n*(cancelled — partial changes applied. Use Ctrl+Z to undo.)*',
+          })
         }
       } else {
         updateChatMessage(assistantMsgId, {
@@ -425,6 +448,7 @@ export default function ChatPanel() {
     selectedSceneId,
     modelConfigs,
     addChatMessage,
+    persistUserMessage,
     updateChatMessage,
     persistChatMessage,
     syncScenesFromAgent,
@@ -433,6 +457,8 @@ export default function ChatPanel() {
     setAgentRunning,
     setAgentType,
     activeConversationId,
+    newConversation,
+    renameConversation,
   ])
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -472,7 +498,7 @@ export default function ChatPanel() {
                 e.preventDefault()
                 setContextMenu({ id: conv.id, x: e.clientX, y: e.clientY })
               }}
-              className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] whitespace-nowrap cursor-pointer select-none transition-all flex-shrink-0 ${
+              className={`flex items-center gap-1 px-2 py-1 rounded text-[12px] whitespace-nowrap cursor-pointer select-none transition-all flex-shrink-0 ${
                 conv.id === activeConversationId
                   ? 'bg-[var(--color-bg)] text-[var(--color-text-primary)] border border-[var(--color-border)]'
                   : 'text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg)]/50'
@@ -496,7 +522,7 @@ export default function ChatPanel() {
                     if (e.key === 'Escape') setRenamingId(null)
                   }}
                   onClick={(e) => e.stopPropagation()}
-                  className="bg-transparent border-b border-[var(--color-accent)] outline-none text-[11px] text-[var(--color-text-primary)] w-24"
+                  className="bg-transparent border-b border-[var(--color-accent)] outline-none text-[12px] text-[var(--color-text-primary)] w-24"
                 />
               ) : (
                 <span
@@ -561,10 +587,10 @@ export default function ChatPanel() {
         <div className="absolute inset-0 z-50 flex flex-col bg-[var(--color-panel)]">
           <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--color-border)] flex-shrink-0">
             <History size={13} className="text-[var(--color-text-muted)]" />
-            <span className="text-[11px] font-medium text-[var(--color-text-primary)] flex-1">Chat History</span>
+            <span className="text-[12px] font-medium text-[var(--color-text-primary)] flex-1">Chat History</span>
             <span
               onClick={() => project?.id && newConversation(project.id).then(() => setShowHistory(false))}
-              className="text-[10px] px-2 py-0.5 rounded cursor-pointer bg-[var(--kbd-bg)] border border-[var(--kbd-border)] text-[var(--kbd-text)] hover:brightness-110 transition-all"
+              className="text-[11px] px-2 py-0.5 rounded cursor-pointer bg-[var(--kbd-bg)] border border-[var(--kbd-border)] text-[var(--kbd-text)] hover:brightness-110 transition-all"
             >
               New Chat
             </span>
@@ -577,7 +603,7 @@ export default function ChatPanel() {
           </div>
           <div className="flex-1 overflow-y-auto p-2 space-y-1">
             {conversations.length === 0 && (
-              <div className="flex items-center justify-center h-20 text-xs text-[var(--color-text-muted)]">
+              <div className="flex items-center justify-center h-20 text-sm text-[var(--color-text-muted)]">
                 No conversations yet
               </div>
             )}
@@ -602,7 +628,7 @@ export default function ChatPanel() {
                       <Pin size={9} className="text-[var(--color-text-muted)] opacity-50 flex-shrink-0" />
                     )}
                     <span
-                      className={`text-xs overflow-hidden whitespace-nowrap flex-1 ${isActive ? 'text-[var(--color-text-primary)] font-medium' : 'text-[var(--color-text-muted)]'}`}
+                      className={`text-sm overflow-hidden whitespace-nowrap flex-1 ${isActive ? 'text-[var(--color-text-primary)] font-medium' : 'text-[var(--color-text-muted)]'}`}
                       style={{
                         WebkitMaskImage: 'linear-gradient(to right, black calc(100% - 20px), transparent 100%)',
                         maskImage: 'linear-gradient(to right, black calc(100% - 20px), transparent 100%)',
@@ -611,13 +637,13 @@ export default function ChatPanel() {
                       {conv.title}
                     </span>
                     {conv.totalCostUsd > 0 && (
-                      <span className="text-[9px] text-[var(--color-text-muted)] font-mono flex-shrink-0">
+                      <span className="text-[10px] text-[var(--color-text-muted)] font-mono flex-shrink-0">
                         ${conv.totalCostUsd.toFixed(4)}
                       </span>
                     )}
                   </div>
                   {preview && (
-                    <div className="text-[10px] text-[var(--color-text-muted)] mt-1 truncate opacity-60">
+                    <div className="text-[11px] text-[var(--color-text-muted)] mt-1 truncate opacity-60">
                       {preview.role === 'assistant' ? 'Agent: ' : ''}
                       {(typeof preview.content === 'string'
                         ? preview.content
@@ -638,7 +664,7 @@ export default function ChatPanel() {
           <div className="flex flex-col items-center justify-center h-full text-center text-[var(--color-text-muted)] select-none">
             <Bot size={32} className="mb-3 opacity-30" />
             <p className="text-sm font-medium mb-1 opacity-60">Cench Studio AI</p>
-            <p className="text-xs opacity-40 max-w-[200px] leading-relaxed">
+            <p className="text-sm opacity-40 max-w-[200px] leading-relaxed">
               Describe what you want to create or edit. I'll build it for you.
             </p>
           </div>
@@ -660,7 +686,7 @@ export default function ChatPanel() {
 
       {/* Input area */}
       <div className="flex-shrink-0 p-3 pt-2">
-        <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] overflow-hidden focus-within:border-[var(--color-text-muted)]/40 transition-colors">
+        <div className="rounded-xl border-[3px] border-[var(--color-border)] bg-[var(--color-bg)] overflow-hidden focus-within:border-[var(--color-text-muted)]/40 transition-colors">
           {/* Textarea */}
           <textarea
             value={chatInputValue}
@@ -682,7 +708,7 @@ export default function ChatPanel() {
                   setShowThinkingMenu(false)
                   setShowAgentMenu(false)
                 }}
-                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors"
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[12px] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors"
               >
                 <span className="font-medium">
                   {modelTier === 'auto' ? 'Auto' : modelTier === 'premium' ? 'Premium' : 'Budget'}
@@ -706,16 +732,16 @@ export default function ChatPanel() {
                         setModelOverride(null)
                         setShowModelMenu(false)
                       }}
-                      className={`w-full text-left px-3 py-1.5 text-[11px] hover:bg-[var(--color-border)]/30 transition-colors ${
+                      className={`w-full text-left px-3 py-1.5 text-[12px] hover:bg-[var(--color-border)]/30 transition-colors ${
                         modelTier === opt.id ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-primary)]'
                       }`}
                     >
                       <div className="font-medium">{opt.label}</div>
-                      <div className="text-[10px] text-[var(--color-text-muted)] mt-0.5">{opt.sub}</div>
+                      <div className="text-[11px] text-[var(--color-text-muted)] mt-0.5">{opt.sub}</div>
                     </button>
                   ))}
                   <div className="border-t border-[var(--color-border)] my-1" />
-                  <div className="px-3 py-1 text-[10px] text-[var(--color-text-muted)] uppercase tracking-wide">
+                  <div className="px-3 py-1 text-[11px] text-[var(--color-text-muted)] uppercase tracking-wide">
                     Override
                   </div>
                   {[
@@ -730,7 +756,7 @@ export default function ChatPanel() {
                         setModelOverride(opt.id as ModelId | null)
                         setShowModelMenu(false)
                       }}
-                      className={`w-full text-left px-3 py-1 text-[11px] hover:bg-[var(--color-border)]/30 transition-colors ${
+                      className={`w-full text-left px-3 py-1 text-[12px] hover:bg-[var(--color-border)]/30 transition-colors ${
                         modelOverride === opt.id ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-primary)]'
                       }`}
                     >
@@ -749,7 +775,7 @@ export default function ChatPanel() {
                   setShowModelMenu(false)
                   setShowAgentMenu(false)
                 }}
-                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors"
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[12px] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors"
               >
                 <span className="font-medium" style={thinkingMode === 'deep' ? { color: '#f59e0b' } : {}}>
                   {thinkingMode === 'off' ? 'Think Off' : thinkingMode === 'adaptive' ? 'Think Auto' : 'Think Deep'}
@@ -782,7 +808,7 @@ export default function ChatPanel() {
                         setThinkingMode(opt.id)
                         setShowThinkingMenu(false)
                       }}
-                      className={`w-full text-left px-3 py-1.5 text-[11px] hover:bg-[var(--color-border)]/30 transition-colors ${
+                      className={`w-full text-left px-3 py-1.5 text-[12px] hover:bg-[var(--color-border)]/30 transition-colors ${
                         thinkingMode === opt.id ? 'font-semibold' : ''
                       }`}
                     >
@@ -800,7 +826,7 @@ export default function ChatPanel() {
                           {opt.label}
                         </span>
                       </div>
-                      <div className="text-[10px] text-[var(--color-text-muted)] mt-0.5 ml-[16.5px]">{opt.sub}</div>
+                      <div className="text-[11px] text-[var(--color-text-muted)] mt-0.5 ml-[16.5px]">{opt.sub}</div>
                     </button>
                   ))}
                 </div>
@@ -815,7 +841,7 @@ export default function ChatPanel() {
                   setShowModelMenu(false)
                   setShowThinkingMenu(false)
                 }}
-                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors"
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[12px] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors"
               >
                 <span className="font-medium" style={agentOverride ? { color: AGENT_COLORS[agentOverride] } : {}}>
                   {agentOverride ? AGENT_LABELS[agentOverride] : 'Agent'}
@@ -866,7 +892,7 @@ export default function ChatPanel() {
                         setAgentOverride(opt.id)
                         setShowAgentMenu(false)
                       }}
-                      className={`w-full text-left px-3 py-1.5 text-[11px] hover:bg-[var(--color-border)]/30 transition-colors ${
+                      className={`w-full text-left px-3 py-1.5 text-[12px] hover:bg-[var(--color-border)]/30 transition-colors ${
                         agentOverride === opt.id ? 'font-semibold' : ''
                       }`}
                     >
@@ -880,7 +906,7 @@ export default function ChatPanel() {
                           {opt.label}
                         </span>
                       </div>
-                      <div className="text-[10px] text-[var(--color-text-muted)] mt-0.5 ml-3">{opt.sub}</div>
+                      <div className="text-[11px] text-[var(--color-text-muted)] mt-0.5 ml-3">{opt.sub}</div>
                     </button>
                   ))}
                 </div>

@@ -2,12 +2,23 @@ import { NextRequest, NextResponse } from 'next/server'
 import type { SFXProvider } from '@/lib/types'
 import { getBestSFXProvider, getSFXProvider } from '@/lib/audio/router'
 import { downloadToLocal } from '@/lib/audio/download'
+import { getOptionalUser } from '@/lib/auth-helpers'
+import { validateQueryLength, sanitizeErrorMessage } from '@/lib/audio/sanitize'
 
 export async function POST(req: NextRequest) {
-  const { query, provider: requestedProvider, limit = 10, prompt, duration, download = false } = await req.json()
+  await getOptionalUser()
+  const { query, provider: requestedProvider, limit: rawLimit = 10, prompt, duration, download = false } = await req.json()
+  const limit = Math.min(Math.max(Number(rawLimit) || 10, 1), 50)
 
   if (!query && !prompt) {
     return NextResponse.json({ error: 'query or prompt is required' }, { status: 400 })
+  }
+
+  try {
+    if (query) validateQueryLength(query)
+    if (prompt) validateQueryLength(prompt)
+  } catch {
+    return NextResponse.json({ error: 'Query or prompt too long' }, { status: 400 })
   }
 
   const providerId: SFXProvider = requestedProvider ?? getBestSFXProvider()
@@ -40,7 +51,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ results, provider: providerId, mode: 'search' })
   } catch (err: unknown) {
     console.error('SFX error:', err)
-    const message = err instanceof Error ? err.message : 'SFX search failed'
-    return NextResponse.json({ error: message }, { status: 500 })
+    return NextResponse.json({ error: sanitizeErrorMessage(err) }, { status: 500 })
   }
 }

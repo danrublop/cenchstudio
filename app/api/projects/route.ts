@@ -1,19 +1,39 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { projects } from '@/lib/db/schema'
-import { desc, isNull, lt, and, sql } from 'drizzle-orm'
+import { desc, eq, isNull, lt, and, or } from 'drizzle-orm'
+import { getOptionalUser } from '@/lib/auth-helpers'
+
+/**
+ * Guest projects (userId NULL) are hidden from logged-in users by default so lists stay per-user.
+ * In development, also list unowned projects so scenes added via unauthenticated API calls still appear.
+ * Production override: AUTH_LIST_INCLUDES_GUEST_PROJECTS=true (single-tenant / support).
+ * Opt out in dev: AUTH_LIST_INCLUDES_GUEST_PROJECTS=false
+ */
+function includeGuestProjectsAlongsideOwned(): boolean {
+  if (process.env.AUTH_LIST_INCLUDES_GUEST_PROJECTS === 'true') return true
+  if (process.env.AUTH_LIST_INCLUDES_GUEST_PROJECTS === 'false') return false
+  return process.env.NODE_ENV === 'development'
+}
 
 // GET: list projects with optional cursor-based pagination
 // Without params: returns flat array (backward-compatible)
 // ?limit=N&cursor=<ISO timestamp>: returns { items, nextCursor }
 export async function GET(req: NextRequest) {
   try {
+    const user = await getOptionalUser()
     const limitParam = req.nextUrl.searchParams.get('limit')
     const cursor = req.nextUrl.searchParams.get('cursor')
     const paginated = limitParam !== null || cursor !== null
     const limit = Math.min(Math.max(parseInt(limitParam || '50', 10) || 50, 1), 100)
 
-    const conditions = [isNull(projects.userId)]
+    const ownerFilter = !user
+      ? isNull(projects.userId)
+      : includeGuestProjectsAlongsideOwned()
+        ? or(eq(projects.userId, user.id), isNull(projects.userId))
+        : eq(projects.userId, user.id)
+
+    const conditions = [ownerFilter]
     if (cursor) {
       const cursorDate = new Date(cursor)
       if (!isNaN(cursorDate.getTime())) {
@@ -46,13 +66,14 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ items, nextCursor })
   } catch (error: any) {
     console.error('Failed to list projects:', error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to list projects' }, { status: 500 })
   }
 }
 
 // POST: create a new project
 export async function POST(req: NextRequest) {
   try {
+    const user = await getOptionalUser()
     const body = await req.json()
     const {
       id,
@@ -78,15 +99,23 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Validate scenes is an array if provided
+    // Validate scenes is an array if provided, with size bounds
     if (scenes && !Array.isArray(scenes)) {
       return NextResponse.json({ error: 'scenes must be an array' }, { status: 400 })
+    }
+    if (scenes && scenes.length > 200) {
+      return NextResponse.json({ error: 'scenes array exceeds 200 item limit' }, { status: 413 })
+    }
+    // Cap sceneGraph nodes
+    if (sceneGraph?.nodes && Array.isArray(sceneGraph.nodes) && sceneGraph.nodes.length > 200) {
+      return NextResponse.json({ error: 'sceneGraph.nodes exceeds 200 item limit' }, { status: 413 })
     }
 
     const [project] = await db
       .insert(projects)
       .values({
         ...(id ? { id } : {}),
+        userId: user?.id ?? null,
         name: (name || 'Untitled Project').slice(0, 255),
         outputMode: outputMode || 'mp4',
         globalStyle: globalStyle || undefined,
@@ -108,6 +137,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(project)
   } catch (error: any) {
     console.error('Failed to create project:', error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to create project' }, { status: 500 })
   }
 }

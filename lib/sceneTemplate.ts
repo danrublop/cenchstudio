@@ -1109,9 +1109,7 @@ function generateD3HTML(scene: Scene, style: ResolvedStyle, audioSettings?: Audi
   ${buildFontLink(style.font)}
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    ${
-      fixedStage
-        ? `html, body { width: 1920px; height: 1080px; overflow: hidden; background: ${style.bgColor};
+    html, body { width: 1920px; height: 1080px; overflow: hidden; background: ${style.bgColor};
       transform-origin: top left;
       ${buildBgStyleCSS(style)}
     }
@@ -1125,18 +1123,7 @@ function generateD3HTML(scene: Scene, style: ResolvedStyle, audioSettings?: Audi
       transform-origin: center center;
       will-change: transform, filter;
     }
-    #chart { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; }`
-        : `html, body { width: 100%; height: 100vh; overflow: hidden; background: ${style.bgColor};
-      ${buildBgStyleCSS(style)}
-    }
-    #scene-camera {
-      position: absolute;
-      inset: 0;
-      transform-origin: center center;
-      will-change: transform, filter;
-    }
-    #chart { width: 100%; height: 100%; }`
-    }
+    #chart { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; }
     ${
       needsRecharts
         ? `[data-cench-recharts] { box-sizing: border-box; }
@@ -1146,21 +1133,17 @@ function generateD3HTML(scene: Scene, style: ResolvedStyle, audioSettings?: Audi
     }
     ${sceneStyles}
   </style>
-  ${
-    fixedStage
-      ? `<script>
+  <script>
     function fitToViewport() {
       var s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
       document.body.style.transform = 'scale(' + s + ')';
     }
     window.addEventListener('resize', fitToViewport);
     document.addEventListener('DOMContentLoaded', fitToViewport);
-  </script>`
-      : ''
-  }
+  </script>
 </head>
 <body>
-  <div id="scene-camera"${fixedStage ? '' : ' style="position:absolute;inset:0;transform-origin:center center;will-change:transform,filter;"'}>
+  <div id="scene-camera">
   ${sceneUsesCanvasBackground(scene) ? CANVAS_BG_CANVAS_TAG : ''}
   <div id="chart"></div>
   ${audioHTML}

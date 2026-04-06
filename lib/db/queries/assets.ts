@@ -2,11 +2,17 @@ import { db } from '../index';
 import { assets } from '../schema';
 import { eq, ilike, or, sql, and } from 'drizzle-orm';
 
+/** Escape LIKE special characters to prevent pattern injection. */
+function escapeLike(str: string): string {
+  return str.replace(/[%_\\]/g, (ch) => `\\${ch}`)
+}
+
 export async function searchAssets(query: string, category?: string) {
+  const safeQuery = escapeLike(query)
   const conditions = [
     or(
-      ilike(assets.name, `%${query}%`),
-      ilike(assets.description, `%${query}%`),
+      ilike(assets.name, `%${safeQuery}%`),
+      ilike(assets.description, `%${safeQuery}%`),
       sql`${assets.tags} @> ${JSON.stringify([query])}::jsonb`,
       sql`to_tsvector('english', ${assets.name} || ' ' ||
           coalesce(${assets.description}, '')) @@

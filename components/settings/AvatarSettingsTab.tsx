@@ -33,12 +33,12 @@ export function AvatarProvidersSection() {
                     {p.name}
                   </span>
                   {!p.requiresKey && (
-                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded border text-green-400 bg-green-400/10 border-green-400/30 uppercase tracking-tighter">
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded border text-green-400 bg-green-400/10 border-green-400/30 uppercase tracking-tighter">
                       free
                     </span>
                   )}
                   {p.requiresKey === 'FAL_KEY' && (
-                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded border text-purple-400 bg-purple-400/10 border-purple-400/30 uppercase tracking-tighter">
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded border text-purple-400 bg-purple-400/10 border-purple-400/30 uppercase tracking-tighter">
                       fal.ai
                     </span>
                   )}
@@ -62,9 +62,9 @@ export function AvatarProvidersSection() {
       {/* API Keys */}
       <div>
         <SectionLabel>API Keys</SectionLabel>
-        <p className="text-[10px] text-[#6b6b7a] px-1 mb-2 -mt-1">
+        <p className="text-[11px] text-[#6b6b7a] px-1 mb-2 -mt-1">
           Set in{' '}
-          <code className="text-[9px] px-1 py-0.5 rounded bg-white/5 border border-[var(--color-border)]">.env</code>
+          <code className="text-[10px] px-1 py-0.5 rounded bg-white/5 border border-[var(--color-border)]">.env</code>
         </p>
         <div className="grid grid-cols-1 gap-1">
           {AVATAR_API_KEYS.map((k) => (
@@ -179,7 +179,7 @@ export function AvatarSettingsTab() {
   }
 
   if (!projectId) {
-    return <p className="text-xs text-[var(--color-text-muted)]">Open a project to configure avatars.</p>
+    return <p className="text-sm text-[var(--color-text-muted)]">Open a project to configure avatars.</p>
   }
 
   const info = PROVIDER_INFO[selectedProvider]
@@ -210,16 +210,16 @@ export function AvatarSettingsTab() {
                   />
                   <div className="min-w-0">
                     <span className="text-sm text-[var(--color-text-primary)] font-semibold leading-none">{pid}</span>
-                    <p className="text-[10px] text-[var(--color-text-muted)] mt-0.5 truncate">{pi?.desc}</p>
+                    <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5 truncate">{pi?.desc}</p>
                   </div>
                 </div>
-                <span className="text-[10px] text-[var(--color-text-muted)] flex-shrink-0">{pi?.cost}</span>
+                <span className="text-[11px] text-[var(--color-text-muted)] flex-shrink-0">{pi?.cost}</span>
               </div>
             )
           })}
         </ListContainer>
         {enabledProviders.length === 0 && (
-          <p className="text-[11px] text-[var(--color-text-muted)] px-1">
+          <p className="text-[12px] text-[var(--color-text-muted)] px-1">
             No avatar providers enabled. Enable them in Settings &gt; Media Gen.
           </p>
         )}
@@ -232,20 +232,20 @@ export function AvatarSettingsTab() {
         {/* TalkingHead: character picker */}
         {selectedProvider === 'talkinghead' && (
           <div className="space-y-2">
-            <label className="text-[10px] text-[var(--color-text-muted)] uppercase font-bold">Character</label>
+            <label className="text-[11px] text-[var(--color-text-muted)] uppercase font-bold">Character</label>
             <div className="flex gap-2">
               {CHARACTER_OPTIONS.map((ch) => (
                 <span
                   key={ch.id}
                   onClick={() => setProviderConfig((prev) => ({ ...prev, characterFile: ch.id }))}
-                  className={`flex-1 text-center py-2 px-3 rounded-lg border cursor-pointer text-xs transition-colors ${
+                  className={`flex-1 text-center py-2 px-3 rounded-lg border cursor-pointer text-sm transition-colors ${
                     (providerConfig.characterFile || 'friendly') === ch.id
                       ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-text-primary)]'
                       : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-muted)]'
                   }`}
                 >
                   <div className="font-medium">{ch.label}</div>
-                  <div className="text-[10px] opacity-70">{ch.desc}</div>
+                  <div className="text-[11px] opacity-70">{ch.desc}</div>
                 </span>
               ))}
             </div>
@@ -255,7 +255,7 @@ export function AvatarSettingsTab() {
         {/* fal.ai providers: source image */}
         {info?.needsImage && (
           <div className="space-y-2">
-            <label className="text-[10px] text-[var(--color-text-muted)] uppercase font-bold">
+            <label className="text-[11px] text-[var(--color-text-muted)] uppercase font-bold">
               Avatar Source Image
             </label>
             <div className="flex gap-2 items-center">
@@ -264,13 +264,13 @@ export function AvatarSettingsTab() {
                 value={providerConfig.sourceImageUrl ?? ''}
                 onChange={(e) => setProviderConfig((prev) => ({ ...prev, sourceImageUrl: e.target.value }))}
                 placeholder="Image URL or upload path"
-                className="flex-1 text-xs px-3 py-1.5 rounded border bg-[var(--color-input-bg)] border-[var(--color-border)] text-[var(--color-text-primary)]"
+                className="flex-1 text-sm px-3 py-1.5 rounded border bg-[var(--color-input-bg)] border-[var(--color-border)] text-[var(--color-text-primary)]"
               />
               <span className="p-1.5 text-[var(--color-text-muted)]">
                 <Upload size={14} />
               </span>
             </div>
-            <p className="text-[10px] text-[var(--color-text-muted)]">
+            <p className="text-[11px] text-[var(--color-text-muted)]">
               Face photo, illustration, or any image to animate as a talking avatar.
             </p>
           </div>
@@ -279,13 +279,13 @@ export function AvatarSettingsTab() {
         {/* Fabric: resolution */}
         {selectedProvider === 'fabric' && (
           <div className="space-y-2">
-            <label className="text-[10px] text-[var(--color-text-muted)] uppercase font-bold">Resolution</label>
+            <label className="text-[11px] text-[var(--color-text-muted)] uppercase font-bold">Resolution</label>
             <div className="flex gap-2">
               {['480p', '720p'].map((res) => (
                 <span
                   key={res}
                   onClick={() => setProviderConfig((prev) => ({ ...prev, resolution: res }))}
-                  className={`px-4 py-1.5 rounded border cursor-pointer text-xs transition-colors ${
+                  className={`px-4 py-1.5 rounded border cursor-pointer text-sm transition-colors ${
                     (providerConfig.resolution || '480p') === res
                       ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-text-primary)]'
                       : 'border-[var(--color-border)] text-[var(--color-text-muted)]'
@@ -302,23 +302,23 @@ export function AvatarSettingsTab() {
         {selectedProvider === 'heygen' && (
           <div className="space-y-2">
             <div>
-              <label className="text-[10px] text-[var(--color-text-muted)] uppercase font-bold">Avatar ID</label>
+              <label className="text-[11px] text-[var(--color-text-muted)] uppercase font-bold">Avatar ID</label>
               <input
                 type="text"
                 value={providerConfig.avatarId ?? ''}
                 onChange={(e) => setProviderConfig((prev) => ({ ...prev, avatarId: e.target.value }))}
                 placeholder="HeyGen avatar ID"
-                className="w-full text-xs px-3 py-1.5 rounded border bg-[var(--color-input-bg)] border-[var(--color-border)] text-[var(--color-text-primary)] mt-1"
+                className="w-full text-sm px-3 py-1.5 rounded border bg-[var(--color-input-bg)] border-[var(--color-border)] text-[var(--color-text-primary)] mt-1"
               />
             </div>
             <div>
-              <label className="text-[10px] text-[var(--color-text-muted)] uppercase font-bold">Voice ID</label>
+              <label className="text-[11px] text-[var(--color-text-muted)] uppercase font-bold">Voice ID</label>
               <input
                 type="text"
                 value={providerConfig.voiceId ?? ''}
                 onChange={(e) => setProviderConfig((prev) => ({ ...prev, voiceId: e.target.value }))}
                 placeholder="HeyGen voice ID"
-                className="w-full text-xs px-3 py-1.5 rounded border bg-[var(--color-input-bg)] border-[var(--color-border)] text-[var(--color-text-primary)] mt-1"
+                className="w-full text-sm px-3 py-1.5 rounded border bg-[var(--color-input-bg)] border-[var(--color-border)] text-[var(--color-text-primary)] mt-1"
               />
             </div>
           </div>
@@ -329,7 +329,7 @@ export function AvatarSettingsTab() {
       {info && info.cost !== 'Free' && (
         <div className="flex items-center gap-2 p-3 rounded-lg bg-yellow-500/5 border border-yellow-500/20">
           <DollarSign size={14} className="text-yellow-400 flex-shrink-0" />
-          <p className="text-[11px] text-[var(--color-text-muted)]">
+          <p className="text-[12px] text-[var(--color-text-muted)]">
             At ~5 scenes/video, avatar generation costs approximately{' '}
             <span className="text-[var(--color-text-primary)] font-medium">
               {selectedProvider === 'musetalk'
@@ -350,7 +350,7 @@ export function AvatarSettingsTab() {
       {/* Save */}
       <span
         onClick={saveConfig}
-        className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium cursor-pointer transition-colors ${
+        className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium cursor-pointer transition-colors ${
           saving
             ? 'bg-[var(--color-border)] text-[var(--color-text-muted)]'
             : 'bg-[var(--color-accent)] text-white hover:opacity-90'
@@ -369,9 +369,9 @@ export function AvatarSettingsTab() {
               <div key={cfg.id} className="flex items-center justify-between py-2 px-1">
                 <div>
                   <span className="text-sm text-[var(--color-text-primary)] font-medium">{cfg.name}</span>
-                  <span className="text-[10px] text-[var(--color-text-muted)] ml-2">{cfg.provider}</span>
+                  <span className="text-[11px] text-[var(--color-text-muted)] ml-2">{cfg.provider}</span>
                   {cfg.isDefault && (
-                    <span className="text-[9px] ml-2 px-1.5 py-0.5 rounded bg-[var(--color-accent)]/20 text-[var(--color-accent)] font-bold">
+                    <span className="text-[10px] ml-2 px-1.5 py-0.5 rounded bg-[var(--color-accent)]/20 text-[var(--color-accent)] font-bold">
                       DEFAULT
                     </span>
                   )}

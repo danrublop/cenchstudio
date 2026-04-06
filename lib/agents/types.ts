@@ -28,9 +28,11 @@ export type ModelId =
   // Google Gemini
   | 'gemini-2.5-flash-preview-05-20'
   | 'gemini-2.5-pro-preview-05-06'
+  // Local models (dynamic — allows arbitrary Ollama model IDs)
+  | (string & {})
 
 /** Short display labels for model IDs */
-export const MODEL_DISPLAY_NAMES: Record<ModelId, string> = {
+export const MODEL_DISPLAY_NAMES: Record<string, string> = {
   'claude-haiku-4-5-20251001': 'Haiku 4.5',
   'claude-sonnet-4-6': 'Sonnet 4.6',
   'claude-opus-4-6': 'Opus 4.6',
@@ -46,8 +48,8 @@ export const MODEL_DISPLAY_NAMES: Record<ModelId, string> = {
   'gemini-2.5-pro-preview-05-06': 'Gemini 2.5 Pro',
 }
 
-/** Cost per 1M tokens (input, output) in USD */
-export const MODEL_PRICING: Record<ModelId, { inputPer1M: number; outputPer1M: number }> = {
+/** Cost per 1M tokens (input, output) in USD. Local models default to { 0, 0 }. */
+export const MODEL_PRICING: Record<string, { inputPer1M: number; outputPer1M: number }> = {
   'claude-haiku-4-5-20251001': { inputPer1M: 0.8, outputPer1M: 4.0 },
   'claude-sonnet-4-6': { inputPer1M: 3.0, outputPer1M: 15.0 },
   'claude-opus-4-6': { inputPer1M: 15.0, outputPer1M: 75.0 },
@@ -63,12 +65,28 @@ export const MODEL_PRICING: Record<ModelId, { inputPer1M: number; outputPer1M: n
   'gemini-2.5-pro-preview-05-06': { inputPer1M: 1.25, outputPer1M: 10.0 },
 }
 
-/** Determine provider from model ID */
-export function getModelProvider(modelId: ModelId): 'anthropic' | 'openai' | 'google' {
+/** Determine provider from model ID. Pass modelConfigs to resolve local models by config lookup. */
+export function getModelProvider(
+  modelId: ModelId,
+  modelConfigs?: import('./model-config').ModelConfig[],
+): 'anthropic' | 'openai' | 'google' | 'local' {
+  // Check model configs first for local models
+  if (modelConfigs) {
+    const config = modelConfigs.find((m) => m.id === modelId || m.modelId === modelId)
+    if (config?.provider === 'local') return 'local'
+  }
   if (modelId.startsWith('claude-')) return 'anthropic'
   if (modelId.startsWith('gpt-') || modelId.startsWith('o1') || modelId.startsWith('o3')) return 'openai'
   if (modelId.startsWith('gemini-')) return 'google'
+  // If none of the known prefixes match, assume local
+  const knownPrefixes = ['claude-', 'gpt-', 'o1', 'o3', 'gemini-']
+  if (!knownPrefixes.some((p) => modelId.startsWith(p))) return 'local'
   return 'anthropic'
+}
+
+/** Get pricing for a model, defaulting to free for unknown/local models */
+export function getModelPricing(modelId: ModelId): { inputPer1M: number; outputPer1M: number } {
+  return MODEL_PRICING[modelId] ?? { inputPer1M: 0, outputPer1M: 0 }
 }
 
 /**
@@ -120,6 +138,11 @@ export function messageContentToText(content: MessageContent): string {
 
 // ── Message Types ─────────────────────────────────────────────────────────────
 
+/** A segment of a message — either a text chunk or a tool call reference, in chronological order */
+export type MessageSegment =
+  | { type: 'text'; text: string }
+  | { type: 'tool'; toolCallId: string }
+
 export interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
@@ -128,6 +151,8 @@ export interface ChatMessage {
   modelId?: ModelId
   /** Tool calls made during this message */
   toolCalls?: ToolCallRecord[]
+  /** Chronologically ordered segments of text and tool calls for interleaved display */
+  contentSegments?: MessageSegment[]
   /** Token usage and cost tracking */
   usage?: UsageStats
   /** Extended thinking content (reasoning summary) */
@@ -232,6 +257,7 @@ export type SSEEventType =
   | 'state_change' // world state mutated
   | 'sub_agent_start' // orchestrator starting a sub-agent for a scene
   | 'sub_agent_complete' // sub-agent finished building a scene
+  | 'run_progress' // live progress update (tool count, cost, iteration)
   | 'error' // error occurred
   | 'done' // stream complete
 
@@ -279,6 +305,15 @@ export interface SSEEvent {
   updatedGlobalStyle?: GlobalStyle
   /** Updated scene graph (on final state_change) */
   updatedSceneGraph?: SceneGraph
+  /** For 'run_progress' events — live execution stats */
+  runProgress?: {
+    toolCallsUsed: number
+    toolCallsMax: number
+    costUsd: number
+    costMax: number
+    iteration: number
+    iterationMax: number
+  }
   /** For 'sub_agent_start' / 'sub_agent_complete' events */
   subAgentId?: string
   subAgentSceneIndex?: number
@@ -483,6 +518,8 @@ export interface RunProgress {
   scenesCreated: string[]
   /** Scene IDs that have been verified (via verify_scene) */
   scenesVerified: string[]
+  /** Scene IDs that have narration added */
+  scenesWithNarration: string[]
 }
 
 /** Serialize run progress into a compact string for context injection */
@@ -505,6 +542,11 @@ export function serializeRunProgress(p: RunProgress): string {
   const unverified = p.scenesCreated.filter((id) => !p.scenesVerified.includes(id))
   if (unverified.length > 0) {
     parts.push(`⚠ Unverified scenes: ${unverified.length} — call verify_scene on these`)
+  }
+
+  const unnarrated = p.scenesCreated.filter((id) => !p.scenesWithNarration.includes(id))
+  if (unnarrated.length > 0 && p.scenesCreated.length >= 2) {
+    parts.push(`⚠ Scenes without narration: ${unnarrated.length} — call add_narration on these before finishing`)
   }
 
   const unresolvedErrors = p.errors.filter((e) => !e.resolved)

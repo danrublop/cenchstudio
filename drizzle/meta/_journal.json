@@ -106,6 +106,13 @@
       "when": 1774935500000,
       "tag": "0014_add_agent_config",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1774935600000,
+      "tag": "0015_refactor_conversations_messages",
+      "breakpoints": true
     }
   ]
 }

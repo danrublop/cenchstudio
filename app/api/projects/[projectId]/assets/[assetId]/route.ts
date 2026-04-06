@@ -4,9 +4,12 @@ import path from 'path'
 import { db } from '@/lib/db'
 import { projectAssets } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
+import { assertProjectAccess } from '@/lib/auth-helpers'
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ projectId: string; assetId: string }> }) {
   const { projectId, assetId } = await params
+  const access = await assertProjectAccess(projectId)
+  if (access.error) return access.error
 
   try {
     const body = await req.json()
@@ -45,6 +48,8 @@ export async function DELETE(
   { params }: { params: Promise<{ projectId: string; assetId: string }> },
 ) {
   const { projectId, assetId } = await params
+  const accessDel = await assertProjectAccess(projectId)
+  if (accessDel.error) return accessDel.error
 
   try {
     // Fetch asset first to get file paths

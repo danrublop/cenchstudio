@@ -3,7 +3,6 @@
 @tailwind utilities;
 
 @layer base {
-  button:not(.context-menu-item):not(.no-style),
   .kbd {
     color: var(--kbd-text);
   }
@@ -11,15 +10,18 @@
 
 :root {
   /* Default: Dark Theme (Inverted Elevation) */
-  --color-bg: #181818; /* Canvas Background */
-  --color-panel: #121212; /* Panels/Header/Timeline */
+  --color-bg: #191919; /* Canvas/Side Panel Background */
+  --color-panel: #141414; /* Header/Footer/Timeline */
   --color-accent: #e84545; /* Critical Accent/Red */
-  --color-border: #000000;
-  /* Panel/tab hairlines (avoid Tailwind var/opacity bugs that inherit light text as border) */
-  --color-hairline: #0a0a0a;
+  /* Faint dividers on dark UI (lighter than panel, much softer than light-theme #e0e0e0) */
+  --color-border: rgba(255, 255, 255, 0.14);
+  --color-hairline: rgba(255, 255, 255, 0.09);
   --color-text-primary: #f0ece0;
-  --color-text-muted: #6b6b7a;
+  --color-text-muted: #7d7d7d;
   --color-input-bg: #0d0d0f;
+
+  /* Agent chat: user bubbles + Talk to Agent composer */
+  --agent-chat-user-surface: #212121;
 
   /* Global Keyboard Style Variables (Dark) */
   --kbd-bg: #151515; /* Interactive Buttons */
@@ -41,7 +43,7 @@
   --chart-5: #9b4ce8;
 
   /* App chrome (overridden in Editor from Settings → General → UI typography) */
-  --font-ui: var(--font-geist-sans), Geist, -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-ui: var(--font-geist-sans), Geist, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
 :root.light-theme {
@@ -53,6 +55,9 @@
   --color-text-primary: #1a1a1e;
   --color-text-muted: #666666;
   --color-input-bg: #f4f4f6;
+
+  /* Agent chat: readable on white canvas, distinct from panel */
+  --agent-chat-user-surface: #ebebef;
 
   /* Global Keyboard Style Variables (Light - Ghost Style) */
   --kbd-bg: #ffffff;
@@ -70,6 +75,37 @@
   --chart-3: #16a34a;
   --chart-4: #ca8a04;
   --chart-5: #7c3aed;
+}
+
+:root.blue-theme {
+  --color-bg: #16181e;
+  --color-panel: #16181e;
+  --color-card: #1e2028;
+  --color-accent: #4a9eff;
+  --color-border: rgba(0, 0, 0, 0.35);
+  --color-hairline: rgba(0, 0, 0, 0.25);
+  --color-text-primary: #d4dae8;
+  --color-text-muted: #6b7894;
+  --color-input-bg: #12141a;
+
+  --agent-chat-user-surface: #1e2028;
+
+  --kbd-bg: #16181e;
+  --kbd-border: #2a2c34;
+  --kbd-shadow: #0a0b0e;
+  --kbd-text: #d4dae8;
+
+  --minimap-node-fill: #2a2c34;
+  --minimap-node-stroke: rgba(74, 158, 255, 0.35);
+  --minimap-mask: rgba(12, 13, 16, 0.55);
+
+  --color-timeline-bg: #1b1d23;
+  --color-card-token: #1e2028;
+  --chart-1: #4a9eff;
+  --chart-2: #ff6b6b;
+  --chart-3: #4ecdc4;
+  --chart-4: #ffd93d;
+  --chart-5: #a855f7;
 }
 
 * {
@@ -98,8 +134,36 @@ body {
     sans-serif;
 }
 
-/* Global Button / KBD Style */
-button:not(.context-menu-item):not(.no-style),
+/* Electron titlebar — frosted glass (search / title / zoom) */
+.electron-titlebar-pill {
+  backdrop-filter: blur(22px) saturate(1.5);
+  -webkit-backdrop-filter: blur(22px) saturate(1.5);
+  background: color-mix(in srgb, var(--agent-chat-user-surface) 52%, transparent);
+  border: 1px solid color-mix(in srgb, #ffffff 16%, transparent);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.18),
+    inset 0 -1px 0 0 rgba(0, 0, 0, 0.14),
+    0 0 0 1px color-mix(in srgb, #000000 22%, transparent),
+    0 2px 10px color-mix(in srgb, #000000 20%, transparent);
+}
+:root.light-theme .electron-titlebar-pill {
+  background: color-mix(in srgb, var(--agent-chat-user-surface) 45%, transparent);
+  border: 1px solid color-mix(in srgb, #ffffff 72%, transparent);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.85),
+    inset 0 -1px 0 0 color-mix(in srgb, var(--color-text-primary) 6%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--color-text-primary) 8%, transparent),
+    0 2px 8px color-mix(in srgb, #000000 6%, transparent);
+}
+
+.electron-titlebar-pill-zoom {
+  border-left-color: color-mix(in srgb, #ffffff 14%, transparent);
+}
+:root.light-theme .electron-titlebar-pill-zoom {
+  border-left-color: color-mix(in srgb, var(--color-text-primary) 10%, transparent);
+}
+
+/* Chrome-style buttons: opt in with class `kbd` only (plain buttons stay unstyled for Tailwind) */
 .kbd {
   display: inline-flex;
   align-items: center;
@@ -120,18 +184,79 @@ button:not(.context-menu-item):not(.no-style),
   overflow: visible;
 }
 
-button:not(.context-menu-item):not(.no-style):active,
 .kbd:active {
   transform: translateY(1.5px);
   box-shadow: 0 0 0 1px var(--kbd-shadow);
   filter: brightness(0.9);
 }
 
-button:not(.context-menu-item):not(.no-style):disabled,
 .kbd:disabled {
   opacity: 0.5;
   cursor: not-allowed;
   transform: none;
+}
+
+button:not(.context-menu-item):not(.no-style):not(.kbd) {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+  box-shadow: none;
+  font: inherit;
+  color: inherit;
+  line-height: inherit;
+  cursor: pointer;
+}
+
+button:not(.context-menu-item):not(.no-style):not(.kbd):disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* Storyboard “Create” — constant subtle outer halo; inner glow only “beats” */
+@keyframes storyboard-create-inner-beat {
+  0%,
+  100% {
+    box-shadow:
+      inset 0 0 10px 0 rgba(255, 255, 255, 0.08),
+      0 0 10px 1px rgba(150, 182, 210, 0.12);
+  }
+  12% {
+    box-shadow:
+      inset 0 0 22px 4px rgba(255, 255, 255, 0.32),
+      0 0 10px 1px rgba(150, 182, 210, 0.12);
+  }
+  22% {
+    box-shadow:
+      inset 0 0 10px 0 rgba(255, 255, 255, 0.08),
+      0 0 10px 1px rgba(150, 182, 210, 0.12);
+  }
+  34% {
+    box-shadow:
+      inset 0 0 20px 3px rgba(255, 255, 255, 0.26),
+      0 0 10px 1px rgba(150, 182, 210, 0.12);
+  }
+  48% {
+    box-shadow:
+      inset 0 0 10px 0 rgba(255, 255, 255, 0.08),
+      0 0 10px 1px rgba(150, 182, 210, 0.12);
+  }
+}
+
+.storyboard-create-btn-glow {
+  animation: storyboard-create-inner-beat 2.2s ease-in-out infinite;
+}
+
+.storyboard-create-btn-glow:disabled {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .storyboard-create-btn-glow {
+    animation: none;
+  }
 }
 
 /* Custom Premium Tooltip System — sharp corners + pointer tip */
@@ -450,8 +575,7 @@ button:not(.context-menu-item):not(.no-style):disabled,
   display: none !important;
 }
 
-/* Global Icon Styling for KBD system */
-button:not(.context-menu-item):not(.no-style) svg,
+/* Icon sizing inside `.kbd` chrome only */
 .kbd svg {
   width: 15px !important;
   height: 15px !important;
@@ -809,22 +933,22 @@ input[type='range']:focus {
 
 /* Electron-only titlebar icon styling */
 .electron-app .electron-titlebar-icon {
-  color: #6f7280;
+  color: var(--color-text-muted);
 }
 .electron-app .electron-titlebar-icon:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--agent-chat-user-surface);
 }
 .electron-app .electron-titlebar-icon.electron-titlebar-icon-active {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--agent-chat-user-surface);
 }
 .electron-app.light-theme .electron-titlebar-icon {
-  color: #8f93a3;
+  color: var(--color-text-muted);
 }
 .electron-app.light-theme .electron-titlebar-icon:hover {
-  background: rgba(26, 26, 30, 0.06);
+  background: var(--agent-chat-user-surface);
 }
 .electron-app.light-theme .electron-titlebar-icon.electron-titlebar-icon-active {
-  background: rgba(26, 26, 30, 0.06);
+  background: var(--agent-chat-user-surface);
 }
 
 /* Agent chat — voice input meter (animated waveform bars) */
@@ -863,4 +987,48 @@ input[type='range']:focus {
   animation: none;
   background: var(--color-accent);
   opacity: 0.95;
+}
+
+/* ── Storyboard toggle radio ── */
+.sb-toggle { user-select: none; }
+.sb-toggle label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+.sb-toggle input[type="checkbox"] { position: absolute; opacity: 0; pointer-events: none; }
+.sb-toggle .rdo {
+  position: relative;
+  display: block;
+  width: 12px;
+  height: 12px;
+  border-radius: 6px;
+  background-color: #606062;
+  background-image: linear-gradient(#474749, #606062);
+  box-shadow: inset 0 1px 1px rgba(255,255,255,0.15), inset 0 -1px 1px rgba(0,0,0,0.15);
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+.sb-toggle .rdo::after {
+  content: "";
+  position: absolute;
+  display: block;
+  top: 3.5px;
+  left: 3.5px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #fff;
+  opacity: 0;
+  transform: scale(0);
+}
+.sb-toggle input[type="checkbox"]:checked + .rdo {
+  background-color: #8a8a8e;
+  background-image: linear-gradient(#9a9a9e, #7a7a7e);
+}
+.sb-toggle input[type="checkbox"]:checked + .rdo::after {
+  opacity: 1;
+  transform: scale(1);
+  transition: all 0.15s ease;
+}
+.sb-toggle input[type="checkbox"]:disabled + .rdo { opacity: 0.4; }
+[data-theme="light"] .sb-toggle .rdo {
+  background-color: #c8c8d0;
+  background-image: linear-gradient(#b8b8c0, #c8c8d0);
 }

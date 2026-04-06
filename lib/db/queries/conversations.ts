@@ -85,14 +85,18 @@ export async function getRecentMessages(conversationId: string, limit = 20) {
 }
 
 export async function addMessage(data: {
+  /** Optional client-generated UUID — if omitted, DB generates one */
+  id?: string
   conversationId: string
   projectId: string
   role: string
   content: string
+  status?: string
   agentType?: string | null
   modelUsed?: string | null
   thinkingContent?: string | null
   toolCalls?: unknown[]
+  contentSegments?: unknown[]
   inputTokens?: number | null
   outputTokens?: number | null
   costUsd?: number | null
@@ -101,39 +105,157 @@ export async function addMessage(data: {
   userRating?: number | null
   generationLogId?: string | null
 }) {
+  const status = data.status ?? 'complete'
   // Atomic position assignment via subquery — no race condition possible
   return db.transaction(async (tx) => {
-    const [message] = (await tx.execute(sql`
+    const idFragment = data.id ? sql`${data.id}::uuid` : sql`gen_random_uuid()`
+    const insertResult = await tx.execute(sql`
       INSERT INTO messages (
-        conversation_id, project_id, role, content, agent_type, model_used,
-        thinking_content, tool_calls, input_tokens, output_tokens, cost_usd,
+        id, conversation_id, project_id, role, content, status, agent_type, model_used,
+        thinking_content, tool_calls, content_segments, input_tokens, output_tokens, cost_usd,
         duration_ms, api_calls, user_rating, generation_log_id, position
       ) VALUES (
+        ${idFragment},
         ${data.conversationId}, ${data.projectId}, ${data.role}, ${data.content},
+        ${status},
         ${data.agentType ?? null}::agent_type, ${data.modelUsed ?? null},
         ${data.thinkingContent ?? null}, ${JSON.stringify(data.toolCalls ?? [])}::jsonb,
+        ${data.contentSegments ? sql`${JSON.stringify(data.contentSegments)}::jsonb` : sql`null`},
         ${data.inputTokens ?? null}, ${data.outputTokens ?? null}, ${data.costUsd ?? null},
         ${data.durationMs ?? null}, ${data.apiCalls ?? null}, ${data.userRating ?? null},
         ${data.generationLogId ?? null},
         (SELECT coalesce(max(position), -1) + 1 FROM messages WHERE conversation_id = ${data.conversationId})
       ) RETURNING *
-    `)) as any
+    `)
+    const message = (insertResult as any).rows?.[0] ?? (insertResult as any)[0]
 
-    // Update conversation stats
-    await tx
-      .update(conversations)
-      .set({
-        lastMessageAt: new Date(),
-        updatedAt: new Date(),
-        totalCostUsd: sql`total_cost_usd + ${data.costUsd ?? 0}`,
-        totalInputTokens: sql`total_input_tokens + ${data.inputTokens ?? 0}`,
-        totalOutputTokens: sql`total_output_tokens + ${data.outputTokens ?? 0}`,
-      })
-      .where(eq(conversations.id, data.conversationId))
+    // Only update conversation stats for non-placeholder messages
+    if (status !== 'streaming') {
+      await tx
+        .update(conversations)
+        .set({
+          lastMessageAt: new Date(),
+          updatedAt: new Date(),
+          totalCostUsd: sql`total_cost_usd + ${data.costUsd ?? 0}`,
+          totalInputTokens: sql`total_input_tokens + ${data.inputTokens ?? 0}`,
+          totalOutputTokens: sql`total_output_tokens + ${data.outputTokens ?? 0}`,
+        })
+        .where(eq(conversations.id, data.conversationId))
+    } else {
+      // Still touch lastMessageAt so the conversation sorts correctly
+      await tx
+        .update(conversations)
+        .set({ lastMessageAt: new Date(), updatedAt: new Date() })
+        .where(eq(conversations.id, data.conversationId))
+    }
 
     const row = message?.rows?.[0] ?? message?.[0] ?? message
     return row
   })
+}
+
+/** Update an existing message in-place. Only updates fields that are explicitly passed. */
+export async function updateMessage(
+  messageId: string,
+  updates: {
+    content?: string
+    status?: string
+    agentType?: string | null
+    modelUsed?: string | null
+    thinkingContent?: string | null
+    toolCalls?: unknown[]
+    contentSegments?: unknown[]
+    inputTokens?: number | null
+    outputTokens?: number | null
+    costUsd?: number | null
+    durationMs?: number | null
+    apiCalls?: number | null
+    generationLogId?: string | null
+  },
+) {
+  // Build SET clauses dynamically from non-undefined fields
+  const setClauses: ReturnType<typeof sql>[] = []
+  if (updates.content !== undefined) setClauses.push(sql`content = ${updates.content}`)
+  if (updates.status !== undefined) setClauses.push(sql`status = ${updates.status}`)
+  if (updates.agentType !== undefined) setClauses.push(sql`agent_type = ${updates.agentType}::agent_type`)
+  if (updates.modelUsed !== undefined) setClauses.push(sql`model_used = ${updates.modelUsed}`)
+  if (updates.thinkingContent !== undefined) setClauses.push(sql`thinking_content = ${updates.thinkingContent}`)
+  if (updates.toolCalls !== undefined) setClauses.push(sql`tool_calls = ${JSON.stringify(updates.toolCalls)}::jsonb`)
+  if (updates.contentSegments !== undefined) setClauses.push(sql`content_segments = ${JSON.stringify(updates.contentSegments)}::jsonb`)
+  if (updates.inputTokens !== undefined) setClauses.push(sql`input_tokens = ${updates.inputTokens}`)
+  if (updates.outputTokens !== undefined) setClauses.push(sql`output_tokens = ${updates.outputTokens}`)
+  if (updates.costUsd !== undefined) setClauses.push(sql`cost_usd = ${updates.costUsd}`)
+  if (updates.durationMs !== undefined) setClauses.push(sql`duration_ms = ${updates.durationMs}`)
+  if (updates.apiCalls !== undefined) setClauses.push(sql`api_calls = ${updates.apiCalls}`)
+  if (updates.generationLogId !== undefined) setClauses.push(sql`generation_log_id = ${updates.generationLogId}`)
+
+  if (setClauses.length === 0) return
+
+  const setFragment = sql.join(setClauses, sql`, `)
+
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`UPDATE messages SET ${setFragment} WHERE id = ${messageId}::uuid`)
+
+    // When completing a message, update conversation cost/token stats
+    if (updates.status === 'complete' && (updates.costUsd || updates.inputTokens || updates.outputTokens)) {
+      // Look up the conversation_id from the message
+      const rowResult = await tx.execute(sql`SELECT conversation_id FROM messages WHERE id = ${messageId}::uuid`)
+      const row = (rowResult as any).rows?.[0] ?? (rowResult as any)[0]
+      const convId = row?.conversation_id
+      if (convId) {
+        await tx
+          .update(conversations)
+          .set({
+            updatedAt: new Date(),
+            totalCostUsd: sql`total_cost_usd + ${updates.costUsd ?? 0}`,
+            totalInputTokens: sql`total_input_tokens + ${updates.inputTokens ?? 0}`,
+            totalOutputTokens: sql`total_output_tokens + ${updates.outputTokens ?? 0}`,
+          })
+          .where(eq(conversations.id, convId))
+      }
+    }
+  })
+}
+
+/** Upsert a message — INSERT if not exists, UPDATE only if still streaming. Used by sendBeacon. */
+export async function upsertMessage(data: {
+  id: string
+  conversationId: string
+  projectId: string
+  role: string
+  content: string
+  status?: string
+  agentType?: string | null
+  modelUsed?: string | null
+  thinkingContent?: string | null
+  toolCalls?: unknown[]
+  contentSegments?: unknown[]
+}) {
+  const status = data.status ?? 'aborted'
+  await db.execute(sql`
+    INSERT INTO messages (
+      id, conversation_id, project_id, role, content, status,
+      agent_type, model_used, thinking_content, tool_calls, content_segments,
+      position
+    ) VALUES (
+      ${data.id}::uuid, ${data.conversationId}, ${data.projectId}, ${data.role}, ${data.content},
+      ${status},
+      ${data.agentType ?? null}::agent_type, ${data.modelUsed ?? null},
+      ${data.thinkingContent ?? null},
+      ${JSON.stringify(data.toolCalls ?? [])}::jsonb,
+      ${data.contentSegments ? sql`${JSON.stringify(data.contentSegments)}::jsonb` : sql`null`},
+      (SELECT coalesce(max(position), -1) + 1 FROM messages WHERE conversation_id = ${data.conversationId})
+    )
+    ON CONFLICT (id) DO UPDATE SET
+      content = EXCLUDED.content,
+      status = EXCLUDED.status,
+      tool_calls = EXCLUDED.tool_calls,
+      content_segments = EXCLUDED.content_segments,
+      thinking_content = EXCLUDED.thinking_content,
+      agent_type = EXCLUDED.agent_type,
+      model_used = EXCLUDED.model_used
+    WHERE messages.status = 'streaming'
+  `)
 }
 
 export async function updateMessageRating(conversationId: string, messageId: string, userRating: number | null) {

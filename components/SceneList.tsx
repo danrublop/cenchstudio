@@ -102,11 +102,11 @@ export function ProjectSwitcher({ isCollapsed }: { isCollapsed: boolean }) {
 
           {/* Project list */}
           {isLoadingProjects ? (
-            <div className="px-3 py-3 text-[10px] text-[var(--color-text-secondary)] uppercase tracking-widest text-center">
+            <div className="px-3 py-3 text-[11px] text-[var(--color-text-secondary)] uppercase tracking-widest text-center">
               Loading...
             </div>
           ) : projectList.length === 0 ? (
-            <div className="px-3 py-3 text-[10px] text-[var(--color-text-secondary)] uppercase tracking-widest text-center">
+            <div className="px-3 py-3 text-[11px] text-[var(--color-text-secondary)] uppercase tracking-widest text-center">
               No saved projects
             </div>
           ) : (
@@ -171,7 +171,7 @@ export default function SceneList({ isCollapsed, onToggleCollapse }: Props) {
       {/* Scenes - only show when fully expanded to avoid 'scaling-up' flicker during animation */}
       <div className={`flex-1 overflow-y-auto pt-1 ${isFullyExpanded ? 'block' : 'hidden'}`}>
         {scenes.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-32 text-[#3a3a45] text-[10px] text-center px-4 uppercase font-bold tracking-widest">
+          <div className="flex flex-col items-center justify-center h-32 text-[#3a3a45] text-[11px] text-center px-4 uppercase font-bold tracking-widest">
             No scenes yet.
           </div>
         ) : (

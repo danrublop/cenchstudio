@@ -898,7 +898,7 @@ function TooltipRenderer({
           content={
             <>
               <p className="mb-1.5 text-[12px] font-bold leading-snug tracking-tight">{el.tooltipTitle}</p>
-              <p className="text-[11px] font-normal leading-relaxed text-slate-300">{el.tooltipBody}</p>
+              <p className="text-[12px] font-normal leading-relaxed text-slate-300">{el.tooltipBody}</p>
             </>
           }
         >

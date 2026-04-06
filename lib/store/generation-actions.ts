@@ -9,6 +9,10 @@ import type { Set, Get } from './types'
 import { getResolvedStyle } from './helpers'
 
 export function createGenerationActions(set: Set, get: Get) {
+  // Per-scene save deduplication: if a save is in flight, queue the next one
+  const _pendingSave = new Map<string, Promise<void>>()
+  const _queuedSave = new Set<string>()
+
   return {
     generateSVG: async (sceneId: string, onToken?: (svg: string) => void) => {
       const { scenes, globalStyle } = get()
@@ -18,7 +22,7 @@ export function createGenerationActions(set: Set, get: Get) {
       const sceneIndex = scenes.findIndex((s) => s.id === sceneId)
       const previousSummary = sceneIndex > 0 ? scenes[sceneIndex - 1].summary : ''
 
-      set({ isGenerating: true, generatingSceneId: sceneId })
+      set({ isGenerating: true, generatingSceneId: sceneId, lastGenerationError: null })
       get().updateScene(sceneId, { svgContent: '' })
 
       try {
@@ -98,6 +102,7 @@ export function createGenerationActions(set: Set, get: Get) {
         }
       } catch (err) {
         console.error('Generation error:', err)
+        set({ lastGenerationError: err instanceof Error ? err.message : 'Generation failed' })
       } finally {
         set({ isGenerating: false, generatingSceneId: null })
       }
@@ -111,7 +116,7 @@ export function createGenerationActions(set: Set, get: Get) {
       const sceneIndex = scenes.findIndex((s) => s.id === sceneId)
       const previousSummary = sceneIndex > 0 ? scenes[sceneIndex - 1].summary : ''
 
-      set({ isGenerating: true, generatingSceneId: sceneId })
+      set({ isGenerating: true, generatingSceneId: sceneId, lastGenerationError: null })
       get().updateScene(sceneId, { canvasCode: '' })
 
       try {
@@ -158,6 +163,7 @@ export function createGenerationActions(set: Set, get: Get) {
         }
       } catch (err) {
         console.error('Canvas generation error:', err)
+        set({ lastGenerationError: err instanceof Error ? err.message : 'Canvas generation failed' })
       } finally {
         set({ isGenerating: false, generatingSceneId: null })
       }
@@ -171,7 +177,7 @@ export function createGenerationActions(set: Set, get: Get) {
       const sceneIndex = scenes.findIndex((s) => s.id === sceneId)
       const previousSummary = sceneIndex > 0 ? scenes[sceneIndex - 1].summary : ''
 
-      set({ isGenerating: true, generatingSceneId: sceneId })
+      set({ isGenerating: true, generatingSceneId: sceneId, lastGenerationError: null })
       get().updateScene(sceneId, { sceneCode: '', sceneHTML: '', sceneStyles: '' })
 
       try {
@@ -204,6 +210,7 @@ export function createGenerationActions(set: Set, get: Get) {
         await get().saveSceneHTML(sceneId)
       } catch (err) {
         console.error('Motion generation error:', err)
+        set({ lastGenerationError: err instanceof Error ? err.message : 'Motion generation failed' })
       } finally {
         set({ isGenerating: false, generatingSceneId: null })
       }
@@ -217,7 +224,7 @@ export function createGenerationActions(set: Set, get: Get) {
       const sceneIndex = scenes.findIndex((s) => s.id === sceneId)
       const previousSummary = sceneIndex > 0 ? scenes[sceneIndex - 1].summary : ''
 
-      set({ isGenerating: true, generatingSceneId: sceneId })
+      set({ isGenerating: true, generatingSceneId: sceneId, lastGenerationError: null })
       get().updateScene(sceneId, { sceneCode: '', sceneStyles: '' })
 
       try {
@@ -254,6 +261,7 @@ export function createGenerationActions(set: Set, get: Get) {
         await get().saveSceneHTML(sceneId)
       } catch (err) {
         console.error('D3 generation error:', err)
+        set({ lastGenerationError: err instanceof Error ? err.message : 'D3 generation failed' })
       } finally {
         set({ isGenerating: false, generatingSceneId: null })
       }
@@ -267,7 +275,7 @@ export function createGenerationActions(set: Set, get: Get) {
       const sceneIndex = scenes.findIndex((s) => s.id === sceneId)
       const previousSummary = sceneIndex > 0 ? scenes[sceneIndex - 1].summary : ''
 
-      set({ isGenerating: true, generatingSceneId: sceneId })
+      set({ isGenerating: true, generatingSceneId: sceneId, lastGenerationError: null })
       get().updateScene(sceneId, { sceneCode: '' })
 
       try {
@@ -297,6 +305,7 @@ export function createGenerationActions(set: Set, get: Get) {
         await get().saveSceneHTML(sceneId)
       } catch (err) {
         console.error('Three.js generation error:', err)
+        set({ lastGenerationError: err instanceof Error ? err.message : 'Three.js generation failed' })
       } finally {
         set({ isGenerating: false, generatingSceneId: null })
       }
@@ -310,7 +319,7 @@ export function createGenerationActions(set: Set, get: Get) {
       const sceneIndex = scenes.findIndex((s) => s.id === sceneId)
       const previousSummary = sceneIndex > 0 ? scenes[sceneIndex - 1].summary : ''
 
-      set({ isGenerating: true, generatingSceneId: sceneId })
+      set({ isGenerating: true, generatingSceneId: sceneId, lastGenerationError: null })
       get().updateScene(sceneId, { svgContent: '' })
 
       try {
@@ -339,6 +348,7 @@ export function createGenerationActions(set: Set, get: Get) {
         await get().saveSceneHTML(sceneId)
       } catch (err) {
         console.error('Lottie overlay generation error:', err)
+        set({ lastGenerationError: err instanceof Error ? err.message : 'Lottie generation failed' })
       } finally {
         set({ isGenerating: false, generatingSceneId: null })
       }
@@ -349,7 +359,7 @@ export function createGenerationActions(set: Set, get: Get) {
       const scene = scenes.find((s) => s.id === sceneId)
       if (!scene || !scene.svgContent || !instruction.trim()) return
 
-      set({ isGenerating: true, generatingSceneId: sceneId })
+      set({ isGenerating: true, generatingSceneId: sceneId, lastGenerationError: null })
 
       try {
         const response = await fetch('/api/generate', {
@@ -394,6 +404,7 @@ export function createGenerationActions(set: Set, get: Get) {
         await get().saveSceneHTML(sceneId)
       } catch (err) {
         console.error('Edit error:', err)
+        set({ lastGenerationError: err instanceof Error ? err.message : 'Edit failed' })
       } finally {
         set({ isGenerating: false, generatingSceneId: null })
       }
@@ -421,56 +432,80 @@ export function createGenerationActions(set: Set, get: Get) {
     },
 
     saveSceneHTML: async (sceneId: string, quiet = false) => {
-      let scene = get().scenes.find((s) => s.id === sceneId)
-      if (!scene) {
-        console.error('[saveSceneHTML] scene not found:', sceneId)
-        return
+      // Deduplicate: if a save is already in flight for this scene, queue a re-save
+      if (_pendingSave.has(sceneId)) {
+        _queuedSave.add(sceneId)
+        return _pendingSave.get(sceneId)
       }
-      if (scene.sceneType === 'd3' && (scene.chartLayers?.length ?? 0) > 0) {
-        const compiled = compileD3SceneFromLayers(scene.chartLayers ?? [])
-        if (
-          compiled.sceneCode !== scene.sceneCode ||
-          JSON.stringify(compiled.d3Data) !== JSON.stringify(scene.d3Data)
-        ) {
-          get().updateScene(sceneId, { sceneCode: compiled.sceneCode, d3Data: compiled.d3Data as any })
-          scene = get().scenes.find((s) => s.id === sceneId) ?? scene
-        }
-      }
-      // Resolve watermark if configured
-      const wm = get().project.watermark
-      let watermarkWithUrl = null as any
-      if (wm) {
-        const asset = get().projectAssets.find((a) => a.id === wm.assetId)
-        if (asset) {
-          watermarkWithUrl = { ...wm, publicUrl: asset.publicUrl }
-        }
-      }
-      const html = generateSceneHTML(scene, get().globalStyle, watermarkWithUrl, get().audioSettings)
-      try {
-        const res = await fetch('/api/scene', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: sceneId, html }),
-        })
-        if (!res.ok) {
-          const body = await res.text().catch(() => '')
-          console.error('[saveSceneHTML] API error', res.status, body)
+
+      const doSave = async () => {
+        let scene = get().scenes.find((s) => s.id === sceneId)
+        if (!scene) {
+          console.error('[saveSceneHTML] scene not found:', sceneId)
           return
         }
-        console.log('[saveSceneHTML] saved', sceneId, `(${html.length} chars)`)
-        if (!quiet) {
-          set({ sceneHtmlVersion: get().sceneHtmlVersion + 1 })
+        if (scene.sceneType === 'd3' && (scene.chartLayers?.length ?? 0) > 0) {
+          const compiled = compileD3SceneFromLayers(scene.chartLayers ?? [])
+          if (
+            compiled.sceneCode !== scene.sceneCode ||
+            JSON.stringify(compiled.d3Data) !== JSON.stringify(scene.d3Data)
+          ) {
+            get().updateScene(sceneId, { sceneCode: compiled.sceneCode, d3Data: compiled.d3Data as any })
+            scene = get().scenes.find((s) => s.id === sceneId) ?? scene
+          }
         }
-      } catch (err) {
-        console.error('[saveSceneHTML] network error:', err)
+        // Resolve watermark if configured
+        const wm = get().project.watermark
+        let watermarkWithUrl = null as any
+        if (wm) {
+          const asset = get().projectAssets.find((a) => a.id === wm.assetId)
+          if (asset) {
+            watermarkWithUrl = { ...wm, publicUrl: asset.publicUrl }
+          }
+        }
+        const html = generateSceneHTML(scene, get().globalStyle, watermarkWithUrl, get().audioSettings)
+        try {
+          const res = await fetch('/api/scene', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: sceneId, html }),
+          })
+          if (!res.ok) {
+            const body = await res.text().catch(() => '')
+            console.error('[saveSceneHTML] API error', res.status, body)
+            set({ sceneWriteErrors: { ...get().sceneWriteErrors, [sceneId]: `Save failed (${res.status})` } })
+            return
+          }
+          console.log('[saveSceneHTML] saved', sceneId, `(${html.length} chars)`)
+          // Clear any previous error for this scene
+          const { [sceneId]: _, ...rest } = get().sceneWriteErrors
+          set({ sceneWriteErrors: rest })
+          if (!quiet) {
+            set({ sceneHtmlVersion: get().sceneHtmlVersion + 1 })
+          }
+        } catch (err) {
+          console.error('[saveSceneHTML] network error:', err)
+          set({ sceneWriteErrors: { ...get().sceneWriteErrors, [sceneId]: 'Network error — server may be down' } })
+        }
       }
+
+      const promise = doSave().finally(() => {
+        _pendingSave.delete(sceneId)
+        // If a save was queued while we were writing, run it now with fresh state
+        if (_queuedSave.has(sceneId)) {
+          _queuedSave.delete(sceneId)
+          get().saveSceneHTML(sceneId, quiet)
+        }
+      })
+      _pendingSave.set(sceneId, promise)
+      return promise
     },
 
     generateSvgObject: async (sceneId: string, objectId: string, prompt: string, onToken?: (svg: string) => void) => {
       const { globalStyle } = get()
       if (!prompt.trim()) return
 
-      set({ isGenerating: true, generatingSceneId: sceneId })
+      set({ isGenerating: true, generatingSceneId: sceneId, lastGenerationError: null })
 
       try {
         const response = await fetch('/api/generate', {
@@ -498,6 +533,7 @@ export function createGenerationActions(set: Set, get: Get) {
         await get().saveSceneHTML(sceneId)
       } catch (err) {
         console.error('SVG object generation error:', err)
+        set({ lastGenerationError: err instanceof Error ? err.message : 'SVG object generation failed' })
       } finally {
         set({ isGenerating: false, generatingSceneId: null })
       }

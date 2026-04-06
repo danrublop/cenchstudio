@@ -158,7 +158,7 @@ Regenerate the full JSON and fix those issues. Keep the same chart intent and st
     }
   } catch (err: unknown) {
     console.error('D3 generate error:', err)
-    const message = err instanceof Error ? err.message : 'Internal error'
+    const message = err instanceof Error ? err.message.replace(/[a-zA-Z0-9_\-]{20,}/g, '[REDACTED]').slice(0, 200) : 'Internal error'
     return NextResponse.json({ error: message }, { status: 500 })
   }
 }

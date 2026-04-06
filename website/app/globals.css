@@ -530,3 +530,150 @@ body {
   background: #b8b3a8;
   border-radius: 4px;
 }
+
+/* Hero editor mock — same tokens + titlebar chrome as app `Editor` (electron layout) */
+.hero-editor-mock {
+  --color-border: rgba(255, 255, 255, 0.09);
+  --color-hairline: rgba(255, 255, 255, 0.055);
+  --color-panel: #121212;
+  --color-bg: #181818;
+  --color-input-bg: #0d0d0f;
+  --color-text-muted: #6b6b7a;
+  --color-text-primary: #f0ece0;
+  --color-accent: #e84545;
+  --agent-chat-user-surface: #212121;
+  --kbd-text: #ffffff;
+  --kbd-bg: #151515;
+  --kbd-border: #444;
+  --kbd-shadow: #000;
+}
+
+/* Scene cards — mirrors `app/globals.css` .scene-card-container (dark) */
+.hero-editor-mock .scene-card-mock {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1.5px solid transparent;
+}
+
+.hero-editor-mock .scene-card-mock.scene-card-mock--selected {
+  border-color: rgba(255, 255, 255, 0.6);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+/* Primary row button — mirrors `.kbd` (dark editor) */
+.hero-editor-mock .editor-kbd-mock {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  border: 1.5px solid var(--kbd-border);
+  box-shadow: 0 0 0 2px var(--kbd-shadow);
+  background: var(--kbd-bg);
+  color: var(--kbd-text);
+  pointer-events: none;
+}
+
+/* Compact `.kbd` chips — matches `LayersTab` Setup rows (hero mock only) */
+.hero-editor-mock .kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 0 8px;
+  background: var(--kbd-bg);
+  border-radius: 10px;
+  border: 1.5px solid var(--kbd-border);
+  box-shadow: 0 0 0 2px var(--kbd-shadow);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--color-text-muted);
+  cursor: default;
+  user-select: none;
+  pointer-events: none;
+}
+
+.hero-editor-mock .agent-mock-scrollbar-hide {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.hero-editor-mock .agent-mock-scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+.hero-editor-mock .scrollbar-hide {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.hero-editor-mock .scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+.hero-editor-mock .agent-mock-no-style {
+  box-shadow: none;
+  margin: 0;
+  font: inherit;
+  cursor: default;
+  pointer-events: none;
+}
+
+/* Unstyled control — mirrors app `globals.css` `.no-style` (Layers tab ⋯).
+   Omit `color: inherit` so Tailwind `text-*` on the same node wins (⋯ icon uses currentColor). */
+.hero-editor-mock .no-style {
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+}
+
+/* Configure-tabs ⋯ — preflight / button UA styles can force black; pin to editor muted gray */
+.hero-editor-mock .hero-mock-layers-more {
+  color: var(--color-text-muted);
+  -webkit-text-fill-color: var(--color-text-muted);
+}
+.hero-editor-mock .hero-mock-layers-more:hover {
+  color: var(--kbd-text);
+  -webkit-text-fill-color: var(--kbd-text);
+}
+.hero-editor-mock .hero-mock-layers-more svg {
+  stroke: currentColor;
+  color: inherit;
+}
+
+/* Title pill: flat fill + single hairline (no glass / no glossy inset) */
+.home-editor-title-pill {
+  background: var(--agent-chat-user-surface);
+  border: 1px solid var(--color-border);
+  box-shadow: none;
+}
+
+.hero-editor-mock .electron-titlebar-icon {
+  color: #6f7280;
+}
+
+/* Selected/hover surface only — icon stays same gray as idle (marketing mock) */
+.hero-editor-mock .electron-titlebar-icon.electron-titlebar-icon-active {
+  background: var(--agent-chat-user-surface);
+  color: #6f7280;
+}
+
+.hero-editor-mock .mock-tb-btn {
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  cursor: default;
+  pointer-events: none;
+}
+
+/* Zoom / label row uses muted text; beats `.electron-titlebar-icon` alone */
+.hero-editor-mock .mock-tb-btn.electron-titlebar-icon.text-\[var\(--color-text-muted\)\] {
+  color: var(--color-text-muted);
+}

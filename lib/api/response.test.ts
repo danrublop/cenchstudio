@@ -1,16 +1,17 @@
 import { describe, it, expect } from 'vitest'
-import { apiSuccess, apiError, apiValidationError, apiNotFound } from './response'
+import { apiJson, apiError, apiValidationError, apiNotFound } from './response'
 
 describe('API response helpers', () => {
-  it('apiSuccess wraps data and returns 200 by default', async () => {
-    const res = apiSuccess({ id: 1, name: 'test' })
+  it('apiJson returns the body as-is with 200 by default', async () => {
+    const res = apiJson({ id: 1, name: 'test' })
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.data).toEqual({ id: 1, name: 'test' })
+    expect(body.id).toBe(1)
+    expect(body.name).toBe('test')
   })
 
-  it('apiSuccess accepts custom status', async () => {
-    const res = apiSuccess({ created: true }, 201)
+  it('apiJson accepts custom status', async () => {
+    const res = apiJson({ created: true }, 201)
     expect(res.status).toBe(201)
   })
 

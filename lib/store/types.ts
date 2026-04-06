@@ -62,10 +62,21 @@ export type Get = () => VideoStore
 
 // ── VideoStore interface ─────────────────────────────────────────────────────
 
+export interface AuthUser {
+  id: string
+  email: string
+  name: string | null
+  image: string | null
+}
+
 export interface VideoStore {
   scenes: Scene[]
   selectedSceneId: string | null
   globalStyle: GlobalStyle
+
+  // Auth
+  currentUser: AuthUser | null
+  setCurrentUser: (user: AuthUser | null) => void
 
   // Undo/Redo
   _undoStack: UndoableState[]
@@ -76,9 +87,27 @@ export interface VideoStore {
   redo: () => void
   isGenerating: boolean
   generatingSceneId: string | null
+  lastGenerationError: string | null
   isExporting: boolean
   isExportModalOpen: boolean
   exportProgress: ExportProgress | null
+
+  // Recording (agent/API-driven)
+  recordingState: import('@/types/electron').RecordingStoreState
+  recordingConfig: import('@/types/electron').RecordingConfig
+  recordingCommand: import('@/types/electron').RecordingCommand
+  recordingCommandNonce: number
+  recordingResult: import('@/types/electron').RecordingSessionManifest | null
+  recordingError: string | null
+  recordingElapsed: number
+  recordingAttachSceneId: string | null
+  setRecordingCommand: (cmd: import('@/types/electron').RecordingCommand) => void
+  setRecordingConfig: (config: Partial<import('@/types/electron').RecordingConfig>) => void
+  setRecordingState: (state: import('@/types/electron').RecordingStoreState) => void
+  setRecordingResult: (result: import('@/types/electron').RecordingSessionManifest | null) => void
+  setRecordingError: (error: string | null) => void
+  setRecordingElapsed: (ms: number) => void
+  setRecordingAttachSceneId: (sceneId: string | null) => void
   timelineHeight: number
   isPreviewFullscreen: boolean
   /** When true, preview uses the Pixi compositor instead of per-scene iframes (Electron continuous mode) */
@@ -87,6 +116,12 @@ export interface VideoStore {
   /** When true, the center area shows the Zdog Studio viewport + controls instead of preview + timeline */
   zdogStudioMode: boolean
   setZdogStudioMode: (active: boolean) => void
+  /** When true, editor is in recording studio mode with live capture preview */
+  studioRecordMode: boolean
+  setStudioRecordMode: (active: boolean) => void
+  /** Live getDisplayMedia stream for studio record preview (not serializable) */
+  studioRecordStream: MediaStream | null
+  setStudioRecordStream: (stream: MediaStream | null) => void
   /** Preview canvas scale (1 = 100%); synced from PreviewPlayer for header display */
   previewZoom: number
   setPreviewZoom: (z: number) => void
@@ -94,6 +129,10 @@ export interface VideoStore {
   timelineScrollX: number
   timelineAutoScroll: boolean
   sceneHtmlVersion: number
+  /** Per-scene HTML write errors — shown in preview when a scene file failed to save */
+  sceneWriteErrors: Record<string, string>
+  /** True when the initial project load failed after all retries */
+  projectLoadFailed: boolean
   gridConfig: GridConfig
   project: Project
   isPublishing: boolean
@@ -126,6 +165,10 @@ export interface VideoStore {
   modelOverride: ModelId | null
   modelTier: ModelTier
   thinkingMode: ThinkingMode
+  /** When true, all LLM calls route through Ollama and TTS uses free providers */
+  localMode: boolean
+  /** Selected local model ID (e.g. Ollama model) when localMode is on */
+  localModelId: string | null
   sceneContext: 'all' | 'selected' | 'auto' | string
   activeTools: string[]
   chatInputValue: string
@@ -160,8 +203,13 @@ export interface VideoStore {
   // Chat Actions
   setChatOpen: (open: boolean) => void
   addChatMessage: (msg: ChatMessage) => void
+  /** Persist a user message to the DB. Awaitable — call before starting the agent stream. */
+  persistUserMessage: (msg: ChatMessage) => Promise<void>
   updateChatMessage: (id: string, updates: Partial<ChatMessage>) => void
-  persistChatMessage: (id: string) => void
+  /** Persist a chat message to DB. INSERT on first call, UPDATE on subsequent. Awaitable. */
+  persistChatMessage: (id: string, opts?: { status?: string }) => Promise<void>
+  /** Track which message IDs have been persisted to DB (INSERT vs UPDATE discrimination) */
+  _persistedMessageIds: globalThis.Set<string>
   removeChatMessage: (id: string) => void
   clearChat: () => void
   setAgentRunning: (running: boolean) => void
@@ -199,12 +247,14 @@ export interface VideoStore {
   setModelOverride: (id: ModelId | null) => void
   setModelTier: (tier: ModelTier) => void
   setThinkingMode: (mode: ThinkingMode) => void
+  setLocalMode: (enabled: boolean) => void
+  setLocalModelId: (id: string | null) => void
   setSceneContext: (ctx: 'all' | 'selected' | 'auto' | string) => void
   setActiveTools: (tools: string[]) => void
   toggleActiveTool: (toolId: string) => void
   setChatInputValue: (v: string) => void
   // Sync scenes from agent tool execution
-  syncScenesFromAgent: (updatedScenes: Scene[], updatedGlobalStyle: GlobalStyle) => void
+  syncScenesFromAgent: (updatedScenes: Scene[], updatedGlobalStyle: GlobalStyle) => Promise<void>
 
   // Actions
   setTimelineHeight: (height: number) => void

@@ -104,7 +104,7 @@ export function HeroLibraryGrid({ open, onClose }: HeroLibraryGridProps) {
         </button>
 
         <div className="flex h-full w-full flex-col justify-end pb-[clamp(6.75rem,19vw,9.75rem)] pt-8 sm:pb-[clamp(7.25rem,17vw,10rem)] sm:pt-12">
-          <div className="pointer-events-auto mx-auto grid grid-cols-3 justify-items-center gap-x-5 gap-y-6 px-3 sm:max-w-3xl sm:gap-x-10 sm:gap-y-8 sm:px-6">
+          <div className="pointer-events-auto mx-auto grid grid-cols-3 justify-items-center gap-x-5 gap-y-6 px-1.5 sm:max-w-3xl sm:gap-x-10 sm:gap-y-8 sm:px-3">
             {PLACEHOLDER_CLIPS.map((clip, i) => (
               <VideoFileTile
                 key={clip.id}

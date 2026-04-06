@@ -1,0 +1,710 @@
+{
+  "id": "1b996b0b-ef72-4131-9468-4842ef7b42f2",
+  "version": 1,
+  "name": "Untitled Project",
+  "playerOptions": {
+    "theme": "dark",
+    "showProgressBar": true,
+    "showSceneNav": true,
+    "allowFullscreen": true,
+    "brandColor": "#e84545",
+    "autoplay": true
+  },
+  "sceneGraph": {
+    "nodes": [
+      {
+        "id": "0022d4cc-8cdf-4571-ad1b-3f48c2d89d4a",
+        "position": {
+          "x": 60,
+          "y": 60
+        }
+      },
+      {
+        "id": "43a9ed0b-490f-4d0d-b486-836f0d2fb46a",
+        "position": {
+          "x": 280,
+          "y": 60
+        }
+      },
+      {
+        "id": "3148dfbe-1a46-401a-829d-6356746283fe",
+        "position": {
+          "x": 500,
+          "y": 60
+        }
+      },
+      {
+        "id": "4acf3344-f5b4-408a-b486-808592ac10be",
+        "position": {
+          "x": 720,
+          "y": 60
+        }
+      },
+      {
+        "id": "1b3c1bc0-a249-44c0-ae1c-32e6b3d64415",
+        "position": {
+          "x": 60,
+          "y": 240
+        }
+      },
+      {
+        "id": "3fed8bbf-cb55-4398-9578-2bb9adefd5a5",
+        "position": {
+          "x": 280,
+          "y": 240
+        }
+      },
+      {
+        "id": "86d5a73b-565a-4237-b355-5988e35d5fb4",
+        "position": {
+          "x": 500,
+          "y": 240
+        }
+      },
+      {
+        "id": "21d944ee-ff99-4d92-9f21-262d0f868190",
+        "position": {
+          "x": 720,
+          "y": 240
+        }
+      },
+      {
+        "id": "fe692157-2ff6-47ec-baf7-8efe54e5fdb9",
+        "position": {
+          "x": 60,
+          "y": 420
+        }
+      },
+      {
+        "id": "2961311e-2ca1-415f-bd32-5bdaffdfc0c1",
+        "position": {
+          "x": 120,
+          "y": 140
+        }
+      },
+      {
+        "id": "ffa36a30-03c2-4be8-9ebf-8ab659a9abd9",
+        "position": {
+          "x": 400,
+          "y": 140
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "0ab3d006-ca22-47bc-a4bc-6c6b16d2a22e",
+        "fromSceneId": "2961311e-2ca1-415f-bd32-5bdaffdfc0c1",
+        "toSceneId": "ffa36a30-03c2-4be8-9ebf-8ab659a9abd9",
+        "condition": {
+          "type": "auto",
+          "variableName": null,
+          "interactionId": null,
+          "variableValue": null
+        }
+      },
+      {
+        "id": "9cc446c0-dbba-4cd9-932e-aab2ef880332",
+        "fromSceneId": "ffa36a30-03c2-4be8-9ebf-8ab659a9abd9",
+        "toSceneId": "2961311e-2ca1-415f-bd32-5bdaffdfc0c1",
+        "condition": {
+          "type": "auto",
+          "variableName": null,
+          "interactionId": null,
+          "variableValue": null
+        }
+      }
+    ],
+    "startSceneId": "2961311e-2ca1-415f-bd32-5bdaffdfc0c1"
+  },
+  "scenes": [
+    {
+      "id": "0022d4cc-8cdf-4571-ad1b-3f48c2d89d4a",
+      "type": "motion",
+      "duration": 12,
+      "htmlUrl": "/published/1b996b0b-ef72-4131-9468-4842ef7b42f2/scenes/0022d4cc-8cdf-4571-ad1b-3f48c2d89d4a.html",
+      "htmlContent": null,
+      "interactions": [],
+      "variables": [],
+      "transition": "crossfade"
+    },
+    {
+      "id": "43a9ed0b-490f-4d0d-b486-836f0d2fb46a",
+      "type": "motion",
+      "duration": 12,
+      "htmlUrl": "/published/1b996b0b-ef72-4131-9468-4842ef7b42f2/scenes/43a9ed0b-490f-4d0d-b486-836f0d2fb46a.html",
+      "htmlContent": null,
+      "interactions": [],
+      "variables": [],
+      "transition": "crossfade"
+    },
+    {
+      "id": "3148dfbe-1a46-401a-829d-6356746283fe",
+      "type": "motion",
+      "duration": 14,
+      "htmlUrl": "/published/1b996b0b-ef72-4131-9468-4842ef7b42f2/scenes/3148dfbe-1a46-401a-829d-6356746283fe.html",
+      "htmlContent": null,
+      "interactions": [],
+      "variables": [],
+      "transition": "crossfade"
+    },
+    {
+      "id": "4acf3344-f5b4-408a-b486-808592ac10be",
+      "type": "d3",
+      "duration": 12,
+      "htmlUrl": "/published/1b996b0b-ef72-4131-9468-4842ef7b42f2/scenes/4acf3344-f5b4-408a-b486-808592ac10be.html",
+      "htmlContent": null,
+      "interactions": [],
+      "variables": [],
+      "transition": "crossfade"
+    },
+    {
+      "id": "1b3c1bc0-a249-44c0-ae1c-32e6b3d64415",
+      "type": "three",
+      "duration": 12,
+      "htmlUrl": "/published/1b996b0b-ef72-4131-9468-4842ef7b42f2/scenes/1b3c1bc0-a249-44c0-ae1c-32e6b3d64415.html",
+      "htmlContent": null,
+      "interactions": [],
+      "variables": [],
+      "transition": "crossfade"
+    },
+    {
+      "id": "3fed8bbf-cb55-4398-9578-2bb9adefd5a5",
+      "type": "canvas2d",
+      "duration": 10,
+      "htmlUrl": "/published/1b996b0b-ef72-4131-9468-4842ef7b42f2/scenes/3fed8bbf-cb55-4398-9578-2bb9adefd5a5.html",
+      "htmlContent": null,
+      "interactions": [],
+      "variables": [],
+      "transition": "crossfade"
+    },
+    {
+      "id": "86d5a73b-565a-4237-b355-5988e35d5fb4",
+      "type": "zdog",
+      "duration": 10,
+      "htmlUrl": "/published/1b996b0b-ef72-4131-9468-4842ef7b42f2/scenes/86d5a73b-565a-4237-b355-5988e35d5fb4.html",
+      "htmlContent": null,
+      "interactions": [],
+      "variables": [],
+      "transition": "crossfade"
+    },
+    {
+      "id": "21d944ee-ff99-4d92-9f21-262d0f868190",
+      "type": "avatar_scene",
+      "duration": 14,
+      "htmlUrl": "/published/1b996b0b-ef72-4131-9468-4842ef7b42f2/scenes/21d944ee-ff99-4d92-9f21-262d0f868190.html",
+      "htmlContent": null,
+      "interactions": [],
+      "variables": [],
+      "transition": "crossfade"
+    },
+    {
+      "id": "fe692157-2ff6-47ec-baf7-8efe54e5fdb9",
+      "type": "motion",
+      "duration": 12,
+      "htmlUrl": "/published/1b996b0b-ef72-4131-9468-4842ef7b42f2/scenes/fe692157-2ff6-47ec-baf7-8efe54e5fdb9.html",
+      "htmlContent": null,
+      "interactions": [],
+      "variables": [],
+      "transition": "crossfade"
+    },
+    {
+      "id": "2961311e-2ca1-415f-bd32-5bdaffdfc0c1",
+      "type": "canvas2d",
+      "duration": 16,
+      "htmlUrl": "/published/1b996b0b-ef72-4131-9468-4842ef7b42f2/scenes/2961311e-2ca1-415f-bd32-5bdaffdfc0c1.html",
+      "htmlContent": null,
+      "interactions": [
+        {
+          "x": 6,
+          "y": 70,
+          "id": "702278be-25b2-4bba-997e-757d86f8c314",
+          "type": "hotspot",
+          "color": "#e84545",
+          "label": "→ Act II",
+          "shape": "pill",
+          "style": "pulse",
+          "width": 18,
+          "height": 12,
+          "hidesAt": null,
+          "appearsAt": 0.4,
+          "visualStyle": {
+            "gap": 10,
+            "blur": 20,
+            "preset": "glass-warm",
+            "bgColor": "#fff5e6",
+            "fontSize": 15,
+            "paddingX": 28,
+            "paddingY": 24,
+            "bgOpacity": 0.18,
+            "innerGlow": 0.7,
+            "textAlign": "center",
+            "textColor": "#ffffff",
+            "fontFamily": "system-ui, -apple-system, sans-serif",
+            "fontWeight": 600,
+            "hoverScale": 1.02,
+            "accentColor": "#e84545",
+            "borderColor": "#fff5e6",
+            "borderWidth": 1,
+            "shadowColor": "#000000",
+            "borderRadius": 20,
+            "shadowSpread": 32,
+            "borderOpacity": 0.3,
+            "letterSpacing": 0,
+            "shadowOpacity": 0.1,
+            "hoverBrightness": 1.1,
+            "transitionSpeed": 200
+          },
+          "jumpsToSceneId": "ffa36a30-03c2-4be8-9ebf-8ab659a9abd9",
+          "triggersEdgeId": null,
+          "entranceAnimation": "pop"
+        },
+        {
+          "x": 76,
+          "y": 68,
+          "id": "99d7b9fc-192e-471e-b289-f41ed84218f4",
+          "type": "hotspot",
+          "color": "#94a3b8",
+          "label": "No jump",
+          "shape": "rectangle",
+          "style": "border",
+          "width": 16,
+          "height": 14,
+          "hidesAt": null,
+          "appearsAt": 0.9,
+          "visualStyle": {
+            "gap": 10,
+            "blur": 0,
+            "preset": "outline",
+            "bgColor": "#ffffff",
+            "fontSize": 13,
+            "paddingX": 28,
+            "paddingY": 24,
+            "bgOpacity": 0,
+            "innerGlow": 0,
+            "textAlign": "center",
+            "textColor": "#ffffff",
+            "fontFamily": "system-ui, -apple-system, sans-serif",
+            "fontWeight": 600,
+            "hoverScale": 1.02,
+            "accentColor": "#e84545",
+            "borderColor": "#ffffff",
+            "borderWidth": 2,
+            "shadowColor": "#000000",
+            "borderRadius": 10,
+            "shadowSpread": 0,
+            "borderOpacity": 0.5,
+            "letterSpacing": 0,
+            "shadowOpacity": 0,
+            "hoverBrightness": 1.1,
+            "transitionSpeed": 200
+          },
+          "jumpsToSceneId": null,
+          "triggersEdgeId": null,
+          "entranceAnimation": "fade"
+        },
+        {
+          "x": 10,
+          "y": 26,
+          "id": "8061607c-ea69-4eb9-8422-70a06b7466ef",
+          "type": "tooltip",
+          "width": 5,
+          "height": 5,
+          "hidesAt": null,
+          "appearsAt": 1.1,
+          "tooltipBody": "Tooltip triggers use the same glass style system — this one uses the neon preset with glow-friendly borders.",
+          "visualStyle": {
+            "gap": 10,
+            "blur": 12,
+            "preset": "neon",
+            "bgColor": "#000000",
+            "fontSize": 13,
+            "paddingX": 28,
+            "paddingY": 24,
+            "bgOpacity": 0.8,
+            "innerGlow": 0.9,
+            "textAlign": "center",
+            "textColor": "#ffffff",
+            "fontFamily": "system-ui, -apple-system, sans-serif",
+            "fontWeight": 600,
+            "hoverScale": 1.02,
+            "accentColor": "#e84545",
+            "borderColor": "#e84545",
+            "borderWidth": 2,
+            "shadowColor": "#e84545",
+            "borderRadius": 20,
+            "shadowSpread": 24,
+            "borderOpacity": 0.8,
+            "letterSpacing": 0,
+            "shadowOpacity": 0.4,
+            "hoverBrightness": 1.1,
+            "transitionSpeed": 200
+          },
+          "tooltipTitle": "Neon preset",
+          "triggerColor": "#e84545",
+          "triggerLabel": "i",
+          "triggerShape": "circle",
+          "tooltipMaxWidth": 260,
+          "tooltipPosition": "right",
+          "entranceAnimation": "fade"
+        },
+        {
+          "x": 84,
+          "y": 20,
+          "id": "b5b874b4-776a-4f48-886d-ae112ea1252c",
+          "type": "tooltip",
+          "width": 6,
+          "height": 5,
+          "hidesAt": null,
+          "appearsAt": 1.4,
+          "tooltipBody": "Positioned left so the card opens into the frame. Try every corner in your own projects.",
+          "visualStyle": {
+            "gap": 10,
+            "blur": 28,
+            "preset": "glass-cool",
+            "bgColor": "#e0f2fe",
+            "fontSize": 13,
+            "paddingX": 28,
+            "paddingY": 24,
+            "bgOpacity": 0.15,
+            "innerGlow": 0.5,
+            "textAlign": "center",
+            "textColor": "#ffffff",
+            "fontFamily": "system-ui, -apple-system, sans-serif",
+            "fontWeight": 600,
+            "hoverScale": 1.02,
+            "accentColor": "#e84545",
+            "borderColor": "#e0f2fe",
+            "borderWidth": 1,
+            "shadowColor": "#000000",
+            "borderRadius": 20,
+            "shadowSpread": 40,
+            "borderOpacity": 0.4,
+            "letterSpacing": 0,
+            "shadowOpacity": 0.1,
+            "hoverBrightness": 1.1,
+            "transitionSpeed": 200
+          },
+          "tooltipTitle": "Glass cool",
+          "triggerColor": "#38bdf8",
+          "triggerLabel": "?",
+          "triggerShape": "rectangle",
+          "tooltipMaxWidth": 280,
+          "tooltipPosition": "left",
+          "entranceAnimation": "slide-up"
+        },
+        {
+          "x": 14,
+          "y": 36,
+          "id": "3d0e6bc8-9a85-4697-aae7-462e8692495c",
+          "type": "choice",
+          "width": 72,
+          "height": 28,
+          "layout": "horizontal",
+          "hidesAt": null,
+          "options": [
+            {
+              "id": "f20fc65e-c346-4232-8ce8-c17513b5e857",
+              "icon": "▶",
+              "color": "#a78bfa",
+              "label": "Act II",
+              "jumpsToSceneId": "ffa36a30-03c2-4be8-9ebf-8ab659a9abd9"
+            },
+            {
+              "id": "02be9478-67dd-4482-98b1-6458548efa3c",
+              "icon": null,
+              "color": "#34d399",
+              "label": "Act II (same)",
+              "jumpsToSceneId": "ffa36a30-03c2-4be8-9ebf-8ab659a9abd9"
+            },
+            {
+              "id": "69096898-d782-469f-ac51-8f3520e6419d",
+              "icon": null,
+              "color": "#64748b",
+              "label": "Stay",
+              "jumpsToSceneId": ""
+            }
+          ],
+          "question": "Branching — where next?",
+          "appearsAt": 2.2,
+          "visualStyle": {
+            "gap": 10,
+            "blur": 0,
+            "preset": "gradient",
+            "bgColor": "#6366f1",
+            "fontSize": 15,
+            "paddingX": 28,
+            "paddingY": 24,
+            "bgOpacity": 0.85,
+            "innerGlow": 0.3,
+            "textAlign": "center",
+            "textColor": "#ffffff",
+            "fontFamily": "system-ui, -apple-system, sans-serif",
+            "fontWeight": 600,
+            "hoverScale": 1.02,
+            "accentColor": "#ec4899",
+            "borderColor": "#ffffff",
+            "borderWidth": 1,
+            "shadowColor": "#000000",
+            "borderRadius": 20,
+            "shadowSpread": 32,
+            "borderOpacity": 0.15,
+            "letterSpacing": 0,
+            "shadowOpacity": 0.1,
+            "hoverBrightness": 1.1,
+            "transitionSpeed": 200
+          },
+          "entranceAnimation": "slide-up"
+        },
+        {
+          "x": 42,
+          "y": 44,
+          "id": "22d02f69-f15b-4589-94e0-c87e20890e34",
+          "type": "gate",
+          "width": 16,
+          "height": 10,
+          "hidesAt": null,
+          "appearsAt": 8.5,
+          "buttonLabel": "Continue timeline",
+          "buttonStyle": "outline",
+          "visualStyle": {
+            "gap": 10,
+            "blur": 24,
+            "preset": "glass-dark",
+            "bgColor": "#000000",
+            "fontSize": 16,
+            "paddingX": 28,
+            "paddingY": 24,
+            "bgOpacity": 0.6,
+            "innerGlow": 0.2,
+            "textAlign": "center",
+            "textColor": "#ffffff",
+            "fontFamily": "system-ui, -apple-system, sans-serif",
+            "fontWeight": 600,
+            "hoverScale": 1.02,
+            "accentColor": "#e84545",
+            "borderColor": "#ffffff",
+            "borderWidth": 1,
+            "shadowColor": "#000000",
+            "borderRadius": 20,
+            "shadowSpread": 32,
+            "borderOpacity": 0.15,
+            "letterSpacing": 0,
+            "shadowOpacity": 0.1,
+            "hoverBrightness": 1.1,
+            "transitionSpeed": 200
+          },
+          "minimumWatchTime": 0,
+          "entranceAnimation": "fade"
+        }
+      ],
+      "variables": [],
+      "transition": "none"
+    },
+    {
+      "id": "ffa36a30-03c2-4be8-9ebf-8ab659a9abd9",
+      "type": "canvas2d",
+      "duration": 26,
+      "htmlUrl": "/published/1b996b0b-ef72-4131-9468-4842ef7b42f2/scenes/ffa36a30-03c2-4be8-9ebf-8ab659a9abd9.html",
+      "htmlContent": null,
+      "interactions": [
+        {
+          "x": 12,
+          "y": 18,
+          "id": "4a8e924d-a219-467b-85ba-dfb4d1f901ea",
+          "type": "quiz",
+          "width": 76,
+          "height": 52,
+          "hidesAt": 9,
+          "onWrong": "retry",
+          "options": [
+            {
+              "id": "a2dcfb5d-4a1e-4390-8374-5b152929cf1a",
+              "label": "Motion / Anime.js forward scenes"
+            },
+            {
+              "id": "ca53c6de-1054-46e5-8d7e-bba3a4025daa",
+              "label": "SVG-only, never Motion"
+            },
+            {
+              "id": "aed1751f-2a9d-46bf-83b5-98b20c79d485",
+              "label": "Static PNG slides"
+            }
+          ],
+          "question": "What does Cench Studio prefer for explainer-style scenes?",
+          "appearsAt": 0.5,
+          "onCorrect": "continue",
+          "explanation": "Motion is the default renderer for explainers; Canvas2D and others are used when the brief fits.",
+          "visualStyle": {
+            "gap": 10,
+            "blur": 0,
+            "preset": "solid-light",
+            "bgColor": "#ffffff",
+            "fontSize": 15,
+            "paddingX": 28,
+            "paddingY": 24,
+            "bgOpacity": 0.95,
+            "innerGlow": 0,
+            "textAlign": "left",
+            "textColor": "#111111",
+            "fontFamily": "system-ui, -apple-system, sans-serif",
+            "fontWeight": 600,
+            "hoverScale": 1.02,
+            "accentColor": "#e84545",
+            "borderColor": "#e5e5e5",
+            "borderWidth": 1,
+            "shadowColor": "#000000",
+            "borderRadius": 20,
+            "shadowSpread": 32,
+            "borderOpacity": 0.8,
+            "letterSpacing": 0,
+            "shadowOpacity": 0.08,
+            "hoverBrightness": 1.1,
+            "transitionSpeed": 200
+          },
+          "onWrongSceneId": null,
+          "correctOptionId": "a2dcfb5d-4a1e-4390-8374-5b152929cf1a",
+          "onCorrectSceneId": null,
+          "entranceAnimation": "slide-up"
+        },
+        {
+          "x": 22,
+          "y": 16,
+          "id": "34ba3e6e-8884-4d2f-82aa-0ff266a01d0a",
+          "type": "form",
+          "width": 56,
+          "fields": [
+            {
+              "id": "fld_name",
+              "type": "text",
+              "label": "Name (injected as {visitorName})",
+              "options": [],
+              "required": true,
+              "placeholder": "Your name"
+            },
+            {
+              "id": "fld_focus",
+              "type": "select",
+              "label": "Focus",
+              "options": [
+                "Animation",
+                "Data viz",
+                "3D",
+                "Publishing"
+              ],
+              "required": false,
+              "placeholder": null
+            },
+            {
+              "id": "fld_level",
+              "type": "radio",
+              "label": "Level",
+              "options": [
+                "Hobbyist",
+                "Pro",
+                "Team"
+              ],
+              "required": false,
+              "placeholder": null
+            }
+          ],
+          "height": 62,
+          "hidesAt": null,
+          "appearsAt": 9.2,
+          "submitLabel": "Save & return to Act I",
+          "visualStyle": {
+            "gap": 10,
+            "blur": 0,
+            "preset": "minimal",
+            "bgColor": "#ffffff",
+            "fontSize": 14,
+            "paddingX": 28,
+            "paddingY": 24,
+            "bgOpacity": 0,
+            "innerGlow": 0,
+            "textAlign": "left",
+            "textColor": "#ffffff",
+            "fontFamily": "system-ui, -apple-system, sans-serif",
+            "fontWeight": 600,
+            "hoverScale": 1.02,
+            "accentColor": "#e84545",
+            "borderColor": "#ffffff",
+            "borderWidth": 1,
+            "shadowColor": "#000000",
+            "borderRadius": 8,
+            "shadowSpread": 0,
+            "borderOpacity": 0.35,
+            "letterSpacing": 0,
+            "shadowOpacity": 0,
+            "hoverBrightness": 1.1,
+            "transitionSpeed": 200
+          },
+          "setsVariables": [
+            {
+              "fieldId": "fld_name",
+              "variableName": "visitorName"
+            },
+            {
+              "fieldId": "fld_focus",
+              "variableName": "focusArea"
+            }
+          ],
+          "jumpsToSceneId": "2961311e-2ca1-415f-bd32-5bdaffdfc0c1",
+          "entranceAnimation": "pop"
+        },
+        {
+          "x": 40,
+          "y": 78,
+          "id": "52fb48e5-a07c-4398-9a68-2c2dee88bbf7",
+          "type": "hotspot",
+          "color": "#f472b6",
+          "label": "Skip form → Act I",
+          "shape": "pill",
+          "style": "glow",
+          "width": 20,
+          "height": 11,
+          "hidesAt": null,
+          "appearsAt": 9,
+          "visualStyle": {
+            "gap": 10,
+            "blur": 0,
+            "preset": "solid",
+            "bgColor": "#1a1a2e",
+            "fontSize": 14,
+            "paddingX": 28,
+            "paddingY": 24,
+            "bgOpacity": 1,
+            "innerGlow": 0,
+            "textAlign": "center",
+            "textColor": "#ffffff",
+            "fontFamily": "system-ui, -apple-system, sans-serif",
+            "fontWeight": 600,
+            "hoverScale": 1.02,
+            "accentColor": "#f472b6",
+            "borderColor": "#2a2a4a",
+            "borderWidth": 1,
+            "shadowColor": "#000000",
+            "borderRadius": 12,
+            "shadowSpread": 24,
+            "borderOpacity": 0.8,
+            "letterSpacing": 0,
+            "shadowOpacity": 0.1,
+            "hoverBrightness": 1.1,
+            "transitionSpeed": 200
+          },
+          "jumpsToSceneId": "2961311e-2ca1-415f-bd32-5bdaffdfc0c1",
+          "triggersEdgeId": null,
+          "entranceAnimation": "fade"
+        }
+      ],
+      "variables": [
+        {
+          "name": "visitorName"
+        },
+        {
+          "name": "focusArea"
+        }
+      ],
+      "transition": "none"
+    }
+  ]
+}

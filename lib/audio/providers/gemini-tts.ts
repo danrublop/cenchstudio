@@ -1,6 +1,7 @@
 import fs from 'fs/promises'
 import path from 'path'
 import type { TTSProviderInterface, TTSParams, TTSResult, Voice } from '../types'
+import { safeAudioFilename } from '../sanitize'
 
 const DEFAULT_MODEL = 'gemini-2.5-flash-preview-tts'
 const DEFAULT_VOICE = 'Kore'
@@ -133,24 +134,23 @@ async function generateViaGeminiAPI(params: TTSParams, apiKey: string): Promise<
 }
 
 async function generateViaGoogleCloudTTS(params: TTSParams, apiKey: string): Promise<Buffer> {
-  const model = params.model || DEFAULT_MODEL
+  const voiceId = params.voiceId || 'en-US-Studio-O'
+  // Extract language code from voice name (e.g. "en-US-Studio-O" -> "en-US")
+  const languageCode = voiceId.split('-').slice(0, 2).join('-') || 'en-US'
 
   let inputText = params.text
   if (params.instructions) {
     inputText = `[${params.instructions}] ${params.text}`
   }
 
-  // Google Cloud TTS with Gemini model uses the model name in the voice config,
-  // not concatenated with the voice name. The voice field selects language/variant,
-  // while modelName selects the synthesis model.
   const response = await fetch(`https://texttospeech.googleapis.com/v1beta1/text:synthesize?key=${apiKey}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       input: { text: inputText },
       voice: {
-        languageCode: 'en-US',
-        name: 'en-US-Studio-O',
+        languageCode,
+        name: voiceId,
       },
       audioConfig: {
         audioEncoding: 'MP3',
@@ -197,7 +197,7 @@ export const geminiTTS: TTSProviderInterface = {
       extension = 'mp3'
     }
 
-    const filename = `tts-${params.sceneId}-${Date.now()}.${extension}`
+    const filename = safeAudioFilename('tts', params.sceneId, extension)
     const filePath = path.join(audioDir, filename)
     await fs.writeFile(filePath, audioBuffer)
 

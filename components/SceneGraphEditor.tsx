@@ -52,9 +52,9 @@ function SceneFlowNode({ data }: { data: { scene: Scene; isStart: boolean; isEnd
         {scene.thumbnail ? (
           <img src={scene.thumbnail} alt="" className="w-full h-full object-cover" />
         ) : hasContent ? (
-          <span className="text-[10px] text-[var(--color-text-muted)]">No preview</span>
+          <span className="text-[11px] text-[var(--color-text-muted)]">No preview</span>
         ) : (
-          <span className="text-[10px] text-[#3a3a45]">Empty scene</span>
+          <span className="text-[11px] text-[#3a3a45]">Empty scene</span>
         )}
       </div>
 
@@ -62,7 +62,7 @@ function SceneFlowNode({ data }: { data: { scene: Scene; isStart: boolean; isEnd
       <div className="px-2 py-1.5 space-y-0.5">
         <div className="flex items-center justify-between gap-1">
           <span
-            className="text-[9px] font-bold uppercase tracking-wider px-1 py-0.5 rounded"
+            className="text-[10px] font-bold uppercase tracking-wider px-1 py-0.5 rounded"
             style={{ background: '#e84545', color: 'white' }}
           >
             {scene.sceneType}
@@ -72,10 +72,10 @@ function SceneFlowNode({ data }: { data: { scene: Scene; isStart: boolean; isEnd
             {isEnd && <span className="w-2 h-2 rounded-full bg-red-500" title="End" />}
           </div>
         </div>
-        <p className="text-[10px] text-[var(--color-text-primary)] font-medium truncate">
+        <p className="text-[11px] text-[var(--color-text-primary)] font-medium truncate">
           {scene.name || scene.prompt.slice(0, 30) || 'Untitled Scene'}
         </p>
-        <p className="text-[9px] text-[var(--color-text-muted)]">{scene.duration}s</p>
+        <p className="text-[10px] text-[var(--color-text-muted)]">{scene.duration}s</p>
       </div>
     </div>
   )
@@ -226,7 +226,7 @@ function GraphContent() {
   )
 
   return (
-    <div className="w-full h-full relative" style={{ background: 'var(--color-bg)' }}>
+    <div className="w-full h-full relative" style={{ background: 'var(--color-timeline-bg, var(--color-bg))' }}>
       <ReactFlow
         nodes={nodes}
         edges={edges}

@@ -15,7 +15,7 @@ const OUTPUT_DIR = path.resolve(__dirname, '..', 'renders')
 
 const app = express()
 
-app.use(cors({ origin: 'http://localhost:3000' }))
+app.use(cors({ origin: process.env.CORS_ORIGIN || NEXT_BASE_URL }))
 app.use(express.json({ limit: '10mb' }))
 
 // Health check

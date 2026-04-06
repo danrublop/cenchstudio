@@ -9,8 +9,8 @@ const cenchAppBgH = 288
 
 /** Cench, API, Claude — slightly larger than Library */
 const iconBoxLg =
-  'h-[4.5rem] w-[4.5rem] shrink-0 sm:h-24 sm:w-24'
-const iconBoxMd = 'h-16 w-16 shrink-0 sm:h-[5.5rem] sm:w-[5.5rem]'
+  'h-[3.75rem] w-[3.75rem] shrink-0 sm:h-20 sm:w-20'
+const iconBoxMd = 'h-14 w-14 shrink-0 sm:h-[4.5rem] sm:w-[4.5rem]'
 
 const items = [
   { id: 'cench' as const, src: '/blacklogo.png', label: 'Cench', width: iconSize, height: iconSize },
@@ -20,7 +20,7 @@ const items = [
 ] as const
 
 type HeroDesktopAgentIconsProps = {
-  activePanel: 'api' | 'claude' | 'library' | null
+  activePanel: 'api' | 'claude' | 'library' | 'cench' | null
   onActivate: (id: HeroToolbarId) => void
 }
 
@@ -36,7 +36,7 @@ function CenchAppTile() {
           width={cenchAppBgW}
           height={cenchAppBgH}
           className="h-full w-full object-cover"
-          sizes="(max-width: 640px) 58px, 80px"
+          sizes="(max-width: 640px) 48px, 64px"
         />
       </div>
       <Image
@@ -45,7 +45,7 @@ function CenchAppTile() {
         width={iconSize}
         height={iconSize}
         className="absolute left-1/2 top-1/2 z-[1] h-[72%] w-[72%] -translate-x-1/2 -translate-y-1/2 object-contain drop-shadow-[0_2px_8px_rgba(0,0,0,0.45)]"
-        sizes="64px"
+        sizes="52px"
       />
     </div>
   )
@@ -56,9 +56,9 @@ function CenchAppTile() {
  */
 export function HeroDesktopAgentIcons({ activePanel, onActivate }: HeroDesktopAgentIconsProps) {
   return (
-    <div className="absolute inset-x-0 bottom-0 z-[3] flex justify-center px-3 pb-3 pt-10 sm:px-5 sm:pb-5 sm:pt-14">
+    <div className="absolute inset-x-0 bottom-0 z-[3] flex justify-center px-1 pb-2 pt-8 sm:px-2 sm:pb-3.5 sm:pt-11">
       <div
-        className="pointer-events-auto flex flex-row items-end gap-2.5 rounded-[1.35rem] border border-white/[0.38] bg-linear-to-b from-white/[0.22] via-white/[0.08] to-white/[0.04] px-3 py-2 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.45),0_16px_48px_rgba(0,0,0,0.22),0_4px_16px_rgba(0,0,0,0.12)] backdrop-blur-2xl backdrop-saturate-150 sm:gap-3.5 sm:rounded-3xl sm:px-4 sm:py-2"
+        className="pointer-events-auto flex flex-row items-end gap-2 rounded-[1.625rem] border border-white/[0.38] bg-linear-to-b from-white/[0.22] via-white/[0.08] to-white/[0.04] px-2.5 py-1.5 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.45),0_12px_36px_rgba(0,0,0,0.2),0_3px_12px_rgba(0,0,0,0.1)] backdrop-blur-2xl backdrop-saturate-150 sm:gap-2.5 sm:rounded-[2rem] sm:px-3 sm:py-1.5"
         role="toolbar"
         aria-label="Integrations"
       >
@@ -66,7 +66,8 @@ export function HeroDesktopAgentIcons({ activePanel, onActivate }: HeroDesktopAg
           const isActive =
             (id === 'api' && activePanel === 'api') ||
             (id === 'claude' && activePanel === 'claude') ||
-            (id === 'library' && activePanel === 'library')
+            (id === 'library' && activePanel === 'library') ||
+            (id === 'cench' && activePanel === 'cench')
           const isLargeIcon = id === 'api' || id === 'claude'
           const iconBox = isLargeIcon ? iconBoxLg : iconBoxMd
           return (
@@ -75,7 +76,7 @@ export function HeroDesktopAgentIcons({ activePanel, onActivate }: HeroDesktopAg
               type="button"
               onClick={() => onActivate(id)}
               aria-pressed={isActive}
-              className={`group flex cursor-pointer flex-col items-center gap-1.5 rounded-xl px-2 py-1 transition-[background-color,transform,box-shadow] duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 sm:px-2.5 sm:py-1.5 ${
+              className={`group flex cursor-pointer flex-col items-center gap-1 rounded-2xl px-1.5 py-0.5 transition-[background-color,transform,box-shadow] duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 sm:gap-1.5 sm:px-2 sm:py-1 ${
                 isActive
                   ? 'bg-white/[0.2] ring-2 ring-white/40 ring-offset-0'
                   : 'hover:bg-white/[0.14]'
@@ -91,11 +92,11 @@ export function HeroDesktopAgentIcons({ activePanel, onActivate }: HeroDesktopAg
                   height={height}
                   className={`${iconBox} object-contain select-none transition-[transform,filter] duration-200 ease-out group-hover:scale-[1.06] group-hover:brightness-110 sm:group-hover:scale-[1.07]`}
                   sizes={
-                    isLargeIcon ? '(max-width: 640px) 72px, 96px' : '(max-width: 640px) 64px, 88px'
+                    isLargeIcon ? '(max-width: 640px) 60px, 80px' : '(max-width: 640px) 56px, 72px'
                   }
                 />
               )}
-              <span className="max-w-full text-center font-sans text-[11px] font-medium leading-tight tracking-tight text-white/95 drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)] transition-[transform,color,font-weight] duration-200 ease-out group-hover:scale-105 group-hover:text-white group-hover:font-semibold sm:text-[13px]">
+              <span className="max-w-full text-center font-sans text-[10px] font-medium leading-tight tracking-tight text-white/95 drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)] transition-[transform,color,font-weight] duration-200 ease-out group-hover:scale-105 group-hover:text-white group-hover:font-semibold sm:text-xs">
                 {label}
               </span>
             </button>

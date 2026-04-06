@@ -78,7 +78,7 @@ export function SFXSearchPopover({ onSelect, onClose }: SFXSearchPopoverProps) {
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
           placeholder="Search sounds..."
-          className="flex-1 border rounded px-2 py-1 text-[11px]"
+          className="flex-1 border rounded px-2 py-1 text-[12px]"
           style={{
             borderColor: 'var(--color-border)',
             backgroundColor: 'var(--color-input-bg)',
@@ -89,7 +89,7 @@ export function SFXSearchPopover({ onSelect, onClose }: SFXSearchPopoverProps) {
           {loading ? <Loader2 size={12} className="animate-spin" /> : <Search size={12} />}
         </span>
       </div>
-      <div className="flex items-center gap-2 text-[10px]" style={{ color: 'var(--color-text-muted)' }}>
+      <div className="flex items-center gap-2 text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
         <span>Trigger at:</span>
         <input
           type="number"
@@ -97,7 +97,7 @@ export function SFXSearchPopover({ onSelect, onClose }: SFXSearchPopoverProps) {
           step={0.5}
           value={triggerAt}
           onChange={(e) => setTriggerAt(parseFloat(e.target.value) || 0)}
-          className="w-14 border rounded px-1 py-0.5 text-[10px]"
+          className="w-14 border rounded px-1 py-0.5 text-[11px]"
           style={{
             borderColor: 'var(--color-border)',
             backgroundColor: 'var(--color-input-bg)',
@@ -111,7 +111,7 @@ export function SFXSearchPopover({ onSelect, onClose }: SFXSearchPopoverProps) {
           {results.map((r) => (
             <div
               key={r.id}
-              className="flex items-center gap-2 px-1 py-1 rounded hover:bg-white/5 text-[11px]"
+              className="flex items-center gap-2 px-1 py-1 rounded hover:bg-white/5 text-[12px]"
               style={{ color: 'var(--color-text-primary)' }}
             >
               <span onClick={() => togglePreview(r)} className="cursor-pointer hover:text-[var(--color-accent)]">
@@ -119,7 +119,7 @@ export function SFXSearchPopover({ onSelect, onClose }: SFXSearchPopoverProps) {
               </span>
               <span className="flex-1 truncate">{r.name}</span>
               {r.duration && (
-                <span className="text-[9px]" style={{ color: 'var(--color-text-muted)' }}>
+                <span className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>
                   {r.duration.toFixed(1)}s
                 </span>
               )}

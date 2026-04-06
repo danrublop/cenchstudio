@@ -8,7 +8,7 @@ export function resolveUIFontStack(gs: Pick<GlobalStyle, 'uiTypography' | 'uiFon
     return 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
   }
   if (mode === 'app') {
-    return 'var(--font-geist-sans), Geist, -apple-system, BlinkMacSystemFont, sans-serif'
+    return 'var(--font-geist-sans), Geist, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif'
   }
   const name = (gs.uiFontFamily ?? 'Inter').trim() || 'Inter'
   const escaped = name.replace(/\\/g, '\\\\').replace(/"/g, '\\"')

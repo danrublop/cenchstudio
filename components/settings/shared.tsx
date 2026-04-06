@@ -5,7 +5,7 @@ import { Eye, EyeOff } from 'lucide-react'
 import { useVideoStore } from '@/lib/store'
 
 export function SectionLabel({ children }: { children: React.ReactNode }) {
-  return <h4 className="text-[10px] uppercase tracking-widest text-[#6b6b7a] font-bold px-1 mb-2">{children}</h4>
+  return <h4 className="text-[11px] uppercase tracking-widest text-[#6b6b7a] font-bold px-1 mb-2">{children}</h4>
 }
 
 export function ListContainer({ children }: { children: React.ReactNode }) {
@@ -32,7 +32,7 @@ export function KeyInputRow({
   return (
     <div className="flex flex-col gap-1.5 mb-2 px-1">
       <div className="flex items-center gap-2">
-        <label className="text-[9px] text-[#6b6b7a] uppercase font-bold tracking-tight">{label}</label>
+        <label className="text-[10px] text-[#6b6b7a] uppercase font-bold tracking-tight">{label}</label>
         <code className="text-[8px] text-[#6b6b7a]/60 font-mono">{envVar}</code>
       </div>
       <div className="flex gap-2 items-center">
@@ -43,7 +43,7 @@ export function KeyInputRow({
             updateProviderConfig(provider, isLocal ? { baseUrl: e.target.value } : { apiKey: e.target.value })
           }
           placeholder={isLocal ? 'http://localhost:5050' : envVar}
-          className="flex-1 text-xs px-3 py-1.5 rounded border focus:outline-none bg-[var(--color-input-bg)] border-[var(--color-border)] text-[var(--color-text-primary)] font-mono"
+          className="flex-1 text-sm px-3 py-1.5 rounded border focus:outline-none bg-[var(--color-input-bg)] border-[var(--color-border)] text-[var(--color-text-primary)] font-mono"
         />
         <div className="flex items-center gap-1.5">
           {!isLocal && (

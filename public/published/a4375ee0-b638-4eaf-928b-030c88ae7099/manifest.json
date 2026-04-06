@@ -1,0 +1,157 @@
+{
+  "id": "a4375ee0-b638-4eaf-928b-030c88ae7099",
+  "version": 1,
+  "name": "Myocarditis — Professional Medical Explainer",
+  "playerOptions": {
+    "theme": "dark",
+    "showProgressBar": true,
+    "showSceneNav": true,
+    "allowFullscreen": true,
+    "brandColor": "#ef4444",
+    "autoplay": true
+  },
+  "sceneGraph": {
+    "nodes": [
+      {
+        "id": "c5fd048e-485d-410f-b41c-9c4f38439797",
+        "position": {
+          "x": 1120,
+          "y": 100
+        }
+      },
+      {
+        "id": "8763be57-12cf-4752-825f-eb247e593420",
+        "position": {
+          "x": 1420,
+          "y": 100
+        }
+      },
+      {
+        "id": "7dd03848-351f-4f46-b744-bcad354ccc85",
+        "position": {
+          "x": 1720,
+          "y": 100
+        }
+      },
+      {
+        "id": "abfd9b4b-f774-4193-a44f-701091a6e123",
+        "position": {
+          "x": 2020,
+          "y": 100
+        }
+      },
+      {
+        "id": "8671cb6d-5ee1-46f7-a61b-4b9ac4da199c",
+        "position": {
+          "x": 2320,
+          "y": 100
+        }
+      },
+      {
+        "id": "32339472-90ce-4ca7-ba1e-03e28618caba",
+        "position": {
+          "x": 220,
+          "y": 100
+        }
+      },
+      {
+        "id": "e7439c34-b84f-4be0-bf36-2436bb6d4595",
+        "position": {
+          "x": 520,
+          "y": 100
+        }
+      },
+      {
+        "id": "d27fdefd-f3a0-4749-995e-dbdb5e21b950",
+        "position": {
+          "x": 820,
+          "y": 100
+        }
+      }
+    ],
+    "edges": [],
+    "startSceneId": "32339472-90ce-4ca7-ba1e-03e28618caba"
+  },
+  "scenes": [
+    {
+      "id": "32339472-90ce-4ca7-ba1e-03e28618caba",
+      "type": "motion",
+      "duration": 12,
+      "htmlUrl": "/published/a4375ee0-b638-4eaf-928b-030c88ae7099/scenes/32339472-90ce-4ca7-ba1e-03e28618caba.html",
+      "htmlContent": null,
+      "interactions": [],
+      "variables": [],
+      "transition": "none"
+    },
+    {
+      "id": "e7439c34-b84f-4be0-bf36-2436bb6d4595",
+      "type": "motion",
+      "duration": 19,
+      "htmlUrl": "/published/a4375ee0-b638-4eaf-928b-030c88ae7099/scenes/e7439c34-b84f-4be0-bf36-2436bb6d4595.html",
+      "htmlContent": null,
+      "interactions": [],
+      "variables": [],
+      "transition": "none"
+    },
+    {
+      "id": "d27fdefd-f3a0-4749-995e-dbdb5e21b950",
+      "type": "motion",
+      "duration": 23,
+      "htmlUrl": "/published/a4375ee0-b638-4eaf-928b-030c88ae7099/scenes/d27fdefd-f3a0-4749-995e-dbdb5e21b950.html",
+      "htmlContent": null,
+      "interactions": [],
+      "variables": [],
+      "transition": "none"
+    },
+    {
+      "id": "c5fd048e-485d-410f-b41c-9c4f38439797",
+      "type": "motion",
+      "duration": 22,
+      "htmlUrl": "/published/a4375ee0-b638-4eaf-928b-030c88ae7099/scenes/c5fd048e-485d-410f-b41c-9c4f38439797.html",
+      "htmlContent": null,
+      "interactions": [],
+      "variables": [],
+      "transition": "none"
+    },
+    {
+      "id": "8763be57-12cf-4752-825f-eb247e593420",
+      "type": "motion",
+      "duration": 25,
+      "htmlUrl": "/published/a4375ee0-b638-4eaf-928b-030c88ae7099/scenes/8763be57-12cf-4752-825f-eb247e593420.html",
+      "htmlContent": null,
+      "interactions": [],
+      "variables": [],
+      "transition": "none"
+    },
+    {
+      "id": "7dd03848-351f-4f46-b744-bcad354ccc85",
+      "type": "motion",
+      "duration": 22,
+      "htmlUrl": "/published/a4375ee0-b638-4eaf-928b-030c88ae7099/scenes/7dd03848-351f-4f46-b744-bcad354ccc85.html",
+      "htmlContent": null,
+      "interactions": [],
+      "variables": [],
+      "transition": "none"
+    },
+    {
+      "id": "abfd9b4b-f774-4193-a44f-701091a6e123",
+      "type": "motion",
+      "duration": 22,
+      "htmlUrl": "/published/a4375ee0-b638-4eaf-928b-030c88ae7099/scenes/abfd9b4b-f774-4193-a44f-701091a6e123.html",
+      "htmlContent": null,
+      "interactions": [],
+      "variables": [],
+      "transition": "none"
+    },
+    {
+      "id": "8671cb6d-5ee1-46f7-a61b-4b9ac4da199c",
+      "type": "motion",
+      "duration": 25,
+      "htmlUrl": "/published/a4375ee0-b638-4eaf-928b-030c88ae7099/scenes/8671cb6d-5ee1-46f7-a61b-4b9ac4da199c.html",
+      "htmlContent": null,
+      "interactions": [],
+      "variables": [],
+      "transition": "none"
+    }
+  ]
+}

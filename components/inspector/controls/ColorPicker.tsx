@@ -58,7 +58,7 @@ export function ColorPicker({ label, value, palette = [], allowNone, onChange }:
               onChange(customHex)
             }
           }}
-          className="w-[72px] bg-[var(--color-input-bg,#1a1a1f)] border border-[var(--color-border,#2a2a32)] rounded text-[var(--color-text-primary,#f0ece0)] text-[10px] font-mono px-1.5 py-0.5"
+          className="w-[72px] bg-[var(--color-input-bg,#1a1a1f)] border border-[var(--color-border,#2a2a32)] rounded text-[var(--color-text-primary,#f0ece0)] text-[11px] font-mono px-1.5 py-0.5"
         />
 
         {open && (

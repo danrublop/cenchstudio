@@ -103,11 +103,11 @@ export default function ExportModal() {
       >
         <div className="p-5 space-y-5">
           <div className="flex justify-end">
-            <span className="inline-flex items-center rounded-full border border-[var(--color-border)] bg-[var(--color-bg)] px-2.5 py-1 text-[10px] uppercase tracking-wider text-[var(--color-text-muted)]">
+            <span className="inline-flex items-center rounded-full border border-[var(--color-border)] bg-[var(--color-bg)] px-2.5 py-1 text-[11px] uppercase tracking-wider text-[var(--color-text-muted)]">
               {backendLabel}
             </span>
           </div>
-          <p className="text-[11px] text-[var(--color-text-muted)] -mt-3">
+          <p className="text-[12px] text-[var(--color-text-muted)] -mt-3">
             {isElectronPath2
               ? 'Path 2 exporter active: single-scene Pixi/WebCodecs pipeline (iterating toward full multi-scene parity).'
               : 'Render-server exporter active: scene HTML capture + FFmpeg stitching.'}
@@ -118,7 +118,7 @@ export default function ExportModal() {
             <>
               {/* Resolution */}
               <div>
-                <label className="text-[var(--color-text-muted)] text-[10px] uppercase tracking-wider block mb-2">
+                <label className="text-[var(--color-text-muted)] text-[11px] uppercase tracking-wider block mb-2">
                   Resolution
                 </label>
                 <div className="grid grid-cols-3 gap-2">
@@ -137,7 +137,7 @@ export default function ExportModal() {
                       >
                         {r.label}
                       </div>
-                      <div className="text-[10px] text-[var(--color-text-muted)]">{r.desc}</div>
+                      <div className="text-[11px] text-[var(--color-text-muted)]">{r.desc}</div>
                     </button>
                   ))}
                 </div>
@@ -145,7 +145,7 @@ export default function ExportModal() {
 
               {/* FPS */}
               <div>
-                <label className="text-[var(--color-text-muted)] text-[10px] uppercase tracking-wider block mb-2">
+                <label className="text-[var(--color-text-muted)] text-[11px] uppercase tracking-wider block mb-2">
                   Frame Rate
                 </label>
                 <div className="flex gap-2">
@@ -167,7 +167,7 @@ export default function ExportModal() {
 
               {/* Profile */}
               <div>
-                <label className="text-[var(--color-text-muted)] text-[10px] uppercase tracking-wider block mb-2">
+                <label className="text-[var(--color-text-muted)] text-[11px] uppercase tracking-wider block mb-2">
                   Export Profile
                 </label>
                 <div className="grid grid-cols-2 gap-2">
@@ -196,7 +196,7 @@ export default function ExportModal() {
 
               {/* Filename */}
               <div>
-                <label className="text-[var(--color-text-muted)] text-[10px] uppercase tracking-wider block mb-2">
+                <label className="text-[var(--color-text-muted)] text-[11px] uppercase tracking-wider block mb-2">
                   Filename
                 </label>
                 <div className="flex items-center gap-1">
@@ -214,7 +214,7 @@ export default function ExportModal() {
               {/* Save location */}
               {'showDirectoryPicker' in globalThis && (
                 <div>
-                  <label className="text-[var(--color-text-muted)] text-[10px] uppercase tracking-wider block mb-2">
+                  <label className="text-[var(--color-text-muted)] text-[11px] uppercase tracking-wider block mb-2">
                     Save to
                   </label>
                   <span
@@ -237,7 +237,7 @@ export default function ExportModal() {
               )}
 
               {/* Summary */}
-              <div className="bg-[var(--color-bg)] rounded p-3 text-xs text-[var(--color-text-muted)] space-y-1">
+              <div className="bg-[var(--color-bg)] rounded p-3 text-sm text-[var(--color-text-muted)] space-y-1">
                 <div className="flex justify-between">
                   <span>Scenes</span>
                   <span className="text-[var(--color-text-primary)]">{scenes.length}</span>
@@ -266,7 +266,7 @@ export default function ExportModal() {
               {osWarning && (
                 <div className="flex gap-2.5 bg-amber-950/40 border border-amber-700/40 rounded p-3">
                   <AlertTriangle size={14} className="text-amber-400 flex-shrink-0 mt-0.5" />
-                  <div className="text-xs space-y-0.5">
+                  <div className="text-sm space-y-0.5">
                     <p className="text-amber-400 font-medium">{osWarning.title}</p>
                     <p className="text-amber-200/70">{osWarning.body}</p>
                   </div>
@@ -359,12 +359,12 @@ export default function ExportModal() {
               </div>
               {exportProgress?.diagnostics && exportProgress.diagnostics.length > 0 && (
                 <div className="text-left bg-[var(--color-bg)] rounded p-3 max-h-28 overflow-auto">
-                  <div className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mb-2">
+                  <div className="text-[11px] uppercase tracking-wider text-[var(--color-text-muted)] mb-2">
                     Export diagnostics
                   </div>
                   <div className="space-y-1">
                     {exportProgress.diagnostics.slice(-8).map((d, i) => (
-                      <div key={`${d}-${i}`} className="text-[11px] text-[var(--color-text-muted)] font-mono break-all">
+                      <div key={`${d}-${i}`} className="text-[12px] text-[var(--color-text-muted)] font-mono break-all">
                         {d}
                       </div>
                     ))}
@@ -400,7 +400,7 @@ export default function ExportModal() {
                       const progress = isDone ? 100 : isCurrent ? exportProgress.sceneProgress : 0
                       return (
                         <div key={scene.id}>
-                          <div className="flex justify-between text-[10px] text-[#6b6b7a] mb-0.5">
+                          <div className="flex justify-between text-[11px] text-[#6b6b7a] mb-0.5">
                             <span>
                               Scene {sceneNum}: {scene.name || scene.prompt.slice(0, 30) || 'Untitled'}
                             </span>
@@ -424,7 +424,7 @@ export default function ExportModal() {
                   <Loader2 size={20} className="animate-spin text-[#e84545]" />
                   <div>
                     <p className="text-[#f0ece0] text-sm font-medium">Mixing audio...</p>
-                    <p className="text-[#6b6b7a] text-xs">Combining TTS, SFX, and music tracks</p>
+                    <p className="text-[#6b6b7a] text-sm">Combining TTS, SFX, and music tracks</p>
                   </div>
                 </div>
               )}
@@ -434,19 +434,19 @@ export default function ExportModal() {
                   <Loader2 size={20} className="animate-spin text-[#e84545]" />
                   <div>
                     <p className="text-[#f0ece0] text-sm font-medium">Stitching scenes...</p>
-                    <p className="text-[#6b6b7a] text-xs">Combining clips with FFmpeg</p>
+                    <p className="text-[#6b6b7a] text-sm">Combining clips with FFmpeg</p>
                   </div>
                 </div>
               )}
 
               {exportProgress?.diagnostics && exportProgress.diagnostics.length > 0 && (
                 <div className="bg-[var(--color-bg)] rounded p-3">
-                  <div className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mb-2">
+                  <div className="text-[11px] uppercase tracking-wider text-[var(--color-text-muted)] mb-2">
                     Export diagnostics
                   </div>
                   <div className="max-h-24 overflow-auto space-y-1">
                     {exportProgress.diagnostics.slice(-6).map((d, i) => (
-                      <div key={`${d}-${i}`} className="text-[11px] text-[var(--color-text-muted)] font-mono break-all">
+                      <div key={`${d}-${i}`} className="text-[12px] text-[var(--color-text-muted)] font-mono break-all">
                         {d}
                       </div>
                     ))}

@@ -84,7 +84,7 @@ export default function AgentEditorOverlay() {
                
                <div className="space-y-4">
                  <div>
-                   <label className="text-[9px] uppercase font-bold text-[#6b6b7a] tracking-widest block mb-2">Internal Identifier</label>
+                   <label className="text-[10px] uppercase font-bold text-[#6b6b7a] tracking-widest block mb-2">Internal Identifier</label>
                    <input 
                     type="text" value={draft.id} readOnly={!isCreatingAgent}
                     onChange={(e) => setDraft(d => ({ ...d, id: e.target.value }))}
@@ -92,7 +92,7 @@ export default function AgentEditorOverlay() {
                   />
                  </div>
                  <div>
-                   <label className="text-[9px] uppercase font-bold text-[#6b6b7a] tracking-widest block mb-2">Display Name</label>
+                   <label className="text-[10px] uppercase font-bold text-[#6b6b7a] tracking-widest block mb-2">Display Name</label>
                    <input 
                     type="text" value={draft.name} 
                     onChange={(e) => setDraft(d => ({ ...d, name: e.target.value }))}
@@ -100,7 +100,7 @@ export default function AgentEditorOverlay() {
                   />
                  </div>
                  <div>
-                   <label className="text-[9px] uppercase font-bold text-[#6b6b7a] tracking-widest block mb-2">Objective</label>
+                   <label className="text-[10px] uppercase font-bold text-[#6b6b7a] tracking-widest block mb-2">Objective</label>
                    <input 
                     type="text" value={draft.description} 
                     onChange={(e) => setDraft(d => ({ ...d, description: e.target.value }))}
@@ -134,7 +134,7 @@ export default function AgentEditorOverlay() {
                    <button
                     key={tier}
                     onClick={() => setDraft(d => ({ ...d, defaultModelTier: tier as any }))}
-                    className={`flex-1 py-3 text-[10px] uppercase font-bold tracking-widest rounded-lg transition-all ${
+                    className={`flex-1 py-3 text-[11px] uppercase font-bold tracking-widest rounded-lg transition-all ${
                       draft.defaultModelTier === tier 
                         ? 'bg-[var(--color-accent)] text-white shadow-lg' 
                         : 'text-[#6b6b7a] hover:text-[var(--color-text-primary)]'
@@ -150,7 +150,7 @@ export default function AgentEditorOverlay() {
                <SectionLabel>Appearance Customization</SectionLabel>
                <div className="flex items-center gap-10">
                  <div className="flex-shrink-0 flex flex-col items-center gap-2">
-                    <label className="text-[9px] uppercase font-bold text-[#6b6b7a] tracking-widest">Aura Color</label>
+                    <label className="text-[10px] uppercase font-bold text-[#6b6b7a] tracking-widest">Aura Color</label>
                     <input 
                       type="color" value={draft.color} 
                       onChange={(e) => setDraft(d => ({ ...d, color: e.target.value }))}
@@ -158,7 +158,7 @@ export default function AgentEditorOverlay() {
                     />
                  </div>
                  <div className="flex-1 space-y-3">
-                    <label className="text-[9px] uppercase font-bold text-[#6b6b7a] tracking-widest block px-1">Specialized Glyph</label>
+                    <label className="text-[10px] uppercase font-bold text-[#6b6b7a] tracking-widest block px-1">Specialized Glyph</label>
                     <div className="flex flex-wrap gap-2">
                        {Object.keys(ICON_MAP).map(name => (
                          <button 
@@ -183,10 +183,10 @@ export default function AgentEditorOverlay() {
 
         {/* Footer */}
         <div className="flex-shrink-0 px-8 py-[8.5px] border-t border-[var(--color-border)] bg-[var(--color-bg)]/40 flex items-center justify-end gap-3">
-           <button onClick={handleClose} className="px-5 py-2 text-xs font-bold text-[#6b6b7a] hover:text-[var(--color-text-primary)] transition-colors">
+           <button onClick={handleClose} className="px-5 py-2 text-sm font-bold text-[#6b6b7a] hover:text-[var(--color-text-primary)] transition-colors">
              Discard
            </button>
-           <button onClick={handleSave} className="flex items-center gap-3 px-8 py-2 bg-[var(--color-accent)] text-white text-xs font-bold rounded-lg hover:opacity-90 transition-all shadow-lg shadow-[var(--color-accent)]/10">
+           <button onClick={handleSave} className="flex items-center gap-3 px-8 py-2 bg-[var(--color-accent)] text-white text-sm font-bold rounded-lg hover:opacity-90 transition-all shadow-lg shadow-[var(--color-accent)]/10">
              Finalize
            </button>
         </div>
@@ -198,7 +198,7 @@ export default function AgentEditorOverlay() {
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <h4 className="text-[11px] uppercase tracking-[0.2em] text-[var(--color-text-muted)] font-black">
+    <h4 className="text-[12px] uppercase tracking-[0.2em] text-[var(--color-text-muted)] font-black">
       {children}
     </h4>
   )

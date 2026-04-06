@@ -24,7 +24,7 @@ export function SliderInput({ label, value, min, max, step = 0.01, onChange }: P
           onChange={(e) => onChange(parseFloat(e.target.value))}
           className="flex-1 h-1 appearance-none bg-[#2a2a32] rounded-full cursor-pointer accent-[#e84545] [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-[#e84545] [&::-webkit-slider-thumb]:rounded-full"
         />
-        <span className="text-[10px] font-mono text-[#6b6b7a] w-8 text-right">{Math.round(value * 100)}%</span>
+        <span className="text-[11px] font-mono text-[#6b6b7a] w-8 text-right">{Math.round(value * 100)}%</span>
       </div>
     </ControlRow>
   )

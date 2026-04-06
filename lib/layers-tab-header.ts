@@ -1,6 +1,14 @@
 /** Persisted Layers tab strip (second header) — mirrors Agent chat tab UX. */
 
-export type LayersTabSectionId = 'scene' | 'properties' | 'transitions' | 'audio' | 'elements' | 'text' | 'interact'
+export type LayersTabSectionId =
+  | 'scenes'
+  | 'scene'
+  | 'properties'
+  | 'transitions'
+  | 'audio'
+  | 'elements'
+  | 'text'
+  | 'interact'
 
 /** Old tab ids → Scene panel (Content tab removed) */
 const LEGACY_TAB_TO_SCENE = new Set(['media', 'ai', 'content'])
@@ -10,7 +18,8 @@ const LEGACY_STYLE_TO_SCENE = 'style'
 
 /** Tabs shown in the strip config (⋯) — Elements is opened via preview only, not listed here */
 export const LAYERS_TAB_META: { id: LayersTabSectionId; label: string }[] = [
-  { id: 'scene', label: 'Scene' },
+  { id: 'scenes', label: 'Scenes' },
+  { id: 'scene', label: 'Setup' },
   { id: 'properties', label: 'Properties' },
   { id: 'transitions', label: 'Transitions' },
   { id: 'audio', label: 'Audio' },

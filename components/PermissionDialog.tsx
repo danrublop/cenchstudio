@@ -91,7 +91,7 @@ export default function PermissionDialog() {
           {req.details.prompt && (
             <div className="flex gap-2">
               <span className="text-[#6b6b7a] min-w-[60px]">Prompt:</span>
-              <span className="text-xs opacity-80 line-clamp-2">&ldquo;{req.details.prompt}&rdquo;</span>
+              <span className="text-sm opacity-80 line-clamp-2">&ldquo;{req.details.prompt}&rdquo;</span>
             </div>
           )}
           {req.details.model && (
@@ -114,7 +114,7 @@ export default function PermissionDialog() {
           style={{ borderColor: 'var(--color-border, #2a2a3a)' }}
         >
           {/* Don't ask again checkbox */}
-          <label className="flex items-center gap-2 text-xs text-[#6b6b7a] cursor-pointer">
+          <label className="flex items-center gap-2 text-sm text-[#6b6b7a] cursor-pointer">
             <input
               type="checkbox"
               checked={dontAskAgain}

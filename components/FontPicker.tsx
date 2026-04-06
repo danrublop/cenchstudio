@@ -44,10 +44,10 @@ export default function FontPicker({ value, presetFont, onChange, hidePresetOpti
     <div className="relative" ref={ref}>
       {/* Trigger */}
       <div className="flex items-center justify-between">
-        <span className="text-[var(--color-text-muted)] text-[10px] uppercase tracking-wider">Font</span>
+        <span className="text-[var(--color-text-muted)] text-[11px] uppercase tracking-wider">Font</span>
         <span
           onClick={() => setOpen(!open)}
-          className="inline-flex items-center gap-1 cursor-pointer text-xs text-[var(--color-text-primary)] hover:text-[var(--color-accent)] transition-colors"
+          className="inline-flex items-center gap-1 cursor-pointer text-sm text-[var(--color-text-primary)] hover:text-[var(--color-accent)] transition-colors"
           style={{ fontFamily: `'${activeFont}', sans-serif` }}
         >
           {activeFont}
@@ -85,7 +85,7 @@ export default function FontPicker({ value, presetFont, onChange, hidePresetOpti
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search fonts..."
               autoFocus
-              className="flex-1 bg-transparent text-xs text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-muted)]"
+              className="flex-1 bg-transparent text-sm text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-muted)]"
             />
           </div>
 
@@ -109,7 +109,7 @@ export default function FontPicker({ value, presetFont, onChange, hidePresetOpti
             {favorites.length > 0 && (
               <>
                 <div className="px-2.5 pt-2 pb-1">
-                  <span className="text-[9px] font-medium uppercase tracking-wider text-[var(--color-text-muted)] flex items-center gap-1">
+                  <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--color-text-muted)] flex items-center gap-1">
                     <Star size={9} className="fill-amber-400 text-amber-400" /> Favorites
                   </span>
                 </div>
@@ -136,7 +136,7 @@ export default function FontPicker({ value, presetFont, onChange, hidePresetOpti
               return (
                 <div key={cat}>
                   <div className="px-2.5 pt-2 pb-1">
-                    <span className="text-[9px] font-medium uppercase tracking-wider text-[var(--color-text-muted)]">
+                    <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--color-text-muted)]">
                       {CATEGORY_LABELS[cat]}
                     </span>
                   </div>

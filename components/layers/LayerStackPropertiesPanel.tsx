@@ -34,7 +34,7 @@ function SubLink({ icon: Icon, label, onClick }: { icon: typeof Layers; label: s
     <button
       type="button"
       onClick={onClick}
-      className="no-style flex w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-[11px] transition-colors hover:bg-white/[0.04]"
+      className="no-style flex w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-[12px] transition-colors hover:bg-white/[0.04]"
       style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
     >
       <Icon size={12} className="shrink-0 text-[var(--color-text-muted)]" />
@@ -63,7 +63,7 @@ export default function LayerStackPropertiesPanel({ scene }: Props) {
     return (
       <div className="px-3 py-10 text-center">
         <Layers size={22} className="mx-auto mb-2 text-[var(--color-text-muted)] opacity-50" />
-        <p className="text-[11px] text-[var(--color-text-muted)] leading-relaxed">
+        <p className="text-[12px] text-[var(--color-text-muted)] leading-relaxed">
           Double-click a row in the layer stack to edit it here. Background, overlays, and scene types each have quick
           controls and shortcuts to related tabs.
         </p>
@@ -115,15 +115,15 @@ export default function LayerStackPropertiesPanel({ scene }: Props) {
   return (
     <div className="space-y-4 px-3 py-3">
       <div className="border-b pb-2" style={{ borderColor: 'var(--color-border)' }}>
-        <p className="text-[9px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
           Layer properties
         </p>
         <p className="mt-0.5 text-[12px] font-medium text-[var(--color-text-primary)]">{title}</p>
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <p className="mt-0.5 font-mono text-[9px] text-[var(--color-text-muted)] opacity-80">{key}</p>
+          <p className="mt-0.5 font-mono text-[10px] text-[var(--color-text-muted)] opacity-80">{key}</p>
           <button
             type="button"
-            className="kbd px-2 py-0.5 text-[9px] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
+            className="kbd px-2 py-0.5 text-[10px] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
             onClick={() => setLayerStackPropertiesKey(null)}
           >
             Close
@@ -134,7 +134,7 @@ export default function LayerStackPropertiesPanel({ scene }: Props) {
       {kind === 'bg' && id === 'stage' && (
         <section className="space-y-3">
           <div className="space-y-1.5">
-            <label className="text-[10px] font-medium text-[var(--color-text-muted)]">Scene background color</label>
+            <label className="text-[11px] font-medium text-[var(--color-text-muted)]">Scene background color</label>
             <div className="flex items-center gap-2">
               <input
                 type="color"
@@ -151,22 +151,22 @@ export default function LayerStackPropertiesPanel({ scene }: Props) {
                 value={scene.bgColor}
                 onChange={(e) => updateScene(scene.id, { bgColor: e.target.value })}
                 onBlur={commit}
-                className="kbd min-w-0 flex-1 px-2 py-1 font-mono text-[11px]"
+                className="kbd min-w-0 flex-1 px-2 py-1 font-mono text-[12px]"
                 placeholder="#hex or css"
               />
             </div>
-            <p className="text-[9px] text-[var(--color-text-muted)] leading-snug">
+            <p className="text-[10px] text-[var(--color-text-muted)] leading-snug">
               Per-scene background. Combine with Style tab for palette, font, and texture on the page shell.
             </p>
           </div>
 
           {BG_ELIGIBLE.has(scene.sceneType ?? '') && (
             <div className="space-y-2 rounded-lg border p-2" style={{ borderColor: 'var(--color-border)' }}>
-              <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
+              <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
                 <LayoutTemplate size={11} />
                 Canvas motion background
               </div>
-              <p className="text-[9px] text-[var(--color-text-muted)] leading-snug">
+              <p className="text-[10px] text-[var(--color-text-muted)] leading-snug">
                 Animated Canvas2D loop behind {scene.sceneType} content (full-frame{' '}
                 <code className="text-[8px]">#c</code>
                 ).
@@ -176,11 +176,11 @@ export default function LayerStackPropertiesPanel({ scene }: Props) {
           )}
 
           <div>
-            <p className="mb-1.5 text-[10px] font-medium text-[var(--color-text-muted)]">Related</p>
+            <p className="mb-1.5 text-[11px] font-medium text-[var(--color-text-muted)]">Related</p>
             <div className="space-y-1">
               <SubLink
                 icon={Film}
-                label="Scene tab — name, duration, style & grid"
+                label="Setup tab — name, duration, style & grid"
                 onClick={() => openLayersSection('scene')}
               />
               <SubLink
@@ -196,7 +196,7 @@ export default function LayerStackPropertiesPanel({ scene }: Props) {
       {kind === 'scene' && id && id !== 'canvas_bg' && (
         <section className="space-y-3">
           <div className="space-y-1">
-            <label className="text-[10px] text-[var(--color-text-muted)]">Duration (s)</label>
+            <label className="text-[11px] text-[var(--color-text-muted)]">Duration (s)</label>
             <input
               type="number"
               min={1}
@@ -205,18 +205,18 @@ export default function LayerStackPropertiesPanel({ scene }: Props) {
               value={scene.duration}
               onChange={(e) => updateScene(scene.id, { duration: Math.max(0.5, parseFloat(e.target.value) || 8) })}
               onBlur={commit}
-              className="kbd w-full px-2 py-1 text-[11px]"
+              className="kbd w-full px-2 py-1 text-[12px]"
             />
           </div>
           <div>
-            <p className="mb-1.5 text-[10px] font-medium text-[var(--color-text-muted)]">Related</p>
+            <p className="mb-1.5 text-[11px] font-medium text-[var(--color-text-muted)]">Related</p>
             <div className="space-y-1">
               <SubLink
                 icon={Layers}
-                label="Scene tab — physics, charts, SVG & layers"
+                label="Setup tab — physics, charts, SVG & layers"
                 onClick={() => openLayersSection('scene')}
               />
-              <SubLink icon={Film} label="Scene tab — name, style & grid" onClick={() => openLayersSection('scene')} />
+              <SubLink icon={Film} label="Setup tab — name, style & grid" onClick={() => openLayersSection('scene')} />
               <SubLink
                 icon={Clapperboard}
                 label="Transitions tab — cuts, wipes & camera"
@@ -236,13 +236,13 @@ export default function LayerStackPropertiesPanel({ scene }: Props) {
 
       {kind === 'scene' && id === 'canvas_bg' && (
         <section className="space-y-3">
-          <p className="text-[10px] text-[var(--color-text-muted)] leading-relaxed">
+          <p className="text-[11px] text-[var(--color-text-muted)] leading-relaxed">
             Procedural Canvas2D layer behind the main scene. Pick a template or clear from the library below.
           </p>
           <CanvasMotionTemplatesPanel scene={scene} />
           <button
             type="button"
-            className="no-style w-full rounded-lg border px-2.5 py-2 text-left text-[11px] transition-colors hover:bg-white/[0.04]"
+            className="no-style w-full rounded-lg border px-2.5 py-2 text-left text-[12px] transition-colors hover:bg-white/[0.04]"
             style={{ borderColor: 'var(--color-border)', color: 'var(--color-accent)' }}
             onClick={() => openLayerStackProperties(BG_STAGE_STACK_KEY)}
           >
@@ -268,7 +268,7 @@ export default function LayerStackPropertiesPanel({ scene }: Props) {
         <section className="space-y-2">
           <SubLink
             icon={Video}
-            label="Scene tab — video source, trim, opacity"
+            label="Setup tab — video source, trim, opacity"
             onClick={() => openLayersSection('scene')}
           />
         </section>
@@ -286,7 +286,7 @@ export default function LayerStackPropertiesPanel({ scene }: Props) {
 
       {kind === 'physics' && id && (
         <section className="space-y-2">
-          <SubLink icon={Layers} label="Scene tab — physics layers & card" onClick={() => openLayersSection('scene')} />
+          <SubLink icon={Layers} label="Setup tab — physics layers & card" onClick={() => openLayersSection('scene')} />
         </section>
       )}
 
@@ -296,7 +296,7 @@ export default function LayerStackPropertiesPanel({ scene }: Props) {
           <div className="space-y-1">
             <SubLink
               icon={BarChart3}
-              label="Scene tab — all charts & add/remove"
+              label="Setup tab — all charts & add/remove"
               onClick={() => openLayersSection('scene')}
             />
             {(() => {
@@ -322,7 +322,7 @@ export default function LayerStackPropertiesPanel({ scene }: Props) {
 
       {kind === 'svg' && id && (
         <section className="space-y-2">
-          <SubLink icon={ImageIcon} label="Scene tab — SVG & objects" onClick={() => openLayersSection('scene')} />
+          <SubLink icon={ImageIcon} label="Setup tab — SVG & objects" onClick={() => openLayersSection('scene')} />
           <SubLink icon={Type} label="Text tab — SVG text slots" onClick={() => openLayersSection('text')} />
         </section>
       )}
@@ -333,14 +333,14 @@ export default function LayerStackPropertiesPanel({ scene }: Props) {
           const el = (scene.interactions ?? []).find((x) => x.id === id)
           if (!el) {
             return (
-              <p className="text-[10px] text-[var(--color-text-muted)]">
+              <p className="text-[11px] text-[var(--color-text-muted)]">
                 This interaction was removed. Close and pick another layer.
               </p>
             )
           }
           return (
             <section className="space-y-3">
-              <p className="text-[9px] text-[var(--color-text-muted)] leading-relaxed">
+              <p className="text-[10px] text-[var(--color-text-muted)] leading-relaxed">
                 Change type, position, timing, branching, and glass style. Edit all visible copy from the layer stack ▸{' '}
                 <strong>Text & labels</strong>, or below (same fields).
               </p>
@@ -366,13 +366,13 @@ function AILayerQuickProps({
   const { updateAILayer } = useVideoStore()
   const layer = (scene.aiLayers ?? []).find((l) => l.id === layerId)
   if (!layer) {
-    return <p className="text-[10px] text-[var(--color-text-muted)]">Layer not found.</p>
+    return <p className="text-[11px] text-[var(--color-text-muted)]">Layer not found.</p>
   }
   return (
     <section className="space-y-3">
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <label className="text-[9px] text-[var(--color-text-muted)]">Opacity</label>
+          <label className="text-[10px] text-[var(--color-text-muted)]">Opacity</label>
           <input
             type="number"
             min={0}
@@ -383,24 +383,24 @@ function AILayerQuickProps({
               updateAILayer(scene.id, layerId, { opacity: Math.max(0, Math.min(1, parseFloat(e.target.value) || 0)) })
             }
             onBlur={onCommit}
-            className="kbd mt-0.5 w-full px-1.5 py-1 text-[10px]"
+            className="kbd mt-0.5 w-full px-1.5 py-1 text-[11px]"
           />
         </div>
         <div>
-          <label className="text-[9px] text-[var(--color-text-muted)]">z-index</label>
+          <label className="text-[10px] text-[var(--color-text-muted)]">z-index</label>
           <input
             type="number"
             step={1}
             value={layer.zIndex}
             onChange={(e) => updateAILayer(scene.id, layerId, { zIndex: parseInt(e.target.value, 10) || 0 })}
             onBlur={onCommit}
-            className="kbd mt-0.5 w-full px-1.5 py-1 text-[10px]"
+            className="kbd mt-0.5 w-full px-1.5 py-1 text-[11px]"
           />
         </div>
       </div>
       {'startAt' in layer && (
         <div>
-          <label className="text-[9px] text-[var(--color-text-muted)]">Start at (s)</label>
+          <label className="text-[10px] text-[var(--color-text-muted)]">Start at (s)</label>
           <input
             type="number"
             min={0}
@@ -410,11 +410,11 @@ function AILayerQuickProps({
               updateAILayer(scene.id, layerId, { startAt: Math.max(0, parseFloat(e.target.value) || 0) } as any)
             }
             onBlur={onCommit}
-            className="kbd mt-0.5 w-full px-1.5 py-1 text-[10px]"
+            className="kbd mt-0.5 w-full px-1.5 py-1 text-[11px]"
           />
         </div>
       )}
-      <SubLink icon={Sparkles} label="Scene tab — AI layer settings" onClick={() => openLayersSection('scene')} />
+      <SubLink icon={Sparkles} label="Setup tab — AI layer settings" onClick={() => openLayersSection('scene')} />
     </section>
   )
 }

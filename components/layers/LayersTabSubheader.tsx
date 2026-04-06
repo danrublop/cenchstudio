@@ -10,6 +10,8 @@ interface Props {
   activeTabId: LayersTabSectionId
   onActiveTabChange: (id: LayersTabSectionId) => void
   hasInteractTab: boolean
+  /** Hide these ids from the ⋯ catalog (e.g. Scenes only on Electron left rail) */
+  catalogExcludeIds?: LayersTabSectionId[]
 }
 
 export default function LayersTabSubheader({
@@ -18,10 +20,13 @@ export default function LayersTabSubheader({
   activeTabId,
   onActiveTabChange,
   hasInteractTab,
+  catalogExcludeIds = [],
 }: Props) {
   const [configOpen, setConfigOpen] = useState(false)
 
-  const catalogIds = LAYERS_TAB_META.map((m) => m.id).filter((id) => id !== 'interact' || hasInteractTab)
+  const catalogIds = LAYERS_TAB_META.map((m) => m.id)
+    .filter((id) => id !== 'interact' || hasInteractTab)
+    .filter((id) => !catalogExcludeIds.includes(id))
 
   const setTabVisible = (id: LayersTabSectionId, on: boolean) => {
     if (on) {
@@ -41,8 +46,7 @@ export default function LayersTabSubheader({
   return (
     <>
       <div
-        className="flex flex-shrink-0 items-center gap-0.5 border-b bg-[var(--color-bg)] px-1 py-1"
-        style={{ borderBottomColor: 'var(--color-hairline)' }}
+        className="flex flex-shrink-0 items-center gap-0.5 bg-[var(--color-panel)] px-1 py-1"
       >
         <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
           {visibleTabIds.map((id) => {
@@ -60,10 +64,10 @@ export default function LayersTabSubheader({
                     onActiveTabChange(id)
                   }
                 }}
-                className={`chat-tab max-w-[120px] flex-shrink-0 cursor-pointer select-none overflow-hidden rounded px-2 py-1 text-[10px] outline-none transition-all ${
+                className={`chat-tab max-w-[120px] flex-shrink-0 cursor-pointer select-none overflow-hidden rounded px-2 py-1 text-[11px] outline-none transition-all ${
                   active
-                    ? 'border border-[var(--color-border)] bg-[var(--color-panel)] text-[var(--kbd-text)]'
-                    : 'border border-transparent text-[var(--color-text-muted)] hover:bg-[var(--color-panel)]/50 hover:text-[var(--kbd-text)]'
+                    ? 'bg-[var(--agent-chat-user-surface)] text-[var(--color-text-primary)]'
+                    : 'text-[var(--color-text-muted)] hover:bg-[var(--color-panel)]/50 hover:text-[var(--kbd-text)]'
                 } whitespace-nowrap`}
                 style={
                   {
@@ -124,7 +128,7 @@ export default function LayersTabSubheader({
                     }`}
                   >
                     <span
-                      className={`text-[11px] font-medium ${on ? 'text-[var(--color-text-primary)]' : 'text-[var(--color-text-muted)]'}`}
+                      className={`text-[12px] font-medium ${on ? 'text-[var(--color-text-primary)]' : 'text-[var(--color-text-muted)]'}`}
                     >
                       {label(id)}
                     </span>

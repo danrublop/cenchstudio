@@ -3,9 +3,12 @@ import { db } from '@/lib/db'
 import { avatarConfigs } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
 import { AvatarService } from '@/lib/avatar'
+import { assertProjectAccess } from '@/lib/auth-helpers'
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ projectId: string }> }) {
   const { projectId } = await params
+  const access = await assertProjectAccess(projectId)
+  if (access.error) return access.error
 
   const configs = await db
     .select()
@@ -21,7 +24,15 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ projectId: string }> }) {
   const { projectId } = await params
-  const body = await req.json()
+  const access = await assertProjectAccess(projectId)
+  if (access.error) return access.error
+
+  let body: any
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+  }
   const { provider, name, config, isDefault } = body
 
   if (!provider || !name) {

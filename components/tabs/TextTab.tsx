@@ -72,7 +72,7 @@ function AllTextStackPanel({
           <Type size={12} strokeWidth={2.25} aria-hidden />
         </span>
         <span
-          className="chat-tab relative min-w-0 w-fit max-w-[min(240px,calc(100%-3.25rem))] overflow-hidden rounded border border-[var(--color-border)] bg-[var(--color-panel)] px-2 py-1 text-[10px] text-[var(--kbd-text)]"
+          className="chat-tab relative min-w-0 w-fit max-w-[min(240px,calc(100%-3.25rem))] overflow-hidden rounded border border-[var(--color-border)] bg-[var(--color-panel)] px-2 py-1 text-[11px] text-[var(--kbd-text)]"
           title={sceneTitle}
         >
           <span className="block truncate">{sceneTitle}</span>
@@ -93,7 +93,7 @@ function AllTextStackPanel({
         <ul className="space-y-0.5">
           {slots.length === 0 ? (
             <li className="px-1 py-2">
-              <p className="text-[10px] text-[var(--color-text-muted)]">No text in this scene yet.</p>
+              <p className="text-[11px] text-[var(--color-text-muted)]">No text in this scene yet.</p>
             </li>
           ) : (
             slots.map((s) => {
@@ -137,7 +137,7 @@ function AllTextStackPanel({
                       {isHidden ? <EyeOff size={13} /> : <Eye size={13} />}
                     </button>
                     <Type size={12} className="shrink-0 text-[var(--color-text-muted)]" strokeWidth={2.25} />
-                    <span className="min-w-0 flex-1 truncate text-[10px] text-[var(--color-text-primary)]">{line}</span>
+                    <span className="min-w-0 flex-1 truncate text-[11px] text-[var(--color-text-primary)]">{line}</span>
                   </div>
                 </li>
               )
@@ -297,19 +297,19 @@ export default function TextTab({ scene }: Props) {
           <div className="flex flex-col gap-3">
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
-                <div className="text-[9px] uppercase tracking-wider text-[var(--color-text-muted)]">Text overlay</div>
-                <div className="truncate text-xs font-medium text-[var(--color-text-primary)]">New overlay</div>
+                <div className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)]">Text overlay</div>
+                <div className="truncate text-sm font-medium text-[var(--color-text-primary)]">New overlay</div>
               </div>
               <button
                 type="button"
-                className="kbd shrink-0 px-2 py-0.5 text-[10px] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
+                className="kbd shrink-0 px-2 py-0.5 text-[11px] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
                 onClick={cancelAddOverlay}
               >
                 Cancel
               </button>
             </div>
             <div>
-              <label className="mb-1 block text-[9px] uppercase tracking-wider text-[var(--color-text-muted)]">
+              <label className="mb-1 block text-[10px] uppercase tracking-wider text-[var(--color-text-muted)]">
                 Content
               </label>
               <textarea
@@ -324,7 +324,7 @@ export default function TextTab({ scene }: Props) {
                 rows={4}
                 placeholder="What should it say?"
                 autoFocus
-                className="w-full resize-y rounded border px-2 py-1.5 text-xs focus:border-[#e84545] focus:outline-none"
+                className="w-full resize-y rounded border px-2 py-1.5 text-sm focus:border-[#e84545] focus:outline-none"
                 style={{
                   backgroundColor: 'var(--color-input-bg)',
                   borderColor: 'var(--color-border)',
@@ -336,14 +336,14 @@ export default function TextTab({ scene }: Props) {
             <div className="flex justify-end gap-1 border-t border-[var(--color-border)] pt-2">
               <button
                 type="button"
-                className="kbd h-8 px-3 text-[10px] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
+                className="kbd h-8 px-3 text-[11px] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
                 onClick={cancelAddOverlay}
               >
                 Cancel
               </button>
               <button
                 type="button"
-                className="kbd h-8 px-3 text-[10px] border border-[var(--color-accent)] text-[var(--color-accent)] hover:bg-[var(--color-accent)]/10"
+                className="kbd h-8 px-3 text-[11px] border border-[var(--color-accent)] text-[var(--color-accent)] hover:bg-[var(--color-accent)]/10"
                 onClick={submitNewOverlay}
               >
                 Add overlay
@@ -351,16 +351,16 @@ export default function TextTab({ scene }: Props) {
             </div>
           </div>
         ) : slots.length === 0 ? (
-          <div className="flex flex-col gap-2 py-6 text-center text-[11px] text-[var(--color-text-muted)]">
+          <div className="flex flex-col gap-2 py-6 text-center text-[12px] text-[var(--color-text-muted)]">
             <Type size={28} className="mx-auto opacity-40" strokeWidth={1.5} />
             <p>Add overlays, SVG &lt;text&gt;, chart titles, interactions, or physics copy.</p>
-            <p className="text-[10px]">
+            <p className="text-[11px]">
               Use <span className="text-[var(--color-text-primary)]">+</span> below to add a text overlay.
             </p>
           </div>
         ) : !textEditorSlotKey || !activeSlot ? (
           <div className="space-y-2">
-            <p className="text-[10px] text-[var(--color-text-muted)]">
+            <p className="text-[11px] text-[var(--color-text-muted)]">
               Select a row in <span className="text-[var(--color-text-primary)]">Text</span> below, or double-click
               under <span className="text-[var(--color-text-primary)]">Layer stack → Text in scene</span>.
             </p>
@@ -369,14 +369,14 @@ export default function TextTab({ scene }: Props) {
           <div className="flex flex-col gap-3">
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
-                <div className="text-[9px] uppercase tracking-wider text-[var(--color-text-muted)]">
+                <div className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)]">
                   {activeSlot.badge}
                 </div>
-                <div className="truncate text-xs font-medium text-[var(--color-text-primary)]">{activeSlot.label}</div>
+                <div className="truncate text-sm font-medium text-[var(--color-text-primary)]">{activeSlot.label}</div>
               </div>
               <button
                 type="button"
-                className="kbd shrink-0 px-2 py-0.5 text-[10px] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
+                className="kbd shrink-0 px-2 py-0.5 text-[11px] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
                 onClick={() => setTextEditorSlotKey(null)}
               >
                 Clear
@@ -384,7 +384,7 @@ export default function TextTab({ scene }: Props) {
             </div>
 
             <div>
-              <label className="mb-1 block text-[9px] uppercase tracking-wider text-[var(--color-text-muted)]">
+              <label className="mb-1 block text-[10px] uppercase tracking-wider text-[var(--color-text-muted)]">
                 {activeSlot.kind === 'chart' ? 'Title' : 'Content'}
               </label>
               <textarea
@@ -392,7 +392,7 @@ export default function TextTab({ scene }: Props) {
                 onChange={(e) => setDraft(e.target.value)}
                 onBlur={commitDraft}
                 rows={overlay || activeSlot.kind === 'chart' ? 3 : 6}
-                className="w-full resize-y rounded border px-2 py-1.5 text-xs focus:border-[#e84545] focus:outline-none"
+                className="w-full resize-y rounded border px-2 py-1.5 text-sm focus:border-[#e84545] focus:outline-none"
                 style={{
                   backgroundColor: 'var(--color-input-bg)',
                   borderColor: 'var(--color-border)',
@@ -405,14 +405,14 @@ export default function TextTab({ scene }: Props) {
             {overlay && (
               <div className="grid grid-cols-2 gap-2 border-t border-[var(--color-border)] pt-3">
                 <div className="col-span-2">
-                  <label className="mb-0.5 block text-[9px] uppercase tracking-wider text-[var(--color-text-muted)]">
+                  <label className="mb-0.5 block text-[10px] uppercase tracking-wider text-[var(--color-text-muted)]">
                     Font
                   </label>
                   <input
                     type="text"
                     value={overlay.font}
                     onChange={(e) => patchOverlay({ font: e.target.value })}
-                    className="w-full rounded border px-2 py-1 text-[11px] focus:border-[#e84545] focus:outline-none"
+                    className="w-full rounded border px-2 py-1 text-[12px] focus:border-[#e84545] focus:outline-none"
                     style={{
                       backgroundColor: 'var(--color-input-bg)',
                       borderColor: 'var(--color-border)',
@@ -421,7 +421,7 @@ export default function TextTab({ scene }: Props) {
                   />
                 </div>
                 <div>
-                  <label className="mb-0.5 block text-[9px] uppercase tracking-wider text-[var(--color-text-muted)]">
+                  <label className="mb-0.5 block text-[10px] uppercase tracking-wider text-[var(--color-text-muted)]">
                     Size
                   </label>
                   <input
@@ -430,7 +430,7 @@ export default function TextTab({ scene }: Props) {
                     max={200}
                     value={overlay.size}
                     onChange={(e) => patchOverlay({ size: parseInt(e.target.value, 10) || 48 })}
-                    className="w-full rounded border px-2 py-1 text-[11px] focus:border-[#e84545] focus:outline-none"
+                    className="w-full rounded border px-2 py-1 text-[12px] focus:border-[#e84545] focus:outline-none"
                     style={{
                       backgroundColor: 'var(--color-input-bg)',
                       borderColor: 'var(--color-border)',
@@ -439,7 +439,7 @@ export default function TextTab({ scene }: Props) {
                   />
                 </div>
                 <div>
-                  <label className="mb-0.5 block text-[9px] uppercase tracking-wider text-[var(--color-text-muted)]">
+                  <label className="mb-0.5 block text-[10px] uppercase tracking-wider text-[var(--color-text-muted)]">
                     Color
                   </label>
                   <input
@@ -450,7 +450,7 @@ export default function TextTab({ scene }: Props) {
                   />
                 </div>
                 <div>
-                  <label className="mb-0.5 block text-[9px] uppercase tracking-wider text-[var(--color-text-muted)]">
+                  <label className="mb-0.5 block text-[10px] uppercase tracking-wider text-[var(--color-text-muted)]">
                     X %
                   </label>
                   <input
@@ -459,7 +459,7 @@ export default function TextTab({ scene }: Props) {
                     max={100}
                     value={overlay.x}
                     onChange={(e) => patchOverlay({ x: parseFloat(e.target.value) || 0 })}
-                    className="w-full rounded border px-2 py-1 text-[11px] focus:border-[#e84545] focus:outline-none"
+                    className="w-full rounded border px-2 py-1 text-[12px] focus:border-[#e84545] focus:outline-none"
                     style={{
                       backgroundColor: 'var(--color-input-bg)',
                       borderColor: 'var(--color-border)',
@@ -468,7 +468,7 @@ export default function TextTab({ scene }: Props) {
                   />
                 </div>
                 <div>
-                  <label className="mb-0.5 block text-[9px] uppercase tracking-wider text-[var(--color-text-muted)]">
+                  <label className="mb-0.5 block text-[10px] uppercase tracking-wider text-[var(--color-text-muted)]">
                     Y %
                   </label>
                   <input
@@ -477,7 +477,7 @@ export default function TextTab({ scene }: Props) {
                     max={100}
                     value={overlay.y}
                     onChange={(e) => patchOverlay({ y: parseFloat(e.target.value) || 0 })}
-                    className="w-full rounded border px-2 py-1 text-[11px] focus:border-[#e84545] focus:outline-none"
+                    className="w-full rounded border px-2 py-1 text-[12px] focus:border-[#e84545] focus:outline-none"
                     style={{
                       backgroundColor: 'var(--color-input-bg)',
                       borderColor: 'var(--color-border)',
@@ -486,7 +486,7 @@ export default function TextTab({ scene }: Props) {
                   />
                 </div>
                 <div>
-                  <label className="mb-0.5 block text-[9px] uppercase tracking-wider text-[var(--color-text-muted)]">
+                  <label className="mb-0.5 block text-[10px] uppercase tracking-wider text-[var(--color-text-muted)]">
                     Delay (s)
                   </label>
                   <input
@@ -495,7 +495,7 @@ export default function TextTab({ scene }: Props) {
                     step={0.1}
                     value={overlay.delay}
                     onChange={(e) => patchOverlay({ delay: parseFloat(e.target.value) || 0 })}
-                    className="w-full rounded border px-2 py-1 text-[11px] focus:border-[#e84545] focus:outline-none"
+                    className="w-full rounded border px-2 py-1 text-[12px] focus:border-[#e84545] focus:outline-none"
                     style={{
                       backgroundColor: 'var(--color-input-bg)',
                       borderColor: 'var(--color-border)',
@@ -504,7 +504,7 @@ export default function TextTab({ scene }: Props) {
                   />
                 </div>
                 <div>
-                  <label className="mb-0.5 block text-[9px] uppercase tracking-wider text-[var(--color-text-muted)]">
+                  <label className="mb-0.5 block text-[10px] uppercase tracking-wider text-[var(--color-text-muted)]">
                     Duration (s)
                   </label>
                   <input
@@ -513,7 +513,7 @@ export default function TextTab({ scene }: Props) {
                     step={0.1}
                     value={overlay.duration}
                     onChange={(e) => patchOverlay({ duration: parseFloat(e.target.value) || 0.6 })}
-                    className="w-full rounded border px-2 py-1 text-[11px] focus:border-[#e84545] focus:outline-none"
+                    className="w-full rounded border px-2 py-1 text-[12px] focus:border-[#e84545] focus:outline-none"
                     style={{
                       backgroundColor: 'var(--color-input-bg)',
                       borderColor: 'var(--color-border)',
@@ -522,13 +522,13 @@ export default function TextTab({ scene }: Props) {
                   />
                 </div>
                 <div className="col-span-2">
-                  <label className="mb-0.5 block text-[9px] uppercase tracking-wider text-[var(--color-text-muted)]">
+                  <label className="mb-0.5 block text-[10px] uppercase tracking-wider text-[var(--color-text-muted)]">
                     Animation
                   </label>
                   <select
                     value={overlay.animation}
                     onChange={(e) => patchOverlay({ animation: e.target.value as TextOverlay['animation'] })}
-                    className="w-full rounded border px-2 py-1 text-[11px] focus:border-[#e84545] focus:outline-none"
+                    className="w-full rounded border px-2 py-1 text-[12px] focus:border-[#e84545] focus:outline-none"
                     style={{
                       backgroundColor: 'var(--color-input-bg)',
                       borderColor: 'var(--color-border)',
@@ -546,7 +546,7 @@ export default function TextTab({ scene }: Props) {
             {activeSlot.kind === 'chart' && chartTitleLayer && (
               <div className="grid grid-cols-2 gap-2 border-t border-[var(--color-border)] pt-3">
                 <div className="col-span-2">
-                  <label className="mb-0.5 block text-[9px] uppercase tracking-wider text-[var(--color-text-muted)]">
+                  <label className="mb-0.5 block text-[10px] uppercase tracking-wider text-[var(--color-text-muted)]">
                     Font family
                   </label>
                   <input
@@ -554,7 +554,7 @@ export default function TextTab({ scene }: Props) {
                     value={String((chartTitleLayer.config as Record<string, unknown>).fontFamily ?? '')}
                     onChange={(e) => patchChartTitleConfig({ fontFamily: e.target.value })}
                     placeholder="e.g. Inter, system-ui"
-                    className="w-full rounded border px-2 py-1 text-[11px] focus:border-[#e84545] focus:outline-none"
+                    className="w-full rounded border px-2 py-1 text-[12px] focus:border-[#e84545] focus:outline-none"
                     style={{
                       backgroundColor: 'var(--color-input-bg)',
                       borderColor: 'var(--color-border)',
@@ -563,7 +563,7 @@ export default function TextTab({ scene }: Props) {
                   />
                 </div>
                 <div>
-                  <label className="mb-0.5 block text-[9px] uppercase tracking-wider text-[var(--color-text-muted)]">
+                  <label className="mb-0.5 block text-[10px] uppercase tracking-wider text-[var(--color-text-muted)]">
                     Chart font size
                   </label>
                   <input
@@ -576,7 +576,7 @@ export default function TextTab({ scene }: Props) {
                         : 18
                     }
                     onChange={(e) => patchChartTitleConfig({ fontSize: parseInt(e.target.value, 10) || 18 })}
-                    className="w-full rounded border px-2 py-1 text-[11px] focus:border-[#e84545] focus:outline-none"
+                    className="w-full rounded border px-2 py-1 text-[12px] focus:border-[#e84545] focus:outline-none"
                     style={{
                       backgroundColor: 'var(--color-input-bg)',
                       borderColor: 'var(--color-border)',
@@ -585,7 +585,7 @@ export default function TextTab({ scene }: Props) {
                   />
                 </div>
                 <div>
-                  <label className="mb-0.5 block text-[9px] uppercase tracking-wider text-[var(--color-text-muted)]">
+                  <label className="mb-0.5 block text-[10px] uppercase tracking-wider text-[var(--color-text-muted)]">
                     Title size
                   </label>
                   <input
@@ -598,7 +598,7 @@ export default function TextTab({ scene }: Props) {
                         : 64
                     }
                     onChange={(e) => patchChartTitleConfig({ titleSize: parseInt(e.target.value, 10) || 64 })}
-                    className="w-full rounded border px-2 py-1 text-[11px] focus:border-[#e84545] focus:outline-none"
+                    className="w-full rounded border px-2 py-1 text-[12px] focus:border-[#e84545] focus:outline-none"
                     style={{
                       backgroundColor: 'var(--color-input-bg)',
                       borderColor: 'var(--color-border)',
@@ -606,14 +606,14 @@ export default function TextTab({ scene }: Props) {
                     }}
                   />
                 </div>
-                <p className="col-span-2 text-[9px] text-[var(--color-text-muted)]">
+                <p className="col-span-2 text-[10px] text-[var(--color-text-muted)]">
                   Title size controls the chart heading; chart font size affects axis and data labels (CenchCharts).
                 </p>
               </div>
             )}
 
             {activeSlot.kind === 'svg_text' && (
-              <p className="text-[9px] text-[var(--color-text-muted)]">
+              <p className="text-[10px] text-[var(--color-text-muted)]">
                 SVG &lt;text&gt; — font and position stay in the SVG; edit wording here.
               </p>
             )}

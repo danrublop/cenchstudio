@@ -28,7 +28,7 @@ import { DEFAULT_MODELS, type ModelConfig } from './model-config'
 // Token budget constants
 const MAX_WORLD_STATE_TOKENS = 2000
 const MAX_FULL_SCENE_TOKENS = 3000
-const MAX_HISTORY_MESSAGES = 10
+const MAX_HISTORY_MESSAGES = 20
 
 const MODEL_DEFAULTS: Record<AgentType, ModelId> = {
   router: 'claude-haiku-4-5-20251001',
@@ -114,9 +114,13 @@ export function resolveModel(
 
   const tierResolved = MODEL_TIERS[tier]?.[agentType] ?? MODEL_DEFAULTS[agentType]
 
-  // If override provided, validate it's enabled and supports tools before using
-  const resolved =
-    explicitOverride && (!toolCapableIds || toolCapableIds.length === 0 || toolCapableIds.includes(explicitOverride))
+  // If override provided, validate it's enabled and supports tools before using.
+  // For local models, the override may be the model `id` (e.g. "ollama-llama3") while
+  // enabledModelIds contains `modelId` (e.g. "llama3.1:8b") — check both.
+  const overrideIsEnabled = !toolCapableIds || toolCapableIds.length === 0
+    || toolCapableIds.includes(explicitOverride ?? '')
+    || (modelConfigs ?? []).some((m) => (m.id === explicitOverride || m.modelId === explicitOverride) && toolCapableIds.includes(m.modelId))
+  const resolved = explicitOverride && overrideIsEnabled
       ? explicitOverride
       : tierResolved
 
@@ -376,7 +380,12 @@ export function serializeWorldState(world: WorldState): string {
 
 // ── Tool Filtering ─────────────────────────────────────────────────────────────
 
-function filterToolsForAgent(agentType: AgentType, activeTools: string[]): ClaudeToolDefinition[] {
+function filterToolsForAgent(
+  agentType: AgentType,
+  activeTools: string[],
+  audioProviderEnabled?: Record<string, boolean>,
+  mediaGenEnabled?: Record<string, boolean>,
+): ClaudeToolDefinition[] {
   const agentTools = AGENT_TOOLS[agentType] ?? ALL_TOOLS
 
   // If no filter active, return all agent tools
@@ -390,6 +399,17 @@ function filterToolsForAgent(agentType: AgentType, activeTools: string[]): Claud
   if (activeTools.includes('three')) allowedLayerTypes.add('three')
   if (activeTools.includes('lottie')) allowedLayerTypes.add('lottie')
   if (activeTools.includes('motion')) allowedLayerTypes.add('motion')
+  if (activeTools.includes('zdog')) allowedLayerTypes.add('zdog')
+  if (activeTools.includes('physics')) allowedLayerTypes.add('physics')
+
+  // Check which provider categories have at least one enabled provider
+  const isAudioEnabled = (id: string) => !audioProviderEnabled || (audioProviderEnabled[id] ?? true)
+  const isMediaEnabled = (id: string) => !mediaGenEnabled || (mediaGenEnabled[id] ?? true)
+  const hasTTS = AUDIO_PROVIDERS.some((p) => p.category === 'tts' && isAudioEnabled(p.id))
+  const hasSFX = AUDIO_PROVIDERS.some((p) => p.category === 'sfx' && isAudioEnabled(p.id))
+  const hasMusic = AUDIO_PROVIDERS.some((p) => p.category === 'music' && isAudioEnabled(p.id))
+  const hasAvatar = MEDIA_PROVIDERS.some((p) => p.category === 'avatar' && isMediaEnabled(p.id))
+  const hasVideo = MEDIA_PROVIDERS.some((p) => p.category === 'video' && isMediaEnabled(p.id))
 
   // Filter tools based on active tool categories
   return agentTools.filter((tool) => {
@@ -431,14 +451,21 @@ function filterToolsForAgent(agentType: AgentType, activeTools: string[]): Claud
     // Conditionally filtered tools
     if (tool.name === 'add_layer' && allowedLayerTypes.size === 0) return false
     if (['generate_chart', 'update_chart', 'remove_chart', 'reorder_charts'].includes(tool.name)) {
-      return activeTools.includes('d3') || activeTools.length === 0
+      return activeTools.includes('d3')
     }
     if (tool.name === 'search_images' || tool.name === 'place_image') return activeTools.includes('assets')
-    if (['set_audio_layer', 'add_narration', 'add_sound_effect', 'add_background_music'].includes(tool.name))
-      return activeTools.includes('audio')
-    if (tool.name === 'set_video_layer') return activeTools.includes('video')
+
+    // Audio tools — gated on activeTools AND provider availability per category
+    if (tool.name === 'set_audio_layer') return activeTools.includes('audio')
+    if (tool.name === 'add_narration') return activeTools.includes('audio') && hasTTS
+    if (tool.name === 'add_sound_effect') return activeTools.includes('audio') && hasSFX
+    if (tool.name === 'add_background_music') return activeTools.includes('audio') && hasMusic
+
+    // Video/avatar tools — gated on provider availability
+    if (tool.name === 'set_video_layer') return activeTools.includes('video') && hasVideo
     if (['generate_avatar', 'list_avatars', 'generate_avatar_narration'].includes(tool.name))
-      return activeTools.includes('avatars')
+      return activeTools.includes('avatars') && hasAvatar
+
     if (['add_interaction', 'add_multiple_interactions', 'edit_interaction', 'connect_scenes'].includes(tool.name))
       return activeTools.includes('interactions')
     if (
@@ -448,10 +475,10 @@ function filterToolsForAgent(agentType: AgentType, activeTools: string[]): Claud
     )
       return activeTools.includes('physics')
     if (tool.name === 'apply_canvas_motion_template') {
-      return activeTools.length === 0 || activeTools.includes('canvas2d')
+      return activeTools.includes('canvas2d')
     }
     if (tool.name === 'three_data_scatter_scene') {
-      return activeTools.length === 0 || activeTools.includes('three')
+      return activeTools.includes('three')
     }
 
     return true
@@ -578,8 +605,8 @@ When planning scenes, design a scene graph — not just a list:
     }
   }
 
-  // Audio provider availability — only inject when audio tools are active
-  if (opts.activeTools.includes('audio') && (agentType === 'director' || agentType === 'scene-maker')) {
+  // Audio provider availability — only show categories with enabled providers
+  if (opts.activeTools.includes('audio') && (agentType === 'director' || agentType === 'scene-maker' || agentType === 'planner')) {
     const enabledMap = opts.audioProviderEnabled ?? {}
     const isEnabled = (id: string) => enabledMap[id] ?? true
     const enabledTTS = AUDIO_PROVIDERS.filter((p) => p.category === 'tts' && isEnabled(p.id)).map((p) => p.name)
@@ -594,8 +621,8 @@ When planning scenes, design a scene graph — not just a list:
     }
   }
 
-  // Media provider availability
-  if (agentType === 'director' || agentType === 'scene-maker') {
+  // Media provider availability — only show enabled providers
+  if (agentType === 'director' || agentType === 'scene-maker' || agentType === 'planner') {
     const mediaMap = opts.mediaGenEnabled ?? {}
     const isMediaEnabled = (id: string) => mediaMap[id] ?? true
     const enabled = MEDIA_PROVIDERS.filter((p) => isMediaEnabled(p.id)).map((p) => p.name)
@@ -678,7 +705,7 @@ ${worldStateSerialized}
 \`\`\``
   const systemPrompt = `${staticPrompt}${dynamicPrompt}`
 
-  const tools = filterToolsForAgent(agentType, opts.activeTools)
+  const tools = filterToolsForAgent(agentType, opts.activeTools, opts.audioProviderEnabled, opts.mediaGenEnabled)
   const modelId = resolveModel(agentType, modelTier ?? 'auto', modelOverride, enabledModelIds)
   // Router never uses thinking; non-Anthropic models don't support thinking param
   const provider = getModelProvider(modelId)
@@ -734,7 +761,7 @@ function estimateContentTokens(content: import('./types').MessageContent): numbe
   }, 0)
 }
 
-const MAX_HISTORY_TOKENS = 8000
+const MAX_HISTORY_TOKENS = 12000
 
 /**
  * Strip image blocks from a message, replacing with text placeholders.
@@ -747,8 +774,8 @@ function stripImages(content: import('./types').MessageContent): import('./types
   return content.map((b) => (b.type === 'image' ? { type: 'text' as const, text: '[image]' } : b))
 }
 
-/** Number of recent messages to keep in full detail */
-const RECENT_WINDOW = 6
+/** Number of recent messages to keep in full detail (verbatim, not summarized) */
+const RECENT_WINDOW = 8
 
 /**
  * Summarize older messages into a structured summary that preserves

@@ -96,7 +96,7 @@ export default function CanvasMotionTemplatesPanel({ scene }: Props) {
     <div className="px-3 py-2 space-y-2">
       {canLayerBehind ? (
         <div
-          className="flex rounded-lg border overflow-hidden text-[10px]"
+          className="flex rounded-lg border overflow-hidden text-[11px]"
           style={{ borderColor: 'var(--color-border)' }}
         >
           <button
@@ -124,7 +124,7 @@ export default function CanvasMotionTemplatesPanel({ scene }: Props) {
           </button>
         </div>
       ) : null}
-      <p className="text-[11px] text-[#6b6b7a] leading-snug">
+      <p className="text-[12px] text-[#6b6b7a] leading-snug">
         {mode === 'background' && canLayerBehind
           ? 'Animates behind your current Motion, D3, or SVG content (1920×1080 canvas, scrub-friendly).'
           : 'Replaces this scene with a Canvas2D-only loop. Use Full background if you want to keep Motion / D3 / SVG on top.'}
@@ -133,7 +133,7 @@ export default function CanvasMotionTemplatesPanel({ scene }: Props) {
         <button
           type="button"
           onClick={() => void clearBackground()}
-          className="text-[10px] px-2 py-1 rounded border w-full transition-colors hover:border-[#e84545]"
+          className="text-[11px] px-2 py-1 rounded border w-full transition-colors hover:border-[#e84545]"
           style={{ borderColor: 'var(--color-border)', color: '#6b6b7a' }}
         >
           Remove canvas background
@@ -143,7 +143,7 @@ export default function CanvasMotionTemplatesPanel({ scene }: Props) {
         value={q}
         onChange={(e) => setQ(e.target.value)}
         placeholder="Search templates…"
-        className="w-full border rounded-md px-2 py-1.5 text-[11px] focus:outline-none focus:border-[#e84545]"
+        className="w-full border rounded-md px-2 py-1.5 text-[12px] focus:outline-none focus:border-[#e84545]"
         style={{
           backgroundColor: 'var(--color-input-bg)',
           borderColor: 'var(--color-border)',
@@ -156,7 +156,7 @@ export default function CanvasMotionTemplatesPanel({ scene }: Props) {
             key={t}
             type="button"
             onClick={() => setTag(t)}
-            className="rounded-full px-2 py-0.5 text-[10px] border transition-colors"
+            className="rounded-full px-2 py-0.5 text-[11px] border transition-colors"
             style={{
               background: tag === t ? '#e84545' : 'transparent',
               borderColor: tag === t ? '#e84545' : 'var(--color-border)',
@@ -176,8 +176,8 @@ export default function CanvasMotionTemplatesPanel({ scene }: Props) {
             className="text-left rounded border px-2 py-1.5 transition-colors hover:border-[#e84545]"
             style={{ borderColor: 'var(--color-border)' }}
           >
-            <div className="text-[11px] font-medium text-[var(--color-text-primary)] truncate">{t.name}</div>
-            <div className="text-[10px] text-[#6b6b7a] line-clamp-2">{t.description}</div>
+            <div className="text-[12px] font-medium text-[var(--color-text-primary)] truncate">{t.name}</div>
+            <div className="text-[11px] text-[#6b6b7a] line-clamp-2">{t.description}</div>
           </button>
         ))}
       </div>

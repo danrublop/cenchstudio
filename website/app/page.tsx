@@ -1,14 +1,9 @@
 'use client'
 
-import { useState, useCallback, useRef, useLayoutEffect, useEffect } from 'react'
+import { useState, useCallback, useRef, useLayoutEffect } from 'react'
 import Image from 'next/image'
-import { TiltImage } from './components/TiltImage'
-import { UseCasesScroll } from './components/UseCasesScroll'
 import { HomeScrollAnimations } from './components/HomeScrollAnimations'
-import { HeroClaudeTerminal } from './components/HeroClaudeTerminal'
-import { HeroCodeCard } from './components/HeroCodeCard'
-import { HeroDesktopAgentIcons, type HeroToolbarId } from './components/HeroDesktopAgentIcons'
-import { HeroLibraryGrid } from './components/HeroLibraryGrid'
+import { HeroEditorChromeMock } from './components/HeroEditorChromeMock'
 import { ebGaramond } from './fonts'
 import { getHomeModelsList } from '../lib/home-models'
 
@@ -60,74 +55,39 @@ const heroLogos = [
   { src: '/logos/kling.svg', alt: 'Kling AI' },
 ] as const
 
-/** `public/bettecc.png` — intrinsic size keeps layout 1:1 with asset (full width, no side letterboxing). */
-const studioShowcaseImageWidth = 2812
-const studioShowcaseImageHeight = 1582
-
-function StudioShowcaseImage({ variant = 'hero' }: { variant?: 'hero' | 'footer' }) {
-  const isFooter = variant === 'footer'
-  const [heroPanel, setHeroPanel] = useState<'api' | 'claude' | 'library' | null>(null)
-
-  useEffect(() => {
-    if (isFooter || !heroPanel) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setHeroPanel(null)
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [isFooter, heroPanel])
-
-  const onToolbarActivate = useCallback((id: HeroToolbarId) => {
-    if (id === 'cench') {
-      setHeroPanel(null)
-      return
-    }
-    if (id === 'library') {
-      setHeroPanel((p) => (p === 'library' ? null : 'library'))
-      return
-    }
-    setHeroPanel((p) => (p === id ? null : id))
-  }, [])
-
+/** Hero desk photo + Cench editor mock (always visible; parallax targets `.home-parallax-img`). */
+function StudioShowcaseImage() {
   return (
-    <div
-      className={
-        isFooter
-          ? 'relative w-full overflow-hidden bg-gray-100'
-          : /* overflow-visible so hero code card shadow is not clipped */
-            'relative w-full overflow-visible bg-gray-100'
-      }
-      {...(!isFooter ? { 'data-parallax-wrap': '' } : {})}
-    >
-      <Image
-        src="/bettecc.png"
-        alt="Cench Studio"
-        width={studioShowcaseImageWidth}
-        height={studioShowcaseImageHeight}
-        className={`h-auto w-full ${isFooter ? '' : 'home-parallax-img'}`}
-        sizes="(max-width: 1152px) 100vw, 1152px"
-      />
-      {!isFooter && (
-        <div className="absolute inset-0 z-[2]">
+    <div className="relative w-full overflow-visible bg-gray-100" data-parallax-wrap>
+      <div className="home-parallax-img relative h-[720px] w-full shrink-0 overflow-hidden rounded-md sm:rounded-lg shadow-[0_20px_50px_rgba(0,0,0,0.12)] lg:h-[800px]">
+        <div className="absolute inset-0 z-0" aria-hidden>
+          <Image
+            src="/bettecc.png"
+            alt=""
+            fill
+            className="object-cover object-center"
+            sizes="(max-width: 1280px) 100vw, 1280px"
+            priority
+          />
+        </div>
+        <div
+          className="pointer-events-none absolute inset-0 z-[1] bg-gradient-to-b from-black/20 via-black/5 to-black/45"
+          aria-hidden
+        />
+        <div className="absolute inset-0 z-[2] flex items-center justify-center">
           <div
-            className="pointer-events-none absolute inset-0 opacity-[0.18] mix-blend-overlay"
+            className="pointer-events-none absolute inset-0 z-0 opacity-[0.18] mix-blend-overlay"
             style={{
               backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E")`,
             }}
             aria-hidden
           />
-          <HeroLibraryGrid open={heroPanel === 'library'} onClose={() => setHeroPanel(null)} />
-          <HeroDesktopAgentIcons activePanel={heroPanel} onActivate={onToolbarActivate} />
-          <div
-            className={`relative z-[2] flex min-h-0 items-center justify-center px-[5%] py-[8%] sm:px-[6%] sm:py-[10%] ${
-              heroPanel === 'api' || heroPanel === 'claude' ? 'pointer-events-auto' : 'pointer-events-none'
-            }`}
-          >
-            {heroPanel === 'api' ? <HeroCodeCard className="pointer-events-auto" /> : null}
-            {heroPanel === 'claude' ? <HeroClaudeTerminal className="pointer-events-auto" /> : null}
+          {/* Fixed 920px width — right-aligned; vertically centered in the hero frame */}
+          <div className="relative z-[1] shrink-0">
+            <HeroEditorChromeMock className="pointer-events-auto" />
           </div>
         </div>
-      )}
+      </div>
     </div>
   )
 }
@@ -152,6 +112,10 @@ function HeroLogoImg({
 
 const headerNavLinkClass =
   'font-sans text-[11px] font-medium uppercase tracking-[0.12em] text-[#0a0a0b] transition-opacity hover:opacity-70 sm:text-xs sm:tracking-[0.14em]'
+
+/** Centered column + horizontal inset that grows on large viewports */
+const homePageShellClass =
+  'mx-auto w-full max-w-screen-2xl px-3 sm:px-4 md:px-6 lg:px-10 xl:px-12'
 
 const agentsModelsMdQuery = '(min-width: 768px)'
 
@@ -275,58 +239,62 @@ function AgentsModelsSection() {
 export default function Home() {
 
   return (
-    <div className="min-h-screen bg-bone">
+    <div className="min-h-screen w-full bg-bone">
       <HomeScrollAnimations />
       <ComingSoonToast />
-      {/* Header */}
-      <header className="sticky top-0 z-50 bg-bone/80 backdrop-blur-sm transition-[box-shadow] duration-200">
-        <div className="max-w-6xl mx-auto px-8 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-4 sm:gap-5">
+      {/* Header — matching actual app UI: dark, fixed, pill nav */}
+      <header className="sticky top-0 z-50 border-b border-black bg-[#0a0a0b]/90 backdrop-blur-md">
+        <div className={`flex items-center justify-between py-2.5 ${homePageShellClass}`}>
+          <div className="flex items-center gap-8">
             <a href="/" className="shrink-0 transition-opacity hover:opacity-70">
-              <Image src="/blacklogo.png" alt="Cench" width={40} height={40} />
+              <Image src="/cench-logo.png" alt="Cench" width={32} height={32} />
             </a>
-            <nav className="hidden sm:flex items-center gap-8">
-              <a href="#animations" className={headerNavLinkClass}>
+            <nav className="hidden md:flex items-center h-8 rounded-lg bg-white/[0.05] p-0.5 gap-0.5 border border-white/[0.03]">
+              <a 
+                href="#animations" 
+                className="px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-md transition-all bg-[#1a1a1a] text-white shadow-[0_1px_2px_rgba(0,0,0,0.5)] border border-white/5"
+              >
                 Animations
               </a>
-              <a href="#agents" className={headerNavLinkClass}>
+              <a 
+                href="#agents" 
+                className="px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-md transition-all text-neutral-400 hover:text-white"
+              >
                 Agents
               </a>
-              <a href="/docs" className={headerNavLinkClass}>
+              <a 
+                href="/docs" 
+                className="px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-md transition-all text-neutral-400 hover:text-white"
+              >
                 Docs
               </a>
             </nav>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-5">
             <ComingSoon>
-              <span className={headerNavLinkClass}>Sign up</span>
+              <span className="cursor-pointer text-[10px] font-bold uppercase tracking-wider text-neutral-400 hover:text-white transition-colors">
+                Log in
+              </span>
             </ComingSoon>
             <ComingSoon>
-              <span className="button-59">
-                <span className="button-59__text">Get started</span>
+              <span className="button-50 button-50--red !h-8 !px-4 !text-[10px] !font-bold !uppercase !tracking-wider">
+                <span className="button-50__Content">Get started</span>
               </span>
             </ComingSoon>
           </div>
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-8">
+      <main className={homePageShellClass}>
         {/* Hero */}
-        <section className="pt-10 pb-16 sm:pt-12 sm:pb-20" data-sr-hero-section>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
-            <div data-sr-hero>
-              <h1
-                className={`${ebGaramond.className} text-5xl font-bold tracking-tight leading-[1.08] sm:text-6xl sm:leading-[1.05]`}
-              >
-                Create videos<br />with prompts.
-              </h1>
-              <p className="mt-4 max-w-md text-[15px] leading-relaxed text-gray-500 sm:mt-5 sm:text-base">
-                AI-powered animated video creation. From prompt to MP4, powered by agents.
-              </p>
-            </div>
-            <div className="flex justify-center lg:justify-end" data-sr-hero>
-              <TiltImage src="/cenchdisk.png" alt="Cench" />
-            </div>
+        <section id="animations" className="pt-10 pb-16 scroll-mt-24 sm:pt-12 sm:pb-20" data-sr-hero-section>
+          <div data-sr-hero>
+            <h1
+              className={`${ebGaramond.className} max-w-3xl text-[1.625rem] font-semibold leading-snug tracking-tight text-[#0a0a0b] sm:text-3xl sm:leading-snug lg:text-[2.125rem] lg:leading-[1.2]`}
+            >
+              AI-powered video creation and editing.{' '}
+              <span className="whitespace-nowrap">From prompt to MP4.</span>
+            </h1>
           </div>
           <div
             className="mt-8 flex w-full flex-col gap-6 sm:mt-10 sm:flex-row sm:items-center sm:gap-8 lg:gap-12"
@@ -365,9 +333,6 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Use it your way */}
-        <UseCasesScroll />
-
         {/* Agents & Models */}
         <section id="agents" className="py-24 scroll-mt-24" data-sr>
           <AgentsModelsSection />
@@ -376,7 +341,7 @@ export default function Home() {
 
       {/* CTA + footer */}
       <div className="bg-bone text-[#0a0a0b]">
-        <section id="get-started" className="max-w-6xl mx-auto px-8 pb-12">
+        <section id="get-started" className={`${homePageShellClass} pb-12`}>
           <div className="grid gap-6 md:grid-cols-2 md:gap-8">
             <a
               href="https://github.com"
@@ -415,7 +380,7 @@ export default function Home() {
         </section>
 
         <footer className="text-[#0a0a0b]">
-          <div className="max-w-6xl mx-auto px-8 pt-10 pb-6 sm:pt-14">
+          <div className={`${homePageShellClass} pt-10 pb-6 sm:pt-14`}>
           {/* Top tier */}
           <div className="grid grid-cols-1 items-center gap-8 sm:grid-cols-3 sm:gap-6" data-sr>
             <div className="flex items-center justify-center gap-2.5 sm:justify-start">
