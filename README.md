@@ -1,6 +1,10 @@
-# Cench Studio
+<p align="center">
+  <img src="public/cench-logo.svg" alt="Cench Studio" width="80" height="80" />
+</p>
 
-**Cursor for video.** Prompt to create animated videos — or edit them yourself.
+<h1 align="center">Cench Studio</h1>
+
+<p align="center"><strong>Cursor for video.</strong> Prompt to create animated videos — or edit them yourself.</p>
 
 Cench is an AI video editor that combines code-driven animation, diffusion models, audio, and your own footage in one timeline. Describe what you want in plain English and the AI builds it. Then edit everything — layers, timing, styles, camera, interactions — just like a traditional editor.
 
@@ -212,13 +216,14 @@ Record product demos, then overlay AI-generated animations, callouts, and narrat
 
 ---
 
-## Three.js and 3D
+## 3D rendering
 
-PBR rendering with `MeshStandardMaterial` and `MeshPhysicalMaterial`. Environment maps and studio lighting. Searchable 3D model library (architecture, biology, objects, vehicles). 3D World scenes with environments (meadow, studio, void), floating HTML panels, and keyframed camera paths.
-
-## Zdog Studio
-
-Pseudo-3D character and scene composition. Seed-based character rigs with configurable hair, face, accessories, and motion profiles (idle, talk, wave, point, present, walk). Scene modules: bar chart, line chart, donut chart, presentation board, desk, tablet. Animation beats for multi-character choreography. Save and reuse characters from an asset library.
+| Engine              | What it does                                                                                                                                                                                                                                       |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Three.js** (r183) | Full 3D with PBR materials (`MeshStandardMaterial`, `MeshPhysicalMaterial`), environment maps, studio lighting. GLTFLoader model library searchable by category (architecture, biology, objects, vehicles). 3D scatter plots.                      |
+| **3D Worlds**       | Immersive environments (meadow, studio room, void space) with placed objects, floating HTML panels, and keyframed camera paths with easing.                                                                                                        |
+| **Zdog**            | Pseudo-3D vector illustrations with depth. Shapes: Ellipse, Rect, Polygon, Cylinder, Cone, Box, Hemisphere. Best for molecules, gears, globes, isometric explainers.                                                                               |
+| **Zdog Studio**     | Character composition system. Seed-based rigs with hair/face/accessory variants, motion profiles (idle, talk, wave, point, present, walk), scene modules (charts, desk, tablet), animation beats. Save and reuse characters from an asset library. |
 
 ## Talking head avatars
 
