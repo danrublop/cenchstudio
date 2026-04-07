@@ -85,17 +85,38 @@ Beyond the Builder, pick a specialist or create your own:
 
 Models: Anthropic Claude (default), OpenAI, Google Gemini, Ollama (local).
 
+```mermaid
+graph LR
+    A[User] --> B[Electron App]
+    B --> C{Agent Router}
+    C --> D[Builder]
+    C --> E[Directors]
+    C --> F[Specialists]
+    C --> G[Editor / DoP]
+    D --> S[Skill Library]
+    S --> H
+    D --> H[Tool Executor<br/>92 tools]
+    E --> H
+    F --> H
+    G --> H
+    H --> I[React Composition<br/>Canvas2D / Three.js / D3<br/>SVG / Lottie / Zdog]
+    I --> J[Scene HTML<br/>1920x1080]
+    J --> K[Preview]
+    J --> L[MP4 Export]
+    J --> M[Interactive Publish]
+```
+
 ---
 
 ## AI media generation
 
-| Type        | Models                                                                            |
-| ----------- | --------------------------------------------------------------------------------- |
-| **Images**  | Flux 1.1 Pro, Flux Schnell, Ideogram v3, Recraft v3, Stable Diffusion 3, DALL-E 3 |
-| **Video**   | Google Veo3                                                                       |
-| **Avatars** | HeyGen, TalkingHead, MuseTalk, Fabric, Aurora                                     |
-| **TTS**     | ElevenLabs, OpenAI, Gemini, Google Cloud, macOS native                            |
-| **Search**  | Unsplash stock photography                                                        |
+| Type        | Models                                                                                                        |
+| ----------- | ------------------------------------------------------------------------------------------------------------- |
+| **Images**  | Flux 1.1 Pro, Flux Schnell, Ideogram v3, Recraft v3, Stable Diffusion 3, DALL-E 3, Google Imagegen, GPT-Image |
+| **Video**   | Google Veo3                                                                                                   |
+| **Avatars** | HeyGen, TalkingHead, MuseTalk, Fabric, Aurora                                                                 |
+| **TTS**     | ElevenLabs, OpenAI, Gemini, Google Cloud, macOS native                                                        |
+| **Search**  | Unsplash stock photography                                                                                    |
 
 Image styles: photorealistic, illustration, flat, sketch, 3D, watercolor, pixel art. Background removal included.
 
@@ -146,7 +167,14 @@ Applied per-scene, synced to the timeline.
 
 Publish as hosted interactive embeds with a scene graph instead of a linear timeline:
 
-**Interaction types** -- Hotspots (click regions), choices (multiple-choice buttons), quizzes (with correct/wrong branching), gates (minimum watch time), tooltips (hover info), forms (text/select/radio inputs that set variables).
+| Interaction | What it does                                                                                   |
+| ----------- | ---------------------------------------------------------------------------------------------- |
+| **Hotspot** | Clickable region (circle/rect/pill) with pulse, glow, or border style. Jumps to another scene. |
+| **Choice**  | Multiple-choice buttons with optional question. Each option links to a different scene.        |
+| **Quiz**    | Correct/wrong answer branching with explanation text and retry option.                         |
+| **Gate**    | Progress gate -- continue button appears after minimum watch time.                             |
+| **Tooltip** | Hover or click info overlay (top/bottom/left/right positioning).                               |
+| **Form**    | Text, select, and radio inputs that set scene variables on submit.                             |
 
 **Branching** -- Connect scenes with conditional edges based on interaction results, variable values, or auto-advance.
 
@@ -177,7 +205,15 @@ Pseudo-3D character and scene composition. Seed-based character rigs with config
 
 ## Talking head avatars
 
-5 providers (free to ~$1/scene). HeyGen: 24+ avatars, voice catalog, automatic green screen removal. Position anywhere with x/y/size controls, layer with z-index. Lip sync is automatic.
+| Provider    | Cost              | Features                                         |
+| ----------- | ----------------- | ------------------------------------------------ |
+| TalkingHead | Free              | Basic lip sync                                   |
+| MuseTalk    | ~$0.04/scene      |                                                  |
+| Fabric 1.0  | ~$0.08-0.15/scene |                                                  |
+| Aurora      | ~$0.05/scene      |                                                  |
+| HeyGen      | ~$0.10-1.00       | 24+ avatars, voice catalog, green screen removal |
+
+Position avatars anywhere with x/y/size controls, adjust opacity, layer with z-index. Lip sync is automatic. HeyGen renders with green background for chroma key removal. Voices searchable by language and gender.
 
 ## SVG and Lottie
 
