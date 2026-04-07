@@ -257,6 +257,27 @@ npm run dev:electron   # Electron + Next.js
 
 Adds native save dialogs, screen recording, webcam capture, WebCodecs export, and an export API on port 3002.
 
+### /cench skill (Claude Code, Cursor, Antigravity)
+
+The `/cench` skill lets you generate scenes from any AI coding tool that supports `.claude/skills/`. With the dev server running:
+
+```
+/cench A 3-scene explainer about how neural networks learn, whiteboard style
+```
+
+The skill plans the scene structure, picks renderers, generates code following strict rules (seeded PRNG, GSAP timelines, safe areas), and POSTs each scene to the API. Open `localhost:3000` to preview.
+
+### MCP server
+
+Expose all 92 agent tools to Claude Code, Cursor, Windsurf, or any MCP-compatible AI tool:
+
+```bash
+npm run mcp                          # Auto-detect project
+PROJECT_ID=abc123 npm run mcp        # Target specific project
+```
+
+The MCP server provides tool access (`select_project`, `refresh_state`, `list_scenes`, plus all agent tools) and resources (`cench://project/scenes`, `cench://project/info` as JSON). Requires the dev server running.
+
 ### Environment variables
 
 | Variable             | Required | What it does                                    |
@@ -289,6 +310,18 @@ render-server/          -- Puppeteer + FFmpeg
 packages/player/        -- Embeddable player SDK
 public/sdk/cench-react/ -- React runtime + bridge components
 ```
+
+## SDKs
+
+| Package                  | What it does                                                                                                                                                                  |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **@cench-studio/player** | Embeddable player for published interactive videos. `play()`, `pause()`, `goToScene()`, variable management, event listeners. Builds to UMD.                                  |
+| **CenchReact**           | Remotion-style React API for scenes. `useCurrentFrame()`, `interpolate()`, `spring()`, `Sequence`, `AbsoluteFill`. Bridge components for Canvas2D, Three.js, D3, SVG, Lottie. |
+| **CenchMotion**          | GSAP animation library. Text reveals, fade-ups, stagger-ins, count-ups, progress bars, path follows, morph shapes, Lottie sync.                                               |
+| **CenchCharts**          | D3-based animated chart library. Static and timeline-driven modes.                                                                                                            |
+| **CenchCamera**          | Cinematic camera motion for CSS/HTML and Three.js scenes.                                                                                                                     |
+
+Player SDK: `packages/player/`. Scene SDKs: `public/sdk/`. All scene SDKs load as browser scripts with no bundler required.
 
 ## Documentation
 
