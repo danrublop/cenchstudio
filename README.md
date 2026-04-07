@@ -7,6 +7,9 @@ Cench is an AI video editor that combines code-driven animation, diffusion model
 [![License: CC BY-NC 4.0](https://img.shields.io/badge/License-CC%20BY--NC%204.0-lightgrey.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue.svg)](https://www.typescriptlang.org/)
 [![Electron](https://img.shields.io/badge/Electron-41-9feaf9.svg)](https://www.electronjs.org/)
+[![Status](https://img.shields.io/badge/Status-In%20Development-orange.svg)]()
+
+`AI Video Editor` `Code Animation` `Diffusion Models` `React` `Three.js` `D3` `Canvas2D` `SVG` `Lottie` `Zdog` `GSAP` `Interactive` `Electron`
 
 ---
 
@@ -191,7 +194,21 @@ Publish as hosted interactive embeds with a scene graph instead of a linear time
 | **MP4**             | Puppeteer + FFmpeg, 39 transition types, 720p/1080p/4K, 24/30/60fps |
 | **Electron export** | Pixi + WebCodecs native pipeline (faster)                           |
 | **Interactive**     | Hosted embed with scene graph, interactions, player SDK             |
-| **Recording**       | Built-in screen + webcam + audio capture with cursor telemetry      |
+
+---
+
+## Screen recording `In Development`
+
+Built-in screen and webcam recording with:
+
+- **Screen capture** -- Native OS picker via `getDisplayMedia()`
+- **Microphone** and **system audio** capture (configurable)
+- **Webcam** -- Optional separate track
+- **Cursor telemetry** -- 10 Hz mouse position sampling
+- **Controls** -- Pause/resume mid-session, resolution and FPS selection
+- **Output** -- Recordings attach to scenes as video layers
+
+Record product demos, then overlay AI-generated animations, callouts, and narration on top.
 
 ---
 
