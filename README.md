@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="public/cench-logo.svg" alt="Cench Studio" width="80" height="80" />
-</p>
-
 <h1 align="center">Cench Studio</h1>
 
 <p align="center"><strong>Cursor for video.</strong> Prompt to create animated videos — or edit them yourself.</p>
