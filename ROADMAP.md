@@ -6,7 +6,7 @@ Build an Electron editor where the AI agent has full NLE control — all clips o
 
 ## Current State
 
-Cench already has a powerful agent (66+ tools, 10+ renderer types, avatar/TTS/physics/3D/data-viz) but is limited by a **scene-centric** model where each scene is an isolated iframe. The Path 2 Electron export engine (Pixi + WebCodecs) renders deterministically but only for export, not preview.
+Cench already has a powerful agent (92+ tools, 7 renderer types, avatar/TTS/physics/3D/data-viz) but is limited by a **scene-centric** model where each scene is an isolated iframe. The Path 2 Electron export engine (Pixi + WebCodecs) renders deterministically but only for export, not preview.
 
 ---
 
