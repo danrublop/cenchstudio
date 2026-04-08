@@ -1,0 +1,23 @@
+{
+  "name": "cench-imessage-agent",
+  "version": "0.1.0",
+  "description": "iMessage agent that generates animated explainer videos via Cench Studio",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@photon-ai/imessage-kit": "file:/tmp/photon-imessage-kit",
+    "better-sqlite3": "^11.7.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

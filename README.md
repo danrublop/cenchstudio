@@ -2,6 +2,8 @@
 
 <p align="center"><strong>Cursor for video.</strong> Prompt to create animated videos — or edit them yourself.</p>
 
+<p align="center"><a href="imessage-agent/PHOTON.md"><strong>Photon iMessage Application</strong></a> — iMessage agent that generates animated videos, built on <code>@photon-ai/imessage-kit</code>. 9 SDK plugin contributions.</p>
+
 Cench is an AI video editor that combines code-driven animation, diffusion models, audio, and your own footage in one timeline. Describe what you want in plain English and the AI builds it. Then edit everything — layers, timing, styles, camera, interactions — just like a traditional editor.
 
 [![License: CC BY-NC 4.0](https://img.shields.io/badge/License-CC%20BY--NC%204.0-lightgrey.svg)](LICENSE)
