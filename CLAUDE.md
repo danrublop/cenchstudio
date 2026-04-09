@@ -50,20 +50,21 @@ render-server/              — Express server for MP4 export
 
 ## APIs (app runs at localhost:3000)
 
-| Method | Path                               | Body / Params                                  | Response                                                                 |
-| ------ | ---------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------ |
-| GET    | `/api/scene?projectId=X`           | —                                              | `{ scenes: [...] }` (layer summaries, no code)                           |
-| GET    | `/api/scene?projectId=X&sceneId=Y` | —                                              | `{ scene: {...} }` (full layers with code)                               |
-| POST   | `/api/scene`                       | `{ id, html }`                                 | `{ success, path }` — writes HTML file to disk                           |
-| PATCH  | `/api/scene`                       | `{ sceneId, layerId, generatedCode, prompt? }` | `{ success, scene: { id, previewUrl } }` — updates DB + regenerates HTML |
-| GET    | `/api/projects`                    | —                                              | Array of projects                                                        |
-| POST   | `/api/projects`                    | `{ name, outputMode, ... }`                    | Project object                                                           |
-| POST   | `/api/generate`                    | `{ prompt, palette?, ... }`                    | `{ result (SVG), usage }`                                                |
-| POST   | `/api/generate-canvas`             | `{ prompt, palette?, ... }`                    | `{ result (JS), usage }`                                                 |
-| POST   | `/api/generate-d3`                 | `{ prompt, palette?, ... }`                    | `{ result: { sceneCode, styles, suggestedData } }`                       |
-| POST   | `/api/generate-three`              | `{ prompt, palette?, ... }`                    | `{ result: { sceneCode } }`                                              |
-| POST   | `/api/generate-motion`             | `{ prompt, palette?, ... }`                    | `{ result: { sceneCode, styles, htmlContent } }`                         |
-| POST   | `/api/export`                      | `{ scenes, settings }`                         | SSE stream of progress                                                   |
+| Method | Path                                      | Body / Params                                  | Response                                                                 |
+| ------ | ----------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------ |
+| GET    | `/api/verify-scene?projectId=X&sceneId=Y` | `expected` (comma-separated keywords)          | `{ success, report, checks, issues }` — static scene analysis            |
+| GET    | `/api/scene?projectId=X`                  | —                                              | `{ scenes: [...] }` (layer summaries, no code)                           |
+| GET    | `/api/scene?projectId=X&sceneId=Y`        | —                                              | `{ scene: {...} }` (full layers with code)                               |
+| POST   | `/api/scene`                              | `{ id, html }`                                 | `{ success, path }` — writes HTML file to disk                           |
+| PATCH  | `/api/scene`                              | `{ sceneId, layerId, generatedCode, prompt? }` | `{ success, scene: { id, previewUrl } }` — updates DB + regenerates HTML |
+| GET    | `/api/projects`                           | —                                              | Array of projects                                                        |
+| POST   | `/api/projects`                           | `{ name, outputMode, ... }`                    | Project object                                                           |
+| POST   | `/api/generate`                           | `{ prompt, palette?, ... }`                    | `{ result (SVG), usage }`                                                |
+| POST   | `/api/generate-canvas`                    | `{ prompt, palette?, ... }`                    | `{ result (JS), usage }`                                                 |
+| POST   | `/api/generate-d3`                        | `{ prompt, palette?, ... }`                    | `{ result: { sceneCode, styles, suggestedData } }`                       |
+| POST   | `/api/generate-three`                     | `{ prompt, palette?, ... }`                    | `{ result: { sceneCode } }`                                              |
+| POST   | `/api/generate-motion`                    | `{ prompt, palette?, ... }`                    | `{ result: { sceneCode, styles, htmlContent } }`                         |
+| POST   | `/api/export`                             | `{ scenes, settings }`                         | SSE stream of progress                                                   |
 
 ## Scene API details
 
@@ -102,7 +103,12 @@ All scenes render at **1920x1080** and must complete within their specified dura
 
 ## Style System
 
-Projects use a style preset that automatically configures:
+Style presets are **optional and off by default** (`presetId: null`).
+When no preset is active, the generator has full creative control over
+colors, fonts, backgrounds, and rendering approach. Users can opt into
+a preset via the Style Picker in the Layers tab.
+
+When a preset IS active, it configures:
 
 - Renderer preference (Motion default; canvas2d for expressive drawing; SVG rare)
 - Roughness level (0-3)
@@ -147,6 +153,17 @@ Scene palette and style controls must NOT be in the Settings panel.
 The Settings panel is for system/app configuration only.
 Editor theme (dark/light) is a global preference — it does not
 change when switching projects or when the agent updates globalStyle.
+
+## Agent vs Claude Code — scene generation
+
+Both paths share `generateSceneHTML()` (lib/sceneTemplate.ts) and produce identical HTML output.
+The in-app agent uses tool-based orchestration (40+ tools); Claude Code writes code directly
+and calls REST APIs. The agent intentionally lacks filesystem access (sandboxed by design).
+Claude Code compensates with the MCP server (`scripts/mcp-server.ts`) which exposes all
+agent tools (verify_scene, plan_scenes, TTS, charts, interactions) for parity.
+
+Design principles are shared: `lib/generation/design-principles.ts` is the single source
+of truth, mirrored in `.claude/skills/cench/rules/design-principles.md`.
 
 ## When generating scenes with /cench
 

@@ -2,11 +2,17 @@
 
 These rules apply to every scene regardless of type.
 
+**Before generating any scene, also read `rules/design-principles.md`** — it contains the shared design quality bar (composition, typography, color, animation, variety) that applies to all scene types.
+
 ---
 
-## Style preset drives everything — read this first
+## Style presets are optional
 
-The project has a style preset that automatically sets:
+By default, no style preset is active (`presetId: null`).
+The generator has full creative control — choose colors, fonts,
+backgrounds, and rendering approach based on the content.
+
+If a user HAS enabled a preset, it sets:
 ROUGHNESS — how rough/wobbly strokes are (0=clean, 3=very rough)
 TOOL — default drawing tool (marker, pen, chalk, etc)
 STROKE_COLOR — the primary ink color for this style
@@ -14,22 +20,24 @@ TEXTURE — background texture (applied automatically)
 FONT — default font family
 
 These are injected as globals in every scene template.
-DO NOT manually set roughness, tool, or texture in generated code.
-Just use ROUGHNESS, TOOL, STROKE_COLOR as constants.
+When a preset is active, use ROUGHNESS, TOOL, STROKE_COLOR as constants.
+When no preset is active, these still exist as neutral defaults
+(ROUGHNESS=0, TOOL='pen', FONT='Inter') — override freely.
 
 ## Renderer preference
 
-**Default hierarchy:** Motion first → canvas2d for expressive hand-drawn / procedural work → SVG rarely.
+**When no preset is active (default):** Choose the renderer that best fits the content.
 
 - **Motion** — preferred for most explainers: HTML/CSS layouts, typography, cards, steps, DOM-based diagrams, GSAP timeline (`window.__tl`).
-- **Canvas2d** — use for organic strokes, chalk, particles, generative art, physics, fluid motion — not the default for clean polished explainers.
+- **Canvas2d** — for organic strokes, chalk, particles, generative art, physics, fluid motion.
 - **SVG** — rare; only when a self-contained vector graphic with template stroke/draw-on classes is clearly the best fit.
+- **Three.js** — 3D geometry, product viz, spatial concepts.
+- **D3** — data visualization, charts.
 
-Check the system prompt for `PREFERRED RENDERER` on every project.
-
+**When a preset IS active**, check the system prompt for `PREFERRED RENDERER`:
 Whiteboard/Chalkboard/Neon/Kraft → canvas2d (organic strokes)
-Blueprint/Clean/Newspaper → motion (precise, professional layouts — not SVG by default)
-Data Story → auto (D3 for data; Motion for non-data explainer frames; canvas2d when expressive)
+Blueprint/Clean/Newspaper → motion (precise, professional layouts)
+Data Story → auto (D3 for data; Motion for non-data frames; canvas2d when expressive)
 
 ## Colors
 

@@ -19,6 +19,7 @@ import {
   MOTION_SYSTEM_PROMPT,
   LOTTIE_OVERLAY_PROMPT,
   ZDOG_SYSTEM_PROMPT,
+  REACT_SYSTEM_PROMPT,
 } from './prompts'
 import { composeDeterministicZdogScene } from '../zdog'
 
@@ -62,6 +63,7 @@ const MAX_TOKENS_BY_TYPE: Record<string, number> = {
   motion: 5120,
   lottie: 4096,
   zdog: 4096,
+  react: 8192,
 }
 
 /** Default model per tier for code generation */
@@ -113,16 +115,21 @@ export async function generateCode(
   projectId?: string,
 ): Promise<GenerateCodeResult> {
   const {
-    palette = ['#1a1a2e', '#16213e', '#0f3460', '#e94560'],
+    palette,
     bgColor = '#181818',
     duration = 8,
-    font = 'Caveat',
+    font,
     strokeWidth = 2,
     previousSummary = '',
     d3Data,
     modelId: requestedModel,
     modelTier = 'auto',
   } = options
+  // When no palette/font provided (no preset active), use neutral fallbacks
+  // but mark them so system prompts can skip the "suggested palette" line
+  const effectivePalette = palette ?? ['#f0ece0', '#e84545', '#4595e8', '#45e87a']
+  const effectiveFont = font ?? 'Inter'
+  const hasExplicitPalette = palette != null && palette.length > 0
 
   if (layerType === 'zdog' && options.zdogComposedSpec) {
     const composedCode = composeDeterministicZdogScene(options.zdogComposedSpec, { duration })
@@ -144,28 +151,65 @@ export async function generateCode(
 
   switch (layerType) {
     case 'svg':
-      systemPrompt = SVG_SYSTEM_PROMPT(palette, strokeWidth, font, duration, previousSummary)
+      systemPrompt = SVG_SYSTEM_PROMPT(
+        effectivePalette,
+        strokeWidth,
+        effectiveFont,
+        duration,
+        previousSummary,
+        hasExplicitPalette,
+      )
       break
     case 'canvas2d':
-      systemPrompt = CANVAS_SYSTEM_PROMPT(palette, bgColor, duration, previousSummary)
+      systemPrompt = CANVAS_SYSTEM_PROMPT(effectivePalette, bgColor, duration, previousSummary, hasExplicitPalette)
       break
     case 'd3':
-      systemPrompt = D3_SYSTEM_PROMPT(palette, font, bgColor, duration, previousSummary)
+      systemPrompt = D3_SYSTEM_PROMPT(
+        effectivePalette,
+        effectiveFont,
+        bgColor,
+        duration,
+        previousSummary,
+        hasExplicitPalette,
+      )
       if (d3Data) {
         userContent = `${prompt}\n\nExisting data to visualize:\n${JSON.stringify(d3Data, null, 2)}`
       }
       break
     case 'three':
-      systemPrompt = THREE_SYSTEM_PROMPT(palette, bgColor, duration, previousSummary)
+      systemPrompt = THREE_SYSTEM_PROMPT(effectivePalette, bgColor, duration, previousSummary, hasExplicitPalette)
       break
     case 'motion':
-      systemPrompt = MOTION_SYSTEM_PROMPT(palette, font, bgColor, duration, previousSummary)
+      systemPrompt = MOTION_SYSTEM_PROMPT(
+        effectivePalette,
+        effectiveFont,
+        bgColor,
+        duration,
+        previousSummary,
+        hasExplicitPalette,
+      )
       break
     case 'lottie':
-      systemPrompt = LOTTIE_OVERLAY_PROMPT(palette, font, duration, previousSummary)
+      systemPrompt = LOTTIE_OVERLAY_PROMPT(
+        effectivePalette,
+        effectiveFont,
+        duration,
+        previousSummary,
+        hasExplicitPalette,
+      )
       break
     case 'zdog':
-      systemPrompt = ZDOG_SYSTEM_PROMPT(palette, bgColor, duration, previousSummary)
+      systemPrompt = ZDOG_SYSTEM_PROMPT(effectivePalette, bgColor, duration, previousSummary, hasExplicitPalette)
+      break
+    case 'react':
+      systemPrompt = REACT_SYSTEM_PROMPT(
+        effectivePalette,
+        effectiveFont,
+        bgColor,
+        duration,
+        previousSummary,
+        hasExplicitPalette,
+      )
       break
     default:
       throw new Error(`Unknown layer type: ${layerType}`)
@@ -187,7 +231,13 @@ export async function generateCode(
     const localConfig = options.modelConfigs?.find((m) => m.id === model || m.modelId === model)
     const endpoint = localConfig?.endpoint ?? process.env.OLLAMA_ENDPOINT ?? 'http://localhost:11434'
     const localModelName = localConfig?.localModelName ?? model
-    ;({ raw, inputTokens, outputTokens, truncated } = await callLocal(endpoint, localModelName, systemPrompt, userContent, maxTokens))
+    ;({ raw, inputTokens, outputTokens, truncated } = await callLocal(
+      endpoint,
+      localModelName,
+      systemPrompt,
+      userContent,
+      maxTokens,
+    ))
   } else if (provider === 'openai') {
     ;({ raw, inputTokens, outputTokens, truncated } = await callOpenAI(model, systemPrompt, userContent, maxTokens))
   } else if (provider === 'google') {
@@ -308,6 +358,27 @@ export async function generateCode(
         code: parsed.sceneCode ?? '',
         styles: parsed.styles,
         htmlContent: parsed.htmlContent,
+        usage: usageResult,
+        truncated,
+      }
+    }
+
+    case 'react': {
+      const cleaned = raw
+        .replace(/^```json\s*/i, '')
+        .replace(/^```\s*/i, '')
+        .replace(/```\s*$/i, '')
+        .trim()
+      let parsed: any
+      try {
+        parsed = JSON.parse(cleaned)
+      } catch {
+        // If JSON parse fails, treat the raw output as sceneCode directly
+        return { code: raw, usage: usageResult, truncated }
+      }
+      return {
+        code: parsed.sceneCode ?? '',
+        styles: parsed.styles,
         usage: usageResult,
         truncated,
       }

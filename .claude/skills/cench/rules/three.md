@@ -76,18 +76,24 @@ const { applyCenchThreeEnvironment, updateCenchThreeEnvironment } = window
 // After scene, renderer, camera exist:
 applyCenchThreeEnvironment('track_rolling_topdown', scene, renderer, camera)
 
-function animate() {
-  const t =
-    window.__tl && typeof window.__tl.time === 'function' ? window.__tl.time() : (performance.now() - startTime) / 1000
-  if (t > DURATION) return
-
-  updateCenchThreeEnvironment(t)
-
-  // … your hero mesh updates …
-
-  renderer.render(scene, camera)
-  requestAnimationFrame(animate)
-}
+// Use GSAP timeline — NOT requestAnimationFrame
+const state = { progress: 0 }
+window.__tl.to(
+  state,
+  {
+    progress: 1,
+    duration: DURATION,
+    ease: 'none',
+    onUpdate: function () {
+      const t = state.progress * DURATION
+      updateCenchThreeEnvironment(t)
+      // … your hero mesh updates …
+      renderer.render(scene, camera)
+    },
+  },
+  0,
+)
+renderer.render(scene, camera)
 ```
 
 The stage attaches under a group named **`__cenchEnvRoot`**. Do not remove it. The id is listed on `window.CENCH_THREE_ENV_IDS`.
@@ -120,32 +126,43 @@ NEVER use MeshBasicMaterial — looks flat and fake.
 NEVER hardcode hex colors — always use PALETTE array.
 `THREE.Color` accepts hex strings: `new THREE.Color('#e84545')`
 
-## Animation loop
+## Animation loop — MUST use window.\_\_tl (GSAP)
+
+The playback controller drives all animation through the GSAP master timeline.
+**Do NOT use your own `requestAnimationFrame` loop** — RAF is blocked/unblocked
+by the playback controller and will not work reliably in Three.js modules.
+
+Use the GSAP `onUpdate` callback pattern instead:
 
 ```js
-const startTime = performance.now()
+const state = { progress: 0 }
+window.__tl.to(
+  state,
+  {
+    progress: 1,
+    duration: DURATION,
+    ease: 'none',
+    onUpdate: function () {
+      const t = state.progress * DURATION // seconds 0 → DURATION
 
-function animate() {
-  const t = (performance.now() - startTime) / 1000 // seconds
-  if (t > DURATION) return
+      // All animation driven by t
+      mesh.rotation.y = t * 0.5
 
-  // All animation driven by t
-  mesh.rotation.y = t * 0.5
-
-  renderer.render(scene, camera)
-  requestAnimationFrame(animate)
-}
+      renderer.render(scene, camera)
+    },
+  },
+  0,
+)
 
 // Initial render so scene is visible while paused
 renderer.render(scene, camera)
-requestAnimationFrame(animate)
 ```
 
-ALWAYS call `renderer.render(scene, camera)` once BEFORE `requestAnimationFrame(animate)`.
-The playback controller blocks RAF until the parent sends 'play'.
-Without an initial render, the scene shows a blank background while paused.
+ALWAYS call `renderer.render(scene, camera)` once AFTER creating the scene
+(before GSAP plays). This ensures the scene is visible while paused.
 
-NEVER use `Date.now()`.
+NEVER use `requestAnimationFrame` for your animation loop.
+NEVER use `Date.now()` or `performance.now()` for timing.
 NEVER use `Math.random()` — use `mulberry32(seed)` from the template.
 
 ## Camera presets
@@ -339,8 +356,8 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 ```
 
-The playback controller intercepts `requestAnimationFrame` for pause/play/seek control.
-Use RAF normally — it will be managed automatically.
+The playback controller drives animation via the GSAP master timeline (`window.__tl`).
+Use `window.__tl.to()` with `onUpdate` for all animation — never `requestAnimationFrame`.
 
 ## drei-vanilla helpers (@pmndrs/vanilla)
 

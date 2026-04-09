@@ -185,6 +185,33 @@ For D3 scenes with CenchCharts:
 
 ---
 
+## MCP Tools (optional, powerful)
+
+If the Cench Studio MCP server is connected (`cench-studio` in settings), you have access
+to all 50+ agent tools directly — the same tools the in-app agent uses. Key tools:
+
+| Tool                   | What it does                                                            |
+| ---------------------- | ----------------------------------------------------------------------- |
+| `verify_scene`         | Static analysis: checks content, text overlap, palette, audio, duration |
+| `plan_scenes`          | Generate a storyboard before building scenes                            |
+| `add_narration`        | Add TTS narration (auto-selects provider)                               |
+| `add_sound_effect`     | Search and attach sound effects                                         |
+| `add_background_music` | Search and attach background music                                      |
+| `generate_chart`       | Create animated D3 chart (zero LLM cost)                                |
+| `set_transition`       | Set transition effect between scenes                                    |
+| `set_global_style`     | Set palette, font, preset across all scenes                             |
+| `add_interaction`      | Add click/hover interactivity to elements                               |
+| `select_project`       | Switch between projects                                                 |
+| `list_scenes`          | List all scenes in current project                                      |
+
+**When to use MCP tools vs REST API:**
+
+- Use MCP tools for operations the agent already handles well (audio, verification, charts, interactions)
+- Use REST API (POST/PATCH `/api/scene`) for creating/editing scene code — you write better code directly
+- After creating scenes via REST, call `verify_scene` via MCP to check for issues
+
+---
+
 ## After creating scenes
 
 All scenes are parts of ONE video in the timeline.

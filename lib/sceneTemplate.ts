@@ -1,3 +1,4 @@
+/* eslint-disable no-useless-escape -- <\/script> escapes required in template literal HTML to prevent early tag closing */
 import type {
   Scene,
   AILayer,
@@ -14,7 +15,7 @@ import type {
 import { getBestTTSProvider } from './audio/resolve-best-tts-provider'
 import { THREE_ENVIRONMENT_RUNTIME_SCRIPT, THREE_SCATTER_RUNTIME_SCRIPT } from './three-environments/inlined-runtimes'
 import { CANVAS_RENDERER_CODE } from './canvas-renderer/inlined'
-import { resolveStyle, type ResolvedStyle, type StylePresetId } from './styles/presets'
+import { resolveStyle, type ResolvedStyle } from './styles/presets'
 import { resolveSceneStyle } from './styles/scene-presets'
 import { buildFontLink, resolveSceneFontFamily, sceneFontCssStack } from './fonts/catalog'
 import { GSAP_HEAD } from './scene-html/gsap-head'
@@ -31,13 +32,45 @@ import {
 const CANVAS_BG_CANVAS_TAG = `<canvas id="c" width="1920" height="1080" style="display:block;position:absolute;left:0;top:0;width:100%;height:100%;z-index:0;margin:0;padding:0;border:0;pointer-events:none;"></canvas>`
 
 function sceneUsesCanvasBackground(scene: Scene): boolean {
-  return !!scene.canvasBackgroundCode?.trim() && ['motion', 'd3', 'svg', 'physics'].includes(scene.sceneType ?? '')
+  return (
+    !!scene.canvasBackgroundCode?.trim() && ['motion', 'd3', 'svg', 'physics', 'react'].includes(scene.sceneType ?? '')
+  )
 }
 
 // ── Multi-track audio HTML generation ─────────────────────────────────────────
 
 function escapeAttr(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+/** Escape a string for safe insertion into a JS single-quoted string literal. */
+function escapeJsString(s: string): string {
+  return s
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .replace(/<\/script/gi, '<\\/script')
+}
+
+/** Strip closing style tags from CSS to prevent context escape in <style> blocks. */
+function sanitizeCssBlock(s: string): string {
+  return s.replace(/<\/style/gi, '/* escaped */')
+}
+
+/** Validate and parse a hex color string, returning '0,0,0' for invalid input. */
+function safeHexToRgb(hex: string): string {
+  const h = (hex || '').replace('#', '')
+  if (!/^[0-9a-fA-F]{6}$/.test(h) && !/^[0-9a-fA-F]{3}$/.test(h)) return '0,0,0'
+  const full =
+    h.length === 3
+      ? h
+          .split('')
+          .map((c) => c + c)
+          .join('')
+      : h
+  return `${parseInt(full.slice(0, 2), 16)},${parseInt(full.slice(2, 4), 16)},${parseInt(full.slice(4, 6), 16)}`
 }
 
 function generateAudioHTML(audioLayer: AudioLayer | null | undefined): string {
@@ -265,12 +298,8 @@ function generateTalkingHeadHTML(
   const pipGlbUrl = getTalkingHeadGlbPath(resolveTalkingHeadModelIdFromLayer(layer))
 
   // Build glassmorphic container style
-  const hexToRgbInline = (hex: string) => {
-    const h = hex.replace('#', '')
-    return `${parseInt(h.slice(0, 2), 16)},${parseInt(h.slice(2, 4), 16)},${parseInt(h.slice(4, 6), 16)}`
-  }
-  const bgRgb = hexToRgbInline(bgColor)
-  const borderRgb = hexToRgbInline(cBorderColor)
+  const bgRgb = safeHexToRgb(bgColor)
+  const borderRgb = safeHexToRgb(cBorderColor)
 
   const glassBg = cBlur > 0 ? `rgba(${bgRgb},${cBgOpacity})` : bgColor
   const glassBackdrop =
@@ -860,7 +889,7 @@ function generateCanvasHTML(scene: Scene, style: ResolvedStyle, audioSettings?: 
 
   <script>
     // ── Scene globals ─────────────────────────────────────
-    var SCENE_ID     = '${scene.id}';
+    var SCENE_ID     = '${escapeJsString(scene.id)}';
     var PALETTE      = ${JSON.stringify(style.palette)};
     var DURATION     = ${scene.duration};
     var ROUGHNESS    = ${style.roughnessLevel};
@@ -1025,7 +1054,7 @@ function generateMotionHTML(scene: Scene, style: ResolvedStyle, audioSettings?: 
       will-change: transform, filter;
     }`
     }
-    ${sceneStyles}
+    ${sanitizeCssBlock(sceneStyles)}
   </style>
   ${
     fixedStage
@@ -1050,7 +1079,7 @@ function generateMotionHTML(scene: Scene, style: ResolvedStyle, audioSettings?: 
   </div><!-- /scene-camera -->
 
   <script>
-    var SCENE_ID     = '${scene.id}';
+    var SCENE_ID     = '${escapeJsString(scene.id)}';
     var PALETTE      = ${JSON.stringify(style.palette)};
     var DURATION     = ${scene.duration};
     var ROUGHNESS    = ${style.roughnessLevel};
@@ -1087,7 +1116,6 @@ function generateD3HTML(scene: Scene, style: ResolvedStyle, audioSettings?: Audi
   const needsRecharts = chartLayersUseRecharts(scene.chartLayers)
 
   const audioHTML = generateAudioHTML(scene.audioLayer)
-  const fixedStage = sceneUsesCanvasBackground(scene)
 
   return `<!DOCTYPE html>
 <html>
@@ -1131,7 +1159,7 @@ function generateD3HTML(scene: Scene, style: ResolvedStyle, audioSettings?: Audi
     [data-cench-recharts] .recharts-default-legend { color: var(--cench-recharts-tick, rgba(232,228,220,0.75)); }`
         : ''
     }
-    ${sceneStyles}
+    ${sanitizeCssBlock(sceneStyles)}
   </style>
   <script>
     function fitToViewport() {
@@ -1154,7 +1182,7 @@ function generateD3HTML(scene: Scene, style: ResolvedStyle, audioSettings?: Audi
   <script src="/sdk/cench-charts.js"></script>
   ${needsPlotly ? '<script src="https://cdn.plot.ly/plotly-3.4.0.min.js" charset="utf-8"></script>' : ''}
   <script>
-    var SCENE_ID     = '${scene.id}';
+    var SCENE_ID     = '${escapeJsString(scene.id)}';
     var DATA = ${JSON.stringify(d3Data)};
     var WIDTH = 1920, HEIGHT = 1080;
     var PALETTE      = ${JSON.stringify(style.palette)};
@@ -1254,7 +1282,7 @@ function generateThreeHTML(scene: Scene, style?: ResolvedStyle, audioSettings?: 
     window.HEIGHT = 1080;
     window.PALETTE = ${palette};
     window.DURATION = ${duration};
-    window.SCENE_ID = '${scene.id}';
+    window.SCENE_ID = '${escapeJsString(scene.id)}';
 
     window.MATERIALS = {
       plastic: function(c) { var T = window.THREE; return new T.MeshStandardMaterial({ color: new T.Color(c), roughness: 0.6, metalness: 0 }); },
@@ -1409,7 +1437,7 @@ function generateZdogHTML(scene: Scene, style: ResolvedStyle, audioSettings?: Au
       };
     }
 
-    var SCENE_ID = '${scene.id}';
+    var SCENE_ID = '${escapeJsString(scene.id)}';
 
     // Audio volume is handled by the playback controller
   </script>
@@ -1453,7 +1481,7 @@ function generateLottieHTML(scene: Scene, audioSettings?: AudioSettings | null):
   </div><!-- /scene-camera -->
 
   <script>
-    var SCENE_ID = '${scene.id}';
+    var SCENE_ID = '${escapeJsString(scene.id)}';
     var DURATION = ${scene.duration ?? 8};
 
     const anim = lottie.loadAnimation({
@@ -1733,7 +1761,7 @@ function generatePhysicsHTML(scene: Scene, style: ResolvedStyle, audioSettings?:
       padding: 16px 24px; border-radius: 10px;
     }
 
-    ${sceneStyles}
+    ${sanitizeCssBlock(sceneStyles)}
   </style>
 </head>
 <body>
@@ -1844,7 +1872,7 @@ function generatePhysicsHTML(scene: Scene, style: ResolvedStyle, audioSettings?:
   </script>
 
   <script>
-    var SCENE_ID     = '${scene.id}';
+    var SCENE_ID     = '${escapeJsString(scene.id)}';
     var PALETTE      = ${JSON.stringify(style.palette)};
     var DURATION     = ${scene.duration};
     var ROUGHNESS    = ${style.roughnessLevel};
@@ -1937,7 +1965,7 @@ function generateWorldHTML(scene: Scene, style: ResolvedStyle, audioSettings?: A
       const configScript = `<script>
     window.__worldConfig = ${configJSON};
     window.DURATION = ${scene.duration ?? 10};
-    window.SCENE_ID = '${scene.id}';
+    window.SCENE_ID = '${escapeJsString(scene.id)}';
   </script>`
 
       const moduleIdx = templateHTML.indexOf('<script type="module">')
@@ -1986,7 +2014,7 @@ function generateWorldHTML(scene: Scene, style: ResolvedStyle, audioSettings?: A
 
       // Inject config before module script so it is available at parse time
       var tag = '<scr' + 'ipt>window.__worldConfig=' + JSON.stringify(config) +
-        ';window.DURATION=${scene.duration ?? 10};window.SCENE_ID="${scene.id}";</scr' + 'ipt>';
+        ';window.DURATION=${scene.duration ?? 10};window.SCENE_ID="${escapeJsString(scene.id)}";</scr' + 'ipt>';
       var idx = html.indexOf('<script type="module">');
       if (idx !== -1) html = html.slice(0, idx) + tag + '\\n' + html.slice(idx);
       html = html.replace('<head>', '<head>\\n<base href="' + baseUrl + '/">');
@@ -2128,7 +2156,7 @@ function generateAvatarSceneHTML(scene: Scene, style: ResolvedStyle, audioSettin
   ${audioHTML}
 
   <script>
-    var SCENE_ID = '${scene.id}';
+    var SCENE_ID = '${escapeJsString(scene.id)}';
     var PALETTE = ${JSON.stringify(style.palette)};
     var DURATION = ${scene.duration};
     var WIDTH = 1920;
@@ -2455,6 +2483,129 @@ function generateAvatarSceneHTML(scene: Scene, style: ResolvedStyle, audioSettin
 </html>`
 }
 
+function generateReactHTML(scene: Scene, style: ResolvedStyle, audioSettings?: AudioSettings | null): string {
+  // React scenes store JSX in reactCode; fall back to sceneCode for compat
+  const reactCode = scene.reactCode || scene.sceneCode || ''
+  const sceneStyles = scene.sceneStyles || ''
+  const audioHTML = generateAudioHTML(scene.audioLayer)
+  const palette = style.palette ?? ['#1a1a2e', '#16213e', '#0f3460', '#e94560']
+  const duration = scene.duration ?? 8
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  ${buildFontLink(style.font)}
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100vh; overflow: hidden; background: ${style.bgColor};
+      ${buildBgStyleCSS(style)}
+    }
+    #scene-camera {
+      position: absolute; inset: 0;
+      transform-origin: center center;
+      will-change: transform, filter;
+    }
+    #react-root {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%;
+    }
+    ${sanitizeCssBlock(sceneStyles)}
+  </style>
+  <!-- React 18 UMD -->
+  <script crossorigin src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js"><\/script>
+  <script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js"><\/script>
+  <!-- Babel standalone: in-browser JSX transpilation -->
+  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.26.10/babel.min.js"><\/script>
+</head>
+<body>
+  <div id="scene-camera">
+    <div id="react-root"></div>
+    ${audioHTML}
+    ${generateAILayersHTML(scene.aiLayers, audioSettings)}
+  </div>
+
+  <script>
+    var SCENE_ID     = '${escapeJsString(scene.id)}';
+    var PALETTE      = ${JSON.stringify(palette)};
+    var DURATION     = ${duration};
+    var ROUGHNESS    = ${style.roughnessLevel};
+    var FONT         = '${style.font}';
+    var STROKE_COLOR = '${style.strokeColor}';
+    var WIDTH        = 1920;
+    var HEIGHT       = 1080;
+  <\/script>
+
+  <!-- playback-controller-slot -->
+
+  <!-- Three.js r128 UMD (exposes window.THREE) + D3 v7 (available for bridge components) -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"><\/script>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"><\/script>
+  <!-- CenchReact SDK: Remotion-style hooks + bridge components -->
+  <script src="/sdk/cench-react/cench-react-runtime.js"><\/script>
+  <script src="/sdk/cench-react/cench-react-bridges.js"><\/script>
+  <!-- CenchMotion + CenchCamera (shared with other scene types) -->
+  <script src="/sdk/cench-motion.js"><\/script>
+  <script src="/sdk/cench-camera.js"><\/script>
+
+  <script id="scene-jsx" type="text/jsx">
+${reactCode.replace(/<\/script/gi, '<\\/script')}
+  <\/script>
+
+  <script>
+  // CenchReact bootstrapper: transpile JSX and mount the exported scene component.
+  // The scene code runs in the same sandboxed iframe as all other scene types.
+  (function() {
+    var jsxSrc = document.getElementById('scene-jsx').textContent;
+    if (!jsxSrc || !jsxSrc.trim()) return;
+
+    // Transpile JSX to JS via Babel standalone
+    var js;
+    try {
+      js = Babel.transform(jsxSrc, {
+        presets: [['react', { runtime: 'classic' }]],
+        plugins: ['transform-modules-commonjs'],
+      }).code;
+    } catch (e) {
+      console.error('CenchReact: JSX transpilation failed', e);
+      var errDiv = document.getElementById('react-root');
+      if (errDiv) errDiv.textContent = 'JSX Error: ' + e.message;
+      return;
+    }
+
+    // Inject transpiled code as a script element (same pattern as other scene types
+    // which embed AI-generated JS directly in inline script tags)
+    var scriptEl = document.createElement('script');
+    scriptEl.textContent = '(function(useCurrentFrame,useVideoConfig,interpolate,spring,Sequence,AbsoluteFill,Easing,Canvas2DLayer,ThreeJSLayer,D3Layer,SVGLayer,LottieLayer){var module={exports:{}};var exports=module.exports;'
+      + js
+      + ';window.__CenchSceneExports=module.exports;'
+      + '})(CenchReact.useCurrentFrame,CenchReact.useVideoConfig,CenchReact.interpolate,CenchReact.spring,CenchReact.Sequence,CenchReact.AbsoluteFill,CenchReact.Easing,CenchReact.Canvas2DLayer,CenchReact.ThreeJSLayer,CenchReact.D3Layer,CenchReact.SVGLayer,CenchReact.LottieLayer);';
+    document.body.appendChild(scriptEl);
+
+    // Resolve the exported component
+    var exp = window.__CenchSceneExports || {};
+    var SceneComponent = exp.default || exp.Scene || (typeof exp === 'function' ? exp : null);
+    if (typeof SceneComponent !== 'function') {
+      console.error('CenchReact: No component exported. Use "export default function Scene() {...}"');
+      return;
+    }
+
+    // Mount inside CenchComposition
+    var fps = 30;
+    var root = ReactDOM.createRoot(document.getElementById('react-root'));
+    root.render(
+      React.createElement(CenchReact.CenchComposition, {
+        fps: fps,
+        width: WIDTH,
+        height: HEIGHT,
+        durationInFrames: Math.round(DURATION * fps),
+      }, React.createElement(SceneComponent))
+    );
+  })();
+  <\/script>
+</body>
+</html>`
+}
 export function generateSceneHTML(
   scene: Scene,
   globalStyle?: GlobalStyle,
@@ -2468,7 +2619,12 @@ export function generateSceneHTML(
       ? resolveSceneStyle(scene.styleOverride, globalStyle)
       : resolveStyleFromGlobal(globalStyle)
 
-  let html = ''
+  // Scene-level bgColor overrides the preset when explicitly set
+  if (scene.bgColor) {
+    style.bgColor = scene.bgColor
+  }
+
+  let html: string
   if (scene.sceneType === 'canvas2d') html = generateCanvasHTML(scene, style, audioSettings)
   else if (scene.sceneType === 'motion') html = generateMotionHTML(scene, style, audioSettings)
   else if (scene.sceneType === 'd3') html = generateD3HTML(scene, style, audioSettings)
@@ -2478,6 +2634,7 @@ export function generateSceneHTML(
   else if (scene.sceneType === 'physics') html = generatePhysicsHTML(scene, style, audioSettings)
   else if (scene.sceneType === '3d_world') html = generateWorldHTML(scene, style, audioSettings)
   else if (scene.sceneType === 'avatar_scene') html = generateAvatarSceneHTML(scene, style, audioSettings)
+  else if (scene.sceneType === 'react') html = generateReactHTML(scene, style, audioSettings)
   else html = generateSVGHTML(scene, style, audioSettings)
 
   // Inject <base> + GSAP + playback controller into <head>
@@ -2510,7 +2667,7 @@ export function generateSceneHTML(
   // Element registry goes right after playback controller
   const canvasBgUserCode = scene.canvasBackgroundCode?.trim() ?? ''
   const canvasBgScript =
-    canvasBgUserCode && ['motion', 'd3', 'svg'].includes(scene.sceneType ?? '')
+    canvasBgUserCode && ['motion', 'd3', 'svg', 'react'].includes(scene.sceneType ?? '')
       ? `<script>\n${canvasBgUserCode}\n<\/script>`
       : ''
 
@@ -2696,7 +2853,7 @@ function generateSVGHTML(scene: Scene, style: ResolvedStyle, audioSettings?: Aud
 
   <script>
     // ── Scene globals ─────────────────────────────────────
-    var SCENE_ID     = '${scene.id}';
+    var SCENE_ID     = '${escapeJsString(scene.id)}';
     var PALETTE      = ${JSON.stringify(style.palette)};
     var DURATION     = ${scene.duration};
     var ROUGHNESS    = ${style.roughnessLevel};

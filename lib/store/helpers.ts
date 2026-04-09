@@ -62,7 +62,7 @@ export function aiLayerHasRenderableOrPending(layer: AILayer): boolean {
 
 /** Code, HTML, video layer, or AI media (including in-flight generation). */
 export function sceneHasRenderableContent(s: Scene): boolean {
-  if (s.svgContent || s.canvasCode || s.sceneCode || s.lottieSource) return true
+  if (s.svgContent || s.canvasCode || s.sceneCode || s.reactCode || s.lottieSource) return true
   if (s.canvasBackgroundCode?.trim()) return true
   if (s.sceneHTML && s.sceneHTML.trim().length > 0) return true
   if (s.videoLayer?.enabled && s.videoLayer.src) return true
@@ -146,12 +146,26 @@ export function ensureStoryboardSceneIds(sb: Storyboard): Storyboard {
   return changed ? { ...sb, scenes: outScenes } : sb
 }
 
+/** Read the persisted editor theme from its dedicated localStorage key. */
+export function getPersistedTheme(): 'dark' | 'light' | 'blue' {
+  if (typeof window === 'undefined') return 'dark'
+  const v = localStorage.getItem('cench-editor-theme')
+  if (v === 'light' || v === 'blue') return v
+  return 'dark'
+}
+
+/** Write the editor theme to its dedicated localStorage key. */
+export function setPersistedTheme(theme: 'dark' | 'light' | 'blue') {
+  if (typeof window !== 'undefined') localStorage.setItem('cench-editor-theme', theme)
+}
+
 export const DEFAULT_GLOBAL_STYLE: GlobalStyle = {
-  presetId: 'whiteboard',
+  presetId: null,
   paletteOverride: null,
   bgColorOverride: null,
   fontOverride: null,
   strokeColorOverride: null,
+  theme: typeof window !== 'undefined' ? getPersistedTheme() : 'dark',
   uiTypography: 'app',
   uiFontFamily: null,
 }
@@ -226,10 +240,11 @@ export function createDefaultScene(prompt = ''): Scene {
     activeBranchId: null,
     transition: 'none',
     usage: null,
-    sceneType: 'svg',
+    sceneType: 'react',
     canvasCode: '',
     canvasBackgroundCode: '',
     sceneCode: '',
+    reactCode: '',
     threeEnvironmentPresetId: null,
     sceneHTML: '',
     sceneStyles: '',

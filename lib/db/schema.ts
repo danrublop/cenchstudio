@@ -146,7 +146,7 @@ export const projects = pgTable(
     outputMode: outputModeEnum('output_mode').default('mp4'),
     storageMode: storageModeEnum('storage_mode').default('local'),
     globalStyle: jsonb('global_style').$type<GlobalStyle>().default({
-      presetId: 'whiteboard',
+      presetId: null,
       paletteOverride: null,
       bgColorOverride: null,
       fontOverride: null,
@@ -334,7 +334,7 @@ export const layers = pgTable(
     modelUsed: text('model_used'),
     generatedAt: timestamp('generated_at'),
     layerConfig: jsonb('layer_config'),
-    mediaId: uuid('media_id').references(() => generatedMedia.id),
+    mediaId: uuid('media_id').references(() => generatedMedia.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
@@ -944,7 +944,9 @@ export const timelineClipsRelations = relations(timelineClips, ({ one }) => ({
 export const githubLinks = pgTable(
   'github_links',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
     projectId: uuid('project_id')
       .notNull()
       .references(() => projects.id, { onDelete: 'cascade' }),

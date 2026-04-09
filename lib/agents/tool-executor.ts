@@ -23,6 +23,7 @@ import { resolveStyle } from '../styles/presets'
 import { API_COST_ESTIMATES, API_DISPLAY_NAMES, checkPermission } from '../permissions'
 import { generateCode } from '../generation/generate'
 import { ALL_TOOLS } from './tools'
+import { SCENE_ID_RE } from '../api/constants'
 import { createSceneToolHandler, SCENE_TOOL_NAMES } from './tool-handlers/scene-tools'
 import { createStyleToolHandler, STYLE_TOOL_NAMES } from './tool-handlers/style-tools'
 import { createInteractionToolHandler, INTERACTION_TOOL_NAMES } from './tool-handlers/interaction-tools'
@@ -40,6 +41,28 @@ import { createTemplateToolHandler, TEMPLATE_TOOL_NAMES } from './tool-handlers/
 import { createPlanningExportToolHandler, PLANNING_EXPORT_TOOL_NAMES } from './tool-handlers/planning-export-tools'
 import { createThreeWorldToolHandler, THREE_WORLD_TOOL_NAMES } from './tool-handlers/three-world-tools'
 import { createPhysicsToolHandler, PHYSICS_TOOL_NAMES } from './tool-handlers/physics-tools'
+import { createSkillToolHandler, SKILL_TOOL_NAMES } from './tool-handlers/skill-tools'
+
+// ── Tool Error Rate Tracking ─────────────────────────────────────────────────
+
+const toolStats = new Map<string, { success: number; failure: number }>()
+
+function recordToolResult(toolName: string, success: boolean): void {
+  const entry = toolStats.get(toolName) ?? { success: 0, failure: 0 }
+  if (success) entry.success++
+  else entry.failure++
+  toolStats.set(toolName, entry)
+}
+
+/** Get per-tool success/failure counts accumulated during the current run */
+export function getToolStats(): Record<string, { success: number; failure: number }> {
+  return Object.fromEntries(toolStats)
+}
+
+/** Reset tool stats (call at the start of each agent run) */
+export function resetToolStats(): void {
+  toolStats.clear()
+}
 
 // ── Snapshot System ───────────────────────────────────────────────────────────
 
@@ -88,7 +111,11 @@ const GENERATION_TOOL_TIMEOUT_MS = 120_000 // 120s for LLM-backed generation too
 
 // ── Generation tools that benefit from auto-validation ───────────────────────
 const GENERATION_TOOL_SET = new Set([
-  'add_layer', 'regenerate_layer', 'edit_layer', 'generate_chart', 'generate_physics_scene',
+  'add_layer',
+  'regenerate_layer',
+  'edit_layer',
+  'generate_chart',
+  'generate_physics_scene',
   'create_world_scene',
 ])
 
@@ -289,7 +316,7 @@ function findScene(world: WorldStateMutable, sceneId: string): Scene | undefined
 function updateScene(world: WorldStateMutable, sceneId: string, updates: Partial<Scene>): Scene | null {
   const idx = world.scenes.findIndex((s) => s.id === sceneId)
   if (idx === -1) return null
-  const updated = { ...world.scenes[idx], ...updates }
+  const updated = { ...world.scenes[idx], ...updates, updatedAt: Date.now() }
   // Keep D3 structured data coherent when scene type changes.
   if (updates.sceneType && updates.sceneType !== 'd3') {
     updated.chartLayers = []
@@ -308,6 +335,7 @@ export function clearStaleCodeFields(sceneType: SceneType): Partial<Scene> {
   }
   if (sceneType !== 'canvas2d') clear.canvasCode = ''
   if (sceneType !== 'lottie') clear.lottieSource = ''
+  if (sceneType !== 'react') clear.reactCode = ''
   if (sceneType !== 'd3') {
     clear.d3Data = null
     clear.chartLayers = [] as any
@@ -570,6 +598,12 @@ function ensureAllHandlersRegistered(): void {
   const physicsHandler = createPhysicsToolHandler({ regenerateHTML })
   toolRegistry.registerMany([...PHYSICS_TOOL_NAMES], (toolName, args, world, logger) =>
     physicsHandler(toolName, args, world as WorldStateMutable, logger),
+  )
+
+  // ── Skill discovery tools ──
+  const skillHandler = createSkillToolHandler()
+  toolRegistry.registerMany([...SKILL_TOOL_NAMES], (toolName, args) =>
+    skillHandler(toolName, args as Record<string, unknown>),
   )
 
   // ── Visual feedback tools ──
@@ -1271,8 +1305,17 @@ export async function executeTool(
   }
   const finalArgs = preResult.modifiedArgs ?? args
 
-  // Snapshot before every execution for undo/recovery
-  const preSnapshot = createSnapshot(world.scenes, world.globalStyle, `before:${toolName}`)
+  // Snapshot before every execution for undo/recovery.
+  // If snapshot creation fails (e.g. non-serializable values), block the tool
+  // rather than executing without rollback protection.
+  let preSnapshot: StateSnapshot
+  try {
+    preSnapshot = createSnapshot(world.scenes, world.globalStyle, `before:${toolName}`)
+  } catch (snapshotErr) {
+    const msg = snapshotErr instanceof Error ? snapshotErr.message : String(snapshotErr)
+    logger?.error('tool_exec', `Snapshot creation failed for ${toolName}: ${msg}`)
+    return { success: false, error: `Failed to create state snapshot — tool execution blocked for safety: ${msg}` }
+  }
 
   const timeoutMs = GENERATION_TOOL_SET.has(toolName) ? GENERATION_TOOL_TIMEOUT_MS : TOOL_TIMEOUT_MS
   const startMs = Date.now()
@@ -1294,6 +1337,7 @@ export async function executeTool(
     result = { success: false, error: `Tool ${toolName} failed: ${message}` }
   }
   const durationMs = Date.now() - startMs
+  recordToolResult(toolName, result.success)
 
   // Auto-validate after generation tools — append quick checks to the result
   // so the agent gets immediate feedback without needing a separate verify_scene call.
@@ -1310,7 +1354,10 @@ export async function executeTool(
             hint: 'Fix these issues with patch_layer_code or regenerate_layer, then call verify_scene.',
           },
         }
-        logger?.warn('auto_validate', `${toolName} succeeded but scene has issues`, { sceneId: result.affectedSceneId, warnings })
+        logger?.warn('auto_validate', `${toolName} succeeded but scene has issues`, {
+          sceneId: result.affectedSceneId,
+          warnings,
+        })
       }
     }
   }
@@ -1330,7 +1377,7 @@ async function regenerateHTML(
   if (!scene) return { htmlWritten: false }
   // Sanitize sceneId to prevent path traversal — must match the same
   // pattern enforced in app/api/scene/route.ts POST handler.
-  if (!/^[a-zA-Z0-9-]+$/.test(sceneId)) {
+  if (!SCENE_ID_RE.test(sceneId)) {
     logger?.error('html', `Invalid sceneId rejected: ${sceneId}`)
     return { htmlWritten: false }
   }
@@ -1341,7 +1388,12 @@ async function regenerateHTML(
     // Write to disk immediately so preview iframes can load the latest content
     const scenesDir = path.join(process.cwd(), 'public', 'scenes')
     await fs.mkdir(scenesDir, { recursive: true })
-    await fs.writeFile(path.join(scenesDir, `${sceneId}.html`), html, 'utf-8')
+    // Atomic write: write to temp file then rename to prevent partial HTML
+    // from concurrent tool calls writing to the same scene
+    const finalPath = path.join(scenesDir, `${sceneId}.html`)
+    const tmpPath = path.join(scenesDir, `${sceneId}.tmp.${Date.now()}.html`)
+    await fs.writeFile(tmpPath, html, 'utf-8')
+    await fs.rename(tmpPath, finalPath)
     const durationMs = Date.now() - start
     logger?.log('html', `Wrote ${sceneId}.html`, { sceneId, htmlLength: html.length, durationMs })
     return { htmlWritten: true }
@@ -1374,11 +1426,12 @@ export async function generateLayerContent(
     const resolved = resolveStyle(globalStyle.presetId, globalStyle)
     logger?.log('generation', `Generating ${layerType} code`, { layerType, promptLength: prompt.length, modelId })
     const genStart = Date.now()
+    const hasPreset = globalStyle.presetId != null
     const result = await generateCode(layerType, prompt, {
-      palette: resolved.palette,
+      palette: hasPreset ? resolved.palette : undefined,
       bgColor: scene.bgColor,
       duration: scene.duration,
-      font: resolved.font,
+      font: hasPreset ? resolved.font : undefined,
       strokeWidth: globalStyle.strokeWidth ?? 2,
       d3Data: scene.d3Data ?? undefined,
       modelId,

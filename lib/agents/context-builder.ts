@@ -109,6 +109,9 @@ export function resolveModel(
   enabledModelIds?: string[],
   modelConfigs?: ModelConfig[],
 ): ModelId {
+  // Normalize: treat 'auto' as no override
+  const override = explicitOverride && explicitOverride !== 'auto' ? explicitOverride : null
+
   // Filter enabled models to only those that support tools
   const toolCapableIds = enabledModelIds?.filter((id) => modelSupportsTools(id, modelConfigs))
 
@@ -117,12 +120,14 @@ export function resolveModel(
   // If override provided, validate it's enabled and supports tools before using.
   // For local models, the override may be the model `id` (e.g. "ollama-llama3") while
   // enabledModelIds contains `modelId` (e.g. "llama3.1:8b") — check both.
-  const overrideIsEnabled = !toolCapableIds || toolCapableIds.length === 0
-    || toolCapableIds.includes(explicitOverride ?? '')
-    || (modelConfigs ?? []).some((m) => (m.id === explicitOverride || m.modelId === explicitOverride) && toolCapableIds.includes(m.modelId))
-  const resolved = explicitOverride && overrideIsEnabled
-      ? explicitOverride
-      : tierResolved
+  const overrideIsEnabled =
+    !toolCapableIds ||
+    toolCapableIds.length === 0 ||
+    toolCapableIds.includes(override ?? '') ||
+    (modelConfigs ?? []).some(
+      (m) => (m.id === override || m.modelId === override) && toolCapableIds.includes(m.modelId),
+    )
+  const resolved = override && overrideIsEnabled ? override : tierResolved
 
   // If no enabled list provided, trust the resolved model
   if (!toolCapableIds || toolCapableIds.length === 0) return resolved
@@ -324,13 +329,15 @@ function serializeFullScene(scene: Scene): string {
         ? scene.svgContent
         : scene.sceneType === 'lottie'
           ? scene.lottieSource
-          : scene.sceneType === 'd3' ||
-              scene.sceneType === 'three' ||
-              scene.sceneType === 'motion' ||
-              scene.sceneType === 'zdog' ||
-              scene.sceneType === 'physics'
-            ? scene.sceneCode
-            : ''
+          : scene.sceneType === 'react'
+            ? scene.reactCode
+            : scene.sceneType === 'd3' ||
+                scene.sceneType === 'three' ||
+                scene.sceneType === 'motion' ||
+                scene.sceneType === 'zdog' ||
+                scene.sceneType === 'physics'
+              ? scene.sceneCode
+              : ''
   if (codeField) {
     const preview = codeField.slice(0, 800)
     parts.push(`  ${scene.sceneType} code preview:\n${preview}${codeField.length > 800 ? '\n  ... (truncated)' : ''}`)
@@ -504,14 +511,15 @@ export function buildAgentContext(
   storyboard?: Storyboard | null,
   userMemories?: Array<{ category: string; key: string; value: string; confidence: number }>,
   focusedSceneType?: string,
+  directorTemplate?: string,
 ): AgentContext {
   // Determine focused scene
   let focusedSceneId: string | null = null
 
-  // 'auto' scene context: director gets all scenes, editor/scene-maker get selected
+  // 'auto' scene context: builder/director/dop/planner get all scenes, editor gets selected
   const effectiveSceneContext =
     opts.sceneContext === 'auto'
-      ? agentType === 'director' || agentType === 'dop' || agentType === 'planner'
+      ? agentType === 'director' || agentType === 'dop' || agentType === 'planner' || agentType === 'scene-maker'
         ? 'all'
         : 'selected'
       : opts.sceneContext
@@ -529,15 +537,23 @@ export function buildAgentContext(
   const presetId = globalStyle?.presetId ?? null
   const resolvedStyle = resolveStyle(presetId, globalStyle)
   const preset = getPreset(presetId)
-  const basePrompt = getAgentPrompt(agentType, resolvedStyle, focusedSceneType)
+  const basePrompt = getAgentPrompt(agentType, resolvedStyle, focusedSceneType, directorTemplate)
 
   // Build cascade guidance from preset
   const cascadeParts: string[] = []
 
-  if (agentType === 'director' || agentType === 'planner') {
-    cascadeParts.push(`## Style Cascade Guidance
-Preferred scene count for this style: ${preset.agent.preferredSceneCount.min}–${preset.agent.preferredSceneCount.max} scenes.
-${agentType === 'planner' ? 'You are in plan-only mode: output a storyboard via plan_scenes only — do not create scenes or layers.' : preset.agent.planFirst ? 'Plan scenes before generating — lay out the narrative arc first.' : 'Generate scenes directly without a planning pass.'}`)
+  if (agentType === 'director' || agentType === 'planner' || agentType === 'scene-maker') {
+    const planGuidance =
+      agentType === 'planner'
+        ? 'You are in plan-only mode: output a storyboard via plan_scenes only — do not create scenes or layers.'
+        : agentType === 'scene-maker'
+          ? 'Generate scenes directly without a planning pass.'
+          : preset.agent.planFirst
+            ? 'Plan scenes before generating — lay out the narrative arc first.'
+            : 'Generate scenes directly without a planning pass.'
+    cascadeParts.push(`## ${presetId ? 'Style Cascade Guidance' : 'Planning Guidance'}
+${presetId ? `Preferred scene count for this style: ${preset.agent.preferredSceneCount.min}–${preset.agent.preferredSceneCount.max} scenes.` : 'Scene count is up to you — match it to the content.'}
+${planGuidance}`)
 
     // Variety alert when one scene type dominates
     const typeCounts = new Map<string, number>()
@@ -606,7 +622,10 @@ When planning scenes, design a scene graph — not just a list:
   }
 
   // Audio provider availability — only show categories with enabled providers
-  if (opts.activeTools.includes('audio') && (agentType === 'director' || agentType === 'scene-maker' || agentType === 'planner')) {
+  if (
+    opts.activeTools.includes('audio') &&
+    (agentType === 'director' || agentType === 'scene-maker' || agentType === 'planner')
+  ) {
     const enabledMap = opts.audioProviderEnabled ?? {}
     const isEnabled = (id: string) => enabledMap[id] ?? true
     const enabledTTS = AUDIO_PROVIDERS.filter((p) => p.category === 'tts' && isEnabled(p.id)).map((p) => p.name)

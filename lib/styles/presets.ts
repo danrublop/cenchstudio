@@ -1066,10 +1066,10 @@ PROHIBITIONS
 const NEUTRAL_BASELINE: StylePreset = {
   id: 'whiteboard' as StylePresetId, // sentinel — never displayed
   name: 'Custom',
-  description: 'No preset. Full style autonomy.',
+  description: 'No preset. Full style autonomy — the generator decides.',
   emoji: '🎨',
-  palette: ['#374151', '#6b7280', '#9ca3af', '#d1d5db'],
-  bgColor: '#ffffff',
+  palette: ['#f0ece0', '#e84545', '#4595e8', '#45e87a'],
+  bgColor: '#181818',
   bgStyle: 'plain',
   font: 'Inter',
   preferredRenderer: 'auto',
@@ -1079,10 +1079,10 @@ const NEUTRAL_BASELINE: StylePreset = {
   textureStyle: 'none',
   textureIntensity: 0,
   textureBlendMode: 'multiply',
-  axisColor: '#6b7280',
-  gridColor: '#e5e7eb',
+  axisColor: '#888888',
+  gridColor: '#333333',
   agentGuidance:
-    'No preset is active. You have full style autonomy. Choose colors, fonts, roughness, and rendering approach that best fit the content.',
+    'No style preset is active. You have full creative control over colors, fonts, backgrounds, layout, and rendering approach. Choose what best fits the content. Do not default to whiteboard or chalkboard aesthetics unless the user asks for them.',
   export: { resolution: '1080p', fps: 30, format: 'mp4' },
   agent: {
     thinkingMode: 'adaptive',
@@ -1096,7 +1096,7 @@ const NEUTRAL_BASELINE: StylePreset = {
     breathingRoom: true,
     annotationStyle: 'minimal',
   },
-  interactive: { autoAddGates: false, autoAddQuizzes: false, showProgressBar: true, playerTheme: 'light' },
+  interactive: { autoAddGates: false, autoAddQuizzes: false, showProgressBar: true, playerTheme: 'dark' },
 }
 
 export function getPreset(id: StylePresetId | null): StylePreset {
