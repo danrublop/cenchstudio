@@ -115,21 +115,22 @@ export const SET_TRANSITION: ClaudeToolDefinition = {
 export const ADD_LAYER: ClaudeToolDefinition = {
   name: 'add_layer',
   description: `Add a new animated layer to a scene. This generates the layer's visual content using AI.
-For SVG: generates rough hand-drawn SVG illustration.
+For react (DEFAULT): generates a React component with bridge components for mixed rendering (Three.js, Canvas2D, D3, SVG, Lottie). Use for all new scenes.
+For motion: generates CSS/JS choreographed animation and text-heavy explainer layouts.
 For canvas2d: generates rough hand-drawn Canvas2D animation code.
 For d3: generates D3.js chart/visualization.
 For three: generates Three.js 3D scene.
-For motion: generates CSS/JS choreographed animation and text-heavy explainer layouts.
-For lottie: generates Lottie JSON animation (all keyframes must include bezier easing i/o handles).
-For zdog: generates Zdog pseudo-3D illustration with flat-shaded shapes and animation.`,
+For svg: generates rough hand-drawn SVG illustration.
+For lottie: generates Lottie JSON animation.
+For zdog: generates Zdog pseudo-3D illustration.`,
   input_schema: {
     type: 'object',
     properties: {
       sceneId: { type: 'string', description: 'Scene ID to add the layer to' },
       layerType: {
         type: 'string',
-        enum: ['svg', 'canvas2d', 'd3', 'three', 'motion', 'lottie', 'zdog'],
-        description: 'Type of layer to generate',
+        enum: ['react', 'svg', 'canvas2d', 'd3', 'three', 'motion', 'lottie', 'zdog'],
+        description: 'Type of layer to generate. Default: react',
       },
       prompt: { type: 'string', description: 'Detailed description of what to generate' },
       zIndex: { type: 'number', description: 'Stack order (higher = on top). Default: 2' },
@@ -571,6 +572,20 @@ IMPORTANT: oldCode must be an exact match — copy it precisely from the world s
       newCode: { type: 'string', description: 'Replacement code' },
     },
     required: ['sceneId', 'layerId', 'oldCode', 'newCode'],
+  },
+}
+
+export const MIGRATE_TO_REACT: ClaudeToolDefinition = {
+  name: 'migrate_to_react',
+  description: `Convert an existing non-React scene to a React scene. Wraps the current scene code (Motion, Canvas2D, SVG, Three.js, D3, Lottie) in a React component using the appropriate bridge component. The visual output is preserved.
+Supported source types: motion, canvas2d, svg, three, d3, lottie.
+Use this to unify a project's scenes under React for easier composition and editing.`,
+  input_schema: {
+    type: 'object',
+    properties: {
+      sceneId: { type: 'string', description: 'Scene ID to migrate' },
+    },
+    required: ['sceneId'],
   },
 }
 
@@ -1649,6 +1664,7 @@ export const LAYER_TOOLS: ClaudeToolDefinition[] = [
   SET_LAYER_TIMING,
   REGENERATE_LAYER,
   PATCH_LAYER_CODE,
+  MIGRATE_TO_REACT,
 ]
 
 /** All element (text overlay) tools */
@@ -1798,7 +1814,10 @@ export const START_RECORDING: ClaudeToolDefinition = {
   input_schema: {
     type: 'object',
     properties: {
-      sourceId: { type: 'string', description: 'Desktop source ID from list_recording_sources. Omit to auto-select first screen.' },
+      sourceId: {
+        type: 'string',
+        description: 'Desktop source ID from list_recording_sources. Omit to auto-select first screen.',
+      },
       sceneId: { type: 'string', description: 'Scene ID to auto-attach the recorded video to when recording stops' },
       micEnabled: { type: 'boolean', description: 'Enable microphone capture (default true)' },
       systemAudioEnabled: { type: 'boolean', description: 'Enable system audio capture (default true)' },
@@ -1821,7 +1840,10 @@ export const STOP_RECORDING: ClaudeToolDefinition = {
   input_schema: {
     type: 'object',
     properties: {
-      sceneId: { type: 'string', description: 'Scene ID to attach the recorded video to (overrides the one set at start)' },
+      sceneId: {
+        type: 'string',
+        description: 'Scene ID to attach the recorded video to (overrides the one set at start)',
+      },
     },
     required: [],
   },
@@ -2555,6 +2577,82 @@ Use the returned assetId in create_world_scene's objects array.`,
 
 export const WORLD_TOOLS: ClaudeToolDefinition[] = [CREATE_WORLD_SCENE, LIST_3D_ASSETS]
 
+// ── Skill Discovery Tools ────────────────────────────────────────────────────
+
+export const SEARCH_SKILLS: ClaudeToolDefinition = {
+  name: 'search_skills',
+  description: `Search the skill library for animation techniques, effects, and rendering patterns.
+Returns a ranked list of matching skills with summaries. Use this to discover what capabilities are available before building.
+After finding a relevant skill, use load_skill to get the full implementation guide.`,
+  input_schema: {
+    type: 'object',
+    properties: {
+      query: {
+        type: 'string',
+        description:
+          'Natural language search query. Examples: "particle explosion", "hand-drawn whiteboard", "3D camera flyover", "data chart animation"',
+      },
+      category: {
+        type: 'string',
+        enum: [
+          'renderer',
+          'effect',
+          'animation',
+          'layout',
+          'data-viz',
+          'interaction',
+          'audio',
+          'typography',
+          '3d',
+          'physics',
+          'media',
+          'template',
+          'technique',
+        ],
+        description: 'Filter by skill category',
+      },
+      sceneType: {
+        type: 'string',
+        description: 'Filter by target scene type (e.g. "canvas2d", "three", "motion", "d3")',
+      },
+      tags: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Filter by tags (returns skills matching any tag)',
+      },
+    },
+    required: ['query'],
+  },
+}
+
+export const LOAD_SKILL: ClaudeToolDefinition = {
+  name: 'load_skill',
+  description: `Load a skill's full implementation guide into context. Call this after search_skills finds a relevant skill.
+Returns the complete guide with code patterns, examples, and gotchas. Use this knowledge to build with standard tools (create_scene, add_layer, etc.).`,
+  input_schema: {
+    type: 'object',
+    properties: {
+      skillId: {
+        type: 'string',
+        description: 'Skill ID from search_skills results',
+      },
+    },
+    required: ['skillId'],
+  },
+}
+
+export const LIST_SKILL_CATEGORIES: ClaudeToolDefinition = {
+  name: 'list_skill_categories',
+  description:
+    'Browse available skill categories with counts and sample skills. Use this for open-ended exploration when you want to see what animation capabilities are available.',
+  input_schema: {
+    type: 'object',
+    properties: {},
+  },
+}
+
+export const SKILL_TOOLS: ClaudeToolDefinition[] = [SEARCH_SKILLS, LOAD_SKILL, LIST_SKILL_CATEGORIES]
+
 /** All tools combined */
 export const ALL_TOOLS: ClaudeToolDefinition[] = [
   ...SCENE_TOOLS,
@@ -2575,6 +2673,7 @@ export const ALL_TOOLS: ClaudeToolDefinition[] = [
   ...TIMELINE_TOOLS,
   CAPTURE_FRAME,
   VERIFY_SCENE,
+  ...SKILL_TOOLS,
 ]
 
 /** Deduplicate tools by name */
@@ -2591,6 +2690,7 @@ function dedup(tools: ClaudeToolDefinition[]): ClaudeToolDefinition[] {
 export const AGENT_TOOLS: Record<string, ClaudeToolDefinition[]> = {
   planner: [PLAN_SCENES_PLANNER],
   director: dedup([
+    ...SKILL_TOOLS,
     ...SCENE_TOOLS,
     ...LAYER_TOOLS,
     ...PARENTING_TOOLS,
@@ -2609,16 +2709,15 @@ export const AGENT_TOOLS: Record<string, ClaudeToolDefinition[]> = {
     ...TIMELINE_TOOLS,
   ]),
   'scene-maker': dedup([
-    CREATE_SCENE,
+    // Scene Maker / Master Builder — flexible default with full toolkit + skill discovery
+    ...SKILL_TOOLS,
+    ...SCENE_TOOLS,
+    ...GLOBAL_TOOLS,
     ...LAYER_TOOLS,
     ...PARENTING_TOOLS,
     ...AI_LAYER_TOOLS,
     ...ELEMENT_TOOLS,
-    SET_SCENE_DURATION,
-    SET_SCENE_BACKGROUND,
-    SET_TRANSITION,
-    SET_CAMERA_MOTION,
-    SET_SCENE_STYLE,
+    ...TEMPLATE_TOOLS,
     STYLE_SCENE,
     ...MODEL_LIBRARY_TOOLS,
     SEARCH_LOTTIE,
@@ -2633,6 +2732,7 @@ export const AGENT_TOOLS: Record<string, ClaudeToolDefinition[]> = {
     // Core editing tools — surgical changes only
     REGENERATE_LAYER,
     PATCH_LAYER_CODE,
+    MIGRATE_TO_REACT,
     REMOVE_LAYER,
     SET_LAYER_OPACITY,
     SET_LAYER_VISIBILITY,
