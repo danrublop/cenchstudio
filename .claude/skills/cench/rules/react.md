@@ -286,6 +286,30 @@ Stack them with `<AbsoluteFill>` + `zIndex`. Time them with `<Sequence>`.
 
 ---
 
+## Spring config presets
+
+Instead of specifying `{ damping, mass, stiffness }` manually, use presets:
+
+```jsx
+spring({ frame, fps, config: spring.config.gentle }) // soft, slow settle
+spring({ frame, fps, config: spring.config.stiff }) // fast, precise
+spring({ frame, fps, config: spring.config.wobbly }) // bouncy feel
+spring({ frame, fps, config: spring.config.snappy }) // quick pop
+spring({ frame, fps, config: spring.config.molasses }) // slow, heavy
+spring({ frame, fps, config: spring.config.default }) // balanced
+```
+
+---
+
+## Performance & Limits
+
+- **Max 1-2 ThreeJSLayers per scene.** Each creates a WebGL context. Browsers allow 8-16 total. If you need multiple 3D objects, compose them in ONE ThreeJSLayer setup function.
+- **D3Layer stability.** D3 manipulates the DOM directly. Wrap D3Layer in `React.memo` or give it a stable `key` to prevent React from unmounting it unexpectedly.
+- **Memoize expensive components.** Every frame triggers a React re-render of the full tree. Use `React.memo()` on components that don't need `useCurrentFrame()`.
+- **Canvas2DLayer:** Fine for up to ~500 objects per frame. For 1000+, consider simplifying or batching draw calls.
+
+---
+
 ## What NOT to do
 
 - Do NOT use `requestAnimationFrame` — frame updates come from `useCurrentFrame()`
@@ -294,8 +318,9 @@ Stack them with `<AbsoluteFill>` + `zIndex`. Time them with `<Sequence>`.
 - Do NOT use `Math.random()` — use frame-based deterministic values
 - Do NOT import React/ReactDOM — they're already loaded as globals
 - Do NOT add `<script>` tags in the JSX — all code goes in the component
-- Do NOT forget the CenchComposition mount at the end
+- Do NOT mount manually — just `export default Scene;` (bootstrapper handles mounting)
 - Do NOT use bounce/elastic easing — use `Easing.bezier(0.16, 1, 0.3, 1)` for entrances
+- Do NOT use 2+ ThreeJSLayers in one scene — compose 3D into one layer
 
 ---
 

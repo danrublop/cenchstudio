@@ -2515,8 +2515,8 @@ function generateReactHTML(scene: Scene, style: ResolvedStyle, audioSettings?: A
   <!-- React 18 UMD -->
   <script crossorigin src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js"><\/script>
   <script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js"><\/script>
-  <!-- Babel standalone: in-browser JSX transpilation -->
-  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.26.10/babel.min.js"><\/script>
+  <!-- Babel standalone: in-browser JSX transpilation (bundled locally to avoid CDN failures) -->
+  <script src="/sdk/babel.min.js"><\/script>
 </head>
 <body>
   <div id="scene-camera">
@@ -2590,16 +2590,44 @@ ${reactCode.replace(/<\/script/gi, '<\\/script')}
       return;
     }
 
-    // Mount inside CenchComposition
+    // Error boundary to catch runtime errors in scene code
+    var ErrorBoundary = (function() {
+      function EB(props) { this.state = { error: null }; }
+      EB.prototype = Object.create(React.Component.prototype);
+      EB.prototype.constructor = EB;
+      EB.getDerivedStateFromError = function(err) { return { error: err }; };
+      EB.prototype.componentDidCatch = function(err, info) {
+        console.error('CenchReact scene error:', err, info);
+      };
+      EB.prototype.render = function() {
+        if (this.state.error) {
+          return React.createElement('div', {
+            style: { position: 'absolute', inset: 0, display: 'flex', alignItems: 'center',
+              justifyContent: 'center', flexDirection: 'column', gap: '12px',
+              background: '#1a1a2e', color: '#e84545', fontFamily: 'monospace', padding: '40px' }
+          },
+            React.createElement('div', { style: { fontSize: '18px', fontWeight: 700 } }, 'Scene Error'),
+            React.createElement('pre', { style: { fontSize: '13px', color: '#ccc', maxWidth: '80%',
+              whiteSpace: 'pre-wrap', wordBreak: 'break-word' } }, String(this.state.error.message || this.state.error))
+          );
+        }
+        return this.props.children;
+      };
+      return EB;
+    })();
+
+    // Mount inside CenchComposition with Error Boundary
     var fps = 30;
     var root = ReactDOM.createRoot(document.getElementById('react-root'));
     root.render(
-      React.createElement(CenchReact.CenchComposition, {
-        fps: fps,
-        width: WIDTH,
-        height: HEIGHT,
-        durationInFrames: Math.round(DURATION * fps),
-      }, React.createElement(SceneComponent))
+      React.createElement(ErrorBoundary, null,
+        React.createElement(CenchReact.CenchComposition, {
+          fps: fps,
+          width: WIDTH,
+          height: HEIGHT,
+          durationInFrames: Math.round(DURATION * fps),
+        }, React.createElement(SceneComponent))
+      )
     );
   })();
   <\/script>

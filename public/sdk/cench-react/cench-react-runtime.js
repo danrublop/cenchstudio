@@ -1,0 +1,280 @@
+/**
+ * CenchReact Runtime — Remotion-style React API for Cench Studio scenes.
+ *
+ * Provides: CenchComposition, useCurrentFrame, useVideoConfig,
+ *           interpolate, spring, Sequence, AbsoluteFill
+ *
+ * Exposed on window.CenchReact (IIFE, no module bundler needed).
+ * Requires React 18+ and GSAP (window.__tl) to be loaded first.
+ */
+;(function () {
+  'use strict'
+
+  var React = window.React
+  if (!React) throw new Error('CenchReact: React 18+ must be loaded before cench-react-runtime.js')
+
+  // ── Context ──────────────────────────────────────────────────────────────
+
+  var FrameContext = React.createContext({ frame: 0, fps: 30, width: 1920, height: 1080, durationInFrames: 240 })
+
+  function useCurrentFrame() {
+    return React.useContext(FrameContext).frame
+  }
+
+  function useVideoConfig() {
+    var ctx = React.useContext(FrameContext)
+    return { fps: ctx.fps, width: ctx.width, height: ctx.height, durationInFrames: ctx.durationInFrames }
+  }
+
+  // ── CenchComposition ─────────────────────────────────────────────────────
+
+  function CenchComposition(props) {
+    var fps = props.fps || 30
+    var width = props.width || 1920
+    var height = props.height || 1080
+    var durationInFrames = props.durationInFrames || Math.round((window.DURATION || 8) * fps)
+
+    var frameRef = React.useRef(0)
+    var _a = React.useState(0), frame = _a[0], setFrame = _a[1]
+
+    React.useEffect(function () {
+      function updateFrame(f) {
+        if (f !== frameRef.current) {
+          frameRef.current = f
+          setFrame(f)
+        }
+      }
+
+      // Bridge from GSAP timeline -> React frame
+      function hookTimeline() {
+        var tl = window.__tl
+        if (!tl) return false
+        var prevCb = tl.eventCallback('onUpdate')
+        tl.eventCallback('onUpdate', function () {
+          if (prevCb) prevCb()
+          updateFrame(Math.round(tl.time() * fps))
+        })
+        return true
+      }
+
+      // Try immediately; if __tl isn't ready yet, poll briefly
+      if (!hookTimeline()) {
+        var attempts = 0
+        var poll = setInterval(function () {
+          attempts++
+          if (hookTimeline() || attempts > 50) clearInterval(poll)
+        }, 50)
+      }
+
+      // Direct frame control for Puppeteer export
+      window.__cenchSetFrame = function (f) { updateFrame(f) }
+
+      // Hook into __advanceFrame (virtual time export mode)
+      var origAdvance = window.__advanceFrame
+      window.__advanceFrame = function (ms) {
+        if (origAdvance) origAdvance(ms)
+        updateFrame(Math.round((ms / 1000) * fps))
+      }
+
+      return function () {
+        delete window.__cenchSetFrame
+        if (origAdvance) window.__advanceFrame = origAdvance
+      }
+    }, [fps])
+
+    var ctx = React.useMemo(function () {
+      return { frame: frame, fps: fps, width: width, height: height, durationInFrames: durationInFrames }
+    }, [frame, fps, width, height, durationInFrames])
+
+    return React.createElement(FrameContext.Provider, { value: ctx }, props.children)
+  }
+
+  // ── interpolate ──────────────────────────────────────────────────────────
+
+  function interpolate(value, inputRange, outputRange, options) {
+    if (inputRange.length !== outputRange.length) {
+      throw new Error('interpolate: inputRange and outputRange must have the same length')
+    }
+    if (inputRange.length < 2) {
+      throw new Error('interpolate: ranges must have at least 2 values')
+    }
+
+    var opts = options || {}
+    var extrapolateLeft = opts.extrapolateLeft || 'clamp'
+    var extrapolateRight = opts.extrapolateRight || 'clamp'
+    var easing = opts.easing || function (t) { return t }
+
+    // Find the correct segment
+    var segIdx = inputRange.length - 2 // default to last segment
+    for (var i = 1; i < inputRange.length; i++) {
+      if (value <= inputRange[i]) { segIdx = i - 1; break }
+    }
+
+    var inMin = inputRange[segIdx]
+    var inMax = inputRange[segIdx + 1]
+    var outMin = outputRange[segIdx]
+    var outMax = outputRange[segIdx + 1]
+
+    // Normalize to 0-1 (guard against identical input values)
+    var t = inMax === inMin ? 1 : (value - inMin) / (inMax - inMin)
+
+    // Clamping
+    if (t < 0) t = extrapolateLeft === 'clamp' ? 0 : t
+    if (t > 1) t = extrapolateRight === 'clamp' ? 1 : t
+
+    // Apply easing only within 0-1 range
+    var easedT = (t >= 0 && t <= 1) ? easing(t) : t
+
+    return outMin + (outMax - outMin) * easedT
+  }
+
+  // ── spring ───────────────────────────────────────────────────────────────
+
+  function spring(params) {
+    var frame = params.frame
+    var fps = params.fps || 30
+    var from = params.from !== undefined ? params.from : 0
+    var to = params.to !== undefined ? params.to : 1
+    var config = params.config || {}
+
+    // Clamp negative frames to 0 (before spring starts)
+    if (frame < 0) return from
+
+    var damping = config.damping !== undefined ? config.damping : 10
+    var mass = config.mass !== undefined ? config.mass : 1
+    var stiffness = config.stiffness !== undefined ? config.stiffness : 100
+    var overshootClamping = config.overshootClamping || false
+
+    var t = frame / fps
+    var omega0 = Math.sqrt(stiffness / mass)
+    var zeta = damping / (2 * Math.sqrt(stiffness * mass))
+
+    var value
+    if (zeta < 1 - 1e-8) {
+      // Underdamped (with epsilon guard against floating-point edge)
+      var omega1 = omega0 * Math.sqrt(1 - zeta * zeta)
+      value = 1 - Math.exp(-zeta * omega0 * t) * (
+        Math.cos(omega1 * t) + (zeta * omega0 / omega1) * Math.sin(omega1 * t)
+      )
+    } else if (zeta < 1 + 1e-8) {
+      // Critically damped (covers floating-point zone around zeta=1)
+      value = 1 - Math.exp(-omega0 * t) * (1 + omega0 * t)
+    } else {
+      // Overdamped
+      var disc = Math.sqrt(zeta * zeta - 1)
+      var s1 = -omega0 * (zeta - disc)
+      var s2 = -omega0 * (zeta + disc)
+      var denom = s2 - s1
+      if (Math.abs(denom) < 1e-10) {
+        value = 1 - Math.exp(-omega0 * t) * (1 + omega0 * t)
+      } else {
+        value = 1 - (s2 * Math.exp(s1 * t) - s1 * Math.exp(s2 * t)) / denom
+      }
+    }
+
+    if (overshootClamping) {
+      value = Math.min(Math.max(value, 0), 1)
+    }
+
+    return from + (to - from) * value
+  }
+
+  // ── Sequence ─────────────────────────────────────────────────────────────
+
+  function Sequence(props) {
+    var parentFrame = useCurrentFrame()
+    var parentConfig = useVideoConfig()
+
+    var from = Math.max(0, props.from || 0) // No negative from
+    var durationInFrames = props.durationInFrames || Infinity
+
+    var localFrame = parentFrame - from
+    if (localFrame < 0 || (durationInFrames !== Infinity && localFrame >= durationInFrames)) return null
+
+    var localCtx = {
+      frame: localFrame,
+      fps: parentConfig.fps,
+      width: parentConfig.width,
+      height: parentConfig.height,
+      durationInFrames: durationInFrames === Infinity ? parentConfig.durationInFrames - from : durationInFrames,
+    }
+
+    return React.createElement(
+      FrameContext.Provider,
+      { value: localCtx },
+      props.children
+    )
+  }
+
+  // ── AbsoluteFill ─────────────────────────────────────────────────────────
+
+  function AbsoluteFill(props) {
+    var baseStyle = {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      width: '100%',
+      height: '100%',
+      display: 'flex',
+      flexDirection: 'column',
+    }
+
+    var mergedStyle = props.style ? Object.assign({}, baseStyle, props.style) : baseStyle
+
+    return React.createElement(
+      'div',
+      { style: mergedStyle, className: props.className || '' },
+      props.children
+    )
+  }
+
+  // ── Easing helpers ───────────────────────────────────────────────────────
+
+  var Easing = {
+    linear: function (t) { return t },
+    ease: function (t) { return t * t * (3 - 2 * t) },
+    easeIn: function (t) { return t * t },
+    easeOut: function (t) { return t * (2 - t) },
+    easeInOut: function (t) { return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t },
+    bezier: function (x1, y1, x2, y2) {
+      return function (t) {
+        // Clamp t for bezier (only valid in 0-1)
+        var ct = Math.max(0, Math.min(1, t))
+        var lo = 0, hi = 1, mid
+        for (var i = 0; i < 20; i++) {
+          mid = (lo + hi) / 2
+          var x = 3 * (1 - mid) * (1 - mid) * mid * x1 + 3 * (1 - mid) * mid * mid * x2 + mid * mid * mid
+          if (x < ct) lo = mid; else hi = mid
+        }
+        return 3 * (1 - mid) * (1 - mid) * mid * y1 + 3 * (1 - mid) * mid * mid * y2 + mid * mid * mid
+      }
+    },
+  }
+
+  // ── Spring config presets ─────────────────────────────────────────────────
+
+  spring.config = {
+    default: { damping: 10, mass: 1, stiffness: 100 },
+    gentle: { damping: 15, mass: 1, stiffness: 80 },
+    wobbly: { damping: 8, mass: 1, stiffness: 120 },
+    stiff: { damping: 20, mass: 1, stiffness: 200 },
+    molasses: { damping: 25, mass: 1, stiffness: 60 },
+    snappy: { damping: 12, mass: 0.8, stiffness: 160 },
+  }
+
+  // ── Export ────────────────────────────────────────────────────────────────
+
+  window.CenchReact = {
+    CenchComposition: CenchComposition,
+    useCurrentFrame: useCurrentFrame,
+    useVideoConfig: useVideoConfig,
+    interpolate: interpolate,
+    spring: spring,
+    Sequence: Sequence,
+    AbsoluteFill: AbsoluteFill,
+    Easing: Easing,
+    _FrameContext: FrameContext,
+  }
+})()
