@@ -826,5 +826,17 @@ ${hasExplicitPalette ? `- Palette: ${JSON.stringify(palette)}` : '- Choose a col
 - Use spring() for organic motion on key reveals. Use interpolate() with Easing.bezier for controlled motion.
 - Leave 20% of duration as a visual hold at the end.
 - Total duration: ${duration} seconds at 30fps = ${duration * 30} total frames.
+
+## CAMERA MOTION (required — every scene)
+Add a CenchCamera call in a useEffect to give the scene cinematic motion:
+\`\`\`jsx
+React.useEffect(() => {
+  CenchCamera.kenBurns({ duration: DURATION, endScale: 1.04 }); // subtle slow zoom (default)
+  // OR: CenchCamera.presetCinematicPush({ at: 0, duration: DURATION * 0.6 }); // for reveals
+  // OR: CenchCamera.dollyIn({ targetSelector: '#hero', at: 1, duration: 3 }); // for emphasis
+}, []);
+\`\`\`
+A static camera feels like a PowerPoint slide. Always add motion.
+
 ${DESIGN_PRINCIPLES}
 Previous scene summary: ${previousSummary || 'none'}`

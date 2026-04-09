@@ -90,14 +90,20 @@ Each scene is a self-contained HTML file at `/public/scenes/{id}.html`. Written 
 
 ## Scene types
 
-| Type      | sceneType  | Code format                                 | Key element                    |
-| --------- | ---------- | ------------------------------------------- | ------------------------------ |
-| SVG       | `svg`      | Raw `<svg>` element                         | `viewBox="0 0 1920 1080"`      |
-| Canvas 2D | `canvas2d` | Raw JavaScript                              | `document.getElementById('c')` |
-| D3        | `d3`       | JSON `{ styles, sceneCode, suggestedData }` | `d3.select('#chart')`          |
-| Three.js  | `three`    | JSON `{ sceneCode }`                        | THREE global (r128)            |
-| Motion    | `motion`   | JSON `{ styles, htmlContent, sceneCode }`   | anime + Motion v11             |
-| Lottie    | `lottie`   | Lottie JSON                                 | lottie.loadAnimation           |
+**React is the default renderer** (`sceneType: 'react'`). Every scene is a React
+component that can compose multiple renderers via bridge components:
+
+| Bridge Component  | Use for                                                 |
+| ----------------- | ------------------------------------------------------- |
+| Pure JSX          | Typography, layouts, cards, step lists (80% of content) |
+| `<ThreeJSLayer>`  | 3D geometry, PBR materials, shadows                     |
+| `<Canvas2DLayer>` | Hand-drawn strokes, particles, procedural art           |
+| `<D3Layer>`       | Data visualization, charts                              |
+| `<SVGLayer>`      | Vector draw-on animations                               |
+| `<LottieLayer>`   | Micro-animations, icons                                 |
+
+Legacy types (svg, canvas2d, motion, d3, three, lottie) still work for
+existing scenes but new scenes should use React.
 
 All scenes render at **1920x1080** and must complete within their specified duration.
 

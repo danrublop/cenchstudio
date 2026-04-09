@@ -24,28 +24,27 @@ When a preset is active, use ROUGHNESS, TOOL, STROKE_COLOR as constants.
 When no preset is active, these still exist as neutral defaults
 (ROUGHNESS=0, TOOL='pen', FONT='Inter') — override freely.
 
-## Renderer preference
+## Renderer: React (default)
 
-**When no preset is active (default):** Choose the renderer that best fits the content.
+**Every scene is a React component.** Use `type: "react"` for all scenes.
 
-- **Motion** — preferred for most explainers: HTML/CSS layouts, typography, cards, steps, DOM-based diagrams, GSAP timeline (`window.__tl`).
-- **Canvas2d** — for organic strokes, chalk, particles, generative art, physics, fluid motion.
-- **SVG** — rare; only when a self-contained vector graphic with template stroke/draw-on classes is clearly the best fit.
-- **Three.js** — 3D geometry, product viz, spatial concepts.
-- **D3** — data visualization, charts.
+Compose multiple renderers in one scene via bridge components:
 
-**When a preset IS active**, check the system prompt for `PREFERRED RENDERER`:
-Whiteboard/Chalkboard/Neon/Kraft → canvas2d (organic strokes)
-Blueprint/Clean/Newspaper → motion (precise, professional layouts)
-Data Story → auto (D3 for data; Motion for non-data frames; canvas2d when expressive)
+- Pure JSX for layouts, typography, cards (80% of scenes)
+- `<ThreeJSLayer>` for 3D content
+- `<Canvas2DLayer>` for hand-drawn/procedural effects
+- `<D3Layer>` for data visualization
+- `<SVGLayer>` for vector draw-on
+- `<LottieLayer>` for micro-animations
+
+See `rules/react.md` for full API and `rules/visual-quality.md` for design guidance.
 
 ## Colors
 
-Primary strokes: STROKE_COLOR (set by preset, may be white on dark bg)
-Accent colors: PALETTE[1], PALETTE[2], PALETTE[3]
-Never hardcode hex values.
+When a preset is active: use PALETTE[0-3] and STROKE_COLOR globals.
+When no preset: choose colors that serve the content (see visual-quality.md).
 
-## Everything else below applies regardless of style preset.
+## Everything else below applies to all scenes.
 
 ---
 

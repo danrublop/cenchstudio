@@ -1,0 +1,317 @@
+# React Scene Rules (Default Renderer)
+
+React is the **default renderer** for all scenes. Every scene is a React component
+that can compose multiple rendering layers — HTML/CSS, Three.js, Canvas2D, D3, SVG, Lottie —
+in a single unified component tree.
+
+**Before generating any scene, also read `rules/visual-quality.md`** for typography,
+color, spatial, and motion design guidance.
+
+---
+
+## Output format
+
+Output a JSON object with two fields:
+
+```json
+{
+  "sceneCode": "<JSX code — the full React component>",
+  "styles": "<optional CSS string — no <style> tags>"
+}
+```
+
+The JSX is transpiled in-browser via Babel. No imports needed — all APIs are available as globals.
+
+---
+
+## Available APIs (globals — do NOT import)
+
+### Core hooks & components
+
+| API                                                                    | Purpose                                                       |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------- |
+| `useCurrentFrame()`                                                    | Returns integer frame number (0, 1, 2, ...)                   |
+| `useVideoConfig()`                                                     | Returns `{ fps, width, height, durationInFrames }`            |
+| `interpolate(value, inputRange, outputRange, opts?)`                   | Map values between ranges                                     |
+| `spring({ frame, fps, config?, from?, to? })`                          | Physics-based spring animation                                |
+| `Easing.ease / .easeIn / .easeOut / .easeInOut / .bezier(x1,y1,x2,y2)` | Easing functions for interpolate                              |
+| `<Sequence from={frame} durationInFrames={n}>`                         | Temporal composition — children see local frame starting at 0 |
+| `<AbsoluteFill style={{...}}>`                                         | Full-frame (1920×1080) absolute layer, stacks via z-index     |
+
+### Bridge components (for imperative renderers)
+
+| Component                                                                                                       | Props                         | Use case                                      |
+| --------------------------------------------------------------------------------------------------------------- | ----------------------------- | --------------------------------------------- |
+| `<Canvas2DLayer draw={(ctx, frame, config) => {}} />`                                                           | `width?`, `height?`, `style?` | Hand-drawn strokes, particles, procedural art |
+| `<ThreeJSLayer setup={(THREE, scene, camera, renderer) => {}} update={(scene, camera, frame, config) => {}} />` | `style?`                      | 3D geometry, PBR materials, shadows           |
+| `<D3Layer setup={(d3, el, config) => {}} update={(d3, el, frame, config) => {}} />`                             | `style?`                      | Data visualization, charts                    |
+| `<SVGLayer setup={(svgEl, gsap, tl) => {}} viewBox?>`                                                           | `children?`, `style?`         | Vector draw-on animations                     |
+| `<LottieLayer data={lottieJSON} />`                                                                             | `style?`                      | Micro-animations, icons                       |
+
+### Scene globals (available on `window`)
+
+`PALETTE`, `DURATION`, `FONT`, `STROKE_COLOR`, `WIDTH` (1920), `HEIGHT` (1080), `ROUGHNESS`, `SCENE_ID`
+
+---
+
+## Scene structure pattern
+
+```jsx
+function Scene() {
+  const frame = useCurrentFrame();
+  const { fps, durationInFrames } = useVideoConfig();
+
+  // Camera motion (runs once)
+  React.useEffect(() => {
+    CenchCamera.kenBurns({ duration: DURATION, endScale: 1.04 });
+  }, []);
+
+  return (
+    <AbsoluteFill style={{ background: '#0a0c10' }}>
+      {/* Layer 1: background (lowest z) */}
+      <AbsoluteFill style={{ zIndex: 0 }}>
+        <ThreeJSLayer setup={...} update={...} />
+      </AbsoluteFill>
+
+      {/* Layer 2: content (appears at frame 15) */}
+      <Sequence from={15}>
+        <AbsoluteFill style={{ zIndex: 1, padding: '6% 7%' }}>
+          <Title frame={frame} />
+          <FeatureList frame={frame} />
+        </AbsoluteFill>
+      </Sequence>
+
+      {/* Layer 3: overlay effects (highest z) */}
+      <AbsoluteFill style={{ zIndex: 2, pointerEvents: 'none' }}>
+        <Canvas2DLayer draw={(ctx, f, cfg) => { /* particles */ }} />
+      </AbsoluteFill>
+    </AbsoluteFill>
+  );
+}
+
+// Mount (required at end of every scene)
+const { CenchComposition } = CenchReact;
+const root = ReactDOM.createRoot(document.getElementById('react-root'));
+root.render(
+  <CenchComposition fps={30} width={1920} height={1080}>
+    <Scene />
+  </CenchComposition>
+);
+```
+
+---
+
+## Animation patterns
+
+### Fade + slide entrance
+
+```jsx
+const opacity = interpolate(frame, [0, 20], [0, 1], { extrapolateRight: 'clamp' })
+const y = interpolate(frame, [0, 20], [30, 0], { extrapolateRight: 'clamp' })
+
+;<div style={{ opacity, transform: `translateY(${y}px)` }}>Content</div>
+```
+
+### Staggered list
+
+```jsx
+{
+  items.map((item, i) => {
+    const enterFrame = 20 + i * 6
+    const op = interpolate(frame, [enterFrame, enterFrame + 15], [0, 1], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+    })
+    const x = interpolate(frame, [enterFrame, enterFrame + 18], [-40, 0], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+    })
+    return (
+      <div key={i} style={{ opacity: op, transform: `translateX(${x}px)` }}>
+        {item}
+      </div>
+    )
+  })
+}
+```
+
+### Spring entrance
+
+```jsx
+const scale = spring({ frame, fps, config: { damping: 12, stiffness: 100 } })
+
+;<div style={{ transform: `scale(${scale})` }}>Content</div>
+```
+
+### Temporal composition with Sequence
+
+```jsx
+{
+  /* Title appears immediately */
+}
+;<Sequence from={0} durationInFrames={durationInFrames}>
+  <Title />
+</Sequence>
+
+{
+  /* Chart fades in after 2 seconds */
+}
+;<Sequence from={fps * 2}>
+  <ChartPanel />
+</Sequence>
+
+{
+  /* CTA appears in last 3 seconds */
+}
+;<Sequence from={durationInFrames - fps * 3}>
+  <CallToAction />
+</Sequence>
+```
+
+---
+
+## Camera motion (use on every scene)
+
+Call CenchCamera from a `useEffect` in the root component. Camera moves register
+on `window.__tl` automatically and are seekable.
+
+```jsx
+React.useEffect(() => {
+  // Pick ONE per scene:
+  CenchCamera.kenBurns({ duration: DURATION, endScale: 1.04 })
+  // OR
+  CenchCamera.presetCinematicPush({ at: 0, duration: DURATION * 0.6 })
+  // OR
+  CenchCamera.dollyIn({ targetSelector: '#hero-text', at: 1, duration: 3 })
+}, [])
+```
+
+| Move                  | Effect                          | Best for                     |
+| --------------------- | ------------------------------- | ---------------------------- |
+| `kenBurns`            | Slow zoom, almost imperceptible | Default for any static scene |
+| `presetCinematicPush` | Slow forward push               | Reveals, title cards         |
+| `presetReveal`        | Zoom out from center            | Opening scenes               |
+| `dollyIn`             | Zoom into specific element      | Emphasis moments             |
+| `dollyOut`            | Pull back to reveal full scene  | After detail view            |
+| `presetEmphasis`      | Zoom in, hold, zoom out         | Highlighting key content     |
+| `pan`                 | Slide across scene              | Wide layouts, panoramas      |
+
+**Every scene should have camera motion.** A static camera feels lifeless.
+kenBurns with endScale 1.03-1.06 is the safe default — barely perceptible
+but gives the scene breath and cinematic quality.
+
+---
+
+## When to use each layer type
+
+### Pure JSX (no bridge) — THE DEFAULT
+
+Use for: typography, layouts, cards, step lists, feature grids, callouts, quotes,
+diagrams-as-HTML, anything that's fundamentally text + boxes.
+
+This is what you should use 80% of the time. React + CSS + interpolate/spring
+handles most explainer video content natively.
+
+### ThreeJSLayer — 3D content
+
+Use for: rotating objects, product visualization, spatial concepts, particle fields,
+anything that needs real 3D with lighting and materials.
+
+```jsx
+<ThreeJSLayer
+  setup={(THREE, scene, camera, renderer) => {
+    // Called once — create geometry, materials, lights
+    renderer.shadowMap.enabled = true
+    camera.position.set(0, 4, 10)
+    // Add meshes, lights, environment...
+  }}
+  update={(scene, camera, frame, config) => {
+    // Called every frame — animate
+    const t = frame / config.fps
+    mesh.rotation.y = t * 0.5
+  }}
+/>
+```
+
+### Canvas2DLayer — hand-drawn / procedural
+
+Use for: particles, hand-drawn strokes, procedural textures, organic effects,
+chalk/marker aesthetics, noise overlays.
+
+```jsx
+<Canvas2DLayer
+  draw={(ctx, frame, config) => {
+    const t = frame / config.fps
+    // Draw particles, strokes, etc.
+  }}
+/>
+```
+
+### D3Layer — data visualization
+
+Use for: bar charts, line charts, scatter plots, custom data visualizations.
+For standard charts, consider using the `generate_chart` MCP tool instead.
+
+```jsx
+<D3Layer
+  setup={(d3, el, config) => {
+    // Called once — create axes, scales, initial elements
+    const svg = d3.select(el).append('svg').attr('viewBox', '0 0 800 400').attr('width', '100%').attr('height', '100%')
+    // ...
+  }}
+  update={(d3, el, frame, config) => {
+    // Called every frame — animate data transitions
+  }}
+/>
+```
+
+### SVGLayer — vector draw-on
+
+Use for: self-drawing paths, calligraphic strokes, technical diagrams with stroke animations.
+
+### LottieLayer — micro-animations
+
+Use for: animated icons, looping decorative elements, pre-made Lottie JSON.
+
+---
+
+## Combining layers — the power of React
+
+The whole point of React scenes is combining layers. A typical explainer might use:
+
+1. **Background**: `<Canvas2DLayer>` with subtle particle drift OR `<ThreeJSLayer>` with slow 3D orbit
+2. **Content**: Pure JSX — title, bullet points, diagrams as HTML
+3. **Data**: `<D3Layer>` for an inset chart
+4. **Accents**: `<Canvas2DLayer>` for floating particles or grain texture
+
+Stack them with `<AbsoluteFill>` + `zIndex`. Time them with `<Sequence>`.
+
+---
+
+## What NOT to do
+
+- Do NOT use `requestAnimationFrame` — frame updates come from `useCurrentFrame()`
+- Do NOT use `useState` for animation state — derive everything from `frame`
+- Do NOT use `setTimeout`, `setInterval`
+- Do NOT use `Math.random()` — use frame-based deterministic values
+- Do NOT import React/ReactDOM — they're already loaded as globals
+- Do NOT add `<script>` tags in the JSX — all code goes in the component
+- Do NOT forget the CenchComposition mount at the end
+- Do NOT use bounce/elastic easing — use `Easing.bezier(0.16, 1, 0.3, 1)` for entrances
+
+---
+
+## Output format reminder
+
+Output raw JSON only. No markdown fences. No explanation:
+
+```json
+{
+  "sceneCode": "function Scene() { ... }\nconst root = ReactDOM.createRoot(...);\nroot.render(<CenchComposition ...><Scene /></CenchComposition>);",
+  "styles": ".custom-class { ... }"
+}
+```
+
+The `styles` field is injected into a `<style>` block in `<head>`. Use it for
+`@keyframes`, complex selectors, or CSS that's cleaner outside inline styles.
+Most scenes don't need it — inline styles via `style={{}}` are preferred.

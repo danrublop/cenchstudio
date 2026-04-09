@@ -59,20 +59,23 @@ Assign IDs: lowercase hyphenated slugs + timestamp suffix, e.g. `water-cycle-01-
 
 ---
 
-## Scene type selection guide
+## Scene type: always `react`
 
-| Type       | Best for                                                                                                                              |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `motion`   | **Default for most explainers** — HTML/CSS layouts, typography, cards, steps, UI-like scenes, DOM diagrams; GSAP timeline             |
-| `canvas2d` | Expressive hand-drawn strokes, particles, procedural/generative art, physics, fluid motion — **not** the default for clean explainers |
-| `svg`      | **Rare** — single-scene vector draw-on only when Motion is a poor fit                                                                 |
-| `d3`       | Charts, graphs, data visualization with real datasets                                                                                 |
-| `three`    | 3D geometry, product visualization, spatial concepts, abstract 3D                                                                     |
-| `lottie`   | Iconographic animations, micro-animations, looping decorative elements                                                                |
-| `zdog`     | Pseudo-3D illustrations, isometric views, flat-shaded 3D objects, stylized graphics                                                   |
-| `physics`  | Live, seekable physics simulations with equations (projectile, orbital, pendulum, oscillator, etc.)                                   |
+Every scene uses `"type": "react"`. The React component composes whatever renderers
+the content needs via bridge components:
 
-For multi-scene videos: vary types deliberately when **content** demands (data vs 3D vs hand-drawn vs layout). Do **not** pick SVG just for variety — Motion can carry most explainer beats.
+| Content type                          | How to build it                                                          |
+| ------------------------------------- | ------------------------------------------------------------------------ |
+| **Typography, layouts, cards, steps** | Pure JSX + `interpolate()` + `spring()` — no bridge needed               |
+| **3D geometry, product viz**          | `<ThreeJSLayer>` bridge inside the React component                       |
+| **Hand-drawn, particles, procedural** | `<Canvas2DLayer>` bridge                                                 |
+| **Charts, data viz**                  | `<D3Layer>` bridge, or `generate_chart` MCP tool for standard charts     |
+| **Vector draw-on**                    | `<SVGLayer>` bridge                                                      |
+| **Micro-animations, icons**           | `<LottieLayer>` bridge                                                   |
+| **Combined**                          | Stack multiple bridges in one scene with `<AbsoluteFill>` + `<Sequence>` |
+
+The power of React: one scene can have a Three.js background, HTML text overlay,
+Canvas2D particles, and a D3 chart — all composed in JSX.
 
 Physics parameter hygiene (to prevent framing/position glitches):
 
@@ -106,16 +109,20 @@ Scenes should never feel rushed. The viewer needs time to read everything AND un
 
 ## Generating code
 
-Read the rule file for the chosen scene type before generating:
+**React is the default renderer.** Read these rule files before generating:
 
-**D3 charts: use `generate_chart` tool** for standard chart types (bar, line, pie, donut, scatter, area, gauge, number, stacked/grouped bar). It calls the pre-built CenchCharts library — zero LLM tokens, consistent animation. Set `animated: true` for cinematic reveals. See `d3.md` for all chart types, data formats, and config options. Only use `add_layer` with `d3` for exotic/custom visualizations.
+1. `.claude/skills/cench/rules/react.md` — **PRIMARY**: scene structure, bridge components, animation API
+2. `.claude/skills/cench/rules/visual-quality.md` — typography, color, spatial, motion quality bar
+3. `.claude/skills/cench/rules/core.md` — universal rules (duration, safe area, globals)
 
-- SVG: `.claude/skills/cench/rules/svg.md`
-- Canvas2D: `.claude/skills/cench/rules/canvas2d.md`
-- D3: `.claude/skills/cench/rules/d3.md`
-- Three.js: `.claude/skills/cench/rules/three.md`
-- Motion/Anime.js: `.claude/skills/cench/rules/motion.md`
-- All types: `.claude/skills/cench/rules/core.md` (universal rules)
+Every scene is a React component. Use bridge components (`ThreeJSLayer`, `Canvas2DLayer`,
+`D3Layer`, `SVGLayer`, `LottieLayer`) to compose multiple renderers in one scene.
+
+**D3 charts: use `generate_chart` MCP tool** for standard chart types (bar, line, pie, etc.).
+Zero LLM tokens, consistent animation. Only write custom D3 via `<D3Layer>` bridge for exotic visualizations.
+
+Legacy rule files (motion.md, canvas2d.md, three.md, svg.md, d3.md, zdog.md) still exist
+for reference on renderer-specific APIs when using bridge components.
 
 Apply every rule in the relevant files. The rules are not suggestions.
 
@@ -141,17 +148,17 @@ Content-Type: application/json
 {
   "projectId": "<projectId from GET /api/projects>",
   "name": "Scene Name",
-  "type": "svg",
+  "type": "react",
   "prompt": "what this scene shows",
-  "generatedCode": "<the generated SVG/JS/JSON code>",
+  "generatedCode": "{\"sceneCode\": \"<JSX code>\", \"styles\": \"<optional CSS>\"}",
   "duration": 8,
-  "bgColor": "#181818"
+  "bgColor": "#0a0c10"
 }
 ```
 
-For SVG scenes, use `"svgContent"` instead of `"generatedCode"`.
+The `generatedCode` field for React scenes is a JSON string containing `sceneCode` (JSX) and optional `styles` (CSS).
 
-For **structured D3** (CenchCharts, same as `generate_chart` / Layers editor), POST with `"type": "d3"` and **`chartLayers`**: an array of `{ id, name, chartType, data, config, layout, timing }`. The API compiles `sceneCode` + `d3Data` automatically. Optional `generatedCode: ""`. See `scripts/create-structured-d3-demo.ts`.
+For **structured D3 charts** via MCP, use the `generate_chart` tool instead of writing D3 code.
 
 The API creates the scene in Postgres, generates the HTML, and writes it to disk.
 The app will show the scene in the timeline automatically.
