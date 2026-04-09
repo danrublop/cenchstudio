@@ -2538,8 +2538,8 @@ function generateReactHTML(scene: Scene, style: ResolvedStyle, audioSettings?: A
 
   <!-- playback-controller-slot -->
 
-  <!-- Three.js r128 UMD (exposes window.THREE) + D3 v7 (available for bridge components) -->
-  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"><\/script>
+  <!-- Three.js r183 UMD (exposes window.THREE) + D3 v7 (available for bridge components) -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.183.0/build/three.min.js"><\/script>
   <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"><\/script>
   <!-- CenchReact SDK: Remotion-style hooks + bridge components -->
   <script src="/sdk/cench-react/cench-react-runtime.js"><\/script>

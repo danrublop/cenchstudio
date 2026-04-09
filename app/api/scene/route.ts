@@ -9,7 +9,7 @@ import { normalizeTransition } from '@/lib/transitions'
 import { readProjectSceneBlob, writeProjectSceneBlob } from '@/lib/db/project-scene-storage'
 import { readProjectScenesFromTables, writeProjectScenesToTables } from '@/lib/db/project-scene-table'
 import { assertProjectAccess } from '@/lib/auth-helpers'
-import { LIMITS, VALID_SCENE_TYPES } from '@/lib/api/constants'
+import { LIMITS, VALID_SCENE_TYPES, SCENE_ID_RE } from '@/lib/api/constants'
 
 // ── GET /api/scene ────────────────────────────────────────────────────────────
 // ?projectId=X           → list scenes from the project's JSONB blob
@@ -81,7 +81,7 @@ export async function POST(req: NextRequest) {
     // Mode 2: Legacy — raw HTML write
     if (body.id && body.html && !body.projectId) {
       const { id, html } = body
-      if (!/^[a-zA-Z0-9\-]+$/.test(id)) {
+      if (!SCENE_ID_RE.test(id)) {
         return NextResponse.json({ error: 'invalid id' }, { status: 400 })
       }
       if (typeof html !== 'string') {
@@ -106,7 +106,7 @@ export async function POST(req: NextRequest) {
     const {
       projectId,
       name: rawName = 'Untitled Scene',
-      type = 'svg',
+      type = 'react',
       prompt = '',
       generatedCode,
       svgContent,
@@ -137,8 +137,14 @@ export async function POST(req: NextRequest) {
     }
 
     // Validate duration
-    if (typeof duration === 'number' && (duration < LIMITS.MIN_SCENE_DURATION || duration > LIMITS.MAX_SCENE_DURATION)) {
-      return NextResponse.json({ error: `Duration must be between ${LIMITS.MIN_SCENE_DURATION} and ${LIMITS.MAX_SCENE_DURATION} seconds` }, { status: 400 })
+    if (
+      typeof duration === 'number' &&
+      (duration < LIMITS.MIN_SCENE_DURATION || duration > LIMITS.MAX_SCENE_DURATION)
+    ) {
+      return NextResponse.json(
+        { error: `Duration must be between ${LIMITS.MIN_SCENE_DURATION} and ${LIMITS.MAX_SCENE_DURATION} seconds` },
+        { status: 400 },
+      )
     }
 
     const access = await assertProjectAccess(projectId)
@@ -163,7 +169,7 @@ export async function POST(req: NextRequest) {
     let parsedSceneCode = ''
     let parsedSceneHTML = ''
     let parsedSceneStyles = typeof bodySceneStyles === 'string' ? bodySceneStyles : ''
-    const structuredTypes = ['motion', 'd3', 'zdog', 'physics']
+    const structuredTypes = ['motion', 'd3', 'zdog', 'physics', 'react']
     if (structuredTypes.includes(type) && code) {
       try {
         const parsed = JSON.parse(code)
@@ -195,6 +201,7 @@ export async function POST(req: NextRequest) {
       canvasCode: type === 'canvas2d' ? code : '',
       canvasBackgroundCode: '',
       sceneCode: ['d3', 'three', 'motion', 'zdog', 'physics', '3d_world'].includes(type) ? parsedSceneCode : '',
+      reactCode: type === 'react' ? parsedSceneCode || code : '',
       sceneHTML: parsedSceneHTML,
       sceneStyles: parsedSceneStyles,
       lottieSource: type === 'lottie' ? code : '',
@@ -350,8 +357,15 @@ export async function PATCH(req: NextRequest) {
     }
 
     // Validate duration if provided
-    if (duration !== undefined && typeof duration === 'number' && (duration < LIMITS.MIN_SCENE_DURATION || duration > LIMITS.MAX_SCENE_DURATION)) {
-      return NextResponse.json({ error: `Duration must be between ${LIMITS.MIN_SCENE_DURATION} and ${LIMITS.MAX_SCENE_DURATION} seconds` }, { status: 400 })
+    if (
+      duration !== undefined &&
+      typeof duration === 'number' &&
+      (duration < LIMITS.MIN_SCENE_DURATION || duration > LIMITS.MAX_SCENE_DURATION)
+    ) {
+      return NextResponse.json(
+        { error: `Duration must be between ${LIMITS.MIN_SCENE_DURATION} and ${LIMITS.MAX_SCENE_DURATION} seconds` },
+        { status: 400 },
+      )
     }
 
     // Cap name length if provided
@@ -428,6 +442,19 @@ export async function PATCH(req: NextRequest) {
         } catch {
           scene.sceneCode = code
         }
+      } else if (sceneType === 'react') {
+        // React scenes: code may be JSON {sceneCode, styles} or raw JSX
+        try {
+          const parsed = JSON.parse(code)
+          if (parsed && typeof parsed === 'object' && parsed.sceneCode) {
+            scene.reactCode = parsed.sceneCode ?? ''
+            if (parsed.styles) scene.sceneStyles = parsed.styles
+          } else {
+            scene.reactCode = code
+          }
+        } catch {
+          scene.reactCode = code
+        }
       } else if (sceneType === 'lottie') {
         scene.lottieSource = code
       }
@@ -458,10 +485,7 @@ export async function PATCH(req: NextRequest) {
       )
     } catch (genErr) {
       console.error(`[PATCH /api/scene] generateSceneHTML failed:`, genErr)
-      return NextResponse.json(
-        { error: `HTML generation failed: ${(genErr as Error).message}` },
-        { status: 500 },
-      )
+      return NextResponse.json({ error: `HTML generation failed: ${(genErr as Error).message}` }, { status: 500 })
     }
 
     // Save to DB first with optimistic locking (source of truth)

@@ -89,15 +89,13 @@ function Scene() {
   );
 }
 
-// Mount (required at end of every scene)
-const { CenchComposition } = CenchReact;
-const root = ReactDOM.createRoot(document.getElementById('react-root'));
-root.render(
-  <CenchComposition fps={30} width={1920} height={1080}>
-    <Scene />
-  </CenchComposition>
-);
+// Export the component — the template bootstrapper handles mounting
+export default Scene;
 ```
+
+**CRITICAL: Do NOT mount the component yourself.** No `ReactDOM.createRoot()` or `.render()`.
+The template bootstrapper automatically wraps your exported component in `<CenchComposition>`
+and mounts it. Just `export default Scene;` at the end.
 
 ---
 
@@ -307,7 +305,7 @@ Output raw JSON only. No markdown fences. No explanation:
 
 ```json
 {
-  "sceneCode": "function Scene() { ... }\nconst root = ReactDOM.createRoot(...);\nroot.render(<CenchComposition ...><Scene /></CenchComposition>);",
+  "sceneCode": "function Scene() { ... }\nexport default Scene;",
   "styles": ".custom-class { ... }"
 }
 ```
