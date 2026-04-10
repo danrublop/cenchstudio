@@ -23,6 +23,7 @@ export function renderTooltip(el: TooltipElement): HTMLElement {
     left: ${el.x}%; top: ${el.y}%;
     width: ${el.width}%; height: ${el.height}%;
     box-sizing: border-box;
+    pointer-events: auto;
   `
 
   // Trigger area

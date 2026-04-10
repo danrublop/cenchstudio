@@ -12,7 +12,7 @@ import { renderForm } from './ui/form'
 export type InteractionCallback = (
   type: string,
   elementId: string,
-  payload: { sceneId?: string; correct?: boolean; selectedId?: string; variables?: Record<string, string> }
+  payload: { sceneId?: string; correct?: boolean; selectedId?: string; variables?: Record<string, string> },
 ) => void
 
 export class InteractionOverlay {
@@ -26,20 +26,16 @@ export class InteractionOverlay {
   private currentTime: number = 0
   private paused: boolean = false
 
-  constructor(
-    parent: HTMLElement,
-    variables: VariableStore,
-    brandColor: string,
-    onFired: InteractionCallback
-  ) {
+  constructor(parent: HTMLElement, variables: VariableStore, brandColor: string, onFired: InteractionCallback) {
     this.variables = variables
     this.brandColor = brandColor
     this.onFired = onFired
 
     this.overlay = document.createElement('div')
     this.overlay.style.cssText = `
-      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-      pointer-events: none; z-index: 20;
+      position: absolute; top: 0; left: 0; width: 1920px; height: 1080px;
+      pointer-events: none; z-index: 100;
+      isolation: isolate;
     `
     parent.appendChild(this.overlay)
   }
@@ -80,6 +76,7 @@ export class InteractionOverlay {
         node = renderHotspot(el, () => {
           this.onFired('hotspot', el.id, { sceneId: el.jumpsToSceneId ?? undefined })
         })
+        node.style.pointerEvents = 'auto'
         break
 
       case 'choice':
@@ -126,6 +123,14 @@ export class InteractionOverlay {
       ;(node as any).__interactionData = el
     }
     return node
+  }
+
+  hide(): void {
+    this.overlay.style.visibility = 'hidden'
+  }
+
+  show(): void {
+    this.overlay.style.visibility = 'visible'
   }
 
   clear(): void {

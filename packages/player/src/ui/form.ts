@@ -5,7 +5,7 @@ export function renderForm(
   el: FormInputElement,
   variables: VariableStore,
   brandColor: string,
-  onSubmit: (jumpsToSceneId: string | null) => void
+  onSubmit: (jumpsToSceneId: string | null) => void,
 ): HTMLElement {
   const wrapper = document.createElement('div')
   wrapper.style.cssText = `
@@ -17,6 +17,7 @@ export function renderForm(
     background: rgba(0,0,0,0.9);
     border-radius: 12px;
     box-sizing: border-box;
+    pointer-events: auto;
   `
 
   const fieldValues: Record<string, string> = {}
@@ -39,9 +40,15 @@ export function renderForm(
         border: 1px solid #444; background: #1a1a1a;
         color: white; font-size: 13px; outline: none;
       `
-      input.addEventListener('focus', () => { input.style.borderColor = brandColor })
-      input.addEventListener('blur', () => { input.style.borderColor = '#444' })
-      input.addEventListener('input', () => { fieldValues[field.id] = input.value })
+      input.addEventListener('focus', () => {
+        input.style.borderColor = brandColor
+      })
+      input.addEventListener('blur', () => {
+        input.style.borderColor = '#444'
+      })
+      input.addEventListener('input', () => {
+        fieldValues[field.id] = input.value
+      })
       group.appendChild(input)
     } else if (field.type === 'select') {
       const select = document.createElement('select')
@@ -56,10 +63,13 @@ export function renderForm(
       select.appendChild(emptyOpt)
       field.options.forEach((opt) => {
         const o = document.createElement('option')
-        o.value = opt; o.textContent = opt
+        o.value = opt
+        o.textContent = opt
         select.appendChild(o)
       })
-      select.addEventListener('change', () => { fieldValues[field.id] = select.value })
+      select.addEventListener('change', () => {
+        fieldValues[field.id] = select.value
+      })
       group.appendChild(select)
     } else if (field.type === 'radio') {
       field.options.forEach((opt) => {
@@ -70,7 +80,9 @@ export function renderForm(
         radio.name = field.id
         radio.value = opt
         radio.style.accentColor = brandColor
-        radio.addEventListener('change', () => { if (radio.checked) fieldValues[field.id] = opt })
+        radio.addEventListener('change', () => {
+          if (radio.checked) fieldValues[field.id] = opt
+        })
         row.appendChild(radio)
         row.appendChild(document.createTextNode(opt))
         group.appendChild(row)

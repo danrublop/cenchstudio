@@ -16,7 +16,7 @@ export class Runtime {
   private rafId: number = 0
   private startTime: number = 0
   private sceneStartTime: number = 0
-  private listeners: Map<PlayerEvent, Set<Function>> = new Map()
+  private listeners: Map<PlayerEvent, Set<(...args: unknown[]) => void>> = new Map()
   private onTimeUpdate: (current: number, total: number) => void
   private onPlayingChange: (playing: boolean) => void
 
@@ -26,7 +26,7 @@ export class Runtime {
     renderer: Renderer,
     overlay: InteractionOverlay,
     onTimeUpdate: (current: number, total: number) => void,
-    onPlayingChange: (playing: boolean) => void
+    onPlayingChange: (playing: boolean) => void,
   ) {
     this.project = project
     this.variables = variables
@@ -53,8 +53,10 @@ export class Runtime {
     this.currentSceneId = sceneId
     this.emit('sceneChange', { sceneId })
 
+    this.overlay.hide()
     await this.renderer.loadScene(scene)
     this.overlay.loadScene(scene)
+    this.overlay.show()
     this.sceneStartTime = 0
   }
 
@@ -117,9 +119,7 @@ export class Runtime {
 
     // Look up edge by interactionId
     const edge = this.project.sceneGraph.edges.find(
-      (e) =>
-        e.fromSceneId === this.currentSceneId &&
-        e.condition.interactionId === elementId
+      (e) => e.fromSceneId === this.currentSceneId && e.condition.interactionId === elementId,
     )
     if (edge) {
       this.goToScene(edge.toSceneId)
@@ -150,12 +150,12 @@ export class Runtime {
     this.listeners.get(event)?.forEach((h) => h(data))
   }
 
-  on(event: PlayerEvent, handler: Function): void {
+  on(event: PlayerEvent, handler: (...args: unknown[]) => void): void {
     if (!this.listeners.has(event)) this.listeners.set(event, new Set())
     this.listeners.get(event)!.add(handler)
   }
 
-  off(event: PlayerEvent, handler: Function): void {
+  off(event: PlayerEvent, handler: (...args: unknown[]) => void): void {
     this.listeners.get(event)?.delete(handler)
   }
 

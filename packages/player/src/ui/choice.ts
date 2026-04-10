@@ -3,7 +3,7 @@ import type { ChoiceElement } from '../types'
 export function renderChoice(
   el: ChoiceElement,
   brandColor: string,
-  onChoice: (optionId: string, jumpsToSceneId: string) => void
+  onChoice: (optionId: string, jumpsToSceneId: string) => void,
 ): HTMLElement {
   const wrapper = document.createElement('div')
   wrapper.style.cssText = `
@@ -15,6 +15,7 @@ export function renderChoice(
     background: rgba(0,0,0,0.85);
     border-radius: 12px;
     box-sizing: border-box;
+    pointer-events: auto;
   `
 
   if (el.question) {
@@ -52,8 +53,12 @@ export function renderChoice(
       transition: background 0.15s, transform 0.1s;
       ${isGrid ? 'flex: 1 1 40%;' : 'flex: 1;'}
     `
-    btn.addEventListener('mouseenter', () => { btn.style.background = `${color}55` })
-    btn.addEventListener('mouseleave', () => { btn.style.background = `${color}22` })
+    btn.addEventListener('mouseenter', () => {
+      btn.style.background = `${color}55`
+    })
+    btn.addEventListener('mouseleave', () => {
+      btn.style.background = `${color}22`
+    })
     btn.addEventListener('click', () => onChoice(opt.id, opt.jumpsToSceneId))
     buttonsDiv.appendChild(btn)
   })

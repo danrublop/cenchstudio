@@ -2,13 +2,13 @@ import type { HotspotElement } from '../types'
 
 export function renderHotspot(el: HotspotElement, onClick: () => void): HTMLElement {
   const div = document.createElement('div')
-  const borderRadius =
-    el.shape === 'circle' ? '50%' : el.shape === 'pill' ? '999px' : '8px'
+  const borderRadius = el.shape === 'circle' ? '50%' : el.shape === 'pill' ? '999px' : '8px'
   div.style.cssText = `
     position: absolute;
     left: ${el.x}%; top: ${el.y}%;
     width: ${el.width}%; height: ${el.height}%;
     cursor: pointer;
+    pointer-events: auto;
     border-radius: ${borderRadius};
     background: ${el.color}33;
     border: 2px solid ${el.color};
