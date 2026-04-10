@@ -159,7 +159,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pr
           sceneGraph !== undefined ? sceneGraph : readProjectSceneBlob(existing.description).sceneGraph
         await writeProjectScenesToTables(projectId, normalizedScenes as any, graphToWrite as any)
       } catch (e) {
-        console.error('[projects PATCH] table sync failed:', e)
+        console.error('[projects PATCH] table sync failed — blob is source of truth:', e)
+        // Don't rethrow — blob write already succeeded, client will load from blob on next GET
+        // The GET's lazy backfill will repopulate tables from blob next time
       }
     }
 

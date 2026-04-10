@@ -310,7 +310,7 @@ export default function Editor({ showWelcome, onEnterEditor }: { showWelcome?: b
     loadInitialProject()
   }, [])
 
-  // Auto-save to DB every 30 seconds when there are changes
+  // Auto-save to DB every 30 seconds — only when the store is dirty
   // Also attempt recovery if initial load failed — retry loading periodically
   useEffect(() => {
     if (!mounted) return
@@ -328,7 +328,8 @@ export default function Editor({ showWelcome, onEnterEditor }: { showWelcome?: b
         } catch { /* still offline */ }
         return
       }
-      saveProjectToDb()
+      if (!state._isDirty) return
+      await saveProjectToDb()
     }, 30000)
     return () => clearInterval(interval)
   }, [mounted, saveProjectToDb])

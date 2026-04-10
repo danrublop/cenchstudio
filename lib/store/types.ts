@@ -407,7 +407,7 @@ export interface VideoStore {
   setSceneMusic: (sceneId: string, music: MusicTrack | null) => void
 
   // Project management
-  projectList: { id: string; name: string; updatedAt: string }[]
+  projectList: { id: string; name: string; updatedAt: string; thumbnailUrl?: string; outputMode?: string; createdAt?: string }[]
   isLoadingProjects: boolean
   fetchProjectList: () => Promise<void>
   createNewProject: (name?: string) => Promise<void>
@@ -418,6 +418,8 @@ export interface VideoStore {
   deleteProjectFromDb: (projectId: string) => Promise<void>
   _dbLoadComplete: boolean
   _setDbLoadComplete: (v: boolean) => void
+  _isDirty: boolean
+  _lastDbLoadTimestamp: number
 
   // Font favorites (user preference, persisted to localStorage)
   favoriteFonts: string[]

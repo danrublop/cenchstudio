@@ -24,6 +24,7 @@ export function createSceneActions(set: Set, get: Get) {
         return {
           scenes: newScenes,
           selectedSceneId: scene.id,
+          _isDirty: true,
           project: {
             ...state.project,
             sceneGraph: { ...state.project.sceneGraph, nodes: newNodes },
@@ -37,6 +38,7 @@ export function createSceneActions(set: Set, get: Get) {
       get()._pushUndoDebounced()
       set((state) => ({
         scenes: state.scenes.map((s) => (s.id === id ? { ...s, ...updates } : s)),
+        _isDirty: true,
       }))
     },
 
@@ -58,6 +60,7 @@ export function createSceneActions(set: Set, get: Get) {
         return {
           scenes: newScenes,
           selectedSceneId: newSelectedId,
+          _isDirty: true,
           project: { ...state.project, sceneGraph: newGraph },
         }
       })
@@ -85,6 +88,7 @@ export function createSceneActions(set: Set, get: Get) {
         return {
           scenes,
           selectedSceneId: newScene.id,
+          _isDirty: true,
           project: { ...state.project, sceneGraph: { ...state.project.sceneGraph, nodes: newNodes } },
         }
       })
@@ -97,7 +101,7 @@ export function createSceneActions(set: Set, get: Get) {
         const scenes = [...state.scenes]
         const [removed] = scenes.splice(fromIndex, 1)
         scenes.splice(toIndex, 0, removed)
-        return { scenes }
+        return { scenes, _isDirty: true }
       })
     },
 
@@ -111,7 +115,7 @@ export function createSceneActions(set: Set, get: Get) {
         } else if (direction === 'down' && idx < scenes.length - 1) {
           ;[scenes[idx], scenes[idx + 1]] = [scenes[idx + 1], scenes[idx]]
         }
-        return { scenes }
+        return { scenes, _isDirty: true }
       })
     },
 

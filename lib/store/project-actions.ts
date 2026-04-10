@@ -19,18 +19,21 @@ export function createProjectActions(set: Set, get: Get) {
     setOutputMode: (mode: 'mp4' | 'interactive') => {
       set((state) => ({
         project: { ...state.project, outputMode: mode, updatedAt: new Date().toISOString() },
+        _isDirty: true,
       }))
     },
 
     updateProject: (updates: Partial<Project>) => {
       set((state) => ({
         project: { ...state.project, ...updates, updatedAt: new Date().toISOString() },
+        _isDirty: true,
       }))
     },
 
     updateSceneGraph: (graph: SceneGraph) => {
       set((state) => ({
         project: { ...state.project, sceneGraph: graph, updatedAt: new Date().toISOString() },
+        _isDirty: true,
       }))
     },
 
@@ -86,7 +89,11 @@ export function createProjectActions(set: Set, get: Get) {
         const res = await fetch('/api/projects')
         if (res.ok) {
           const list = await res.json()
-          set({ projectList: list.map((p: any) => ({ id: p.id, name: p.name, updatedAt: p.updatedAt })) })
+          set({ projectList: list.map((p: any) => ({
+            id: p.id, name: p.name, updatedAt: p.updatedAt,
+            thumbnailUrl: p.thumbnailUrl, outputMode: p.outputMode,
+            createdAt: p.createdAt,
+          })) })
         }
       } catch (e) {
         console.error('Failed to fetch projects:', e)
@@ -240,10 +247,12 @@ export function createProjectActions(set: Set, get: Get) {
           storyboardProposed: loadedProposed,
           pausedAgentRun: loadedPausedRun,
           runCheckpoint: loadedRunCheckpoint,
+          _lastDbLoadTimestamp: Date.now(),
         })
-        for (const scene of newScenes) {
+        for (let i = 0; i < newScenes.length; i++) {
+          const scene = newScenes[i]
           if (sceneHasRenderableContent(scene)) {
-            get().saveSceneHTML(scene.id, true)
+            setTimeout(() => get().saveSceneHTML(scene.id, true), i * 50)
           }
         }
       } catch (e) {
@@ -266,10 +275,11 @@ export function createProjectActions(set: Set, get: Get) {
       })
 
       // Save current project before switching — auto-save may not have fired yet.
-      // Only save if scenes actually have content (avoids overwriting DB with empty
-      // localStorage-hydrated scenes on initial page load).
-      const hasContent = get().scenes.some(sceneHasRenderableContent)
-      if (hasContent) {
+      // Only save if DB was loaded and scenes are still fresh (not stripped localStorage).
+      const { scenes: currentScenes, _dbLoadComplete: dbLoaded, _lastDbLoadTimestamp: dbLoadTs } = get()
+      const dbDataIsStillFresh = dbLoaded && (Date.now() - (dbLoadTs ?? 0)) < 300_000 // 5 min
+      const hasContent = currentScenes.some(sceneHasRenderableContent)
+      if (hasContent && dbDataIsStillFresh) {
         await get().saveProjectToDb()
       }
       try {
@@ -318,10 +328,15 @@ export function createProjectActions(set: Set, get: Get) {
         )
         const loadedPausedRun = data.pausedAgentRun ?? null
         const loadedRunCheckpoint = data.runCheckpoint ?? null
+        const loadedSceneIds = new Set((data.scenes || []).map((s: any) => s.id))
+        const persistedSelectedId = get().selectedSceneId
+        const selectedSceneId = (persistedSelectedId && loadedSceneIds.has(persistedSelectedId))
+          ? persistedSelectedId
+          : data.scenes?.[0]?.id ?? null
         set({
           project: loadedProject,
           scenes: (data.scenes || []).map(normalizeScene),
-          selectedSceneId: data.scenes?.[0]?.id || null,
+          selectedSceneId,
           // Clear conversation state immediately so old project's messages don't bleed through
           conversations: [],
           chatMessages: [],
@@ -344,10 +359,12 @@ export function createProjectActions(set: Set, get: Get) {
 
         // Regenerate scene HTML to inject updated element-registry code
         // Only for scenes that actually have content (avoid overwriting existing HTML with empty output)
+        // Stagger calls to avoid bursts of parallel write requests
         const loadedScenes = data.scenes || []
-        for (const scene of loadedScenes) {
+        for (let i = 0; i < loadedScenes.length; i++) {
+          const scene = loadedScenes[i]
           if (sceneHasRenderableContent(scene)) {
-            get().saveSceneHTML(scene.id, true)
+            setTimeout(() => get().saveSceneHTML(scene.id, true), i * 50)
           }
         }
 
@@ -356,27 +373,10 @@ export function createProjectActions(set: Set, get: Get) {
         get().loadProjectAssets(projectId)
 
         // Mark DB load complete — auto-save is now safe
-        set({ _dbLoadComplete: true })
+        set({ _dbLoadComplete: true, _lastDbLoadTimestamp: Date.now() })
 
-        // Guard against persist middleware clobbering rich scenes with stripped
-        // localStorage data. If after a short delay the store's scenes lost their
-        // code fields, re-fetch from the server.
-        const richSceneIds = loadedScenes
-          .filter((s: any) => sceneHasRenderableContent(s))
-          .map((s: any) => s.id)
-        if (richSceneIds.length > 0) {
-          setTimeout(() => {
-            const current = get().scenes
-            const clobbered = richSceneIds.some((id: string) => {
-              const s = current.find((cs) => cs.id === id)
-              return s && !sceneHasRenderableContent(s)
-            })
-            if (clobbered) {
-              console.warn('[loadProject] Persist merge clobbered scene code — refreshing from server')
-              get().refreshProjectFromServer()
-            }
-          }, 500)
-        }
+        // The _lastDbLoadTimestamp guard in the persist merge callback now prevents
+        // localStorage from clobbering freshly loaded DB scenes — no setTimeout hack needed.
       } catch (e) {
         console.error('Failed to load project:', e)
       }
@@ -387,138 +387,72 @@ export function createProjectActions(set: Set, get: Get) {
       // Don't save until DB has been loaded — prevents overwriting real data
       // with empty localStorage-hydrated scenes
       if (!_dbLoadComplete) return
-      const localRich = scenes.some(sceneHasRenderableContent)
 
-      let dbProject: any = null
-      try {
-        const check = await fetch(`/api/projects/${project.id}`, { method: 'GET' })
-        if (check.ok) dbProject = await check.json()
-      } catch {
-        /* proceed without snapshot */
-      }
+      const patchBody = JSON.stringify({
+        name: project.name,
+        outputMode: project.outputMode,
+        globalStyle,
+        mp4Settings: project.mp4Settings,
+        interactiveSettings: project.interactiveSettings,
+        apiPermissions: project.apiPermissions,
+        audioSettings: project.audioSettings,
+        audioProviderEnabled,
+        mediaGenEnabled,
+        watermark: project.watermark,
+        scenes,
+        sceneGraph: project.sceneGraph,
+        timeline: project.timeline ?? null,
+      })
 
-      const dbScenes: Scene[] = dbProject?.scenes || []
-      const dbRich = dbScenes.some(sceneHasRenderableContent)
-
-      // Pull server state into the editor when local is clearly behind (stripped persist / wrong tab).
-      const pullFromDb = () => {
-        void get().refreshProjectFromServer()
-      }
-
-      const sameSceneIds =
-        dbProject &&
-        scenes.length === dbScenes.length &&
-        scenes.length > 0 &&
-        scenes.every((s) => dbScenes.some((d) => d.id === s.id))
-
-      // Only skip when local looks like stripped localStorage (same scenes as DB, no code) but DB still has content.
-      if (sameSceneIds && !localRich && dbRich) {
-        console.warn(
-          'saveProjectToDb: skipping save — local has no renderable content but DB does (likely stripped localStorage)',
-        )
-        pullFromDb()
-        return
-      }
-
-      try {
-        if (dbProject) {
-          const dbTime = new Date(dbProject.updatedAt).getTime()
-          const ourTime = new Date(project.updatedAt).getTime()
-          if (dbTime > ourTime) {
-            if (dbRich && !localRich) pullFromDb()
-            return
-          }
-
-          if (!localRich && dbRich && dbScenes.length > scenes.length) {
-            console.warn('saveProjectToDb: skipping — DB has more scenes than local (rehydration/stale client)')
-            pullFromDb()
-            return
-          }
-          if (!localRich && dbRich && dbScenes.length === scenes.length && scenes.length > 0) {
-            const localIds = new Set(scenes.map((s) => s.id))
-            const dbIds = new Set(dbScenes.map((s) => s.id))
-            const sameSet = localIds.size === dbIds.size && [...localIds].every((id) => dbIds.has(id))
-            if (sameSet) {
-              console.warn('saveProjectToDb: skipping — DB has scene content, local is empty (stripped localStorage)')
-              pullFromDb()
-              return
-            }
-          }
-        }
-
-        // PATCH the project with retry on 409 conflict
-        const patchBody = JSON.stringify({
-          name: project.name,
-          outputMode: project.outputMode,
-          globalStyle,
-          mp4Settings: project.mp4Settings,
-          interactiveSettings: project.interactiveSettings,
-          apiPermissions: project.apiPermissions,
-          audioSettings: project.audioSettings,
-          audioProviderEnabled,
-          mediaGenEnabled,
-          watermark: project.watermark,
-          scenes,
-          sceneGraph: project.sceneGraph,
-          timeline: project.timeline ?? null,
+      let res: Response | null = null
+      for (let attempt = 0; attempt < 3; attempt++) {
+        res = await fetch(`/api/projects/${project.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: patchBody,
         })
+        if (res.status === 409 && attempt < 2) {
+          // Version conflict — refresh server timestamp and retry with backoff
+          console.warn(`[saveProjectToDb] 409 conflict on attempt ${attempt + 1}, retrying…`)
+          await new Promise((r) => setTimeout(r, 200 * Math.pow(2, attempt)))
+          try {
+            const refresh = await fetch(`/api/projects/${project.id}`)
+            if (refresh.ok) {
+              const fresh = await refresh.json()
+              if (fresh.updatedAt) set({ project: { ...get().project, updatedAt: fresh.updatedAt } })
+            }
+          } catch { /* proceed with retry anyway */ }
+          continue
+        }
+        break
+      }
 
-        let res: Response | null = null
-        for (let attempt = 0; attempt < 3; attempt++) {
-          res = await fetch(`/api/projects/${project.id}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: patchBody,
-          })
-          if (res.status === 409 && attempt < 2) {
-            // Version conflict — refresh server timestamp and retry with backoff
-            console.warn(`[saveProjectToDb] 409 conflict on attempt ${attempt + 1}, retrying…`)
-            await new Promise((r) => setTimeout(r, 200 * Math.pow(2, attempt)))
-            // Re-read server version so next attempt has correct updatedAt
-            try {
-              const refresh = await fetch(`/api/projects/${project.id}`, { method: 'GET' })
-              if (refresh.ok) {
-                const freshProject = await refresh.json()
-                if (freshProject.updatedAt) {
-                  set({ project: { ...get().project, updatedAt: freshProject.updatedAt } })
-                }
-              }
-            } catch { /* proceed with retry anyway */ }
-            continue
-          }
-          break
+      if (res?.ok) {
+        const saved = await res.json()
+        if (saved.updatedAt) {
+          set({ project: { ...get().project, updatedAt: saved.updatedAt }, _isDirty: false })
         }
-        if (res && res.ok) {
-          // Sync local updatedAt so subsequent auto-saves aren't blocked
-          // by the conflict check (DB timestamp would be newer otherwise)
-          const saved = await res.json()
-          if (saved.updatedAt) {
-            set({ project: { ...get().project, updatedAt: saved.updatedAt } })
-          }
-        } else if (res && res.status === 404) {
-          // Project doesn't exist in DB yet — create it
-          await fetch('/api/projects', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              id: project.id,
-              name: project.name,
-              outputMode: project.outputMode,
-              globalStyle,
-              mp4Settings: project.mp4Settings,
-              interactiveSettings: project.interactiveSettings,
-              apiPermissions: project.apiPermissions,
-              audioSettings: project.audioSettings,
-              audioProviderEnabled,
-              mediaGenEnabled,
-              scenes,
-              sceneGraph: project.sceneGraph,
-              timeline: project.timeline ?? null,
-            }),
-          })
-        }
-      } catch (e) {
-        console.error('Failed to save project:', e)
+      } else if (res?.status === 404) {
+        // Project doesn't exist in DB yet — create it
+        await fetch('/api/projects', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: project.id,
+            name: project.name,
+            outputMode: project.outputMode,
+            globalStyle,
+            mp4Settings: project.mp4Settings,
+            interactiveSettings: project.interactiveSettings,
+            apiPermissions: project.apiPermissions,
+            audioSettings: project.audioSettings,
+            audioProviderEnabled,
+            mediaGenEnabled,
+            scenes,
+            sceneGraph: project.sceneGraph,
+            timeline: project.timeline ?? null,
+          }),
+        })
       }
     },
 
