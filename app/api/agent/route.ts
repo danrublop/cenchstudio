@@ -128,6 +128,45 @@ export async function POST(req: NextRequest) {
     authenticatedUserId = access.user?.id ?? null
   }
 
+  // Server-side authoritative scene read — merge with client scenes to prevent
+  // stripped code fields from corrupting agent context (Fix 4)
+  let serverScenes: Scene[] = []
+  if (body.projectId) {
+    try {
+      const { getFullProject } = await import('@/lib/db/queries/projects')
+      const dbProject = await getFullProject(body.projectId)
+      if (dbProject?.scenes) {
+        serverScenes = dbProject.scenes as unknown as Scene[]
+      }
+    } catch (e) {
+      console.warn(`[Agent API] Could not read server scenes: ${(e as Error).message}`)
+    }
+  }
+
+  // Merge: prefer server's code fields when client's are empty/stripped
+  if (serverScenes.length > 0) {
+    const mergedScenes = body.scenes.map((clientScene: any) => {
+      const serverScene = serverScenes.find((s: any) => s.id === clientScene.id)
+      if (!serverScene) return clientScene
+      return {
+        ...clientScene,
+        canvasCode: clientScene.canvasCode || (serverScene as any).canvasCode || '',
+        sceneCode: clientScene.sceneCode || (serverScene as any).sceneCode || '',
+        sceneHTML: clientScene.sceneHTML || (serverScene as any).sceneHTML || '',
+        svgContent: clientScene.svgContent || (serverScene as any).svgContent || '',
+        canvasBackgroundCode: clientScene.canvasBackgroundCode || (serverScene as any).canvasBackgroundCode || '',
+        lottieSource: clientScene.lottieSource || (serverScene as any).lottieSource || '',
+      }
+    })
+    // Add any server scenes not present in client
+    for (const serverScene of serverScenes) {
+      if (!mergedScenes.some((s: any) => s.id === (serverScene as any).id)) {
+        mergedScenes.push(serverScene as any)
+      }
+    }
+    body.scenes = mergedScenes
+  }
+
   // ── Mock mode: return canned SSE stream without hitting any LLM API ──────
   if (process.env.MOCK_AGENT === 'true') {
     return createMockAgentResponse(body)
@@ -386,7 +425,12 @@ export async function POST(req: NextRequest) {
       // Placeholder strings like "[123 chars]" must NOT be persisted to DB.
       const isPlaceholder = (v: string | undefined | null) => !!v && /^\[\d+ chars\]$/.test(v)
       const cleanScenesForPersistence = result.updatedScenes.map((s: any) => {
-        if (isPlaceholder(s.svgContent) || isPlaceholder(s.canvasCode) || isPlaceholder(s.sceneCode) || isPlaceholder(s.lottieSource)) {
+        if (
+          isPlaceholder(s.svgContent) ||
+          isPlaceholder(s.canvasCode) ||
+          isPlaceholder(s.sceneCode) ||
+          isPlaceholder(s.lottieSource)
+        ) {
           // Find the original scene from the request to get the original (stripped) state.
           // Since we don't have the real content server-side, skip writing content fields for this scene
           // by setting them to empty — the DB already has the real content.
@@ -404,22 +448,36 @@ export async function POST(req: NextRequest) {
       })
 
       if (body.projectId) {
-        try {
-          const ok = await persistScenesFromAgentRun(body.projectId, {
-            scenes: cleanScenesForPersistence,
-            sceneGraph: result.updatedSceneGraph,
-            globalStyle: result.updatedGlobalStyle,
-            storyboard: result.updatedStoryboard,
-            zdogLibrary: result.updatedZdogLibrary,
-            zdogStudioLibrary: result.updatedZdogStudioLibrary,
-          })
-          if (!ok) {
-            logger.warn('api', 'persistScenesFromAgentRun did not apply (conflict or missing project)', {
-              projectId: body.projectId,
+        let persistOk = false
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            persistOk = await persistScenesFromAgentRun(body.projectId, {
+              scenes: cleanScenesForPersistence,
+              sceneGraph: result.updatedSceneGraph,
+              globalStyle: result.updatedGlobalStyle,
+              storyboard: result.updatedStoryboard,
+              zdogLibrary: result.updatedZdogLibrary,
+              zdogStudioLibrary: result.updatedZdogStudioLibrary,
             })
+            if (persistOk) break
+            // No-op return (conflict) — wait and retry
+            if (attempt < 2) await new Promise((r) => setTimeout(r, 300 * Math.pow(2, attempt)))
+          } catch (e) {
+            logger.error('api', `persistScenesFromAgentRun threw (attempt ${attempt + 1}): ${(e as Error).message}`)
+            if (attempt < 2) await new Promise((r) => setTimeout(r, 300 * Math.pow(2, attempt)))
           }
-        } catch (e) {
-          console.error('[Agent API] Failed to persist scenes after agent run:', e)
+        }
+        if (!persistOk) {
+          logger.error(
+            'api',
+            'persistScenesFromAgentRun failed after 3 attempts — agent work may not be persisted to DB',
+          )
+          sendEvent({
+            type: 'warning',
+            message: 'Your changes were applied but could not be saved to the database. Please save manually.',
+          } as any)
+        } else {
+          logger.log('api', 'Agent run persisted to DB successfully')
         }
       }
       // Clear checkpoint after successful completion (if we were resuming)

@@ -11,8 +11,6 @@ import type { Scene, GlobalStyle } from '../types'
 import { logSpend } from '../db'
 import type { AgentLogger } from './logger'
 
-const client = new Anthropic()
-
 const VALID_AGENT_TYPES = new Set<AgentType>(['director', 'scene-maker', 'editor', 'dop'])
 
 /**
@@ -73,6 +71,20 @@ export async function routeMessage(
       method: 'heuristic',
       reason: 'non-anthropic-router',
     })
+    return heuristicResult.agent
+  }
+
+  // Check if Anthropic API key is available before attempting LLM routing
+  if (!process.env.ANTHROPIC_API_KEY) {
+    logger?.log('route', 'No Anthropic API key — using heuristic routing')
+    return heuristicResult.agent
+  }
+
+  let client: Anthropic
+  try {
+    client = new Anthropic()
+  } catch (e) {
+    logger?.log('route', `Anthropic client init failed: ${(e as Error).message} — using heuristic`)
     return heuristicResult.agent
   }
 
@@ -178,16 +190,16 @@ function heuristicRoute(message: string, ctx?: RouteContext): HeuristicResult {
   // ── High-confidence: Director ──
   // Multi-word phrases that unambiguously signal video/project creation
   if (
-    /\b(create a video|make a video|build a (video|presentation)|new project|plan the (video|scenes|project))\b/i.test(lower) ||
+    /\b(create a video|make a video|build a (video|presentation)|new project|plan the (video|scenes|project))\b/i.test(
+      lower,
+    ) ||
     lower.includes('storyboard')
   ) {
     return { agent: 'director', confidence: 'high' }
   }
 
   // Educational prompts starting with clear intent verbs
-  if (
-    /^(explain|teach me|make a? ?(lesson|tutorial|walkthrough|overview) (about|on|for))\b/i.test(lower)
-  ) {
+  if (/^(explain|teach me|make a? ?(lesson|tutorial|walkthrough|overview) (about|on|for))\b/i.test(lower)) {
     return { agent: 'director', confidence: 'high' }
   }
 
@@ -197,10 +209,7 @@ function heuristicRoute(message: string, ctx?: RouteContext): HeuristicResult {
   }
 
   // "Continue" / "keep going" after a storyboard was approved → director
-  if (
-    ctx?.hasStoryboard &&
-    /\b(continue|keep going|build it|go ahead|proceed)\b/i.test(lower)
-  ) {
+  if (ctx?.hasStoryboard && /\b(continue|keep going|build it|go ahead|proceed)\b/i.test(lower)) {
     return { agent: 'director', confidence: 'high' }
   }
 
@@ -217,9 +226,7 @@ function heuristicRoute(message: string, ctx?: RouteContext): HeuristicResult {
   }
 
   // ── High-confidence: Scene-Maker ──
-  if (
-    /\b(add a (new )?scene|new scene|generate ?(a )?scene|create ?(a )?scene)\b/i.test(lower)
-  ) {
+  if (/\b(add a (new )?scene|new scene|generate ?(a )?scene|create ?(a )?scene)\b/i.test(lower)) {
     return { agent: 'scene-maker', confidence: 'high' }
   }
 
@@ -227,7 +234,9 @@ function heuristicRoute(message: string, ctx?: RouteContext): HeuristicResult {
 
   // Topic-like descriptions without explicit action verbs → probably director, but let LLM decide
   if (
-    /\b(explain|teach|lesson|tutorial|walkthrough|overview|introduction to|history of|how .+ works?|compare .+ (and|vs|versus))\b/i.test(lower) ||
+    /\b(explain|teach|lesson|tutorial|walkthrough|overview|introduction to|history of|how .+ works?|compare .+ (and|vs|versus))\b/i.test(
+      lower,
+    ) ||
     (lower.split(/,\s*| and /).length >= 3 && lower.length > 50)
   ) {
     return { agent: 'director', confidence: 'low' }
@@ -244,10 +253,7 @@ function heuristicRoute(message: string, ctx?: RouteContext): HeuristicResult {
   }
 
   // Vague improvement requests on existing projects → editor
-  if (
-    hasManyScenes &&
-    /\b(make it better|improve|polish|fix|tweak|adjust)\b/i.test(lower)
-  ) {
+  if (hasManyScenes && /\b(make it better|improve|polish|fix|tweak|adjust)\b/i.test(lower)) {
     return { agent: 'editor', confidence: 'low' }
   }
 

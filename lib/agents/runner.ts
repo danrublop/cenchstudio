@@ -621,6 +621,7 @@ export async function runAgent(opts: RunnerOptions): Promise<{
       sceneGraph: sceneGraph ? JSON.parse(JSON.stringify(sceneGraph)) : { nodes: [], edges: [], startSceneId: '' },
       modelId,
       modelTier: opts.modelTier ?? 'auto',
+      snapshots: [], // per-run snapshot store (Fix 9)
       ...(opts.initialStoryboard
         ? { storyboard: JSON.parse(JSON.stringify(opts.initialStoryboard)) as Storyboard }
         : {}),
@@ -739,7 +740,10 @@ export async function runAgent(opts: RunnerOptions): Promise<{
     const provider = getModelProvider(modelId, opts.modelConfigs)
     if (provider === 'local') {
       const localConfig = opts.modelConfigs?.find((m) => m.id === modelId || m.modelId === modelId)
-      logger.log('run', `Local mode: provider=${provider} model=${modelId} endpoint=${localConfig?.endpoint ?? 'http://localhost:11434'} localModelName=${localConfig?.localModelName ?? modelId}`)
+      logger.log(
+        'run',
+        `Local mode: provider=${provider} model=${modelId} endpoint=${localConfig?.endpoint ?? 'http://localhost:11434'} localModelName=${localConfig?.localModelName ?? modelId}`,
+      )
     } else {
       logger.log('run', `Provider: ${provider} model=${modelId}`)
     }
@@ -874,14 +878,59 @@ export async function runAgent(opts: RunnerOptions): Promise<{
       totalApiCalls++
 
       // Cost guardrail: abort if accumulated LLM cost exceeds the per-run cap
-      const runningCost = calculateCost(modelId, totalInputTokens, totalOutputTokens, totalCacheCreationTokens, totalCacheReadTokens)
+      const runningCost = calculateCost(
+        modelId,
+        totalInputTokens,
+        totalOutputTokens,
+        totalCacheCreationTokens,
+        totalCacheReadTokens,
+      )
       if (runningCost > rc.maxRunCostUsd) {
         logger.warn('cost', `Run cost $${runningCost.toFixed(3)} exceeds cap $${rc.maxRunCostUsd} — stopping`, {
           iteration,
           inputTokens: totalInputTokens,
           outputTokens: totalOutputTokens,
         })
-        const msg = `\n\n⚠ Cost limit reached ($${runningCost.toFixed(2)} / $${rc.maxRunCostUsd.toFixed(2)} cap). Stopping to prevent overspend.`
+        // Save checkpoint so user can resume
+        if (opts.projectId && world.storyboard && runProgress.scenesCreated.length > 0) {
+          try {
+            const checkpoint: import('./types').RunCheckpoint = {
+              runId: logger.runId,
+              agentType,
+              modelId,
+              storyboard: world.storyboard,
+              completedSceneIds: runProgress.scenesCreated,
+              remainingSceneIndexes: world.storyboard.scenes
+                .map((_, i) => i)
+                .filter(
+                  (i) =>
+                    !world.scenes.some((s) => s.name.toLowerCase() === world.storyboard!.scenes[i].name.toLowerCase()),
+                ),
+              progress: { ...runProgress },
+              worldSnapshot: {
+                scenes: JSON.parse(JSON.stringify(world.scenes)),
+                globalStyle: JSON.parse(JSON.stringify(world.globalStyle)),
+                sceneGraph: JSON.parse(JSON.stringify(world.sceneGraph)),
+              },
+              originalMessage: messageContentToText(message),
+              partialUsage: {
+                inputTokens: totalInputTokens,
+                outputTokens: totalOutputTokens,
+                apiCalls: totalApiCalls,
+                costUsd: runningCost,
+                totalDurationMs: Date.now() - runStartTime,
+              },
+              createdAt: new Date().toISOString(),
+              reason: 'cost_cap' as const,
+            }
+            await persistRunCheckpoint(opts.projectId, checkpoint)
+            emit({ type: 'checkpoint_saved', reason: 'cost_cap', scenesBuilt: runProgress.scenesCreated.length })
+          } catch (e) {
+            logger.error('cost', `Failed to save cost-cap checkpoint: ${(e as Error).message}`)
+          }
+        }
+        const remaining = (world.storyboard?.scenes.length ?? 0) - runProgress.scenesCreated.length
+        const msg = `\n\n⚠ Cost limit reached ($${runningCost.toFixed(2)}). Built ${runProgress.scenesCreated.length} of ${world.storyboard?.scenes.length ?? '?'} scenes.${remaining > 0 ? ` Say "continue" to resume the remaining ${remaining} scenes.` : ''}`
         fullText += msg
         emit({ type: 'token', token: msg })
         break
@@ -893,7 +942,52 @@ export async function runAgent(opts: RunnerOptions): Promise<{
           iteration,
           toolCalls: allToolCalls.length,
         })
-        const msg = `\n\n⚠ Tool call limit reached (${allToolCalls.length} calls). Stopping to prevent runaway execution.`
+        // Save checkpoint so user can resume
+        if (opts.projectId && world.storyboard && runProgress.scenesCreated.length > 0) {
+          try {
+            const checkpoint: import('./types').RunCheckpoint = {
+              runId: logger.runId,
+              agentType,
+              modelId,
+              storyboard: world.storyboard,
+              completedSceneIds: runProgress.scenesCreated,
+              remainingSceneIndexes: world.storyboard.scenes
+                .map((_, i) => i)
+                .filter(
+                  (i) =>
+                    !world.scenes.some((s) => s.name.toLowerCase() === world.storyboard!.scenes[i].name.toLowerCase()),
+                ),
+              progress: { ...runProgress },
+              worldSnapshot: {
+                scenes: JSON.parse(JSON.stringify(world.scenes)),
+                globalStyle: JSON.parse(JSON.stringify(world.globalStyle)),
+                sceneGraph: JSON.parse(JSON.stringify(world.sceneGraph)),
+              },
+              originalMessage: messageContentToText(message),
+              partialUsage: {
+                inputTokens: totalInputTokens,
+                outputTokens: totalOutputTokens,
+                apiCalls: totalApiCalls,
+                costUsd: calculateCost(
+                  modelId,
+                  totalInputTokens,
+                  totalOutputTokens,
+                  totalCacheCreationTokens,
+                  totalCacheReadTokens,
+                ),
+                totalDurationMs: Date.now() - runStartTime,
+              },
+              createdAt: new Date().toISOString(),
+              reason: 'tool_limit' as const,
+            }
+            await persistRunCheckpoint(opts.projectId, checkpoint)
+            emit({ type: 'checkpoint_saved', reason: 'tool_limit', scenesBuilt: runProgress.scenesCreated.length })
+          } catch (e) {
+            logger.error('tools', `Failed to save tool-limit checkpoint: ${(e as Error).message}`)
+          }
+        }
+        const remaining = (world.storyboard?.scenes.length ?? 0) - runProgress.scenesCreated.length
+        const msg = `\n\n⚠ Tool call limit reached (${allToolCalls.length} calls). Built ${runProgress.scenesCreated.length} of ${world.storyboard?.scenes.length ?? '?'} scenes.${remaining > 0 ? ` Say "continue" to resume the remaining ${remaining} scenes.` : ''}`
         fullText += msg
         emit({ type: 'token', token: msg })
         break
@@ -905,7 +999,13 @@ export async function runAgent(opts: RunnerOptions): Promise<{
         runProgress: {
           toolCallsUsed: allToolCalls.length,
           toolCallsMax: rc.maxToolCalls,
-          costUsd: calculateCost(modelId, totalInputTokens, totalOutputTokens, totalCacheCreationTokens, totalCacheReadTokens),
+          costUsd: calculateCost(
+            modelId,
+            totalInputTokens,
+            totalOutputTokens,
+            totalCacheCreationTokens,
+            totalCacheReadTokens,
+          ),
           costMax: rc.maxRunCostUsd,
           iteration,
           iterationMax: effectiveMaxIterations,
@@ -1143,7 +1243,11 @@ export async function runAgent(opts: RunnerOptions): Promise<{
 
             // Compact messages to prevent unbounded growth during long builds
             const before = messages.length
-            const compacted = compactInFlightMessages(messages, { maxTokens: rc.compactionMaxTokens, preserveRecent: rc.compactionPreserveRecent })
+            const compacted = compactInFlightMessages(messages, {
+              maxTokens: rc.compactionMaxTokens,
+              preserveRecent: Math.max(rc.compactionPreserveRecent, world.scenes.length * 2),
+              protectedIds: world.scenes.map((s) => s.id),
+            })
             if (compacted.length < before) {
               messages.length = 0
               messages.push(...compacted)
@@ -1153,13 +1257,19 @@ export async function runAgent(opts: RunnerOptions): Promise<{
         }
 
         // Orchestrator handoff (Gemini path)
+        const geminiScenesBuiltByDirector = allToolCalls.filter(
+          (tc) => tc.toolName === 'add_layer' || tc.toolName === 'create_scene',
+        ).length
+        const geminiStylingComplete = allToolCalls.some(
+          (tc) => tc.toolName === 'set_global_style' || tc.toolName === 'set_all_transitions',
+        )
         if (
           agentType === 'director' &&
           !opts.isSubAgent &&
           world.storyboard &&
-          world.storyboard.scenes.length >= 3 &&
-          allToolCalls.some((tc) => tc.toolName === 'set_global_style' || tc.toolName === 'set_all_transitions') &&
-          !allToolCalls.some((tc) => tc.toolName === 'add_layer')
+          world.storyboard.scenes.length >= 2 &&
+          geminiStylingComplete &&
+          geminiScenesBuiltByDirector <= 4
         ) {
           logger.log('orchestrator', `Handing off to orchestrator (Gemini): ${world.storyboard.scenes.length} scenes`)
           const { runOrchestrated } = await import('./orchestrator')
@@ -1170,7 +1280,13 @@ export async function runAgent(opts: RunnerOptions): Promise<{
             emit,
             logger,
             toolBudgetRemaining: rc.maxToolCalls - allToolCalls.length,
-            parentCostUsd: calculateCost(modelId, totalInputTokens, totalOutputTokens, totalCacheCreationTokens, totalCacheReadTokens),
+            parentCostUsd: calculateCost(
+              modelId,
+              totalInputTokens,
+              totalOutputTokens,
+              totalCacheCreationTokens,
+              totalCacheReadTokens,
+            ),
             maxRunCostUsd: rc.maxRunCostUsd,
           })
           for (const sr of subResults) {
@@ -1267,7 +1383,8 @@ export async function runAgent(opts: RunnerOptions): Promise<{
         }
 
         // Local models may not support tools — skip tool parameter if supportsTools is false
-        const localConfig = provider === 'local' ? opts.modelConfigs?.find((m) => m.id === modelId || m.modelId === modelId) : null
+        const localConfig =
+          provider === 'local' ? opts.modelConfigs?.find((m) => m.id === modelId || m.modelId === modelId) : null
         const supportsTools = localConfig ? localConfig.supportsTools !== false : true
 
         let stream: any
@@ -1284,9 +1401,10 @@ export async function runAgent(opts: RunnerOptions): Promise<{
         } catch (connectErr) {
           const errMsg = (connectErr as Error).message ?? 'Unknown error'
           logger.error('iteration', `Failed to connect to ${provider === 'local' ? 'Ollama' : 'OpenAI'}: ${errMsg}`)
-          const userMsg = provider === 'local'
-            ? `Failed to connect to Ollama at ${(oaiClient as any)?.baseURL ?? 'localhost:11434'}. Make sure Ollama is running (\`ollama serve\`) and the model is pulled.`
-            : `Failed to connect to OpenAI: ${errMsg}`
+          const userMsg =
+            provider === 'local'
+              ? `Failed to connect to Ollama at ${(oaiClient as any)?.baseURL ?? 'localhost:11434'}. Make sure Ollama is running (\`ollama serve\`) and the model is pulled.`
+              : `Failed to connect to OpenAI: ${errMsg}`
           fullText += `\n\n${userMsg}`
           emit({ type: 'token', token: `\n\n${userMsg}` })
           break
@@ -1336,9 +1454,13 @@ export async function runAgent(opts: RunnerOptions): Promise<{
         const toolUseBlocks = Object.values(toolCallAccum)
 
         // Execute tools
-        logger.log('iteration', `${provider === 'local' ? 'Local' : 'OpenAI'}: ${toolUseBlocks.length} tool calls to execute`, {
-          toolCallCount: toolUseBlocks.length,
-        })
+        logger.log(
+          'iteration',
+          `${provider === 'local' ? 'Local' : 'OpenAI'}: ${toolUseBlocks.length} tool calls to execute`,
+          {
+            toolCallCount: toolUseBlocks.length,
+          },
+        )
         const toolResultMsgs: OpenAI.ChatCompletionToolMessageParam[] = []
         let stopBecausePermission = false
         let stopBecauseInvalidToolArgs = false
@@ -1483,7 +1605,11 @@ export async function runAgent(opts: RunnerOptions): Promise<{
 
             // Compact messages to prevent unbounded growth during long builds
             const before = messages.length
-            const compacted = compactInFlightMessages(messages, { maxTokens: rc.compactionMaxTokens, preserveRecent: rc.compactionPreserveRecent })
+            const compacted = compactInFlightMessages(messages, {
+              maxTokens: rc.compactionMaxTokens,
+              preserveRecent: Math.max(rc.compactionPreserveRecent, world.scenes.length * 2),
+              protectedIds: world.scenes.map((s) => s.id),
+            })
             if (compacted.length < before) {
               messages.length = 0
               messages.push(...compacted)
@@ -1493,15 +1619,24 @@ export async function runAgent(opts: RunnerOptions): Promise<{
         }
 
         // Orchestrator handoff (OpenAI path)
+        const openaiScenesBuiltByDirector = allToolCalls.filter(
+          (tc) => tc.toolName === 'add_layer' || tc.toolName === 'create_scene',
+        ).length
+        const openaiStylingComplete = allToolCalls.some(
+          (tc) => tc.toolName === 'set_global_style' || tc.toolName === 'set_all_transitions',
+        )
         if (
           agentType === 'director' &&
           !opts.isSubAgent &&
           world.storyboard &&
-          world.storyboard.scenes.length >= 3 &&
-          allToolCalls.some((tc) => tc.toolName === 'set_global_style' || tc.toolName === 'set_all_transitions') &&
-          !allToolCalls.some((tc) => tc.toolName === 'add_layer')
+          world.storyboard.scenes.length >= 2 &&
+          openaiStylingComplete &&
+          openaiScenesBuiltByDirector <= 4
         ) {
-          logger.log('orchestrator', `Handing off to orchestrator (${provider}): ${world.storyboard.scenes.length} scenes`)
+          logger.log(
+            'orchestrator',
+            `Handing off to orchestrator (${provider}): ${world.storyboard.scenes.length} scenes`,
+          )
           const { runOrchestrated } = await import('./orchestrator')
           const subResults = await runOrchestrated({
             storyboard: world.storyboard,
@@ -1510,7 +1645,13 @@ export async function runAgent(opts: RunnerOptions): Promise<{
             emit,
             logger,
             toolBudgetRemaining: rc.maxToolCalls - allToolCalls.length,
-            parentCostUsd: calculateCost(modelId, totalInputTokens, totalOutputTokens, totalCacheCreationTokens, totalCacheReadTokens),
+            parentCostUsd: calculateCost(
+              modelId,
+              totalInputTokens,
+              totalOutputTokens,
+              totalCacheCreationTokens,
+              totalCacheReadTokens,
+            ),
             maxRunCostUsd: rc.maxRunCostUsd,
           })
           for (const sr of subResults) {
@@ -1588,8 +1729,19 @@ export async function runAgent(opts: RunnerOptions): Promise<{
                 await fs.mkdir(scenesDir, { recursive: true })
                 await fs.writeFile(path.join(scenesDir, `${focusedScene.id}.html`), html, 'utf-8')
 
-                emit({ type: 'preview_update', sceneId: focusedScene.id, changes: [{ type: 'scene_updated', sceneId: focusedScene.id, description: 'Generated scene code (local)' }] })
-                emit({ type: 'state_change', changes: [{ type: 'scene_updated', sceneId: focusedScene.id, description: 'Generated scene code (local)' }] })
+                emit({
+                  type: 'preview_update',
+                  sceneId: focusedScene.id,
+                  changes: [
+                    { type: 'scene_updated', sceneId: focusedScene.id, description: 'Generated scene code (local)' },
+                  ],
+                })
+                emit({
+                  type: 'state_change',
+                  changes: [
+                    { type: 'scene_updated', sceneId: focusedScene.id, description: 'Generated scene code (local)' },
+                  ],
+                })
 
                 const doneMsg = `_Scene generated successfully._`
                 fullText += doneMsg
@@ -1770,7 +1922,11 @@ export async function runAgent(opts: RunnerOptions): Promise<{
           console.error('[Agent] finalMessage() failed:', err)
           // Abort the stream to release the underlying HTTP connection
           // instead of leaving it in a partially-consumed state.
-          try { stream.abort() } catch { /* best-effort cleanup */ }
+          try {
+            stream.abort()
+          } catch {
+            /* best-effort cleanup */
+          }
           finalMsg = {
             id: '',
             type: 'message',
@@ -2002,11 +2158,21 @@ export async function runAgent(opts: RunnerOptions): Promise<{
 
         // Post-tool cost check: catch single-tool overspend that the pre-iteration
         // check at the top of the loop can't see (it only fires before the next iteration).
-        const postToolCost = calculateCost(modelId, totalInputTokens, totalOutputTokens, totalCacheCreationTokens, totalCacheReadTokens)
+        const postToolCost = calculateCost(
+          modelId,
+          totalInputTokens,
+          totalOutputTokens,
+          totalCacheCreationTokens,
+          totalCacheReadTokens,
+        )
         if (postToolCost > rc.maxRunCostUsd) {
-          logger.warn('cost', `Post-tool cost $${postToolCost.toFixed(3)} exceeds cap — stopping after this iteration`, {
-            iteration,
-          })
+          logger.warn(
+            'cost',
+            `Post-tool cost $${postToolCost.toFixed(3)} exceeds cap — stopping after this iteration`,
+            {
+              iteration,
+            },
+          )
           const costMsg = `\n\n⚠ Cost limit reached ($${postToolCost.toFixed(2)} / $${rc.maxRunCostUsd.toFixed(2)} cap). Stopping to prevent overspend.`
           fullText += costMsg
           emit({ type: 'token', token: costMsg })
@@ -2054,7 +2220,11 @@ export async function runAgent(opts: RunnerOptions): Promise<{
 
             // Compact messages to prevent unbounded growth during long builds
             const before = messages.length
-            const compacted = compactInFlightMessages(messages, { maxTokens: rc.compactionMaxTokens, preserveRecent: rc.compactionPreserveRecent })
+            const compacted = compactInFlightMessages(messages, {
+              maxTokens: rc.compactionMaxTokens,
+              preserveRecent: Math.max(rc.compactionPreserveRecent, world.scenes.length * 2),
+              protectedIds: world.scenes.map((s) => s.id),
+            })
             if (compacted.length < before) {
               messages.length = 0
               messages.push(...compacted)
@@ -2066,15 +2236,19 @@ export async function runAgent(opts: RunnerOptions): Promise<{
         // ── Orchestrator handoff ──────────────────────────────────────────────
         // After the Director has set up the storyboard and style, delegate
         // per-scene building to focused SceneMaker sub-agents.
+        const anthropicScenesBuiltByDirector = allToolCalls.filter(
+          (tc) => tc.toolName === 'add_layer' || tc.toolName === 'create_scene',
+        ).length
+        const anthropicStylingComplete = allToolCalls.some(
+          (tc) => tc.toolName === 'set_global_style' || tc.toolName === 'set_all_transitions',
+        )
         if (
           agentType === 'director' &&
           !opts.isSubAgent &&
           world.storyboard &&
-          world.storyboard.scenes.length >= 3 &&
-          // Only hand off once style tools have been called (PLAN+STYLE complete)
-          allToolCalls.some((tc) => tc.toolName === 'set_global_style' || tc.toolName === 'set_all_transitions') &&
-          // Don't hand off if we've already created scenes (Director is in BUILD phase already)
-          !allToolCalls.some((tc) => tc.toolName === 'add_layer')
+          world.storyboard.scenes.length >= 2 &&
+          anthropicStylingComplete &&
+          anthropicScenesBuiltByDirector <= 4
         ) {
           logger.log('orchestrator', `Handing off to orchestrator: ${world.storyboard.scenes.length} scenes to build`)
 
@@ -2086,7 +2260,13 @@ export async function runAgent(opts: RunnerOptions): Promise<{
             emit,
             logger,
             toolBudgetRemaining: rc.maxToolCalls - allToolCalls.length,
-            parentCostUsd: calculateCost(modelId, totalInputTokens, totalOutputTokens, totalCacheCreationTokens, totalCacheReadTokens),
+            parentCostUsd: calculateCost(
+              modelId,
+              totalInputTokens,
+              totalOutputTokens,
+              totalCacheCreationTokens,
+              totalCacheReadTokens,
+            ),
             maxRunCostUsd: rc.maxRunCostUsd,
           })
 
@@ -2125,6 +2305,61 @@ export async function runAgent(opts: RunnerOptions): Promise<{
           break
         }
       } // end Anthropic path
+    }
+
+    // Checkpoint on iteration limit — save progress if the while loop exhausted all iterations
+    if (
+      iteration >= effectiveMaxIterations &&
+      opts.projectId &&
+      world.storyboard &&
+      runProgress.scenesCreated.length > 0
+    ) {
+      try {
+        const checkpoint: import('./types').RunCheckpoint = {
+          runId: logger.runId,
+          agentType,
+          modelId,
+          storyboard: world.storyboard,
+          completedSceneIds: runProgress.scenesCreated,
+          remainingSceneIndexes: world.storyboard.scenes
+            .map((_, i) => i)
+            .filter(
+              (i) => !world.scenes.some((s) => s.name.toLowerCase() === world.storyboard!.scenes[i].name.toLowerCase()),
+            ),
+          progress: { ...runProgress },
+          worldSnapshot: {
+            scenes: JSON.parse(JSON.stringify(world.scenes)),
+            globalStyle: JSON.parse(JSON.stringify(world.globalStyle)),
+            sceneGraph: JSON.parse(JSON.stringify(world.sceneGraph)),
+          },
+          originalMessage: messageContentToText(message),
+          partialUsage: {
+            inputTokens: totalInputTokens,
+            outputTokens: totalOutputTokens,
+            apiCalls: totalApiCalls,
+            costUsd: calculateCost(
+              modelId,
+              totalInputTokens,
+              totalOutputTokens,
+              totalCacheCreationTokens,
+              totalCacheReadTokens,
+            ),
+            totalDurationMs: Date.now() - runStartTime,
+          },
+          createdAt: new Date().toISOString(),
+          reason: 'iteration_limit' as const,
+        }
+        await persistRunCheckpoint(opts.projectId, checkpoint)
+        emit({ type: 'checkpoint_saved', reason: 'iteration_limit', scenesBuilt: runProgress.scenesCreated.length })
+        const remaining = world.storyboard.scenes.length - runProgress.scenesCreated.length
+        if (remaining > 0) {
+          const msg = `\n\n⚠ Iteration limit reached (${iteration} iterations). Built ${runProgress.scenesCreated.length} of ${world.storyboard.scenes.length} scenes. Say "continue" to resume the remaining ${remaining} scenes.`
+          fullText += msg
+          emit({ type: 'token', token: msg })
+        }
+      } catch (e) {
+        logger.error('iteration', `Failed to save iteration-limit checkpoint: ${(e as Error).message}`)
+      }
     }
 
     // ── 6. Calculate usage and cost ──────────────────────────────────────────
@@ -2273,7 +2508,15 @@ export async function runAgent(opts: RunnerOptions): Promise<{
           remainingSceneIndexes: storyboard.scenes
             .map((_, i) => i)
             .filter((i) => !opts.scenes.some((s) => s.name.toLowerCase() === storyboard.scenes[i].name.toLowerCase())),
-          progress: { scenesCreated: opts.scenes.map((s) => s.id), toolCallsTotal: allToolCalls.length, iterationsUsed: 0, phase: 'unknown', storyboardScenesPlanned: storyboard.scenes.length, errors: [], scenesWithNarration: [] },
+          progress: {
+            scenesCreated: opts.scenes.map((s) => s.id),
+            toolCallsTotal: allToolCalls.length,
+            iterationsUsed: 0,
+            phase: 'unknown',
+            storyboardScenesPlanned: storyboard.scenes.length,
+            errors: [],
+            scenesWithNarration: [],
+          },
           worldSnapshot: {
             scenes: JSON.parse(JSON.stringify(opts.scenes)),
             globalStyle: JSON.parse(JSON.stringify(opts.globalStyle)),

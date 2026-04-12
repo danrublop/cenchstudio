@@ -46,19 +46,21 @@ import { createPhysicsToolHandler, PHYSICS_TOOL_NAMES } from './tool-handlers/ph
 const snapshots: StateSnapshot[] = []
 const MAX_SNAPSHOTS = 50
 
-export function createSnapshot(scenes: Scene[], globalStyle: GlobalStyle, description: string): StateSnapshot {
+export function createSnapshot(world: WorldStateMutable, description: string): StateSnapshot {
+  if (!world.snapshots) world.snapshots = []
   const snapshot: StateSnapshot = {
     id: uuidv4(),
     timestamp: Date.now(),
     description,
     // Deep clone
-    scenes: JSON.parse(JSON.stringify(scenes)),
-    globalStyle: JSON.parse(JSON.stringify(globalStyle)),
+    scenes: JSON.parse(JSON.stringify(world.scenes)),
+    globalStyle: JSON.parse(JSON.stringify(world.globalStyle)),
   }
+  world.snapshots.push(snapshot)
+  if (world.snapshots.length > 20) world.snapshots.shift() // per-run cap
+  // Also keep module-level fallback in sync for legacy call sites
   snapshots.push(snapshot)
-  if (snapshots.length > MAX_SNAPSHOTS) {
-    snapshots.shift()
-  }
+  if (snapshots.length > MAX_SNAPSHOTS) snapshots.shift()
   return snapshot
 }
 
@@ -66,8 +68,9 @@ export function getSnapshots(): StateSnapshot[] {
   return [...snapshots]
 }
 
-export function getLastSnapshot(): StateSnapshot | null {
-  return snapshots.length > 0 ? snapshots[snapshots.length - 1] : null
+export function getLastSnapshot(world?: WorldStateMutable): StateSnapshot | null {
+  const arr = world?.snapshots?.length ? world.snapshots : snapshots
+  return arr.length > 0 ? arr[arr.length - 1] : null
 }
 
 /** Restore world state from a snapshot. Used for rollback when a tool throws.
@@ -88,7 +91,11 @@ const GENERATION_TOOL_TIMEOUT_MS = 120_000 // 120s for LLM-backed generation too
 
 // ── Generation tools that benefit from auto-validation ───────────────────────
 const GENERATION_TOOL_SET = new Set([
-  'add_layer', 'regenerate_layer', 'edit_layer', 'generate_chart', 'generate_physics_scene',
+  'add_layer',
+  'regenerate_layer',
+  'edit_layer',
+  'generate_chart',
+  'generate_physics_scene',
   'create_world_scene',
 ])
 
@@ -122,6 +129,8 @@ export interface WorldStateMutable {
   outputMode: 'mp4' | 'interactive'
   sceneGraph: SceneGraph
   activeTools?: string[]
+  /** Per-run snapshot store for undo/recovery (isolates concurrent runs) */
+  snapshots?: StateSnapshot[]
   apiPermissions?: APIPermissions
   audioProviderEnabled?: Record<string, boolean>
   mediaGenEnabled?: Record<string, boolean>
@@ -1272,7 +1281,7 @@ export async function executeTool(
   const finalArgs = preResult.modifiedArgs ?? args
 
   // Snapshot before every execution for undo/recovery
-  const preSnapshot = createSnapshot(world.scenes, world.globalStyle, `before:${toolName}`)
+  const preSnapshot = createSnapshot(world, `before:${toolName}`)
 
   const timeoutMs = GENERATION_TOOL_SET.has(toolName) ? GENERATION_TOOL_TIMEOUT_MS : TOOL_TIMEOUT_MS
   const startMs = Date.now()
@@ -1310,7 +1319,10 @@ export async function executeTool(
             hint: 'Fix these issues with patch_layer_code or regenerate_layer, then call verify_scene.',
           },
         }
-        logger?.warn('auto_validate', `${toolName} succeeded but scene has issues`, { sceneId: result.affectedSceneId, warnings })
+        logger?.warn('auto_validate', `${toolName} succeeded but scene has issues`, {
+          sceneId: result.affectedSceneId,
+          warnings,
+        })
       }
     }
   }

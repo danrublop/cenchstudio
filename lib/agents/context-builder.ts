@@ -117,12 +117,14 @@ export function resolveModel(
   // If override provided, validate it's enabled and supports tools before using.
   // For local models, the override may be the model `id` (e.g. "ollama-llama3") while
   // enabledModelIds contains `modelId` (e.g. "llama3.1:8b") — check both.
-  const overrideIsEnabled = !toolCapableIds || toolCapableIds.length === 0
-    || toolCapableIds.includes(explicitOverride ?? '')
-    || (modelConfigs ?? []).some((m) => (m.id === explicitOverride || m.modelId === explicitOverride) && toolCapableIds.includes(m.modelId))
-  const resolved = explicitOverride && overrideIsEnabled
-      ? explicitOverride
-      : tierResolved
+  const overrideIsEnabled =
+    !toolCapableIds ||
+    toolCapableIds.length === 0 ||
+    toolCapableIds.includes(explicitOverride ?? '') ||
+    (modelConfigs ?? []).some(
+      (m) => (m.id === explicitOverride || m.modelId === explicitOverride) && toolCapableIds.includes(m.modelId),
+    )
+  const resolved = explicitOverride && overrideIsEnabled ? explicitOverride : tierResolved
 
   // If no enabled list provided, trust the resolved model
   if (!toolCapableIds || toolCapableIds.length === 0) return resolved
@@ -606,7 +608,10 @@ When planning scenes, design a scene graph — not just a list:
   }
 
   // Audio provider availability — only show categories with enabled providers
-  if (opts.activeTools.includes('audio') && (agentType === 'director' || agentType === 'scene-maker' || agentType === 'planner')) {
+  if (
+    opts.activeTools.includes('audio') &&
+    (agentType === 'director' || agentType === 'scene-maker' || agentType === 'planner')
+  ) {
     const enabledMap = opts.audioProviderEnabled ?? {}
     const isEnabled = (id: string) => enabledMap[id] ?? true
     const enabledTTS = AUDIO_PROVIDERS.filter((p) => p.category === 'tts' && isEnabled(p.id)).map((p) => p.name)
@@ -980,6 +985,8 @@ export function compactInFlightMessages(
   opts: {
     maxTokens?: number
     preserveRecent?: number
+    /** IDs that must not be compacted — messages containing these strings are kept */
+    protectedIds?: string[]
   } = {},
 ): Array<{ role: string; content: any }> {
   const maxTokens = opts.maxTokens ?? 6000
@@ -992,8 +999,27 @@ export function compactInFlightMessages(
   }
 
   // Split: older messages to summarize, recent to preserve
-  const olderMessages = messages.slice(0, messages.length - preserveRecent)
+  let olderMessages = messages.slice(0, messages.length - preserveRecent)
   const recentMessages = messages.slice(messages.length - preserveRecent)
+
+  // Protect messages containing active scene/layer IDs from compaction
+  if (opts.protectedIds && opts.protectedIds.length > 0) {
+    const protectedSet = new Set(opts.protectedIds)
+    const keptOlder: typeof olderMessages = []
+    const compactableOlder: typeof olderMessages = []
+    for (const msg of olderMessages) {
+      const contentStr = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)
+      const hasProtectedId = [...protectedSet].some((id) => contentStr.includes(id))
+      if (hasProtectedId) {
+        keptOlder.push(msg)
+      } else {
+        compactableOlder.push(msg)
+      }
+    }
+    olderMessages = compactableOlder
+    // Protected older messages are prepended to recent messages to preserve them
+    recentMessages.unshift(...keptOlder)
+  }
 
   const summary = summarizeOlderMessages(olderMessages)
 

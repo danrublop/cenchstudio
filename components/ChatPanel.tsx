@@ -117,6 +117,7 @@ export default function ChatPanel() {
   const [showHistory, setShowHistory] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const pendingResumeRef = useRef(false)
   const sendingRef = useRef(false)
 
   // Handle thumbs up/down feedback
@@ -214,6 +215,15 @@ export default function ChatPanel() {
     // Build history (last 10 messages, excluding the pending assistant msg)
     const historyMsgs = chatMessages.slice(-10)
 
+    // Strip large generated code fields from scenes — server reads these from DB (Fix 10)
+    const scenesForAgent = scenes.map(
+      ({ canvasCode, sceneCode, sceneHTML, svgContent, canvasBackgroundCode, lottieSource, sceneStyles, ...rest }) =>
+        rest,
+    )
+
+    const isResume = pendingResumeRef.current
+    pendingResumeRef.current = false
+
     const requestBody = {
       message: text,
       agentOverride: agentOverride ?? undefined,
@@ -225,12 +235,13 @@ export default function ChatPanel() {
       history: historyMsgs,
       projectId: project.id,
       conversationId: activeConversationId,
-      scenes,
+      scenes: scenesForAgent,
       globalStyle,
       projectName: project.name,
       outputMode: project.outputMode,
       selectedSceneId,
       enabledModelIds: modelConfigs.filter((m) => m.enabled).map((m) => m.modelId),
+      ...(isResume ? { resumeCheckpoint: true } : {}),
     }
 
     const controller = new AbortController()
@@ -337,6 +348,15 @@ export default function ChatPanel() {
             if (event.generationLogId) {
               updateChatMessage(assistantMsgId, { generationLogId: event.generationLogId })
             }
+            break
+          }
+
+          case 'checkpoint_saved': {
+            updateChatMessage(assistantMsgId, {
+              hasCheckpoint: true,
+              checkpointReason: (event as any).reason,
+              checkpointScenesBuilt: (event as any).scenesBuilt,
+            })
             break
           }
 
@@ -460,6 +480,12 @@ export default function ChatPanel() {
     newConversation,
     renameConversation,
   ])
+
+  const handleResume = useCallback(() => {
+    setChatInputValue('Continue building')
+    pendingResumeRef.current = true
+    setTimeout(() => sendMessage(), 0)
+  }, [sendMessage, setChatInputValue])
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -678,6 +704,7 @@ export default function ChatPanel() {
             activeToolName={streamingMsgId === msg.id ? activeToolName : null}
             onRate={handleRate}
             onPermission={handlePermission}
+            onResume={handleResume}
           />
         ))}
 

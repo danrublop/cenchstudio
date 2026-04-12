@@ -36,7 +36,16 @@ import HeaderTabSwitcher from './HeaderTabSwitcher'
 // Custom SVG icon for media tab
 function MediaIcon({ size = 19 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M21.1935 16.793C20.8437 19.2739 20.6689 20.5143 19.7717 21.2572C18.8745 22 17.5512 22 14.9046 22H9.09536C6.44881 22 5.12553 22 4.22834 21.2572C3.33115 20.5143 3.15626 19.2739 2.80648 16.793L2.38351 13.793C1.93748 10.6294 1.71447 9.04765 2.66232 8.02383C3.61017 7 5.29758 7 8.67239 7H15.3276C18.7024 7 20.3898 7 21.3377 8.02383C22.0865 8.83268 22.1045 9.98979 21.8592 12" />
       <path d="M19.5617 7C19.7904 5.69523 18.7863 4.5 17.4617 4.5H6.53788C5.21323 4.5 4.20922 5.69523 4.43784 7" />
       <path d="M17.4999 4.5C17.5283 4.24092 17.5425 4.11135 17.5427 4.00435C17.545 2.98072 16.7739 2.12064 15.7561 2.01142C15.6497 2 15.5194 2 15.2588 2H8.74099C8.48035 2 8.35002 2 8.24362 2.01142C7.22584 2.12064 6.45481 2.98072 6.45704 4.00434C6.45727 4.11135 6.47146 4.2409 6.49983 4.5" />
@@ -75,7 +84,7 @@ function CommandPalette({ onClose, onAction }: { onClose: () => void; onAction: 
   const filtered = COMMAND_ITEMS.filter(
     (item) =>
       item.label.toLowerCase().includes(query.toLowerCase()) ||
-      (item.hint && item.hint.toLowerCase().includes(query.toLowerCase()))
+      (item.hint && item.hint.toLowerCase().includes(query.toLowerCase())),
   )
 
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -102,7 +111,10 @@ function CommandPalette({ onClose, onAction }: { onClose: () => void; onAction: 
             ref={inputRef}
             type="text"
             value={query}
-            onChange={(e) => { setQuery(e.target.value); setSelectedIndex(0) }}
+            onChange={(e) => {
+              setQuery(e.target.value)
+              setSelectedIndex(0)
+            }}
             onKeyDown={handleKeyDown}
             placeholder="Search settings, actions..."
             className="flex-1 bg-transparent border-none outline-none text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)]"
@@ -232,8 +244,7 @@ export default function Editor({ showWelcome, onEnterEditor }: { showWelcome?: b
       e.preventDefault()
       const dx = e.clientX - d.startX
       if (d.side === 'left') {
-        const minW =
-          showSettingsRef.current ? 240 : 140
+        const minW = showSettingsRef.current ? 240 : 140
         setLeftWidth(Math.max(minW, Math.min(520, d.startW + dx)))
       } else if (d.side === 'right') {
         setRightWidth(Math.max(340, Math.min(600, d.startW - dx)))
@@ -316,6 +327,8 @@ export default function Editor({ showWelcome, onEnterEditor }: { showWelcome?: b
     if (!mounted) return
     const interval = setInterval(async () => {
       const state = useVideoStore.getState()
+      // Never auto-save mid-run — wait for agent to finish and persist via API
+      if (state.isAgentRunning) return
       if (state.projectLoadFailed && !state._dbLoadComplete && state.project?.id) {
         // Attempt to recover from load failure
         try {
@@ -325,7 +338,9 @@ export default function Editor({ showWelcome, onEnterEditor }: { showWelcome?: b
             useVideoStore.setState({ _dbLoadComplete: true, projectLoadFailed: false })
             console.log('[Editor] Server reachable — auto-save re-enabled')
           }
-        } catch { /* still offline */ }
+        } catch {
+          /* still offline */
+        }
         return
       }
       saveProjectToDb()
@@ -391,7 +406,10 @@ export default function Editor({ showWelcome, onEnterEditor }: { showWelcome?: b
   }
 
   return (
-    <div className="flex flex-col h-screen bg-[var(--color-bg)] text-[var(--color-text-primary)] [font-family:var(--font-ui)] overflow-hidden" style={{ zoom: 'var(--ui-zoom, 1)' }}>
+    <div
+      className="flex flex-col h-screen bg-[var(--color-bg)] text-[var(--color-text-primary)] [font-family:var(--font-ui)] overflow-hidden"
+      style={{ zoom: 'var(--ui-zoom, 1)' }}
+    >
       {projectLoadFailed && (
         <div className="flex items-center justify-between px-4 py-2 bg-red-500/10 border-b border-red-500/20 text-red-400 text-sm shrink-0">
           <span>Could not connect to server. Changes won't be saved.</span>
@@ -433,7 +451,10 @@ export default function Editor({ showWelcome, onEnterEditor }: { showWelcome?: b
       {useElectronLayout && (
         <header
           className={`h-12 border-b border-[var(--color-border)] bg-[var(--color-panel)] grid grid-cols-[auto_1fr_auto] items-center px-3 gap-2 ${isElectron ? 'pl-20' : 'pl-3'}`}
-          style={{ color: 'var(--color-text-muted)', ...(isElectron ? { WebkitAppRegion: 'drag' } as React.CSSProperties : {}) }}
+          style={{
+            color: 'var(--color-text-muted)',
+            ...(isElectron ? ({ WebkitAppRegion: 'drag' } as React.CSSProperties) : {}),
+          }}
         >
           <div className="flex items-center gap-1.5">
             <button
@@ -447,7 +468,8 @@ export default function Editor({ showWelcome, onEnterEditor }: { showWelcome?: b
               <PanelLeft size={20} strokeWidth={1.5} />
             </button>
           </div>
-          <div className="justify-self-center flex items-center gap-2 min-w-0 max-w-[60vw] h-full"
+          <div
+            className="justify-self-center flex items-center gap-2 min-w-0 max-w-[60vw] h-full"
             style={isElectron ? ({ WebkitAppRegion: 'no-drag' } as React.CSSProperties) : undefined}
           >
             <span
@@ -471,10 +493,11 @@ export default function Editor({ showWelcome, onEnterEditor }: { showWelcome?: b
               data-tooltip="Timeline"
               style={isElectron ? ({ WebkitAppRegion: 'no-drag' } as React.CSSProperties) : undefined}
             >
-              {timelineHeight > 0
-                ? <PanelBottomOpen size={20} strokeWidth={1.5} />
-                : <PanelBottomClose size={20} strokeWidth={1.5} />
-              }
+              {timelineHeight > 0 ? (
+                <PanelBottomOpen size={20} strokeWidth={1.5} />
+              ) : (
+                <PanelBottomClose size={20} strokeWidth={1.5} />
+              )}
             </button>
             <button
               onClick={() => setRightPanelTab('prompt')}
@@ -507,251 +530,254 @@ export default function Editor({ showWelcome, onEnterEditor }: { showWelcome?: b
         <div className="flex-1 overflow-auto">
           <WelcomePageContent onEnterEditor={onEnterEditor ?? (() => {})} />
         </div>
-      ) : <>
-      {/* Three-panel layout */}
-      <div className="flex flex-1 overflow-hidden relative">
-        {/* Drag overlay — prevents iframes from stealing mouse events during resize */}
-        {isDraggingPanel && <div className="fixed inset-0 z-[9999]" style={{ cursor: 'col-resize' }} />}
-        {/* Left — Scene List */}
-        <div
-          className={`flex-shrink-0 border-r border-[var(--color-border)] bg-[var(--color-panel)] flex flex-col transition-all duration-200 ease-in-out relative ${
-            isLeftCollapsed
-              ? useElectronLayout
-                ? 'z-[101] overflow-hidden pointer-events-none'
-                : 'z-[103] overflow-visible'
-              : 'z-[101] overflow-hidden'
-          } ${isPreviewFullscreen ? 'overflow-hidden' : ''}`}
-          style={{
-            width: isPreviewFullscreen ? 0 : isLeftCollapsed ? (useElectronLayout ? 0 : 64) : leftWidth,
-            visibility: isPreviewFullscreen || (useElectronLayout && isLeftCollapsed) ? 'hidden' : 'visible',
-          }}
-        >
-          <div className={`flex-1 relative flex flex-col ${isLeftCollapsed ? 'overflow-visible' : 'overflow-hidden'}`}>
-            {/* Sidebar header */}
+      ) : (
+        <>
+          {/* Three-panel layout */}
+          <div className="flex flex-1 overflow-hidden relative">
+            {/* Drag overlay — prevents iframes from stealing mouse events during resize */}
+            {isDraggingPanel && <div className="fixed inset-0 z-[9999]" style={{ cursor: 'col-resize' }} />}
+            {/* Left — Scene List */}
             <div
-              className={`h-12 flex-shrink-0 flex justify-between gap-2 items-center ${isLeftCollapsed ? 'border-b-0 pl-3 pr-2' : 'px-3'}`}
+              className={`flex-shrink-0 border-r border-[var(--color-border)] bg-[var(--color-panel)] flex flex-col transition-all duration-200 ease-in-out relative ${
+                isLeftCollapsed
+                  ? useElectronLayout
+                    ? 'z-[101] overflow-hidden pointer-events-none'
+                    : 'z-[103] overflow-visible'
+                  : 'z-[101] overflow-hidden'
+              } ${isPreviewFullscreen ? 'overflow-hidden' : ''}`}
+              style={{
+                width: isPreviewFullscreen ? 0 : isLeftCollapsed ? (useElectronLayout ? 0 : 64) : leftWidth,
+                visibility: isPreviewFullscreen || (useElectronLayout && isLeftCollapsed) ? 'hidden' : 'visible',
+              }}
             >
               <div
-                className={`flex gap-2 ${isLeftCollapsed ? 'flex-col items-start' : `flex-row items-center ${useElectronLayout ? 'justify-center w-full' : 'flex-1'}`}`}
+                className={`flex-1 relative flex flex-col ${isLeftCollapsed ? 'overflow-visible' : 'overflow-hidden'}`}
               >
-                {!useElectronLayout && (
-                  <>
-                    <button
-                      onClick={() => setIsLeftCollapsed(!isLeftCollapsed)}
-                      data-tooltip={isLeftCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
-                      data-tooltip-pos={isLeftCollapsed ? 'right' : 'bottom-right'}
-                      className="kbd w-8 h-8 p-0 flex items-center justify-center shrink-0"
-                    >
-                      <PanelLeft size={17} style={{ color: 'var(--kbd-text)' }} />
-                    </button>
-
-                    <button
-                      onClick={() => {
-                        setShowProjectPanel(!showProjectPanel)
-                        if (!showProjectPanel) setSettingsTab(null)
-                      }}
-                      className={`kbd w-8 h-8 p-0 flex items-center justify-center shrink-0 transition-all duration-200 ${showProjectPanel ? 'border-[var(--color-accent)]' : ''}`}
-                      data-tooltip="Projects"
-                      data-tooltip-pos={isLeftCollapsed ? 'right' : 'bottom'}
-                    >
-                      <FolderOpen size={17} style={{ color: 'var(--kbd-text)' }} />
-                    </button>
-
-                    <button
-                      onClick={() => {
-                        setSettingsTab(showSettings ? null : 'general')
-                        if (!showSettings) setShowProjectPanel(false)
-                      }}
-                      className={`kbd w-7 h-7 p-0 flex items-center justify-center shrink-0 transition-all duration-200 ${showSettings ? 'border-[var(--color-accent)]' : ''}`}
-                      data-tooltip="Settings"
-                      data-tooltip-pos={isLeftCollapsed ? 'right' : 'bottom'}
-                    >
-                      <Settings size={15} style={{ color: 'var(--kbd-text)' }} />
-                    </button>
-                  </>
-                )}
-                {useElectronLayout && (
-                  <>
-                    <button
-                      onClick={() => {
-                        setElectronLeftTab('media')
-                        setShowProjectPanel(false)
-                        setSettingsTab(null)
-                      }}
-                      className={`no-style electron-titlebar-icon w-8 h-8 rounded-md flex items-center justify-center shrink-0 transition-colors ${
-                        electronLeftTab === 'media' && !showProjectPanel && !showSettings
-                          ? 'text-[var(--color-accent)] electron-titlebar-icon-active'
-                          : ''
-                      }`}
-                      data-tooltip="Media"
-                      style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-                    >
-                      <MediaIcon size={19} />
-                    </button>
-                    <button
-                      onClick={() => {
-                        setElectronLeftTab('layers')
-                        setShowProjectPanel(false)
-                        setSettingsTab(null)
-                      }}
-                      className={`no-style electron-titlebar-icon w-8 h-8 rounded-md flex items-center justify-center shrink-0 transition-colors ${
-                        electronLeftTab === 'layers' && !showProjectPanel && !showSettings
-                          ? 'text-[var(--color-accent)] electron-titlebar-icon-active'
-                          : ''
-                      }`}
-                      data-tooltip="Scenes & layers"
-                      style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-                    >
-                      <Layers size={19} strokeWidth={1.5} />
-                    </button>
-                    <button
-                      onClick={() => {
-                        setShowProjectPanel(!showProjectPanel)
-                        if (!showProjectPanel) setSettingsTab(null)
-                      }}
-                      className={`no-style electron-titlebar-icon w-8 h-8 rounded-md flex items-center justify-center shrink-0 transition-colors ${
-                        showProjectPanel ? 'text-[var(--color-accent)] electron-titlebar-icon-active' : ''
-                      }`}
-                      data-tooltip="Projects"
-                      style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-                    >
-                      <FolderOpen size={19} strokeWidth={1.5} />
-                    </button>
-                    <button
-                      onClick={() => {
-                        if (project.outputMode === 'mp4') openExportModal()
-                        else publishProject()
-                      }}
-                      className="no-style electron-titlebar-icon w-8 h-8 rounded-md flex items-center justify-center shrink-0 transition-colors"
-                      data-tooltip={project.outputMode === 'mp4' ? 'Export' : 'Publish'}
-                      style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-                    >
-                      {project.outputMode === 'mp4' ? (
-                        <Download size={19} strokeWidth={1.5} />
-                      ) : (
-                        <Globe size={19} strokeWidth={1.5} />
-                      )}
-                    </button>
-                  </>
-                )}
-                {!useElectronLayout && (
-                  <button
-                    onClick={() => {
-                      if (showSettings) {
-                        setSettingsTab(null)
-                      } else if (showProjectPanel) {
-                        setShowProjectPanel(false)
-                      } else {
-                        addScene()
-                      }
-                    }}
-                    className={`kbd h-7 !py-0 gap-2 text-sm font-medium shadow-black/40 transition-all duration-200 relative flex items-center justify-center overflow-hidden ${
-                      isLeftCollapsed ? 'w-7 px-0 cursor-copy' : 'flex-1 px-3'
-                    }`}
-                    {...(isLeftCollapsed
-                      ? {
-                          'data-tooltip': showSettings || showProjectPanel ? 'Close' : 'New Scene',
-                          'data-tooltip-pos': 'right',
-                        }
-                      : {})}
+                {/* Sidebar header */}
+                <div
+                  className={`h-12 flex-shrink-0 flex justify-between gap-2 items-center ${isLeftCollapsed ? 'border-b-0 pl-3 pr-2' : 'px-3'}`}
+                >
+                  <div
+                    className={`flex gap-2 ${isLeftCollapsed ? 'flex-col items-start' : `flex-row items-center ${useElectronLayout ? 'justify-center w-full' : 'flex-1'}`}`}
                   >
-                    {isLeftCollapsed &&
-                      (showSettings || showProjectPanel ? (
-                        <X size={14} className="flex-shrink-0" />
-                      ) : (
-                        <Plus size={14} className="flex-shrink-0" />
-                      ))}
-                    <span className={`whitespace-nowrap overflow-hidden ${isLeftCollapsed ? 'hidden' : 'inline'}`}>
-                      {showSettings || showProjectPanel ? 'Close' : 'New Scene'}
-                    </span>
-                  </button>
-                )}
+                    {!useElectronLayout && (
+                      <>
+                        <button
+                          onClick={() => setIsLeftCollapsed(!isLeftCollapsed)}
+                          data-tooltip={isLeftCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
+                          data-tooltip-pos={isLeftCollapsed ? 'right' : 'bottom-right'}
+                          className="kbd w-8 h-8 p-0 flex items-center justify-center shrink-0"
+                        >
+                          <PanelLeft size={17} style={{ color: 'var(--kbd-text)' }} />
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            setShowProjectPanel(!showProjectPanel)
+                            if (!showProjectPanel) setSettingsTab(null)
+                          }}
+                          className={`kbd w-8 h-8 p-0 flex items-center justify-center shrink-0 transition-all duration-200 ${showProjectPanel ? 'border-[var(--color-accent)]' : ''}`}
+                          data-tooltip="Projects"
+                          data-tooltip-pos={isLeftCollapsed ? 'right' : 'bottom'}
+                        >
+                          <FolderOpen size={17} style={{ color: 'var(--kbd-text)' }} />
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            setSettingsTab(showSettings ? null : 'general')
+                            if (!showSettings) setShowProjectPanel(false)
+                          }}
+                          className={`kbd w-7 h-7 p-0 flex items-center justify-center shrink-0 transition-all duration-200 ${showSettings ? 'border-[var(--color-accent)]' : ''}`}
+                          data-tooltip="Settings"
+                          data-tooltip-pos={isLeftCollapsed ? 'right' : 'bottom'}
+                        >
+                          <Settings size={15} style={{ color: 'var(--kbd-text)' }} />
+                        </button>
+                      </>
+                    )}
+                    {useElectronLayout && (
+                      <>
+                        <button
+                          onClick={() => {
+                            setElectronLeftTab('media')
+                            setShowProjectPanel(false)
+                            setSettingsTab(null)
+                          }}
+                          className={`no-style electron-titlebar-icon w-8 h-8 rounded-md flex items-center justify-center shrink-0 transition-colors ${
+                            electronLeftTab === 'media' && !showProjectPanel && !showSettings
+                              ? 'text-[var(--color-accent)] electron-titlebar-icon-active'
+                              : ''
+                          }`}
+                          data-tooltip="Media"
+                          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+                        >
+                          <MediaIcon size={19} />
+                        </button>
+                        <button
+                          onClick={() => {
+                            setElectronLeftTab('layers')
+                            setShowProjectPanel(false)
+                            setSettingsTab(null)
+                          }}
+                          className={`no-style electron-titlebar-icon w-8 h-8 rounded-md flex items-center justify-center shrink-0 transition-colors ${
+                            electronLeftTab === 'layers' && !showProjectPanel && !showSettings
+                              ? 'text-[var(--color-accent)] electron-titlebar-icon-active'
+                              : ''
+                          }`}
+                          data-tooltip="Scenes & layers"
+                          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+                        >
+                          <Layers size={19} strokeWidth={1.5} />
+                        </button>
+                        <button
+                          onClick={() => {
+                            setShowProjectPanel(!showProjectPanel)
+                            if (!showProjectPanel) setSettingsTab(null)
+                          }}
+                          className={`no-style electron-titlebar-icon w-8 h-8 rounded-md flex items-center justify-center shrink-0 transition-colors ${
+                            showProjectPanel ? 'text-[var(--color-accent)] electron-titlebar-icon-active' : ''
+                          }`}
+                          data-tooltip="Projects"
+                          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+                        >
+                          <FolderOpen size={19} strokeWidth={1.5} />
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (project.outputMode === 'mp4') openExportModal()
+                            else publishProject()
+                          }}
+                          className="no-style electron-titlebar-icon w-8 h-8 rounded-md flex items-center justify-center shrink-0 transition-colors"
+                          data-tooltip={project.outputMode === 'mp4' ? 'Export' : 'Publish'}
+                          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+                        >
+                          {project.outputMode === 'mp4' ? (
+                            <Download size={19} strokeWidth={1.5} />
+                          ) : (
+                            <Globe size={19} strokeWidth={1.5} />
+                          )}
+                        </button>
+                      </>
+                    )}
+                    {!useElectronLayout && (
+                      <button
+                        onClick={() => {
+                          if (showSettings) {
+                            setSettingsTab(null)
+                          } else if (showProjectPanel) {
+                            setShowProjectPanel(false)
+                          } else {
+                            addScene()
+                          }
+                        }}
+                        className={`kbd h-7 !py-0 gap-2 text-sm font-medium shadow-black/40 transition-all duration-200 relative flex items-center justify-center overflow-hidden ${
+                          isLeftCollapsed ? 'w-7 px-0 cursor-copy' : 'flex-1 px-3'
+                        }`}
+                        {...(isLeftCollapsed
+                          ? {
+                              'data-tooltip': showSettings || showProjectPanel ? 'Close' : 'New Scene',
+                              'data-tooltip-pos': 'right',
+                            }
+                          : {})}
+                      >
+                        {isLeftCollapsed &&
+                          (showSettings || showProjectPanel ? (
+                            <X size={14} className="flex-shrink-0" />
+                          ) : (
+                            <Plus size={14} className="flex-shrink-0" />
+                          ))}
+                        <span className={`whitespace-nowrap overflow-hidden ${isLeftCollapsed ? 'hidden' : 'inline'}`}>
+                          {showSettings || showProjectPanel ? 'Close' : 'New Scene'}
+                        </span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex-1 overflow-hidden relative">
+                  {showProjectPanel && !isLeftCollapsed ? (
+                    <ProjectPanel onClose={() => setShowProjectPanel(false)} />
+                  ) : showSettings && !isLeftCollapsed ? (
+                    <SettingsPanel onClose={() => setSettingsTab(null)} />
+                  ) : useElectronLayout && electronLeftTab === 'media' ? (
+                    <MediaLibrary />
+                  ) : useElectronLayout && electronLeftTab === 'layers' ? (
+                    scenes.length === 0 ? (
+                      <div className="flex min-h-0 h-full flex-col gap-2 overflow-hidden p-3">
+                        <button
+                          type="button"
+                          onClick={() => addScene()}
+                          className="kbd flex h-8 w-full items-center justify-center gap-2 px-3 text-sm font-medium shadow-black/40"
+                        >
+                          <Plus size={14} strokeWidth={1.5} />
+                          New Scene
+                        </button>
+                        <p className="text-center text-[11px] text-[var(--color-text-muted)]">No scenes yet.</p>
+                      </div>
+                    ) : (
+                      <div className="flex min-h-0 h-full flex-col overflow-hidden">
+                        <LayersTab
+                          scene={selectedScene ?? scenes[0]!}
+                          showScenesSection
+                          isLeftCollapsed={isLeftCollapsed}
+                          onToggleLeftCollapse={() => setIsLeftCollapsed(!isLeftCollapsed)}
+                        />
+                      </div>
+                    )
+                  ) : (
+                    <SceneList
+                      isCollapsed={isLeftCollapsed}
+                      onToggleCollapse={() => setIsLeftCollapsed(!isLeftCollapsed)}
+                    />
+                  )}
+                </div>
               </div>
             </div>
 
-            <div className="flex-1 overflow-hidden relative">
-              {showProjectPanel && !isLeftCollapsed ? (
-                <ProjectPanel onClose={() => setShowProjectPanel(false)} />
-              ) : showSettings && !isLeftCollapsed ? (
-                <SettingsPanel onClose={() => setSettingsTab(null)} />
-              ) : useElectronLayout && electronLeftTab === 'media' ? (
-                <MediaLibrary />
-              ) : useElectronLayout && electronLeftTab === 'layers' ? (
-                scenes.length === 0 ? (
-                  <div className="flex min-h-0 h-full flex-col gap-2 overflow-hidden p-3">
-                    <button
-                      type="button"
-                      onClick={() => addScene()}
-                      className="kbd flex h-8 w-full items-center justify-center gap-2 px-3 text-sm font-medium shadow-black/40"
-                    >
-                      <Plus size={14} strokeWidth={1.5} />
-                      New Scene
-                    </button>
-                    <p className="text-center text-[11px] text-[var(--color-text-muted)]">No scenes yet.</p>
-                  </div>
-                ) : (
-                  <div className="flex min-h-0 h-full flex-col overflow-hidden">
-                    <LayersTab
-                      scene={selectedScene ?? scenes[0]!}
-                      showScenesSection
-                      isLeftCollapsed={isLeftCollapsed}
-                      onToggleLeftCollapse={() => setIsLeftCollapsed(!isLeftCollapsed)}
-                    />
-                  </div>
-                )
-              ) : (
-                <SceneList
-                  isCollapsed={isLeftCollapsed}
-                  onToggleCollapse={() => setIsLeftCollapsed(!isLeftCollapsed)}
-                />
-              )}
+            {/* Left resize handle (Absolute) */}
+            {!isLeftCollapsed && !isPreviewFullscreen && (
+              <div
+                className="absolute top-0 bottom-0 w-3 -translate-x-1/2 hover:bg-[var(--color-accent)]/30 active:bg-[var(--color-accent)]/50 transition-colors z-[200]"
+                style={{
+                  cursor: 'col-resize',
+                  left: isLeftCollapsed ? 64 : leftWidth,
+                }}
+                onMouseDown={(e) => startPanelDrag(e, 'left')}
+                onDoubleClick={() => setIsLeftCollapsed(true)}
+              />
+            )}
+
+            {/* Center — Preview (match top titlebar / panel chrome) */}
+            <div className="flex-1 flex flex-col bg-[var(--color-timeline-bg,var(--color-panel))] min-w-0 relative z-[90] overflow-visible">
+              <PreviewPlayer />
+              {(editingAgentId || isCreatingAgent) && <AgentEditorOverlay />}
             </div>
+
+            {/* Right resize handle (Absolute) */}
+            {!isPreviewFullscreen && (
+              <div
+                className="absolute top-0 bottom-0 w-2 translate-x-1/2 hover:bg-[var(--color-accent)]/30 active:bg-[var(--color-accent)]/50 transition-colors z-[200]"
+                style={{
+                  cursor: 'col-resize',
+                  right: rightWidth,
+                }}
+                onMouseDown={(e) => startPanelDrag(e, 'right')}
+              />
+            )}
+
+            {/* Right — Editor (min-h-0 + overflow-hidden so Layers tab pins stack to panel bottom) */}
+            {!isPreviewFullscreen && (
+              <div
+                className="flex min-h-0 shrink-0 flex-col overflow-hidden border-l border-[var(--color-border)] bg-[var(--color-panel)] relative z-[101]"
+                style={{ width: rightWidth }}
+              >
+                <SceneEditor />
+              </div>
+            )}
           </div>
-        </div>
-
-        {/* Left resize handle (Absolute) */}
-        {!isLeftCollapsed && !isPreviewFullscreen && (
-          <div
-            className="absolute top-0 bottom-0 w-3 -translate-x-1/2 hover:bg-[var(--color-accent)]/30 active:bg-[var(--color-accent)]/50 transition-colors z-[200]"
-            style={{
-              cursor: 'col-resize',
-              left: isLeftCollapsed ? 64 : leftWidth,
-            }}
-            onMouseDown={(e) => startPanelDrag(e, 'left')}
-            onDoubleClick={() => setIsLeftCollapsed(true)}
-          />
-        )}
-
-        {/* Center — Preview (match top titlebar / panel chrome) */}
-        <div className="flex-1 flex flex-col bg-[var(--color-timeline-bg,var(--color-panel))] min-w-0 relative z-[90] overflow-visible">
-          <PreviewPlayer />
-          {(editingAgentId || isCreatingAgent) && <AgentEditorOverlay />}
-        </div>
-
-        {/* Right resize handle (Absolute) */}
-        {!isPreviewFullscreen && (
-          <div
-            className="absolute top-0 bottom-0 w-2 translate-x-1/2 hover:bg-[var(--color-accent)]/30 active:bg-[var(--color-accent)]/50 transition-colors z-[200]"
-            style={{
-              cursor: 'col-resize',
-              right: rightWidth,
-            }}
-            onMouseDown={(e) => startPanelDrag(e, 'right')}
-          />
-        )}
-
-        {/* Right — Editor (min-h-0 + overflow-hidden so Layers tab pins stack to panel bottom) */}
-        {!isPreviewFullscreen && (
-          <div
-            className="flex min-h-0 shrink-0 flex-col overflow-hidden border-l border-[var(--color-border)] bg-[var(--color-panel)] relative z-[101]"
-            style={{ width: rightWidth }}
-          >
-            <SceneEditor />
-          </div>
-        )}
-      </div>
-
-      </>}
+        </>
+      )}
 
       {/* Modals */}
       <PermissionDialog />
@@ -773,8 +799,10 @@ export default function Editor({ showWelcome, onEnterEditor }: { showWelcome?: b
             else if (action === 'projects') setShowProjectPanel(true)
             else if (action === 'media') setElectronLeftTab('media')
             else if (action === 'layers') setElectronLeftTab('layers')
-            else if (action === 'export') { if (project.outputMode === 'mp4') openExportModal(); else publishProject() }
-            else if (action === 'agents') setSettingsTab('agents')
+            else if (action === 'export') {
+              if (project.outputMode === 'mp4') openExportModal()
+              else publishProject()
+            } else if (action === 'agents') setSettingsTab('agents')
             else if (action === 'new-scene') addScene()
           }}
         />

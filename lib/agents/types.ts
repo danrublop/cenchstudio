@@ -139,9 +139,7 @@ export function messageContentToText(content: MessageContent): string {
 // ── Message Types ─────────────────────────────────────────────────────────────
 
 /** A segment of a message — either a text chunk or a tool call reference, in chronological order */
-export type MessageSegment =
-  | { type: 'text'; text: string }
-  | { type: 'tool'; toolCallId: string }
+export type MessageSegment = { type: 'text'; text: string } | { type: 'tool'; toolCallId: string }
 
 export interface ChatMessage {
   id: string
@@ -166,6 +164,12 @@ export interface ChatMessage {
   timestamp: number
   /** Permission requests that need user approval (from tool results with permissionNeeded) */
   pendingPermissions?: PendingPermission[]
+  /** True when a checkpoint was saved (cost/tool/iteration limit hit) */
+  hasCheckpoint?: boolean
+  /** Why the checkpoint was saved */
+  checkpointReason?: 'cost_cap' | 'tool_limit' | 'iteration_limit'
+  /** Number of scenes built before checkpoint */
+  checkpointScenesBuilt?: number
 }
 
 export interface PendingPermission {
@@ -258,6 +262,7 @@ export type SSEEventType =
   | 'sub_agent_start' // orchestrator starting a sub-agent for a scene
   | 'sub_agent_complete' // sub-agent finished building a scene
   | 'run_progress' // live progress update (tool count, cost, iteration)
+  | 'checkpoint_saved' // checkpoint saved (cost/tool/iteration limit hit)
   | 'error' // error occurred
   | 'done' // stream complete
 
@@ -314,6 +319,9 @@ export interface SSEEvent {
     iteration: number
     iterationMax: number
   }
+  /** For 'checkpoint_saved' events */
+  reason?: string
+  scenesBuilt?: number
   /** For 'sub_agent_start' / 'sub_agent_complete' events */
   subAgentId?: string
   subAgentSceneIndex?: number
@@ -597,7 +605,7 @@ export interface RunCheckpoint {
   /** When the checkpoint was created */
   createdAt: string
   /** Why the run was interrupted */
-  reason: 'disconnect' | 'timeout' | 'error'
+  reason: 'disconnect' | 'timeout' | 'error' | 'cost_cap' | 'tool_limit' | 'iteration_limit'
 }
 
 // ── Snapshot / Undo ───────────────────────────────────────────────────────────
