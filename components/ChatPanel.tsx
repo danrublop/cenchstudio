@@ -2,24 +2,15 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import {
-  Send,
   ChevronUp,
   ChevronDown,
   ChevronRight,
   Bot,
   X,
-  Loader2,
   Lightbulb,
-  ThumbsUp,
-  ThumbsDown,
-  CheckCircle2,
-  XCircle,
-  Wrench,
   Plus,
   Pin,
-  Trash2,
   History,
-  ShieldAlert,
 } from 'lucide-react'
 import { v4 as uuidv4 } from 'uuid'
 import { useVideoStore } from '@/lib/store'
@@ -40,8 +31,8 @@ import type { Scene } from '@/lib/types'
 import { syncSceneGraphWithScenes } from '@/lib/scene-graph-sync'
 
 import { MessageBubble } from './chat/MessageBubble'
+import type { AgentPhase } from './chat/MessageBubble'
 import { ConversationContextMenu } from './chat/ConversationContextMenu'
-import { ThinkingBubble } from './chat/ThinkingBubble'
 
 function parseChatPanelSseEvent(jsonStr: string, label: string): SSEEvent | null {
   try {
@@ -83,14 +74,10 @@ export default function ChatPanel() {
     setThinkingMode,
     sceneContext,
     activeTools,
-    scenes,
-    globalStyle,
     project,
-    selectedSceneId,
     modelConfigs,
     syncScenesFromAgent,
     updateSceneGraph,
-    sceneHtmlVersion,
     chatInputValue,
     setChatInputValue,
     isChatOpen,
@@ -111,6 +98,9 @@ export default function ChatPanel() {
   const [showThinkingMenu, setShowThinkingMenu] = useState(false)
   const [showAgentMenu, setShowAgentMenu] = useState(false)
   const [activeToolName, setActiveToolName] = useState<string | null>(null)
+  const [agentPhase, setAgentPhase] = useState<AgentPhase>('idle')
+  const [isNearBottom, setIsNearBottom] = useState(true)
+  const isNearBottomRef = useRef(true)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null)
@@ -155,9 +145,26 @@ export default function ChatPanel() {
     [chatMessages, setSessionPermission, updateChatMessage],
   )
 
-  // Auto-scroll on new messages
+  // Track whether user is near the bottom of the scroll area
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const threshold = 120
+    const near = el.scrollHeight - el.scrollTop - el.clientHeight < threshold
+    isNearBottomRef.current = near
+    setIsNearBottom(near)
+  }, [])
+
   useEffect(() => {
-    if (scrollRef.current) {
+    const el = scrollRef.current
+    if (!el) return
+    el.addEventListener('scroll', handleScroll, { passive: true })
+    return () => el.removeEventListener('scroll', handleScroll)
+  }, [handleScroll])
+
+  // Smart auto-scroll — only scroll if user is near the bottom
+  useEffect(() => {
+    if (isNearBottomRef.current && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
   }, [chatMessages, isThinking])
@@ -166,271 +173,289 @@ export default function ChatPanel() {
     const text = chatInputValue.trim()
     if (!text || isAgentRunning || sendingRef.current) return
     sendingRef.current = true
-
-    setChatInputValue('')
-    setShowModelMenu(false)
-    setShowAgentMenu(false)
-
-    // Ensure we have an active conversation before sending
-    let convId = activeConversationId
-    if (!convId && project?.id) {
-      convId = await newConversation(project.id)
-    }
-    if (!convId) {
-      sendingRef.current = false
-      return
-    }
-
-    // Add user message
-    const userMsg: ChatMessage = {
-      id: uuidv4(),
-      role: 'user',
-      content: text,
-      timestamp: Date.now(),
-    }
-    addChatMessage(userMsg)
-    await persistUserMessage(userMsg)
-
-    // Auto-title conversation from first message
-    if (chatMessages.length === 0 && activeConversationId) {
-      const autoTitle = text.slice(0, 40) + (text.length > 40 ? '...' : '')
-      renameConversation(activeConversationId, autoTitle)
-    }
-
-    // Add pending assistant message
-    const assistantMsgId = uuidv4()
-    const assistantMsg: ChatMessage = {
-      id: assistantMsgId,
-      role: 'assistant',
-      content: '',
-      agentType: agentOverride ?? undefined,
-      timestamp: Date.now(),
-    }
-    addChatMessage(assistantMsg)
-    setStreamingMsgId(assistantMsgId)
-    setIsThinking(true)
-    setAgentRunning(true)
-
-    // Build history (last 10 messages, excluding the pending assistant msg)
-    const historyMsgs = chatMessages.slice(-10)
-
-    const requestBody = {
-      message: text,
-      agentOverride: agentOverride ?? undefined,
-      modelOverride: modelOverride ?? undefined,
-      modelTier,
-      thinkingMode,
-      sceneContext,
-      activeTools,
-      history: historyMsgs,
-      projectId: project.id,
-      conversationId: activeConversationId,
-      scenes,
-      globalStyle,
-      projectName: project.name,
-      outputMode: project.outputMode,
-      selectedSceneId,
-      enabledModelIds: modelConfigs.filter((m) => m.enabled).map((m) => m.modelId),
-    }
-
-    const controller = new AbortController()
-    abortRef.current = controller
-
-    let accumulatedText = ''
-    let accumulatedThinking = ''
-    let accumulatedToolCalls = 0
-    const toolCalls: ToolCallRecord[] = []
-    let currentToolCall: Partial<ToolCallRecord> | null = null
-
     try {
-      const response = await fetch('/api/agent', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody),
-        signal: controller.signal,
-      })
+      setChatInputValue('')
+      setShowModelMenu(false)
+      setShowAgentMenu(false)
 
-      if (!response.ok) {
-        throw new Error(`Agent API error: ${response.statusText}`)
+      // Read volatile state from store directly (Fix 14 — avoid stale closure deps)
+      const store = useVideoStore.getState()
+
+      // Ensure we have an active conversation before sending
+      let convId = store.activeConversationId
+      if (!convId && store.project?.id) {
+        convId = await newConversation(store.project.id)
+      }
+      if (!convId) return
+
+      // Fix 5 — capture isFirstMessage BEFORE adding the user message
+      const isFirstMessage = store.chatMessages.filter(m => m.role === 'user').length === 0
+
+      // Add user message
+      const userMsg: ChatMessage = {
+        id: uuidv4(),
+        role: 'user',
+        content: text,
+        timestamp: Date.now(),
+      }
+      addChatMessage(userMsg)
+      await persistUserMessage(userMsg)
+
+      // Auto-title conversation from first message
+      if (isFirstMessage && convId) {
+        const autoTitle = text.slice(0, 40) + (text.length > 40 ? '...' : '')
+        renameConversation(convId, autoTitle)
       }
 
-      const reader = response.body!.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
+      // Add pending assistant message
+      const assistantMsgId = uuidv4()
+      const assistantMsg: ChatMessage = {
+        id: assistantMsgId,
+        role: 'assistant',
+        content: '',
+        agentType: agentOverride ?? undefined,
+        timestamp: Date.now(),
+      }
+      addChatMessage(assistantMsg)
+      setStreamingMsgId(assistantMsgId)
+      setIsThinking(true)
+      setAgentRunning(true)
+      setAgentPhase('routing')
 
-      const processSSEEvent = (event: SSEEvent) => {
-        switch (event.type) {
-          case 'thinking':
-            setIsThinking(true)
-            break
+      // Fix 3 — increase history to 40 messages, filter empty content
+      const historyMsgs = store.chatMessages
+        .filter(m => m.content && (typeof m.content === 'string' ? m.content.length > 0 : m.content.length > 0))
+        .slice(-40)
 
-          case 'thinking_start':
-            setIsThinking(true)
-            updateChatMessage(assistantMsgId, { isThinkingStreaming: true, thinking: '' })
-            break
-
-          case 'thinking_token':
-            if (event.token) {
-              accumulatedThinking += event.token
-              updateChatMessage(assistantMsgId, { thinking: accumulatedThinking })
-            }
-            break
-
-          case 'thinking_complete':
-            setIsThinking(false)
-            updateChatMessage(assistantMsgId, {
-              thinking: event.fullThinking ?? '',
-              isThinkingStreaming: false,
-            })
-            break
-
-          case 'token':
-            if (event.token) {
-              setIsThinking(false)
-              accumulatedText += event.token
-              updateChatMessage(assistantMsgId, { content: accumulatedText })
-            }
-            break
-
-          case 'tool_start':
-            if (event.toolName) {
-              currentToolCall = {
-                id: uuidv4(),
-                toolName: event.toolName,
-                input: event.toolInput ?? {},
-              }
-              setActiveToolName(event.toolName)
-            }
-            break
-
-          case 'tool_complete':
-            if (currentToolCall && event.toolResult) {
-              const completed: ToolCallRecord = {
-                ...(currentToolCall as ToolCallRecord),
-                output: event.toolResult,
-              }
-              toolCalls.push(completed)
-              accumulatedToolCalls++
-              updateChatMessage(assistantMsgId, { toolCalls: [...toolCalls] })
-              currentToolCall = null
-            }
-            setActiveToolName(null)
-            break
-
-          case 'state_change': {
-            console.log('[Chat] State change:', event.changes?.[0]?.description)
-            if (event.updatedScenes && event.updatedGlobalStyle) {
-              const scenes = event.updatedScenes as any[]
-              console.log(`[Chat] Final state sync: ${scenes.length} scenes`)
-              for (const s of scenes) {
-                console.log(
-                  `[Chat]   ${s.id?.slice(0, 8)}… "${s.name}" type=${s.sceneType} html=${s.sceneHTML?.length ?? 0} canvas=${s.canvasCode?.length ?? 0} code=${s.sceneCode?.length ?? 0}`,
-                )
-              }
-              syncScenesFromAgent(event.updatedScenes as typeof scenes, event.updatedGlobalStyle as typeof globalStyle)
-              const mergedGraph = syncSceneGraphWithScenes(
-                event.updatedScenes as Scene[],
-                event.updatedSceneGraph ?? useVideoStore.getState().project.sceneGraph,
-              )
-              updateSceneGraph(mergedGraph)
-            }
-            if (event.generationLogId) {
-              updateChatMessage(assistantMsgId, { generationLogId: event.generationLogId })
-            }
-            break
-          }
-
-          case 'done': {
-            console.log(
-              '[Chat] Done event:',
-              event.agentType,
-              event.modelId,
-              event.usage ? `$${event.usage.costUsd}` : 'no usage',
-            )
-            if (event.agentType) {
-              setAgentType(event.agentType)
-              updateChatMessage(assistantMsgId, {
-                agentType: event.agentType,
-                modelId: event.modelId,
-                content: event.fullText ?? accumulatedText,
-                toolCalls: event.toolCalls ?? toolCalls,
-                usage: event.usage,
-              })
-            }
-            break
-          }
-
-          case 'error':
-            console.error('[Chat] Agent error:', event.error)
-            updateChatMessage(assistantMsgId, {
-              content: event.error ? `Error: ${event.error}` : 'An error occurred.',
-            })
-            break
-        }
+      // Fix 14 — read volatile state from store directly
+      const requestBody = {
+        message: text,
+        agentOverride: agentOverride ?? undefined,
+        modelOverride: modelOverride ?? undefined,
+        modelTier,
+        thinkingMode,
+        sceneContext,
+        activeTools,
+        history: historyMsgs,
+        projectId: store.project.id,
+        conversationId: convId,
+        scenes: store.scenes,
+        globalStyle: store.globalStyle,
+        projectName: store.project.name,
+        outputMode: store.project.outputMode,
+        selectedSceneId: store.selectedSceneId,
+        enabledModelIds: modelConfigs.filter((m) => m.enabled).map((m) => m.modelId),
       }
 
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) {
-          console.log('[Chat] Stream ended')
-          break
-        }
+      const controller = new AbortController()
+      abortRef.current = controller
 
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() ?? ''
+      let accumulatedText = ''
+      let accumulatedThinking = ''
+      let accumulatedToolCalls = 0
+      const toolCalls: ToolCallRecord[] = []
+      let currentToolCall: Partial<ToolCallRecord> | null = null
 
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue
-          const jsonStr = line.slice(6).trim()
-          if (!jsonStr) continue
-          const ev = parseChatPanelSseEvent(jsonStr, 'chunk')
-          if (ev) processSSEEvent(ev)
-        }
-      }
-
-      // Flush any remaining buffered event after stream ends
-      const remaining = buffer.trim()
-      if (remaining.startsWith('data: ')) {
-        const jsonStr = remaining.slice(6).trim()
-        if (jsonStr) {
-          const evRem = parseChatPanelSseEvent(jsonStr, 'flush')
-          if (evRem) processSSEEvent(evRem)
-        }
-      }
-    } catch (err) {
-      if ((err as Error).name === 'AbortError') {
-        // If aborted before any content arrived, remove the empty message
-        const hadChanges = accumulatedToolCalls > 0
-        if (!accumulatedText) {
-          updateChatMessage(assistantMsgId, {
-            content: hadChanges
-              ? '*(cancelled — partial changes may have been applied. Use Ctrl+Z to undo.)*'
-              : '*(cancelled)*',
-          })
-        } else if (hadChanges) {
-          updateChatMessage(assistantMsgId, {
-            content: accumulatedText + '\n\n*(cancelled — partial changes applied. Use Ctrl+Z to undo.)*',
-          })
-        }
-      } else {
-        updateChatMessage(assistantMsgId, {
-          content: `Failed to connect to agent: ${(err as Error).message}`,
+      try {
+        const response = await fetch('/api/agent', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestBody),
+          signal: controller.signal,
         })
+
+        if (!response.ok) {
+          throw new Error(`Agent API error: ${response.statusText}`)
+        }
+
+        const reader = response.body!.getReader()
+        const decoder = new TextDecoder()
+        let buffer = ''
+
+        const processSSEEvent = (event: SSEEvent) => {
+          switch (event.type) {
+            case 'thinking':
+              setIsThinking(true)
+              break
+
+            case 'thinking_start':
+              setIsThinking(true)
+              setAgentPhase('thinking')
+              updateChatMessage(assistantMsgId, { isThinkingStreaming: true, thinking: '' })
+              break
+
+            case 'thinking_token':
+              if (event.token) {
+                accumulatedThinking += event.token
+                updateChatMessage(assistantMsgId, { thinking: accumulatedThinking })
+              }
+              break
+
+            case 'thinking_complete':
+              setIsThinking(false)
+              setAgentPhase('generating')
+              updateChatMessage(assistantMsgId, {
+                thinking: event.fullThinking ?? '',
+                isThinkingStreaming: false,
+              })
+              break
+
+            case 'token':
+              if (event.token) {
+                setIsThinking(false)
+                setAgentPhase('generating')
+                accumulatedText += event.token
+                updateChatMessage(assistantMsgId, { content: accumulatedText })
+              }
+              break
+
+            case 'tool_start':
+              if (event.toolName) {
+                currentToolCall = {
+                  id: uuidv4(),
+                  toolName: event.toolName,
+                  input: event.toolInput ?? {},
+                }
+                setActiveToolName(event.toolName)
+                setAgentPhase('tool')
+              }
+              break
+
+            case 'tool_complete':
+              if (currentToolCall && event.toolResult) {
+                const completed: ToolCallRecord = {
+                  ...(currentToolCall as ToolCallRecord),
+                  output: event.toolResult,
+                }
+                toolCalls.push(completed)
+                accumulatedToolCalls++
+                updateChatMessage(assistantMsgId, { toolCalls: [...toolCalls] })
+                currentToolCall = null
+              }
+              setActiveToolName(null)
+              setAgentPhase('generating')
+              break
+
+            case 'state_change': {
+              console.log('[Chat] State change:', event.changes?.[0]?.description)
+              if (event.updatedScenes && event.updatedGlobalStyle) {
+                const stateScenes = event.updatedScenes as any[]
+                console.log(`[Chat] Final state sync: ${stateScenes.length} scenes`)
+                for (const s of stateScenes) {
+                  console.log(
+                    `[Chat]   ${s.id?.slice(0, 8)}… "${s.name}" type=${s.sceneType} html=${s.sceneHTML?.length ?? 0} canvas=${s.canvasCode?.length ?? 0} code=${s.sceneCode?.length ?? 0}`,
+                  )
+                }
+                const currentGlobalStyle = useVideoStore.getState().globalStyle
+                syncScenesFromAgent(event.updatedScenes as typeof stateScenes, event.updatedGlobalStyle as typeof currentGlobalStyle)
+                const mergedGraph = syncSceneGraphWithScenes(
+                  event.updatedScenes as Scene[],
+                  event.updatedSceneGraph ?? useVideoStore.getState().project.sceneGraph,
+                )
+                updateSceneGraph(mergedGraph)
+              }
+              if (event.generationLogId) {
+                updateChatMessage(assistantMsgId, { generationLogId: event.generationLogId })
+              }
+              break
+            }
+
+            case 'done': {
+              console.log(
+                '[Chat] Done event:',
+                event.agentType,
+                event.modelId,
+                event.usage ? `$${event.usage.costUsd}` : 'no usage',
+              )
+              setAgentPhase('idle')
+              if (event.agentType) {
+                setAgentType(event.agentType)
+                updateChatMessage(assistantMsgId, {
+                  agentType: event.agentType,
+                  modelId: event.modelId,
+                  content: event.fullText ?? accumulatedText,
+                  toolCalls: event.toolCalls ?? toolCalls,
+                  usage: event.usage,
+                })
+              }
+              break
+            }
+
+            case 'error':
+              console.error('[Chat] Agent error:', event.error)
+              setAgentPhase('idle')
+              updateChatMessage(assistantMsgId, {
+                content: event.error ? `Error: ${event.error}` : 'An error occurred.',
+              })
+              break
+          }
+        }
+
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) {
+            console.log('[Chat] Stream ended')
+            break
+          }
+
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split('\n')
+          buffer = lines.pop() ?? ''
+
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue
+            const jsonStr = line.slice(6).trim()
+            if (!jsonStr) continue
+            const ev = parseChatPanelSseEvent(jsonStr, 'chunk')
+            if (ev) processSSEEvent(ev)
+          }
+        }
+
+        // Flush any remaining buffered event after stream ends
+        const remaining = buffer.trim()
+        if (remaining.startsWith('data: ')) {
+          const jsonStr = remaining.slice(6).trim()
+          if (jsonStr) {
+            const evRem = parseChatPanelSseEvent(jsonStr, 'flush')
+            if (evRem) processSSEEvent(evRem)
+          }
+        }
+      } catch (err) {
+        if ((err as Error).name === 'AbortError') {
+          const hadChanges = accumulatedToolCalls > 0
+          if (!accumulatedText) {
+            updateChatMessage(assistantMsgId, {
+              content: hadChanges
+                ? '*(cancelled — partial changes may have been applied. Use Ctrl+Z to undo.)*'
+                : '*(cancelled)*',
+            })
+          } else if (hadChanges) {
+            updateChatMessage(assistantMsgId, {
+              content: accumulatedText + '\n\n*(cancelled — partial changes applied. Use Ctrl+Z to undo.)*',
+            })
+          }
+        } else {
+          updateChatMessage(assistantMsgId, {
+            content: `Failed to connect to agent: ${(err as Error).message}`,
+          })
+        }
+      } finally {
+        setIsThinking(false)
+        setStreamingMsgId(null)
+        setActiveToolName(null)
+        setAgentRunning(false)
+        setAgentPhase('idle')
+        abortRef.current = null
+        // Persist the finalized assistant message to DB
+        persistChatMessage(assistantMsgId)
+        // Fix 1 — only refresh if agent actually modified scenes, and only once
+        if (accumulatedToolCalls > 0) {
+          void useVideoStore.getState().refreshProjectFromServer()
+        }
       }
     } finally {
-      setIsThinking(false)
-      setStreamingMsgId(null)
-      setActiveToolName(null)
-      setAgentRunning(false)
-      abortRef.current = null
+      // Fix 2 — outer try/finally ensures sendingRef is always reset
       sendingRef.current = false
-      // Persist the finalized assistant message to DB
-      persistChatMessage(assistantMsgId)
-      void useVideoStore.getState().refreshProjectFromServer()
-      setTimeout(() => {
-        void useVideoStore.getState().refreshProjectFromServer()
-      }, 2500)
     }
   }, [
     chatInputValue,
@@ -441,11 +466,6 @@ export default function ChatPanel() {
     thinkingMode,
     sceneContext,
     activeTools,
-    chatMessages,
-    scenes,
-    globalStyle,
-    project,
-    selectedSceneId,
     modelConfigs,
     addChatMessage,
     persistUserMessage,
@@ -456,10 +476,35 @@ export default function ChatPanel() {
     setChatInputValue,
     setAgentRunning,
     setAgentType,
-    activeConversationId,
     newConversation,
     renameConversation,
   ])
+
+  // Fix 10 — edit a user message and re-send from that point
+  const handleEditMessage = useCallback((msgId: string, newText: string) => {
+    const msgs = useVideoStore.getState().chatMessages
+    const idx = msgs.findIndex(m => m.id === msgId)
+    if (idx === -1) return
+    // Remove the edited message and everything after it
+    const trimmed = msgs.slice(0, idx)
+    useVideoStore.setState({ chatMessages: trimmed })
+    // Put the new text in the input and send
+    setChatInputValue(newText)
+    setTimeout(() => sendMessage(), 0)
+  }, [sendMessage, setChatInputValue])
+
+  // Fix 11 — retry from the last user message before an error
+  const handleRetryMessage = useCallback((msgId: string) => {
+    const msgs = useVideoStore.getState().chatMessages
+    const idx = msgs.findIndex(m => m.id === msgId)
+    const prevUserMsg = [...msgs.slice(0, idx)].reverse().find(m => m.role === 'user')
+    if (!prevUserMsg) return
+    // Remove from the failed assistant message onward
+    useVideoStore.setState({ chatMessages: msgs.slice(0, idx) })
+    const text = typeof prevUserMsg.content === 'string' ? prevUserMsg.content : messageContentToText(prevUserMsg.content)
+    setChatInputValue(text)
+    setTimeout(() => sendMessage(), 0)
+  }, [sendMessage, setChatInputValue])
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -659,13 +704,13 @@ export default function ChatPanel() {
       )}
 
       {/* Messages */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-3 space-y-0 min-h-0">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-3 space-y-0 min-h-0 relative">
         {chatMessages.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full text-center text-[var(--color-text-muted)] select-none">
             <Bot size={32} className="mb-3 opacity-30" />
             <p className="text-sm font-medium mb-1 opacity-60">Cench Studio AI</p>
             <p className="text-sm opacity-40 max-w-[200px] leading-relaxed">
-              Describe what you want to create or edit. I'll build it for you.
+              Describe what you want to create or edit. I&apos;ll build it for you.
             </p>
           </div>
         )}
@@ -676,12 +721,27 @@ export default function ChatPanel() {
             msg={msg}
             isStreaming={streamingMsgId === msg.id}
             activeToolName={streamingMsgId === msg.id ? activeToolName : null}
+            agentPhase={streamingMsgId === msg.id ? agentPhase : undefined}
             onRate={handleRate}
             onPermission={handlePermission}
+            onEdit={handleEditMessage}
+            onRetry={handleRetryMessage}
           />
         ))}
 
-        {isThinking && streamingMsgId === null && <ThinkingBubble />}
+        {/* Fix 8 — Scroll to bottom button */}
+        {!isNearBottom && (
+          <button
+            onClick={() => {
+              scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
+              isNearBottomRef.current = true
+              setIsNearBottom(true)
+            }}
+            className="sticky bottom-2 left-1/2 -translate-x-1/2 z-10 flex items-center justify-center w-8 h-8 rounded-full bg-[var(--color-panel)] border border-[var(--color-border)] shadow-lg hover:brightness-110 transition-all"
+          >
+            <ChevronDown size={14} className="text-[var(--color-text-muted)]" />
+          </button>
+        )}
       </div>
 
       {/* Input area */}

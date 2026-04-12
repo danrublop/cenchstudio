@@ -79,7 +79,8 @@ export function createAgentActions(set: Set, get: Get) {
       const validIds = new Set(get().conversations.map((c) => c.id))
       if (!validIds.has(conversationId)) return
       const requestId = ++switchConversationCounter
-      set({ activeConversationId: conversationId, chatMessages: [] })
+      // Only update the active ID — don't clear messages yet to avoid flash
+      set({ activeConversationId: conversationId })
       try {
         const res = await fetch(`/api/conversations/${conversationId}/messages`)
         if (!res.ok) return
@@ -133,6 +134,10 @@ export function createAgentActions(set: Set, get: Get) {
         }
       } catch (err) {
         console.error('[Conversations] Failed to load messages:', err)
+        // On error, clear messages so stale ones from the previous conversation aren't shown
+        if (get().activeConversationId === conversationId) {
+          set({ chatMessages: [] })
+        }
       }
     },
 
