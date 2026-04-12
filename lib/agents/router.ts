@@ -23,6 +23,11 @@ const VALID_AGENT_TYPES = new Set<AgentType>(['director', 'scene-maker', 'editor
  * If no Anthropic model is available (e.g. user only has OpenAI/Gemini enabled),
  * falls back to heuristic routing to avoid needing multi-provider support here.
  */
+export interface RouteResult {
+  agent: AgentType
+  method: 'llm' | 'heuristic' | 'fallback'
+}
+
 export async function routeMessage(
   message: string,
   scenes: Scene[],
@@ -32,7 +37,7 @@ export async function routeMessage(
   projectId?: string,
   logger?: AgentLogger,
   enabledModelIds?: string[],
-): Promise<AgentType> {
+): Promise<RouteResult> {
   // Build state context for smarter routing
   const routeCtx: RouteContext = {
     sceneCount: scenes.filter((s) => s.prompt || s.svgContent || s.canvasCode || s.sceneCode).length,
@@ -49,7 +54,7 @@ export async function routeMessage(
       confidence: heuristicResult.confidence,
       sceneCount: routeCtx.sceneCount,
     })
-    return heuristicResult.agent
+    return { agent: heuristicResult.agent, method: 'heuristic' }
   }
 
   // Low-confidence or ambiguous — use LLM for accurate routing
@@ -73,7 +78,7 @@ export async function routeMessage(
       method: 'heuristic',
       reason: 'non-anthropic-router',
     })
-    return heuristicResult.agent
+    return { agent: heuristicResult.agent, method: 'heuristic' }
   }
 
   try {
@@ -137,15 +142,26 @@ export async function routeMessage(
         outputTokens,
         costUsd,
       })
-      return lastMatch
+      return { agent: lastMatch, method: 'llm' }
     }
 
     logger?.warn('route', `LLM response unrecognized: "${rawText.slice(0, 50)}", falling back to heuristic`)
     // Fallback: use heuristic default
-    return heuristicResult.agent
+    return { agent: heuristicResult.agent, method: 'fallback' }
   } catch (err) {
     console.error('[Router] Routing failed, using heuristics:', err)
-    return heuristicResult.agent
+    // For endgame prompts, default to director even on heuristic fallback
+    // so the user gets planning + orchestration instead of scene-maker loop
+    const isEndgamePrompt =
+      message.length > 200 ||
+      /\b(\d+)\s*(scene|slide|section)/i.test(message) ||
+      /\b(full|complete|entire|whole)\s*(video|presentation|project)/i.test(message) ||
+      /\b(intro|outro|transition|narration|music|background)\b/i.test(message)
+
+    if (isEndgamePrompt && heuristicResult.agent === 'scene-maker') {
+      return { agent: 'director', method: 'fallback' }
+    }
+    return { agent: heuristicResult.agent, method: 'fallback' }
   }
 }
 
@@ -178,16 +194,16 @@ function heuristicRoute(message: string, ctx?: RouteContext): HeuristicResult {
   // ── High-confidence: Director ──
   // Multi-word phrases that unambiguously signal video/project creation
   if (
-    /\b(create a video|make a video|build a (video|presentation)|new project|plan the (video|scenes|project))\b/i.test(lower) ||
+    /\b(create a video|make a video|build a (video|presentation)|new project|plan the (video|scenes|project))\b/i.test(
+      lower,
+    ) ||
     lower.includes('storyboard')
   ) {
     return { agent: 'director', confidence: 'high' }
   }
 
   // Educational prompts starting with clear intent verbs
-  if (
-    /^(explain|teach me|make a? ?(lesson|tutorial|walkthrough|overview) (about|on|for))\b/i.test(lower)
-  ) {
+  if (/^(explain|teach me|make a? ?(lesson|tutorial|walkthrough|overview) (about|on|for))\b/i.test(lower)) {
     return { agent: 'director', confidence: 'high' }
   }
 
@@ -197,10 +213,7 @@ function heuristicRoute(message: string, ctx?: RouteContext): HeuristicResult {
   }
 
   // "Continue" / "keep going" after a storyboard was approved → director
-  if (
-    ctx?.hasStoryboard &&
-    /\b(continue|keep going|build it|go ahead|proceed)\b/i.test(lower)
-  ) {
+  if (ctx?.hasStoryboard && /\b(continue|keep going|build it|go ahead|proceed)\b/i.test(lower)) {
     return { agent: 'director', confidence: 'high' }
   }
 
@@ -217,9 +230,7 @@ function heuristicRoute(message: string, ctx?: RouteContext): HeuristicResult {
   }
 
   // ── High-confidence: Scene-Maker ──
-  if (
-    /\b(add a (new )?scene|new scene|generate ?(a )?scene|create ?(a )?scene)\b/i.test(lower)
-  ) {
+  if (/\b(add a (new )?scene|new scene|generate ?(a )?scene|create ?(a )?scene)\b/i.test(lower)) {
     return { agent: 'scene-maker', confidence: 'high' }
   }
 
@@ -227,7 +238,9 @@ function heuristicRoute(message: string, ctx?: RouteContext): HeuristicResult {
 
   // Topic-like descriptions without explicit action verbs → probably director, but let LLM decide
   if (
-    /\b(explain|teach|lesson|tutorial|walkthrough|overview|introduction to|history of|how .+ works?|compare .+ (and|vs|versus))\b/i.test(lower) ||
+    /\b(explain|teach|lesson|tutorial|walkthrough|overview|introduction to|history of|how .+ works?|compare .+ (and|vs|versus))\b/i.test(
+      lower,
+    ) ||
     (lower.split(/,\s*| and /).length >= 3 && lower.length > 50)
   ) {
     return { agent: 'director', confidence: 'low' }
@@ -244,10 +257,7 @@ function heuristicRoute(message: string, ctx?: RouteContext): HeuristicResult {
   }
 
   // Vague improvement requests on existing projects → editor
-  if (
-    hasManyScenes &&
-    /\b(make it better|improve|polish|fix|tweak|adjust)\b/i.test(lower)
-  ) {
+  if (hasManyScenes && /\b(make it better|improve|polish|fix|tweak|adjust)\b/i.test(lower)) {
     return { agent: 'editor', confidence: 'low' }
   }
 

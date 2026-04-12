@@ -46,20 +46,41 @@ import { createPhysicsToolHandler, PHYSICS_TOOL_NAMES } from './tool-handlers/ph
 const snapshots: StateSnapshot[] = []
 const MAX_SNAPSHOTS = 50
 
-export function createSnapshot(scenes: Scene[], globalStyle: GlobalStyle, description: string): StateSnapshot {
-  const snapshot: StateSnapshot = {
-    id: uuidv4(),
-    timestamp: Date.now(),
-    description,
-    // Deep clone
-    scenes: JSON.parse(JSON.stringify(scenes)),
-    globalStyle: JSON.parse(JSON.stringify(globalStyle)),
+// Overload: legacy signature (scenes, globalStyle, description)
+export function createSnapshot(scenes: Scene[], globalStyle: GlobalStyle, description: string): StateSnapshot
+// Overload: new world-first signature (world, description)
+export function createSnapshot(world: WorldStateMutable, description: string): StateSnapshot
+export function createSnapshot(
+  worldOrScenes: WorldStateMutable | Scene[],
+  descOrGlobalStyle: string | GlobalStyle,
+  desc?: string,
+): StateSnapshot {
+  if (Array.isArray(worldOrScenes)) {
+    // Legacy call site: createSnapshot(scenes, globalStyle, description)
+    const snapshot: StateSnapshot = {
+      id: uuidv4(),
+      timestamp: Date.now(),
+      description: desc!,
+      scenes: JSON.parse(JSON.stringify(worldOrScenes)),
+      globalStyle: JSON.parse(JSON.stringify(descOrGlobalStyle)),
+    }
+    snapshots.push(snapshot)
+    if (snapshots.length > MAX_SNAPSHOTS) snapshots.shift()
+    return snapshot
+  } else {
+    // New call site: createSnapshot(world, description)
+    const world = worldOrScenes
+    const snapshot: StateSnapshot = {
+      id: uuidv4(),
+      timestamp: Date.now(),
+      description: descOrGlobalStyle as string,
+      scenes: JSON.parse(JSON.stringify(world.scenes)),
+      globalStyle: JSON.parse(JSON.stringify(world.globalStyle)),
+    }
+    snapshots.push(snapshot)
+    if (snapshots.length > MAX_SNAPSHOTS) snapshots.shift()
+    return snapshot
   }
-  snapshots.push(snapshot)
-  if (snapshots.length > MAX_SNAPSHOTS) {
-    snapshots.shift()
-  }
-  return snapshot
 }
 
 export function getSnapshots(): StateSnapshot[] {
@@ -88,7 +109,11 @@ const GENERATION_TOOL_TIMEOUT_MS = 120_000 // 120s for LLM-backed generation too
 
 // ── Generation tools that benefit from auto-validation ───────────────────────
 const GENERATION_TOOL_SET = new Set([
-  'add_layer', 'regenerate_layer', 'edit_layer', 'generate_chart', 'generate_physics_scene',
+  'add_layer',
+  'regenerate_layer',
+  'edit_layer',
+  'generate_chart',
+  'generate_physics_scene',
   'create_world_scene',
 ])
 
@@ -1310,7 +1335,10 @@ export async function executeTool(
             hint: 'Fix these issues with patch_layer_code or regenerate_layer, then call verify_scene.',
           },
         }
-        logger?.warn('auto_validate', `${toolName} succeeded but scene has issues`, { sceneId: result.affectedSceneId, warnings })
+        logger?.warn('auto_validate', `${toolName} succeeded but scene has issues`, {
+          sceneId: result.affectedSceneId,
+          warnings,
+        })
       }
     }
   }

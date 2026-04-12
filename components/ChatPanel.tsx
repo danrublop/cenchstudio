@@ -260,6 +260,22 @@ export default function ChatPanel() {
 
       const processSSEEvent = (event: SSEEvent) => {
         switch (event.type) {
+          case 'agent_routed': {
+            if (event.agentType) {
+              updateChatMessage(assistantMsgId, {
+                agentType: event.agentType,
+                modelId: event.modelId ?? undefined,
+                routeMethod: event.routeMethod ?? undefined,
+              })
+            }
+            if (event.isFallback) {
+              updateChatMessage(assistantMsgId, {
+                routingFallback: true,
+              })
+            }
+            break
+          }
+
           case 'thinking':
             setIsThinking(true)
             break
