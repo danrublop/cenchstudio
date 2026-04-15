@@ -1,9 +1,6 @@
 import type { QuizElement } from '../types'
 
-export function renderQuiz(
-  el: QuizElement,
-  onAnswered: (correct: boolean, selectedId: string) => void
-): HTMLElement {
+export function renderQuiz(el: QuizElement, onAnswered: (correct: boolean, selectedId: string) => void): HTMLElement {
   const wrapper = document.createElement('div')
   wrapper.style.cssText = `
     position: absolute;
@@ -14,6 +11,7 @@ export function renderQuiz(
     background: rgba(0,0,0,0.9);
     border-radius: 12px;
     box-sizing: border-box;
+    pointer-events: auto;
   `
 
   const q = document.createElement('p')

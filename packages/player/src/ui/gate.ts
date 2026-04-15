@@ -7,6 +7,7 @@ export function renderGate(el: GateElement, brandColor: string, onContinue: () =
     left: ${el.x}%; top: ${el.y}%;
     transform: translate(-50%, -50%);
     display: flex; align-items: center; justify-content: center;
+    pointer-events: auto;
   `
 
   const btn = document.createElement('button')
@@ -36,8 +37,12 @@ export function renderGate(el: GateElement, brandColor: string, onContinue: () =
       cursor: pointer;
       transition: background 0.15s;
     `
-    btn.addEventListener('mouseenter', () => { btn.style.background = `${brandColor}22` })
-    btn.addEventListener('mouseleave', () => { btn.style.background = 'transparent' })
+    btn.addEventListener('mouseenter', () => {
+      btn.style.background = `${brandColor}22`
+    })
+    btn.addEventListener('mouseleave', () => {
+      btn.style.background = 'transparent'
+    })
   } else {
     // minimal
     btn.style.cssText = `
@@ -50,8 +55,12 @@ export function renderGate(el: GateElement, brandColor: string, onContinue: () =
 
   btn.textContent = el.buttonLabel
 
-  btn.addEventListener('mousedown', () => { btn.style.transform = 'scale(0.97)' })
-  btn.addEventListener('mouseup', () => { btn.style.transform = 'scale(1)' })
+  btn.addEventListener('mousedown', () => {
+    btn.style.transform = 'scale(0.97)'
+  })
+  btn.addEventListener('mouseup', () => {
+    btn.style.transform = 'scale(1)'
+  })
   btn.addEventListener('click', onContinue)
 
   wrapper.appendChild(btn)

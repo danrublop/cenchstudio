@@ -101,7 +101,9 @@ class ScenePlayer {
   private send(msg: Record<string, unknown>) {
     try {
       this.iframe.contentWindow?.postMessage({ target: 'cench-scene', sceneId: this.sceneId, ...msg }, '*')
-    } catch {}
+    } catch {
+      /* postMessage may fail if iframe is detached */
+    }
   }
 
   play() {
@@ -138,9 +140,32 @@ export default function ViewerPage() {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const playerRef = useRef<ScenePlayer | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const stageContainerRef = useRef<HTMLDivElement>(null)
   const sessionId = useRef(typeof crypto !== 'undefined' ? crypto.randomUUID() : 'no-crypto')
   const triggeredGatesRef = useRef<Set<string>>(new Set())
   const appearedRef = useRef<Set<string>>(new Set())
+  const [stageTransform, setStageTransform] = useState('scale(1)')
+
+  // Scale the 1920×1080 stage to fit the container, keeping aspect ratio
+  useEffect(() => {
+    const el = stageContainerRef.current
+    if (!el) return
+    const recalc = () => {
+      const w = el.clientWidth
+      const h = el.clientHeight
+      if (w === 0 || h === 0) return
+      const scaleX = w / 1920
+      const scaleY = h / 1080
+      const scale = Math.min(scaleX, scaleY)
+      const offsetX = (w - 1920 * scale) / 2
+      const offsetY = (h - 1080 * scale) / 2
+      setStageTransform(`translate(${offsetX}px, ${offsetY}px) scale(${scale})`)
+    }
+    const ro = new ResizeObserver(recalc)
+    ro.observe(el)
+    recalc()
+    return () => ro.disconnect()
+  }, [])
 
   // ── Track analytics ──
 
@@ -438,47 +463,70 @@ export default function ViewerPage() {
       <InteractionStyles />
 
       {/* Player container */}
-      <div ref={containerRef} className="flex-1 relative flex items-center justify-center overflow-hidden">
-        <div
-          className="relative w-full h-full"
-          style={{
-            maxWidth: '100vw',
-            maxHeight: '100vh',
-            aspectRatio: '16/9',
-          }}
-        >
-          {/* Scene iframe with optional blend-in between scenes */}
-          <iframe
-            ref={iframeRef}
-            className="w-full h-full border-none bg-white"
-            sandbox="allow-scripts allow-same-origin allow-autoplay"
-            title="Scene"
+      <div ref={containerRef} className="flex-1 relative overflow-hidden" style={{ isolation: 'isolate' }}>
+        {/* Stage container — measures available space for scaling */}
+        <div ref={stageContainerRef} className="absolute inset-0">
+          {/* Inner stage: fixed 1920×1080, CSS-transformed to fit */}
+          <div
             style={{
-              opacity: transitioning ? 0 : 1,
-              transition: 'opacity 0.5s ease',
+              position: 'absolute',
+              width: 1920,
+              height: 1080,
+              transformOrigin: 'top left',
+              transform: stageTransform,
             }}
-          />
+          >
+            {/* Scene iframe with optional blend-in between scenes */}
+            <iframe
+              ref={iframeRef}
+              className="border-none bg-white"
+              sandbox="allow-scripts allow-same-origin allow-autoplay"
+              title="Scene"
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: 1920,
+                height: 1080,
+                border: 'none',
+                opacity: transitioning ? 0 : 1,
+                transition: 'opacity 0.5s ease',
+              }}
+            />
 
-          {/* Interaction overlay */}
-          <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 10 }}>
-            {currentScene.interactions
-              .filter((el) => {
-                if (playhead < el.appearsAt) return false
-                if (el.hidesAt !== null && playhead >= el.hidesAt) return false
-                return true
-              })
-              .map((el) => {
-                const firstAppearance = !appearedRef.current.has(el.id)
-                if (firstAppearance) appearedRef.current.add(el.id)
-                return (
-                  <InteractionRenderer
-                    key={el.id}
-                    element={el}
-                    callbacks={interactionCallbacks}
-                    firstAppearance={firstAppearance}
-                  />
-                )
-              })}
+            {/* Interaction overlay — same 1920×1080 space, above iframe */}
+            <div
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: 1920,
+                height: 1080,
+                pointerEvents: 'none',
+                zIndex: 100,
+                isolation: 'isolate',
+                visibility: transitioning ? 'hidden' : 'visible',
+              }}
+            >
+              {currentScene.interactions
+                .filter((el) => {
+                  if (playhead < el.appearsAt) return false
+                  if (el.hidesAt !== null && playhead >= el.hidesAt) return false
+                  return true
+                })
+                .map((el) => {
+                  const firstAppearance = !appearedRef.current.has(el.id)
+                  if (firstAppearance) appearedRef.current.add(el.id)
+                  return (
+                    <InteractionRenderer
+                      key={el.id}
+                      element={el}
+                      callbacks={interactionCallbacks}
+                      firstAppearance={firstAppearance}
+                    />
+                  )
+                })}
+            </div>
           </div>
         </div>
       </div>
