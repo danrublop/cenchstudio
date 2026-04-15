@@ -134,7 +134,7 @@ export function createAgentActions(set: Set, get: Get) {
         }
       } catch (err) {
         console.error('[Conversations] Failed to load messages:', err)
-        // On error, clear messages so stale ones from the previous conversation aren't shown
+        // On error, clear messages so stale ones from previous conversation aren't shown
         if (get().activeConversationId === conversationId) {
           set({ chatMessages: [] })
         }
