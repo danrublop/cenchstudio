@@ -11,8 +11,6 @@ import type { Scene, GlobalStyle } from '../types'
 import { logSpend } from '../db'
 import type { AgentLogger } from './logger'
 
-const client = new Anthropic()
-
 const VALID_AGENT_TYPES = new Set<AgentType>(['director', 'scene-maker', 'editor', 'dop'])
 
 /**
@@ -79,6 +77,20 @@ export async function routeMessage(
       reason: 'non-anthropic-router',
     })
     return { agent: heuristicResult.agent, method: 'heuristic' }
+  }
+
+  // Check if Anthropic API key is available before attempting LLM routing
+  if (!process.env.ANTHROPIC_API_KEY) {
+    logger?.log('route', 'No Anthropic API key — using heuristic routing')
+    return heuristicResult.agent
+  }
+
+  let client: Anthropic
+  try {
+    client = new Anthropic()
+  } catch (e) {
+    logger?.log('route', `Anthropic client init failed: ${(e as Error).message} — using heuristic`)
+    return heuristicResult.agent
   }
 
   try {

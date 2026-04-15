@@ -69,49 +69,31 @@ export function resetToolStats(): void {
 const snapshots: StateSnapshot[] = []
 const MAX_SNAPSHOTS = 50
 
-// Overload: legacy signature (scenes, globalStyle, description)
-export function createSnapshot(scenes: Scene[], globalStyle: GlobalStyle, description: string): StateSnapshot
-// Overload: new world-first signature (world, description)
-export function createSnapshot(world: WorldStateMutable, description: string): StateSnapshot
-export function createSnapshot(
-  worldOrScenes: WorldStateMutable | Scene[],
-  descOrGlobalStyle: string | GlobalStyle,
-  desc?: string,
-): StateSnapshot {
-  if (Array.isArray(worldOrScenes)) {
-    // Legacy call site: createSnapshot(scenes, globalStyle, description)
-    const snapshot: StateSnapshot = {
-      id: uuidv4(),
-      timestamp: Date.now(),
-      description: desc!,
-      scenes: JSON.parse(JSON.stringify(worldOrScenes)),
-      globalStyle: JSON.parse(JSON.stringify(descOrGlobalStyle)),
-    }
-    snapshots.push(snapshot)
-    if (snapshots.length > MAX_SNAPSHOTS) snapshots.shift()
-    return snapshot
-  } else {
-    // New call site: createSnapshot(world, description)
-    const world = worldOrScenes
-    const snapshot: StateSnapshot = {
-      id: uuidv4(),
-      timestamp: Date.now(),
-      description: descOrGlobalStyle as string,
-      scenes: JSON.parse(JSON.stringify(world.scenes)),
-      globalStyle: JSON.parse(JSON.stringify(world.globalStyle)),
-    }
-    snapshots.push(snapshot)
-    if (snapshots.length > MAX_SNAPSHOTS) snapshots.shift()
-    return snapshot
+export function createSnapshot(world: WorldStateMutable, description: string): StateSnapshot {
+  if (!world.snapshots) world.snapshots = []
+  const snapshot: StateSnapshot = {
+    id: uuidv4(),
+    timestamp: Date.now(),
+    description,
+    // Deep clone
+    scenes: JSON.parse(JSON.stringify(world.scenes)),
+    globalStyle: JSON.parse(JSON.stringify(world.globalStyle)),
   }
+  world.snapshots.push(snapshot)
+  if (world.snapshots.length > 20) world.snapshots.shift() // per-run cap
+  // Also keep module-level fallback in sync for legacy call sites
+  snapshots.push(snapshot)
+  if (snapshots.length > MAX_SNAPSHOTS) snapshots.shift()
+  return snapshot
 }
 
 export function getSnapshots(): StateSnapshot[] {
   return [...snapshots]
 }
 
-export function getLastSnapshot(): StateSnapshot | null {
-  return snapshots.length > 0 ? snapshots[snapshots.length - 1] : null
+export function getLastSnapshot(world?: WorldStateMutable): StateSnapshot | null {
+  const arr = world?.snapshots?.length ? world.snapshots : snapshots
+  return arr.length > 0 ? arr[arr.length - 1] : null
 }
 
 /** Restore world state from a snapshot. Used for rollback when a tool throws.
@@ -170,6 +152,8 @@ export interface WorldStateMutable {
   outputMode: 'mp4' | 'interactive'
   sceneGraph: SceneGraph
   activeTools?: string[]
+  /** Per-run snapshot store for undo/recovery (isolates concurrent runs) */
+  snapshots?: StateSnapshot[]
   apiPermissions?: APIPermissions
   audioProviderEnabled?: Record<string, boolean>
   mediaGenEnabled?: Record<string, boolean>
@@ -1326,17 +1310,8 @@ export async function executeTool(
   }
   const finalArgs = preResult.modifiedArgs ?? args
 
-  // Snapshot before every execution for undo/recovery.
-  // If snapshot creation fails (e.g. non-serializable values), block the tool
-  // rather than executing without rollback protection.
-  let preSnapshot: StateSnapshot
-  try {
-    preSnapshot = createSnapshot(world.scenes, world.globalStyle, `before:${toolName}`)
-  } catch (snapshotErr) {
-    const msg = snapshotErr instanceof Error ? snapshotErr.message : String(snapshotErr)
-    logger?.error('tool_exec', `Snapshot creation failed for ${toolName}: ${msg}`)
-    return { success: false, error: `Failed to create state snapshot — tool execution blocked for safety: ${msg}` }
-  }
+  // Snapshot before every execution for undo/recovery
+  const preSnapshot = createSnapshot(world, `before:${toolName}`)
 
   const timeoutMs = GENERATION_TOOL_SET.has(toolName) ? GENERATION_TOOL_TIMEOUT_MS : TOOL_TIMEOUT_MS
   const startMs = Date.now()

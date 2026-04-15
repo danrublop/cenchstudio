@@ -27,9 +27,17 @@ export interface MessageBubbleProps {
   activeToolName?: string | null
   onRate: (msgId: string, rating: number) => void
   onPermission?: (msgId: string, api: string, decision: 'allow' | 'deny') => void
+  onResume?: () => void
 }
 
-export function MessageBubble({ msg, isStreaming, activeToolName, onRate, onPermission }: MessageBubbleProps) {
+export function MessageBubble({
+  msg,
+  isStreaming,
+  activeToolName,
+  onRate,
+  onPermission,
+  onResume,
+}: MessageBubbleProps) {
   const modelConfigs = useVideoStore((s) => s.modelConfigs)
   const isUser = msg.role === 'user'
 
@@ -172,6 +180,27 @@ export function MessageBubble({ msg, isStreaming, activeToolName, onRate, onPerm
             />
             <span className="text-sm text-[var(--color-text-primary)] font-mono truncate">{activeToolName}</span>
             <span className="text-[11px] text-blue-400 ml-auto flex-shrink-0">Running</span>
+          </div>
+        )}
+
+        {/* Checkpoint resume button */}
+        {msg.hasCheckpoint && !isStreaming && (
+          <div className="mx-3 mb-2 p-3 rounded-lg border border-amber-500/20 bg-amber-500/5">
+            <p className="text-[12px] text-amber-400 mb-2">
+              {msg.checkpointReason === 'cost_cap'
+                ? '\u26A0 Cost limit reached'
+                : msg.checkpointReason === 'tool_limit'
+                  ? '\u26A0 Tool call limit reached'
+                  : '\u26A0 Iteration limit reached'}{' '}
+              &mdash; {msg.checkpointScenesBuilt} scene{msg.checkpointScenesBuilt !== 1 ? 's' : ''} built. Progress
+              saved.
+            </p>
+            <button
+              onClick={() => onResume?.()}
+              className="px-3 py-1.5 rounded text-[12px] bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 border border-amber-500/30 transition-colors"
+            >
+              Continue building &rarr;
+            </button>
           </div>
         )}
 

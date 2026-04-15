@@ -629,6 +629,7 @@ export async function runAgent(opts: RunnerOptions): Promise<{
       sceneGraph: sceneGraph ? JSON.parse(JSON.stringify(sceneGraph)) : { nodes: [], edges: [], startSceneId: '' },
       modelId,
       modelTier: opts.modelTier ?? 'auto',
+      snapshots: [], // per-run snapshot store (Fix 9)
       ...(opts.initialStoryboard
         ? { storyboard: JSON.parse(JSON.stringify(opts.initialStoryboard)) as Storyboard }
         : {}),
@@ -898,7 +899,46 @@ export async function runAgent(opts: RunnerOptions): Promise<{
           inputTokens: totalInputTokens,
           outputTokens: totalOutputTokens,
         })
-        const msg = `\n\n⚠ Cost limit reached ($${runningCost.toFixed(2)} / $${rc.maxRunCostUsd.toFixed(2)} cap). Stopping to prevent overspend.`
+        // Save checkpoint so user can resume
+        if (opts.projectId && world.storyboard && runProgress.scenesCreated.length > 0) {
+          try {
+            const checkpoint: import('./types').RunCheckpoint = {
+              runId: logger.runId,
+              agentType,
+              modelId,
+              storyboard: world.storyboard,
+              completedSceneIds: runProgress.scenesCreated,
+              remainingSceneIndexes: world.storyboard.scenes
+                .map((_, i) => i)
+                .filter(
+                  (i) =>
+                    !world.scenes.some((s) => s.name.toLowerCase() === world.storyboard!.scenes[i].name.toLowerCase()),
+                ),
+              progress: { ...runProgress },
+              worldSnapshot: {
+                scenes: JSON.parse(JSON.stringify(world.scenes)),
+                globalStyle: JSON.parse(JSON.stringify(world.globalStyle)),
+                sceneGraph: JSON.parse(JSON.stringify(world.sceneGraph)),
+              },
+              originalMessage: messageContentToText(message),
+              partialUsage: {
+                inputTokens: totalInputTokens,
+                outputTokens: totalOutputTokens,
+                apiCalls: totalApiCalls,
+                costUsd: runningCost,
+                totalDurationMs: Date.now() - runStartTime,
+              },
+              createdAt: new Date().toISOString(),
+              reason: 'cost_cap' as const,
+            }
+            await persistRunCheckpoint(opts.projectId, checkpoint)
+            emit({ type: 'checkpoint_saved', reason: 'cost_cap', scenesBuilt: runProgress.scenesCreated.length })
+          } catch (e) {
+            logger.error('cost', `Failed to save cost-cap checkpoint: ${(e as Error).message}`)
+          }
+        }
+        const remaining = (world.storyboard?.scenes.length ?? 0) - runProgress.scenesCreated.length
+        const msg = `\n\n⚠ Cost limit reached ($${runningCost.toFixed(2)}). Built ${runProgress.scenesCreated.length} of ${world.storyboard?.scenes.length ?? '?'} scenes.${remaining > 0 ? ` Say "continue" to resume the remaining ${remaining} scenes.` : ''}`
         fullText += msg
         emit({ type: 'token', token: msg })
         break
@@ -910,7 +950,52 @@ export async function runAgent(opts: RunnerOptions): Promise<{
           iteration,
           toolCalls: allToolCalls.length,
         })
-        const msg = `\n\n⚠ Tool call limit reached (${allToolCalls.length} calls). Stopping to prevent runaway execution.`
+        // Save checkpoint so user can resume
+        if (opts.projectId && world.storyboard && runProgress.scenesCreated.length > 0) {
+          try {
+            const checkpoint: import('./types').RunCheckpoint = {
+              runId: logger.runId,
+              agentType,
+              modelId,
+              storyboard: world.storyboard,
+              completedSceneIds: runProgress.scenesCreated,
+              remainingSceneIndexes: world.storyboard.scenes
+                .map((_, i) => i)
+                .filter(
+                  (i) =>
+                    !world.scenes.some((s) => s.name.toLowerCase() === world.storyboard!.scenes[i].name.toLowerCase()),
+                ),
+              progress: { ...runProgress },
+              worldSnapshot: {
+                scenes: JSON.parse(JSON.stringify(world.scenes)),
+                globalStyle: JSON.parse(JSON.stringify(world.globalStyle)),
+                sceneGraph: JSON.parse(JSON.stringify(world.sceneGraph)),
+              },
+              originalMessage: messageContentToText(message),
+              partialUsage: {
+                inputTokens: totalInputTokens,
+                outputTokens: totalOutputTokens,
+                apiCalls: totalApiCalls,
+                costUsd: calculateCost(
+                  modelId,
+                  totalInputTokens,
+                  totalOutputTokens,
+                  totalCacheCreationTokens,
+                  totalCacheReadTokens,
+                ),
+                totalDurationMs: Date.now() - runStartTime,
+              },
+              createdAt: new Date().toISOString(),
+              reason: 'tool_limit' as const,
+            }
+            await persistRunCheckpoint(opts.projectId, checkpoint)
+            emit({ type: 'checkpoint_saved', reason: 'tool_limit', scenesBuilt: runProgress.scenesCreated.length })
+          } catch (e) {
+            logger.error('tools', `Failed to save tool-limit checkpoint: ${(e as Error).message}`)
+          }
+        }
+        const remaining = (world.storyboard?.scenes.length ?? 0) - runProgress.scenesCreated.length
+        const msg = `\n\n⚠ Tool call limit reached (${allToolCalls.length} calls). Built ${runProgress.scenesCreated.length} of ${world.storyboard?.scenes.length ?? '?'} scenes.${remaining > 0 ? ` Say "continue" to resume the remaining ${remaining} scenes.` : ''}`
         fullText += msg
         emit({ type: 'token', token: msg })
         break
@@ -1168,7 +1253,8 @@ export async function runAgent(opts: RunnerOptions): Promise<{
             const before = messages.length
             const compacted = compactInFlightMessages(messages, {
               maxTokens: rc.compactionMaxTokens,
-              preserveRecent: rc.compactionPreserveRecent,
+              preserveRecent: Math.max(rc.compactionPreserveRecent, world.scenes.length * 2),
+              protectedIds: world.scenes.map((s) => s.id),
             })
             if (compacted.length < before) {
               messages.length = 0
@@ -1179,13 +1265,19 @@ export async function runAgent(opts: RunnerOptions): Promise<{
         }
 
         // Orchestrator handoff (Gemini path)
+        const geminiScenesBuiltByDirector = allToolCalls.filter(
+          (tc) => tc.toolName === 'add_layer' || tc.toolName === 'create_scene',
+        ).length
+        const geminiStylingComplete = allToolCalls.some(
+          (tc) => tc.toolName === 'set_global_style' || tc.toolName === 'set_all_transitions',
+        )
         if (
           agentType === 'director' &&
           !opts.isSubAgent &&
           world.storyboard &&
-          world.storyboard.scenes.length >= 3 &&
-          allToolCalls.some((tc) => tc.toolName === 'set_global_style' || tc.toolName === 'set_all_transitions') &&
-          !allToolCalls.some((tc) => tc.toolName === 'add_layer')
+          world.storyboard.scenes.length >= 2 &&
+          geminiStylingComplete &&
+          geminiScenesBuiltByDirector <= 4
         ) {
           logger.log('orchestrator', `Handing off to orchestrator (Gemini): ${world.storyboard.scenes.length} scenes`)
           const { runOrchestrated } = await import('./orchestrator')
@@ -1523,7 +1615,8 @@ export async function runAgent(opts: RunnerOptions): Promise<{
             const before = messages.length
             const compacted = compactInFlightMessages(messages, {
               maxTokens: rc.compactionMaxTokens,
-              preserveRecent: rc.compactionPreserveRecent,
+              preserveRecent: Math.max(rc.compactionPreserveRecent, world.scenes.length * 2),
+              protectedIds: world.scenes.map((s) => s.id),
             })
             if (compacted.length < before) {
               messages.length = 0
@@ -1534,13 +1627,19 @@ export async function runAgent(opts: RunnerOptions): Promise<{
         }
 
         // Orchestrator handoff (OpenAI path)
+        const openaiScenesBuiltByDirector = allToolCalls.filter(
+          (tc) => tc.toolName === 'add_layer' || tc.toolName === 'create_scene',
+        ).length
+        const openaiStylingComplete = allToolCalls.some(
+          (tc) => tc.toolName === 'set_global_style' || tc.toolName === 'set_all_transitions',
+        )
         if (
           agentType === 'director' &&
           !opts.isSubAgent &&
           world.storyboard &&
-          world.storyboard.scenes.length >= 3 &&
-          allToolCalls.some((tc) => tc.toolName === 'set_global_style' || tc.toolName === 'set_all_transitions') &&
-          !allToolCalls.some((tc) => tc.toolName === 'add_layer')
+          world.storyboard.scenes.length >= 2 &&
+          openaiStylingComplete &&
+          openaiScenesBuiltByDirector <= 4
         ) {
           logger.log(
             'orchestrator',
@@ -2131,7 +2230,8 @@ export async function runAgent(opts: RunnerOptions): Promise<{
             const before = messages.length
             const compacted = compactInFlightMessages(messages, {
               maxTokens: rc.compactionMaxTokens,
-              preserveRecent: rc.compactionPreserveRecent,
+              preserveRecent: Math.max(rc.compactionPreserveRecent, world.scenes.length * 2),
+              protectedIds: world.scenes.map((s) => s.id),
             })
             if (compacted.length < before) {
               messages.length = 0
@@ -2144,15 +2244,19 @@ export async function runAgent(opts: RunnerOptions): Promise<{
         // ── Orchestrator handoff ──────────────────────────────────────────────
         // After the Director has set up the storyboard and style, delegate
         // per-scene building to focused SceneMaker sub-agents.
+        const anthropicScenesBuiltByDirector = allToolCalls.filter(
+          (tc) => tc.toolName === 'add_layer' || tc.toolName === 'create_scene',
+        ).length
+        const anthropicStylingComplete = allToolCalls.some(
+          (tc) => tc.toolName === 'set_global_style' || tc.toolName === 'set_all_transitions',
+        )
         if (
           agentType === 'director' &&
           !opts.isSubAgent &&
           world.storyboard &&
-          world.storyboard.scenes.length >= 3 &&
-          // Only hand off once style tools have been called (PLAN+STYLE complete)
-          allToolCalls.some((tc) => tc.toolName === 'set_global_style' || tc.toolName === 'set_all_transitions') &&
-          // Don't hand off if we've already created scenes (Director is in BUILD phase already)
-          !allToolCalls.some((tc) => tc.toolName === 'add_layer')
+          world.storyboard.scenes.length >= 2 &&
+          anthropicStylingComplete &&
+          anthropicScenesBuiltByDirector <= 4
         ) {
           logger.log('orchestrator', `Handing off to orchestrator: ${world.storyboard.scenes.length} scenes to build`)
 
@@ -2209,6 +2313,61 @@ export async function runAgent(opts: RunnerOptions): Promise<{
           break
         }
       } // end Anthropic path
+    }
+
+    // Checkpoint on iteration limit — save progress if the while loop exhausted all iterations
+    if (
+      iteration >= effectiveMaxIterations &&
+      opts.projectId &&
+      world.storyboard &&
+      runProgress.scenesCreated.length > 0
+    ) {
+      try {
+        const checkpoint: import('./types').RunCheckpoint = {
+          runId: logger.runId,
+          agentType,
+          modelId,
+          storyboard: world.storyboard,
+          completedSceneIds: runProgress.scenesCreated,
+          remainingSceneIndexes: world.storyboard.scenes
+            .map((_, i) => i)
+            .filter(
+              (i) => !world.scenes.some((s) => s.name.toLowerCase() === world.storyboard!.scenes[i].name.toLowerCase()),
+            ),
+          progress: { ...runProgress },
+          worldSnapshot: {
+            scenes: JSON.parse(JSON.stringify(world.scenes)),
+            globalStyle: JSON.parse(JSON.stringify(world.globalStyle)),
+            sceneGraph: JSON.parse(JSON.stringify(world.sceneGraph)),
+          },
+          originalMessage: messageContentToText(message),
+          partialUsage: {
+            inputTokens: totalInputTokens,
+            outputTokens: totalOutputTokens,
+            apiCalls: totalApiCalls,
+            costUsd: calculateCost(
+              modelId,
+              totalInputTokens,
+              totalOutputTokens,
+              totalCacheCreationTokens,
+              totalCacheReadTokens,
+            ),
+            totalDurationMs: Date.now() - runStartTime,
+          },
+          createdAt: new Date().toISOString(),
+          reason: 'iteration_limit' as const,
+        }
+        await persistRunCheckpoint(opts.projectId, checkpoint)
+        emit({ type: 'checkpoint_saved', reason: 'iteration_limit', scenesBuilt: runProgress.scenesCreated.length })
+        const remaining = world.storyboard.scenes.length - runProgress.scenesCreated.length
+        if (remaining > 0) {
+          const msg = `\n\n⚠ Iteration limit reached (${iteration} iterations). Built ${runProgress.scenesCreated.length} of ${world.storyboard.scenes.length} scenes. Say "continue" to resume the remaining ${remaining} scenes.`
+          fullText += msg
+          emit({ type: 'token', token: msg })
+        }
+      } catch (e) {
+        logger.error('iteration', `Failed to save iteration-limit checkpoint: ${(e as Error).message}`)
+      }
     }
 
     // ── 6. Calculate usage and cost ──────────────────────────────────────────
