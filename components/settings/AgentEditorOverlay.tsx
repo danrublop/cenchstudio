@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import {
-  X, Check, Film, Scissors, Palette, Zap, Infinity, PenLine,
+  X, Check, Film, Scissors, Palette, Zap, PenLine,
   Paintbrush, Sparkles, Box, BarChart2, Plus, ArrowLeft, Cpu, ShieldCheck
 } from 'lucide-react'
 import { useVideoStore } from '@/lib/store'

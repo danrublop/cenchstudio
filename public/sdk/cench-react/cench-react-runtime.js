@@ -264,6 +264,149 @@
     snappy: { damping: 12, mass: 0.8, stiffness: 160 },
   }
 
+  // ── Variable Context ──────────────────────────────────────────────────────
+
+  var VariableContext = React.createContext({})
+
+  // ── useVariable ──────────────────────────────────────────────────────────
+  // Reactive state synced with parent via postMessage.
+  // Usage: var [count, setCount] = useVariable('count', 0)
+
+  function useVariable(name, defaultValue) {
+    var initial = (window.__CENCH_VARIABLES && window.__CENCH_VARIABLES[name] !== undefined)
+      ? window.__CENCH_VARIABLES[name]
+      : defaultValue
+    var _s = React.useState(initial), value = _s[0], _setValue = _s[1]
+
+    // Listen for parent pushing variable updates
+    React.useEffect(function () {
+      function onChanged(e) {
+        if (e.detail && e.detail.name === name) {
+          _setValue(e.detail.value)
+        }
+      }
+      window.addEventListener('cench:variable-changed', onChanged)
+      return function () { window.removeEventListener('cench:variable-changed', onChanged) }
+    }, [name])
+
+    var setValue = React.useCallback(function (newValue) {
+      // Resolve function updaters
+      var resolved = typeof newValue === 'function' ? newValue(value) : newValue
+      _setValue(resolved)
+      // Persist to global store
+      if (!window.__CENCH_VARIABLES) window.__CENCH_VARIABLES = {}
+      window.__CENCH_VARIABLES[name] = resolved
+      // Notify parent
+      if (window.__cenchPostToParent) {
+        window.__cenchPostToParent({ type: 'variable_changed', name: name, value: resolved })
+      }
+    }, [name, value])
+
+    return [value, setValue]
+  }
+
+  // ── useInteraction ───────────────────────────────────────────────────────
+  // Returns event handler props for interactive elements.
+  // Usage: var btn = useInteraction('my-button')
+  //        <div {...btn.handlers} style={{ opacity: btn.isHovered ? 1 : 0.7 }}>
+
+  function useInteraction(elementId) {
+    var _h = React.useState(false), isHovered = _h[0], setHovered = _h[1]
+    var _c = React.useState(false), isClicked = _c[0], setClicked = _c[1]
+
+    var notify = React.useCallback(function (type, data) {
+      if (window.__cenchPostToParent) {
+        window.__cenchPostToParent({ type: type, elementId: elementId, data: data || {} })
+      }
+    }, [elementId])
+
+    var handlers = React.useMemo(function () {
+      return {
+        onClick: function (e) {
+          setClicked(true)
+          notify('element_clicked', { x: e?.clientX, y: e?.clientY })
+          // Reset click state after animation
+          setTimeout(function () { setClicked(false) }, 300)
+        },
+        onMouseEnter: function () {
+          setHovered(true)
+          notify('element_hovered', { hovered: true })
+        },
+        onMouseLeave: function () {
+          setHovered(false)
+          notify('element_hovered', { hovered: false })
+        },
+        onTouchStart: function () {
+          setHovered(true)
+        },
+        onTouchEnd: function () {
+          setHovered(false)
+          setClicked(true)
+          notify('element_clicked')
+          setTimeout(function () { setClicked(false) }, 300)
+        },
+        style: { cursor: 'pointer' },
+      }
+    }, [notify])
+
+    return {
+      handlers: handlers,
+      isHovered: isHovered,
+      isClicked: isClicked,
+      // Convenience: spread these directly on an element
+      onClick: handlers.onClick,
+      onMouseEnter: handlers.onMouseEnter,
+      onMouseLeave: handlers.onMouseLeave,
+      onTouchStart: handlers.onTouchStart,
+      onTouchEnd: handlers.onTouchEnd,
+    }
+  }
+
+  // ── useTrigger ───────────────────────────────────────────────────────────
+  // Named events that cross the iframe boundary.
+  // Usage: var details = useTrigger('show-details')
+  //        details.fire({ itemId: 42 })
+  //        details.onFired(function(payload) { ... })
+
+  function useTrigger(name) {
+    var callbackRef = React.useRef(null)
+
+    // Listen for triggers from parent
+    React.useEffect(function () {
+      function onTrigger(e) {
+        if (e.detail && e.detail.name === name && callbackRef.current) {
+          callbackRef.current(e.detail.payload)
+        }
+      }
+      window.addEventListener('cench:trigger', onTrigger)
+      return function () { window.removeEventListener('cench:trigger', onTrigger) }
+    }, [name])
+
+    var fire = React.useCallback(function (payload) {
+      if (window.__cenchPostToParent) {
+        window.__cenchPostToParent({ type: 'interaction_event', name: name, payload: payload })
+      }
+    }, [name])
+
+    var onFired = React.useCallback(function (cb) {
+      callbackRef.current = cb
+    }, [])
+
+    return { fire: fire, onFired: onFired }
+  }
+
+  // ── Enhanced CenchComposition (wraps with VariableContext) ───────────────
+
+  var _OriginalComposition = CenchComposition
+  CenchComposition = function CenchCompositionWithVariables(props) {
+    var varsRef = React.useRef(window.__CENCH_VARIABLES || {})
+    return React.createElement(
+      VariableContext.Provider,
+      { value: varsRef.current },
+      React.createElement(_OriginalComposition, props)
+    )
+  }
+
   // ── Export ────────────────────────────────────────────────────────────────
 
   window.CenchReact = {
@@ -275,6 +418,12 @@
     Sequence: Sequence,
     AbsoluteFill: AbsoluteFill,
     Easing: Easing,
+    // Interactivity hooks
+    useVariable: useVariable,
+    useInteraction: useInteraction,
+    useTrigger: useTrigger,
+    // Internal contexts
     _FrameContext: FrameContext,
+    _VariableContext: VariableContext,
   }
 })()

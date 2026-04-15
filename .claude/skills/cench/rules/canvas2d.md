@@ -36,7 +36,7 @@ const lerp = (a, b, t) => a + (b - a) * t
 const clamp01 = (t) => Math.max(0, Math.min(1, t))
 
 function draw(t) {
-  ctx.clearRect(0, 0, 1920, 1080)
+  ctx.clearRect(0, 0, WIDTH, HEIGHT)
   // YOUR DRAWING CODE — drive everything with t (0 → DURATION)
   // Background color is set by body CSS — do NOT fill it here
 }
@@ -388,7 +388,7 @@ const x = lerp(startX, endX, easeOut(clamp01((t - delay) / moveDur)))
 
 ```js
 const rand = mulberry32(42) // fixed seed
-const x = rand() * 1920 // deterministic "random" position
+const x = rand() * WIDTH // deterministic "random" position
 ```
 
 ---
@@ -407,5 +407,5 @@ const x = rand() * 1920 // deterministic "random" position
 
 ## Coordinates and scale
 
-- Canvas logical size: 1920x1080 (set via `width`/`height` attributes)
-- CSS scales it to fill the viewport — your coordinates are always in 1920x1080 space
+- Canvas logical size: WIDTH×HEIGHT (defaults to 1920×1080 for 16:9; set via `width`/`height` attributes)
+- CSS scales it to fill the viewport — your coordinates are always in WIDTH×HEIGHT space

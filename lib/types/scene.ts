@@ -40,6 +40,7 @@ export type SceneType =
   | 'physics'
   | 'avatar_scene'
   | '3d_world'
+  | 'react'
 
 // ── Scene ────────────────────────────────────────────────────────────────────
 
@@ -79,6 +80,8 @@ export interface Scene {
   /** Canvas2D loop behind Motion / D3 / SVG (full-frame #c, z-index 0); empty when unused */
   canvasBackgroundCode: string
   sceneCode: string
+  /** React scene: JSX component code transpiled in-browser via Sucrase */
+  reactCode: string
   /** Three.js: chosen Cench stage env id (kept in sync with applyCenchThreeEnvironment in sceneCode when possible) */
   threeEnvironmentPresetId?: string | null
   sceneHTML: string
@@ -93,11 +96,15 @@ export interface Scene {
   messages: Message[]
   styleOverride: SceneStyleOverride
   cameraMotion: CameraMove[] | null
+  /** Non-destructive visual overrides applied by the inspector on top of generated code */
+  elementOverrides?: Record<string, Record<string, string | number>>
   worldConfig: WorldConfig | null
   /** Layer stack panel: synthetic keys hidden in UI (eye toggle); export may ignore until wired */
   layerHiddenIds?: string[]
   /** Layer stack panel: top-to-bottom = front-to-back; controls z-index / array order where applicable */
   layerPanelOrder?: string[]
+  /** Timestamp of last mutation (ms since epoch) — used for checkpoint merge conflict resolution */
+  updatedAt?: number
 }
 
 export interface CameraMove {

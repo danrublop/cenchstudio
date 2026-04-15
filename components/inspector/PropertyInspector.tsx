@@ -10,9 +10,10 @@ import { ToggleInput } from './controls/ToggleInput'
 import { SelectInput } from './controls/SelectInput'
 import { TextareaInput } from './controls/TextareaInput'
 import { AgentEditButton } from './controls/AgentEditButton'
-import { ELEMENT_PROPERTY_MAP, type SceneElement } from '@/lib/types/elements'
+import { getElementPropertyMap, type SceneElement } from '@/lib/types/elements'
+import { resolveProjectDimensions } from '@/lib/dimensions'
 import { patchElementInIframe } from '@/lib/scene-patcher'
-import { MousePointerClick, Layers, Box } from 'lucide-react'
+import { MousePointerClick, Layers, Box, RotateCcw } from 'lucide-react'
 
 export default function PropertyInspector() {
   const {
@@ -94,12 +95,16 @@ export function ElementInspector({
   sceneId,
   palette,
   onPatch,
+  onResetOverrides,
+  hasOverrides,
 }: {
   element: SceneElement
   layerId: string | null
   sceneId: string | null
   palette: string[]
   onPatch: (elementId: string, property: string, value: unknown) => void
+  onResetOverrides?: () => void
+  hasOverrides?: boolean
 }) {
   const patch = (prop: string, val: unknown) => onPatch(element.id, prop, val)
 
@@ -111,7 +116,20 @@ export function ElementInspector({
         <span className="text-sm text-[var(--color-text-primary,#f0ece0)] font-medium truncate">
           {element.label || element.id}
         </span>
-        <span className="ml-auto text-[10px] font-mono text-[#4a4a52] bg-[#1a1a1f] px-1.5 py-0.5 rounded flex-shrink-0">
+        {hasOverrides && onResetOverrides && (
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={onResetOverrides}
+            onKeyDown={(e) => { if (e.key === 'Enter') onResetOverrides() }}
+            className="ml-auto flex items-center gap-1 text-[10px] text-[#e84545] hover:text-[#ff6b6b] cursor-pointer transition-colors"
+            data-tooltip="Reset to original"
+          >
+            <RotateCcw size={10} />
+            Reset
+          </span>
+        )}
+        <span className={`${hasOverrides ? '' : 'ml-auto '}text-[10px] font-mono text-[#4a4a52] bg-[#1a1a1f] px-1.5 py-0.5 rounded flex-shrink-0`}>
           {element.type}
         </span>
       </div>
@@ -180,7 +198,9 @@ function TypeProperties({
   palette: string[]
   onPatch: (property: string, value: unknown) => void
 }) {
-  const properties = ELEMENT_PROPERTY_MAP[element.type]
+  const { project } = useVideoStore()
+  const dims = resolveProjectDimensions(project.mp4Settings?.aspectRatio, project.mp4Settings?.resolution)
+  const properties = getElementPropertyMap(dims.width, dims.height)[element.type]
   if (!properties || properties.length === 0) {
     // Complex types — agent-only editing
     if (['d3-chart', 'three-object', 'zdog-shape'].includes(element.type)) {
@@ -195,7 +215,38 @@ function TypeProperties({
     return null
   }
 
-  // Group properties into Style and Position sections
+  // Check if any property has a `group` field — use grouped layout for DOM elements
+  const hasGroups = properties.some((p) => p.group)
+
+  if (hasGroups) {
+    // Group properties by their group field
+    const groups: Record<string, typeof properties> = {}
+    for (const prop of properties) {
+      const g = prop.group || 'Other'
+      if (!groups[g]) groups[g] = []
+      groups[g].push(prop)
+    }
+
+    return (
+      <>
+        {Object.entries(groups).map(([groupName, groupProps]) => (
+          <Section key={groupName} title={groupName}>
+            {groupProps.map((prop) => (
+              <PropertyControl
+                key={prop.key}
+                prop={prop}
+                value={(element as unknown as Record<string, unknown>)[prop.key]}
+                palette={palette}
+                onChange={(v) => onPatch(prop.key, v)}
+              />
+            ))}
+          </Section>
+        ))}
+      </>
+    )
+  }
+
+  // Legacy layout: Style + Position sections for SVG/rough elements
   const styleProps = properties.filter((p) =>
     [
       'color',

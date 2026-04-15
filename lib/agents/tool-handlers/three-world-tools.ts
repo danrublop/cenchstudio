@@ -12,6 +12,7 @@ export const THREE_WORLD_TOOL_NAMES = [
   'search_lottie',
   'create_world_scene',
   'list_3d_assets',
+  'extrude_svg_to_3d',
 ] as const
 
 // ── Handler Factory ──────────────────────────────────────────────────────────
@@ -244,6 +245,150 @@ loader.load('${url}', (gltf) => {
         } catch {
           return ok(null, 'Asset library not available — index.json not found')
         }
+      }
+
+      // ── extrude_svg_to_3d ─────────────────────────────────────────────
+      case 'extrude_svg_to_3d': {
+        const sceneId = args.sceneId as string
+        const assetId = args.assetId as string
+        const depth = (args.depth as number) ?? 20
+        const materialStyle = (args.materialStyle as string) ?? 'chrome'
+        const animate = args.animate !== false
+
+        if (!sceneId || !assetId) return err('sceneId and assetId are required')
+
+        const scene = findScene(world, sceneId)
+        if (!scene) return err(`Scene ${sceneId} not found`)
+
+        const asset = world.projectAssets?.find((a) => a.id === assetId)
+        if (!asset) return err(`Asset ${assetId} not found in project assets`)
+        if (asset.type !== 'svg') return err(`Asset ${assetId} is not an SVG (type: ${asset.type})`)
+
+        const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
+        const svgUrl = `${baseUrl}${asset.publicUrl}`
+
+        // Material presets
+        const matPresets: Record<string, string> = {
+          chrome: 'metalness: 0.8, roughness: 0.15',
+          matte: 'metalness: 0.05, roughness: 0.9',
+          glass: 'metalness: 0.1, roughness: 0.05, transparent: true, opacity: 0.7',
+          gold: 'metalness: 0.9, roughness: 0.2, color: new THREE.Color("#FFD700")',
+        }
+        const matProps = matPresets[materialStyle] || matPresets.chrome
+
+        const rotationLine = animate ? `pivot.rotation.y = elapsed * 0.3;` : ''
+
+        const sceneCode = `import * as THREE from 'three';
+import { SVGLoader } from 'three/addons/loaders/SVGLoader.js';
+
+const { WIDTH, HEIGHT, PALETTE, DURATION, MATERIALS, mulberry32, setupEnvironment } = window;
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setSize(WIDTH, HEIGHT);
+renderer.setClearColor(PALETTE[3] || '#1a1a2e');
+renderer.shadowMap.enabled = true;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(50, WIDTH / HEIGHT, 0.1, 1000);
+camera.position.set(0, 0, 8);
+
+window.THREE = THREE;
+window.scene = scene;
+window.camera = camera;
+window.renderer = renderer;
+
+setupEnvironment(scene, renderer);
+
+// 3-point lighting
+scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+const key = new THREE.DirectionalLight(0xffffff, 1.5);
+key.position.set(5, 8, 5);
+key.castShadow = true;
+key.shadow.mapSize.set(1024, 1024);
+scene.add(key);
+const fill = new THREE.DirectionalLight(0xffffff, 0.4);
+fill.position.set(-4, 3, -2);
+scene.add(fill);
+const rim = new THREE.DirectionalLight(0xffffff, 0.6);
+rim.position.set(0, -2, -5);
+scene.add(rim);
+
+// Floor
+const floor = new THREE.Mesh(
+  new THREE.PlaneGeometry(30, 30),
+  new THREE.MeshStandardMaterial({ color: PALETTE[3] || '#1a1a2e', roughness: 0.3, metalness: 0.6 })
+);
+floor.rotation.x = -Math.PI / 2;
+floor.position.y = -3.5;
+floor.receiveShadow = true;
+scene.add(floor);
+
+// Pivot for rotation, inner group for centering
+const pivot = new THREE.Group();
+scene.add(pivot);
+
+// Load and extrude SVG
+fetch('${svgUrl}').then(r => r.text()).then(text => {
+  const inner = new THREE.Group();
+  const data = new SVGLoader().parse(text);
+  let i = 0;
+  for (const path of data.paths) {
+    const shapes = SVGLoader.createShapes(path);
+    for (const shape of shapes) {
+      const geo = new THREE.ExtrudeGeometry(shape, {
+        depth: ${depth},
+        bevelEnabled: true,
+        bevelThickness: ${Math.max(1, depth * 0.1)},
+        bevelSize: ${Math.max(0.5, depth * 0.08)},
+        bevelSegments: 8,
+        curveSegments: 24,
+      });
+      // Always use palette colors — SVGLoader cannot resolve gradient/url() fills
+      const mat = new THREE.MeshStandardMaterial({ color: PALETTE[i % PALETTE.length], ${matProps} });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.castShadow = true;
+      inner.add(mesh);
+      i++;
+    }
+  }
+  // Center inner group at origin, scale+flip via pivot
+  const box = new THREE.Box3().setFromObject(inner);
+  const center = box.getCenter(new THREE.Vector3());
+  const size = box.getSize(new THREE.Vector3());
+  inner.position.set(-center.x, -center.y, -center.z);
+  const maxDim = Math.max(size.x, size.y, size.z);
+  const s = 4 / maxDim;
+  pivot.scale.set(s, -s, s);
+  pivot.add(inner);
+});
+
+// Animation
+window.__tl.to({}, {
+  duration: DURATION,
+  onUpdate() {
+    const elapsed = window.__tl.time();
+    ${rotationLine}
+    renderer.render(scene, camera);
+  }
+}, 0);
+`
+
+        const staleClears = clearStaleCodeFields('three' as SceneType)
+        updateScene(world, sceneId, {
+          sceneType: 'three' as SceneType,
+          sceneCode,
+          ...staleClears,
+        })
+
+        await deps.regenerateHTML(world, sceneId, logger)
+
+        return ok(
+          sceneId,
+          `Extruded SVG "${asset.name}" into 3D scene with ${materialStyle} material (depth: ${depth}).`,
+        )
       }
 
       default:

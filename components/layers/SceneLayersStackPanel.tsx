@@ -21,9 +21,7 @@ import {
   MousePointerClick,
   Music,
   Palette,
-  Plus,
   Sparkles,
-  Trash2,
   Type,
   User,
   Volume2,
@@ -31,7 +29,7 @@ import {
 import { BG_STAGE_STACK_KEY, type LayerStackKey, parseLayerStackKey, pinLayerStackTail } from '@/lib/layer-stack-keys'
 import { useVideoStore } from '@/lib/store'
 import type { AILayer, AudioLayer, D3ChartLayer, InteractionElement, PhysicsLayer, Scene, SceneType } from '@/lib/types'
-import { createDefaultInteraction, InteractionTextBulkForm } from '@/components/tabs/InteractTab'
+import { InteractionTextBulkForm } from '@/components/tabs/InteractTab'
 import { compileD3SceneFromLayers } from '@/lib/charts/compile'
 import { deriveChartLayersFromScene } from '@/lib/charts/extract'
 import {
@@ -130,7 +128,7 @@ function buildDefaultOrder(scene: Scene): StackKey[] {
   ;(scene.interactions ?? []).forEach((it) => keys.push(`interaction:${it.id}` as StackKey))
   keys.push(BG_STAGE_STACK_KEY)
   if (scene.videoLayer?.enabled && scene.videoLayer.src) keys.push('video')
-  if (audioRowVisible(scene.audioLayer)) keys.push('audio')
+  if (scene.audioLayer && audioRowVisible(scene.audioLayer)) keys.push('audio')
   return keys
 }
 
@@ -615,11 +613,16 @@ function LayerStackRows({ scene, selectedKey, onToggleRow, onOpenLayerProperties
                 <div
                   role="button"
                   tabIndex={0}
-                  onClick={() => {
+                    onClick={() => {
                     onToggleRow(key)
                     if (kind === 'scene') openLayersSection('scene')
+                    if (kind === 'chart') openLayersSection('charts')
+                    if (kind === 'physics') openLayersSection('three')
                     if (kind === 'ai' && rowId) {
                       const l = (scene.aiLayers ?? []).find((x) => x.id === rowId)
+                      if (l?.type === 'avatar') {
+                        openLayersSection('avatar', { avatarLayerId: rowId })
+                      }
                       if (l?.type === 'avatar' && onOpenLayerProperties) onOpenLayerProperties(key)
                     }
                   }}
@@ -632,6 +635,12 @@ function LayerStackRows({ scene, selectedKey, onToggleRow, onOpenLayerProperties
                       e.preventDefault()
                       onToggleRow(key)
                       if (kind === 'scene') openLayersSection('scene')
+                      if (kind === 'chart') openLayersSection('charts')
+                      if (kind === 'physics') openLayersSection('three')
+                      if (kind === 'ai' && rowId) {
+                        const l = (scene.aiLayers ?? []).find((x) => x.id === rowId)
+                        if (l?.type === 'avatar') openLayersSection('avatar', { avatarLayerId: rowId })
+                      }
                     }
                   }}
                   title={
@@ -955,14 +964,10 @@ export default function SceneLayersStackPanel({ scene }: Props) {
   const {
     updateScene,
     saveSceneHTML,
-    addTextOverlay,
-    addSvgObject,
     removeAILayer,
     removeSvgObject,
     removeTextOverlay,
-    addInteraction,
     removeInteraction,
-    project,
   } = useVideoStore()
 
   const handleOpenLayerProperties = useCallback(
@@ -975,7 +980,6 @@ export default function SceneLayersStackPanel({ scene }: Props) {
   const [stackSegment, setStackSegment] = useState<'layers' | 'scenes'>('layers')
   const [selection, setSelection] = useState<{ sceneId: string; key: StackKey } | null>(null)
   const [expandedScenes, setExpandedScenes] = useState<Record<string, boolean>>({})
-  const [addOpen, setAddOpen] = useState(false)
   const [stackBodyHeight, setStackBodyHeight] = useState(LAYER_STACK_H_DEFAULT)
   const [stackResizeDrag, setStackResizeDrag] = useState(false)
   const [stackCollapsed, setStackCollapsed] = useState(false)
@@ -1109,35 +1113,6 @@ export default function SceneLayersStackPanel({ scene }: Props) {
     saveSceneHTML,
   ])
 
-  const onAddText = () => {
-    addTextOverlay(scene.id)
-    void saveSceneHTML(scene.id)
-    setAddOpen(false)
-  }
-
-  const onAddSvg = () => {
-    addSvgObject(scene.id)
-    void saveSceneHTML(scene.id)
-    setAddOpen(false)
-  }
-
-  const onAddInteraction = (t: InteractionElement['type']) => {
-    const el = createDefaultInteraction(t)
-    addInteraction(scene.id, el)
-    void saveSceneHTML(scene.id)
-    setAddOpen(false)
-  }
-
-  const selKey = selection?.sceneId === scene.id ? selection.key : null
-  const mainSceneSvgStackKey = `svg:${MAIN_SCENE_SVG_LAYER_ID}` as StackKey
-  const deleteDisabled =
-    !selection ||
-    selection.key === 'audio' ||
-    selection.key === 'video' ||
-    selection.key === BG_STAGE_STACK_KEY ||
-    selection.key === mainSceneSvgStackKey ||
-    parseKey(selection.key).kind === 'scene'
-
   return (
     <div
       className="flex shrink-0 flex-col border-t bg-[var(--color-panel)]"
@@ -1176,84 +1151,6 @@ export default function SceneLayersStackPanel({ scene }: Props) {
           <ChevronDown size={12} className={`transition-transform ${stackCollapsed ? '-rotate-90' : ''}`} />
         </span>
         <span className="flex-1 select-none text-[12px] font-semibold uppercase tracking-widest text-[var(--color-text-muted)]">Layers</span>
-
-        {(
-          <div className="relative ml-1 flex flex-shrink-0 items-center">
-            <span
-              role="button"
-              tabIndex={0}
-              onClick={() => setAddOpen((o) => !o)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault()
-                  setAddOpen((o) => !o)
-                }
-              }}
-              className="flex h-6 w-6 flex-shrink-0 cursor-pointer items-center justify-center rounded text-[var(--color-text-muted)] outline-none transition-all hover:bg-[var(--color-panel)]/50 hover:text-[var(--kbd-text)]"
-              aria-label="Add layer"
-              data-tooltip="Add layer"
-              data-tooltip-pos="bottom"
-            >
-              <Plus size={12} />
-            </span>
-            {addOpen && (
-              <>
-                <button
-                  type="button"
-                  className="fixed inset-0 z-10 cursor-default"
-                  aria-label="Close add menu"
-                  onClick={() => setAddOpen(false)}
-                />
-                <div
-                  className="absolute bottom-full right-0 z-20 mb-1 min-w-[140px] rounded border border-[var(--color-border)] py-1 shadow-lg"
-                  style={{ backgroundColor: 'var(--color-input-bg)' }}
-                >
-                  <button
-                    type="button"
-                    className="no-style flex w-full items-center gap-2 px-2 py-1.5 text-left text-[11px] hover:bg-white/10"
-                    onClick={onAddText}
-                  >
-                    <Type size={12} /> Text overlay
-                  </button>
-                  <button
-                    type="button"
-                    className="no-style flex w-full items-center gap-2 px-2 py-1.5 text-left text-[11px] hover:bg-white/10"
-                    onClick={onAddSvg}
-                  >
-                    <Layers size={12} /> SVG object
-                  </button>
-                  {project.outputMode === 'interactive' && (
-                    <>
-                      <div className="my-1 border-t border-[var(--color-border)]" role="separator" />
-                      <p className="px-2 pt-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
-                        Interaction
-                      </p>
-                      {(
-                        [
-                          ['hotspot', 'Hotspot'],
-                          ['choice', 'Choice'],
-                          ['quiz', 'Quiz'],
-                          ['gate', 'Gate'],
-                          ['tooltip', 'Tooltip'],
-                          ['form', 'Form'],
-                        ] as const
-                      ).map(([t, lab]) => (
-                        <button
-                          key={t}
-                          type="button"
-                          className="no-style flex w-full items-center gap-2 px-2 py-1.5 text-left text-[11px] hover:bg-white/10"
-                          onClick={() => onAddInteraction(t)}
-                        >
-                          <MousePointerClick size={12} /> {lab}
-                        </button>
-                      ))}
-                    </>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-        )}
 
       </div>
 

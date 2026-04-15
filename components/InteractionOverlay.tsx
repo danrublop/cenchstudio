@@ -6,6 +6,7 @@ import type { Scene, InteractionElement } from '@/lib/types'
 import { DEFAULT_INTERACTION_STYLE } from '@/lib/types'
 import { cssBorderRadiusForTooltipTrigger } from '@/lib/interactions/tooltip-trigger-css'
 import { snapToGrid } from '@/lib/grid'
+import { resolveProjectDimensions } from '@/lib/dimensions'
 import { InteractionRenderer, InteractionStyles } from '@/components/interactions/InteractionRenderer'
 import type { InteractionCallbacks } from '@/components/interactions/InteractionRenderer'
 
@@ -26,6 +27,10 @@ const TYPE_COLORS: Record<string, string> = {
   gate: '#10b981',
   tooltip: '#06b6d4',
   form: '#ec4899',
+  slider: '#f97316',
+  toggle: '#14b8a6',
+  reveal: '#a855f7',
+  countdown: '#ef4444',
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -35,6 +40,10 @@ const TYPE_LABELS: Record<string, string> = {
   gate: 'Gate',
   tooltip: 'Tooltip',
   form: 'Form',
+  slider: 'Slider',
+  toggle: 'Toggle',
+  reveal: 'Reveal',
+  countdown: 'Countdown',
 }
 
 interface DragState {
@@ -54,7 +63,8 @@ export default function InteractionOverlay({
   onElementMove,
   interactionCallbacks,
 }: InteractionOverlayProps) {
-  const { updateInteraction, gridConfig } = useVideoStore()
+  const { updateInteraction, gridConfig, project } = useVideoStore()
+  const { width: sceneW, height: sceneH } = resolveProjectDimensions(project.mp4Settings?.aspectRatio, project.mp4Settings?.resolution)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<DragState | null>(null)
@@ -103,12 +113,12 @@ export default function InteractionOverlay({
       let newX = Math.max(0, Math.min(100, d.origX + dx))
       let newY = Math.max(0, Math.min(100, d.origY + dy))
       if (gridConfig.enabled && !e.shiftKey) {
-        const pxX = (newX / 100) * 1920
-        const pxY = (newY / 100) * 1080
+        const pxX = (newX / 100) * sceneW
+        const pxY = (newY / 100) * sceneH
         const snappedX = snapToGrid(pxX, gridConfig.size, gridConfig.snapThreshold)
         const snappedY = snapToGrid(pxY, gridConfig.size, gridConfig.snapThreshold)
-        newX = (snappedX / 1920) * 100
-        newY = (snappedY / 1080) * 100
+        newX = (snappedX / sceneW) * 100
+        newY = (snappedY / sceneH) * 100
       }
       updateInteraction(scene.id, d.elementId, { x: newX, y: newY } as any)
       onElementMove?.(d.elementId, newX, newY)

@@ -10,6 +10,7 @@ import { projectAssets, projects } from '@/lib/db/schema'
 import { eq, and, desc } from 'drizzle-orm'
 import { assertProjectAccess } from '@/lib/auth-helpers'
 import { sanitizeSvg } from '@/lib/api/sanitize-svg'
+import { extractColorsFromSvg, extractColorsFromImage } from '@/lib/brand/extract-colors'
 
 const execFileAsync = promisify(execFile)
 
@@ -101,6 +102,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
     let height: number | null = null
     let durationSeconds: number | null = null
     let thumbnailUrl: string | null = null
+    let extractedColors: string[] = []
 
     // Extract metadata and generate thumbnails
     if (assetType === 'image') {
@@ -119,6 +121,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
         thumbnailUrl = `/uploads/projects/${projectId}/${thumbFilename}`
       } catch (e) {
         console.warn('[asset-upload] sharp metadata/thumbnail failed:', e)
+      }
+      try {
+        extractedColors = await extractColorsFromImage(buffer)
+      } catch (e) {
+        console.warn('[asset-upload] color extraction failed:', e)
       }
     } else if (assetType === 'svg') {
       // Sanitize SVG to strip XSS vectors (script tags, event handlers, javascript: URIs)
@@ -140,6 +147,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
         const hMatch = svgText.match(/height=["']([\d.]+)/)
         if (wMatch) width = Math.round(parseFloat(wMatch[1]))
         if (hMatch) height = Math.round(parseFloat(hMatch[1]))
+      }
+      try {
+        extractedColors = extractColorsFromSvg(cleanSvg)
+      } catch (e) {
+        console.warn('[asset-upload] SVG color extraction failed:', e)
       }
     } else if (assetType === 'video') {
       // Extract duration and first frame via ffprobe/ffmpeg
@@ -192,6 +204,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
         name: displayName,
         tags,
         thumbnailUrl,
+        extractedColors,
       })
       .returning()
 

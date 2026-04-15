@@ -13,7 +13,7 @@ import { createDefaultAPIPermissions } from '../permissions'
 import type { LayersTabSectionId } from '../layers-tab-header'
 
 import type { VideoStore } from './types'
-import { createDefaultProject, createDefaultScene, DEFAULT_GLOBAL_STYLE, sceneHasRenderableContent } from './helpers'
+import { createDefaultProject, createDefaultScene, DEFAULT_GLOBAL_STYLE, sceneHasRenderableContent, setPersistedTheme } from './helpers'
 
 import { createUndoActions } from './undo-actions'
 import { createSceneActions } from './scene-actions'
@@ -90,6 +90,7 @@ export const useVideoStore = create<VideoStore>()(
       setRecordingElapsed: (ms) => set({ recordingElapsed: ms }),
       setRecordingAttachSceneId: (sceneId) => set({ recordingAttachSceneId: sceneId }),
       timelineHeight: 200,
+      graphExpandedScenes: [] as string[],
       isPreviewFullscreen: false,
       compositorPreview: false,
       setCompositorPreview: (active) => set({ compositorPreview: active }),
@@ -132,9 +133,11 @@ export const useVideoStore = create<VideoStore>()(
       _persistedMessageIds: new Set<string>(),
       isChatOpen: false,
       isAgentRunning: false,
+      _agentRunStartedAt: 0,
       agentType: null,
       agentModelId: null,
       agentOverride: null,
+      directorTemplate: null,
       pendingStoryboard: null,
       storyboardProposed: null,
       pausedAgentRun: null,
@@ -146,27 +149,32 @@ export const useVideoStore = create<VideoStore>()(
       localMode: false,
       localModelId: null,
       sceneContext: 'auto',
-      activeTools: ['svg', 'canvas2d', 'd3', 'three', 'lottie', 'zdog', 'assets', 'audio', 'video'],
+      activeTools: ['react', 'svg', 'canvas2d', 'd3', 'three', 'lottie', 'zdog', 'assets', 'audio', 'video'],
       chatInputValue: '',
       settingsTab: null,
       setSettingsTab: (tab) => set({ settingsTab: tab }),
       rightPanelTab: 'prompt' as const,
-      setRightPanelTab: (tab) => set({ rightPanelTab: tab }),
+      setRightPanelTab: (tab: 'prompt' | 'layers' | 'media' | null) => set({ rightPanelTab: tab }),
       textEditorSlotKey: null as string | null,
       setTextEditorSlotKey: (key) => set({ textEditorSlotKey: key }),
       layersTabSectionPending: null as LayersTabSectionId | null,
-      clearLayersTabSectionPending: () => set({ layersTabSectionPending: null }),
+      layersTabAvatarLayerIdPending: null as string | null,
+      clearLayersTabSectionPending: () =>
+        set({ layersTabSectionPending: null, layersTabAvatarLayerIdPending: null }),
       openTextTabForSlot: (slotKey) =>
         set({
           rightPanelTab: 'layers',
           layersTabSectionPending: 'text',
           textEditorSlotKey: slotKey,
+          layersTabAvatarLayerIdPending: null,
         }),
 
-      openLayersSection: (section) =>
+      openLayersSection: (section, opts) =>
         set({
           rightPanelTab: 'layers',
           layersTabSectionPending: section,
+          layersTabAvatarLayerIdPending:
+            section === 'avatar' ? opts?.avatarLayerId ?? null : null,
         }),
 
       layerStackPropertiesKey: null as string | null,
@@ -176,6 +184,7 @@ export const useVideoStore = create<VideoStore>()(
           rightPanelTab: 'layers',
           layersTabSectionPending: 'properties',
           layerStackPropertiesKey: stackKey,
+          layersTabAvatarLayerIdPending: null,
         }),
 
       // Media library
@@ -213,6 +222,36 @@ export const useVideoStore = create<VideoStore>()(
         scenes.forEach((s) => get().saveSceneHTML(s.id, true))
       },
 
+      // Brand Kit
+      brandKit: null,
+      updateBrandKit: async (updates) => {
+        const { project, brandKit: current } = get()
+        const merged = { ...(current ?? { brandName: null, logoAssetIds: [], palette: [], fontPrimary: null, fontSecondary: null, guidelines: null }), ...updates }
+        set({ brandKit: merged })
+        set((s) => ({ project: { ...s.project, brandKit: merged } }))
+        try {
+          await fetch(`/api/projects/${project.id}/brand-kit`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updates),
+          })
+        } catch (e) {
+          console.error('[store] updateBrandKit failed:', e)
+        }
+      },
+      applyBrandToStyle: () => {
+        const { brandKit, updateGlobalStyle } = get()
+        if (!brandKit) return
+        const updates: Record<string, unknown> = {}
+        if (brandKit.palette.length >= 4) {
+          updates.paletteOverride = brandKit.palette.slice(0, 4) as [string, string, string, string]
+        }
+        if (brandKit.fontPrimary) {
+          updates.fontOverride = brandKit.fontPrimary
+        }
+        updateGlobalStyle(updates as any)
+      },
+
       // Agent editing state
       editingAgentId: null,
       setEditingAgentId: (id) => set({ editingAgentId: id }),
@@ -240,6 +279,11 @@ export const useVideoStore = create<VideoStore>()(
       agentConfigs: DEFAULT_AGENTS,
 
       setTimelineHeight: (height: number) => set({ timelineHeight: height }),
+      toggleGraphSceneExpanded: (sceneId: string) => set((state) => ({
+        graphExpandedScenes: state.graphExpandedScenes.includes(sceneId)
+          ? state.graphExpandedScenes.filter((id) => id !== sceneId)
+          : [...state.graphExpandedScenes, sceneId],
+      })),
       setPreviewFullscreen: (full: boolean) => set({ isPreviewFullscreen: full }),
       setTimelineZoom: (zoom: number) => set({ timelineZoom: zoom }),
       setTimelineScrollX: (x: number) => set({ timelineScrollX: x }),
@@ -259,6 +303,7 @@ export const useVideoStore = create<VideoStore>()(
 
       updateGlobalStyle: (updates) => {
         get()._pushUndoDebounced()
+        if (updates.theme) setPersistedTheme(updates.theme)
         set((state) => {
           const merged = { ...state.globalStyle, ...updates }
           const typ = merged.uiTypography ?? 'app'
@@ -440,6 +485,7 @@ export const useVideoStore = create<VideoStore>()(
           canvasCode: '',
           canvasBackgroundCode: '',
           sceneCode: '',
+          reactCode: '',
           sceneHTML: '',
           sceneStyles: '',
           lottieSource: '',

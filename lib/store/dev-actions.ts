@@ -3,6 +3,7 @@
 import { v4 as uuidv4 } from 'uuid'
 import type { Scene, SceneNode, SceneEdge } from '../types'
 import { generateSceneHTML } from '../sceneTemplate'
+import { resolveProjectDimensions } from '../dimensions'
 import {
   createTestScenes,
   createInteractiveTestScenes,
@@ -17,6 +18,7 @@ import { createCapabilityShowcaseScenes } from '../capabilityShowcaseScenes'
 import { createThreeEnvironmentShowcaseScenes } from '../threeEnvironmentShowcaseScenes'
 import { createAvatarShowcaseScenes } from '../avatarShowcaseScenes'
 import { createTalkingHeadLipSyncTestScene } from '../talkingHeadLipSyncTestScene'
+import { createReactShowcaseScenes } from '../reactShowcaseScenes'
 import type { Set, Get } from './types'
 
 export function createDevActions(set: Set, get: Get) {
@@ -24,7 +26,7 @@ export function createDevActions(set: Set, get: Get) {
     seedTestScenes: async () => {
       const testScenes = createTestScenes()
       for (const scene of testScenes) {
-        const html = generateSceneHTML(scene, get().globalStyle, undefined, get().audioSettings)
+        const html = generateSceneHTML(scene, get().globalStyle, undefined, get().audioSettings, resolveProjectDimensions(get().project.mp4Settings?.aspectRatio, get().project.mp4Settings?.resolution))
         try {
           await fetch('/api/scene', {
             method: 'POST',
@@ -42,10 +44,31 @@ export function createDevActions(set: Set, get: Get) {
       }))
     },
 
+    seedReactShowcaseScenes: async () => {
+      const reactScenes = createReactShowcaseScenes()
+      for (const scene of reactScenes) {
+        const html = generateSceneHTML(scene, get().globalStyle, undefined, get().audioSettings, resolveProjectDimensions(get().project.mp4Settings?.aspectRatio, get().project.mp4Settings?.resolution))
+        try {
+          await fetch('/api/scene', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: scene.id, html }),
+          })
+        } catch {
+          // non-fatal
+        }
+      }
+      set((state) => ({
+        scenes: [...state.scenes, ...reactScenes],
+        selectedSceneId: reactScenes[0].id,
+        sceneHtmlVersion: state.sceneHtmlVersion + 1,
+      }))
+    },
+
     seedCapabilityShowcaseScenes: async () => {
       const showcaseScenes = createCapabilityShowcaseScenes()
       for (const scene of showcaseScenes) {
-        const html = generateSceneHTML(scene, get().globalStyle, undefined, get().audioSettings)
+        const html = generateSceneHTML(scene, get().globalStyle, undefined, get().audioSettings, resolveProjectDimensions(get().project.mp4Settings?.aspectRatio, get().project.mp4Settings?.resolution))
         try {
           await fetch('/api/scene', {
             method: 'POST',
@@ -66,7 +89,7 @@ export function createDevActions(set: Set, get: Get) {
     seedThreeEnvironmentShowcaseScenes: async () => {
       const envScenes = createThreeEnvironmentShowcaseScenes()
       for (const scene of envScenes) {
-        const html = generateSceneHTML(scene, get().globalStyle, undefined, get().audioSettings)
+        const html = generateSceneHTML(scene, get().globalStyle, undefined, get().audioSettings, resolveProjectDimensions(get().project.mp4Settings?.aspectRatio, get().project.mp4Settings?.resolution))
         try {
           await fetch('/api/scene', {
             method: 'POST',
@@ -88,7 +111,7 @@ export function createDevActions(set: Set, get: Get) {
       const testScenes = createInteractiveTestScenes()
       // Write HTML files first
       for (const scene of testScenes) {
-        const html = generateSceneHTML(scene, get().globalStyle, undefined, get().audioSettings)
+        const html = generateSceneHTML(scene, get().globalStyle, undefined, get().audioSettings, resolveProjectDimensions(get().project.mp4Settings?.aspectRatio, get().project.mp4Settings?.resolution))
         try {
           await fetch('/api/scene', {
             method: 'POST',
@@ -151,7 +174,7 @@ export function createDevActions(set: Set, get: Get) {
     seedInteractiveStyleShowcaseScenes: async () => {
       const showcaseScenes = createInteractiveStyleShowcaseScenes()
       for (const scene of showcaseScenes) {
-        const html = generateSceneHTML(scene, get().globalStyle, undefined, get().audioSettings)
+        const html = generateSceneHTML(scene, get().globalStyle, undefined, get().audioSettings, resolveProjectDimensions(get().project.mp4Settings?.aspectRatio, get().project.mp4Settings?.resolution))
         try {
           await fetch('/api/scene', {
             method: 'POST',
@@ -206,7 +229,7 @@ export function createDevActions(set: Set, get: Get) {
     seedInteractiveProfessionalTourScenes: async () => {
       const tour = createInteractiveProfessionalTourScenes()
       for (const scene of tour) {
-        const html = generateSceneHTML(scene, get().globalStyle, undefined, get().audioSettings)
+        const html = generateSceneHTML(scene, get().globalStyle, undefined, get().audioSettings, resolveProjectDimensions(get().project.mp4Settings?.aspectRatio, get().project.mp4Settings?.resolution))
         try {
           await fetch('/api/scene', {
             method: 'POST',
@@ -255,7 +278,7 @@ export function createDevActions(set: Set, get: Get) {
     seedProfessionalTooltipTestScenes: async () => {
       const pack = createProfessionalTooltipTestScenes()
       for (const scene of pack) {
-        const html = generateSceneHTML(scene, get().globalStyle, undefined, get().audioSettings)
+        const html = generateSceneHTML(scene, get().globalStyle, undefined, get().audioSettings, resolveProjectDimensions(get().project.mp4Settings?.aspectRatio, get().project.mp4Settings?.resolution))
         try {
           await fetch('/api/scene', {
             method: 'POST',
@@ -356,7 +379,7 @@ export function createDevActions(set: Set, get: Get) {
     seedMedicalTestScenes: async () => {
       const testScenes = createMedicalTestScenes()
       for (const scene of testScenes) {
-        const html = generateSceneHTML(scene, get().globalStyle, undefined, get().audioSettings)
+        const html = generateSceneHTML(scene, get().globalStyle, undefined, get().audioSettings, resolveProjectDimensions(get().project.mp4Settings?.aspectRatio, get().project.mp4Settings?.resolution))
         try {
           await fetch('/api/scene', {
             method: 'POST',
@@ -436,7 +459,7 @@ export function createDevActions(set: Set, get: Get) {
     seedTextEditingHarnessScenes: async () => {
       const testScenes = createTextEditingHarnessScenes()
       for (const scene of testScenes) {
-        const html = generateSceneHTML(scene, get().globalStyle, undefined, get().audioSettings)
+        const html = generateSceneHTML(scene, get().globalStyle, undefined, get().audioSettings, resolveProjectDimensions(get().project.mp4Settings?.aspectRatio, get().project.mp4Settings?.resolution))
         try {
           await fetch('/api/scene', {
             method: 'POST',
@@ -474,7 +497,7 @@ export function createDevActions(set: Set, get: Get) {
       get().updateAudioSettings({ defaultTTSProvider: 'web-speech' })
       const showcaseScenes = createAvatarShowcaseScenes()
       for (const scene of showcaseScenes) {
-        const html = generateSceneHTML(scene, get().globalStyle, undefined, get().audioSettings)
+        const html = generateSceneHTML(scene, get().globalStyle, undefined, get().audioSettings, resolveProjectDimensions(get().project.mp4Settings?.aspectRatio, get().project.mp4Settings?.resolution))
         try {
           await fetch('/api/scene', {
             method: 'POST',
@@ -511,7 +534,7 @@ export function createDevActions(set: Set, get: Get) {
     seedTalkingHeadLipSyncTestScene: async () => {
       const testScenes = createTalkingHeadLipSyncTestScene()
       for (const scene of testScenes) {
-        const html = generateSceneHTML(scene, get().globalStyle, undefined, get().audioSettings)
+        const html = generateSceneHTML(scene, get().globalStyle, undefined, get().audioSettings, resolveProjectDimensions(get().project.mp4Settings?.aspectRatio, get().project.mp4Settings?.resolution))
         try {
           await fetch('/api/scene', {
             method: 'POST',

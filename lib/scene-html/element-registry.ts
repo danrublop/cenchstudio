@@ -42,7 +42,7 @@ export const ELEMENT_REGISTRY = `
     var bodyStyle = document.body.style.transform || '';
     var m = bodyStyle.match(/scale\\(([^)]+)\\)/);
     if (m) return parseFloat(m[1]);
-    return Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+    return Math.min(window.innerWidth / (typeof WIDTH !== 'undefined' ? WIDTH : 1920), window.innerHeight / (typeof HEIGHT !== 'undefined' ? HEIGHT : 1080));
   }
 
   var __PHYSICS_CARD_PRESETS = {
@@ -124,7 +124,7 @@ export const ELEMENT_REGISTRY = `
     var bodyScale = scaleMatch ? parseFloat(scaleMatch[1]) : 1;
     // If no body transform, fall back to viewport ratio
     if (!bodyScale || isNaN(bodyScale)) {
-      bodyScale = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+      bodyScale = Math.min(window.innerWidth / (typeof WIDTH !== 'undefined' ? WIDTH : 1920), window.innerHeight / (typeof HEIGHT !== 'undefined' ? HEIGHT : 1080));
     }
     var x = e.clientX / bodyScale;
     var y = e.clientY / bodyScale;
@@ -158,8 +158,8 @@ export const ELEMENT_REGISTRY = `
 
     if (!highlightCanvas) {
       highlightCanvas = document.createElement('canvas');
-      highlightCanvas.width = 1920;
-      highlightCanvas.height = 1080;
+      highlightCanvas.width = (typeof WIDTH !== 'undefined' ? WIDTH : 1920);
+      highlightCanvas.height = (typeof HEIGHT !== 'undefined' ? HEIGHT : 1080);
       highlightCanvas.style.cssText =
         'position:absolute;inset:0;pointer-events:none;z-index:9999;';
       // Scale with the body
@@ -171,7 +171,9 @@ export const ELEMENT_REGISTRY = `
     }
 
     var ctx = highlightCanvas.getContext('2d');
-    ctx.clearRect(0, 0, 1920, 1080);
+    var __w = (typeof WIDTH !== 'undefined' ? WIDTH : 1920);
+    var __h = (typeof HEIGHT !== 'undefined' ? HEIGHT : 1080);
+    ctx.clearRect(0, 0, __w, __h);
 
     var bx = element.bbox.x;
     var by = element.bbox.y;
@@ -207,7 +209,7 @@ export const ELEMENT_REGISTRY = `
   function clearSelectionHighlight() {
     if (highlightCanvas) {
       var ctx = highlightCanvas.getContext('2d');
-      ctx.clearRect(0, 0, 1920, 1080);
+      ctx.clearRect(0, 0, (typeof WIDTH !== 'undefined' ? WIDTH : 1920), (typeof HEIGHT !== 'undefined' ? HEIGHT : 1080));
     }
   }
 
@@ -257,9 +259,30 @@ export const ELEMENT_REGISTRY = `
       if (window.__redrawAll) {
         window.__redrawAll();
       }
-      // For SVG, apply attribute directly to the DOM node
+      // For DOM elements (React scenes), patch via style
       var domEl = document.getElementById(elementId);
-      if (domEl) {
+      if (domEl && (element.type === 'dom-text' || element.type === 'dom-container' || element.type === 'dom-image')) {
+        if (property === 'text') {
+          domEl.textContent = value;
+        } else if (property === 'visible') {
+          domEl.style.display = value ? '' : 'none';
+        } else if (property === 'opacity') {
+          domEl.style.opacity = String(value);
+        } else if (property === 'src' && domEl.tagName === 'IMG') {
+          domEl.src = value;
+        } else {
+          // CSS properties — camelCase keys map directly to style
+          domEl.style[property] = (typeof value === 'number') ? (value + 'px') : String(value);
+        }
+        // Update bbox after patch
+        try {
+          var s = __physicsCardBodyScale();
+          var r = domEl.getBoundingClientRect();
+          element.bbox = { x: r.left / s, y: r.top / s, w: r.width / s, h: r.height / s };
+        } catch(ignored) {}
+      }
+      // For SVG, apply attribute directly to the DOM node
+      else if (domEl) {
         // Map element properties to DOM attributes
         if (property === 'fill' || property === 'stroke') {
           domEl.setAttribute(property, value || 'none');
@@ -324,8 +347,12 @@ export const ELEMENT_REGISTRY = `
 
   window.addEventListener('load', function() {
     // Scan ALL visible SVG elements (not just those with id)
+    // Skip SVGs inside #react-root — those are part of React components
+    // and will be handled by the DOM scan if they have data-label
     var autoIdx = 0;
+    var rRoot = document.getElementById('react-root');
     document.querySelectorAll('svg').forEach(function(svg) {
+      if (rRoot && rRoot.contains(svg)) return;
       svg.querySelectorAll(SVG_SCAN_TAGS).forEach(function(el) {
         // Assign stable id if missing
         if (!el.id) {
@@ -400,14 +427,105 @@ export const ELEMENT_REGISTRY = `
       });
     });
 
-    // Report all registered elements to parent
-    setTimeout(function() {
+    // ── Auto-register DOM elements (React scenes) ─────────
+    // React 18 createRoot().render() is async — DOM may not exist at load time.
+    // We use a single retry-based scan that waits for React to render.
+    function __scanReactDOM(root) {
+      var domIdx = 0;
+      var bodyScale = __physicsCardBodyScale();
+      var registered = {};
+      var candidates = [];
+
+      // Pass 1: elements with explicit data-label (highest priority)
+      root.querySelectorAll('[data-label]').forEach(function(el) {
+        candidates.push(el);
+      });
+      // Pass 2: leaf text elements
+      root.querySelectorAll('h1,h2,h3,h4,h5,h6,p,li').forEach(function(el) {
+        if (!el.dataset || !el.dataset.label) candidates.push(el);
+      });
+      // Pass 3: images
+      root.querySelectorAll('img').forEach(function(el) {
+        candidates.push(el);
+      });
+
+      candidates.forEach(function(el) {
+        var rect = el.getBoundingClientRect();
+        if (rect.width < 8 || rect.height < 8) return;
+        var cs = window.getComputedStyle(el);
+        if (cs.display === 'none' || cs.visibility === 'hidden') return;
+
+        // Skip if an ancestor is already registered
+        var ancestor = el.parentElement;
+        while (ancestor && ancestor !== root) {
+          if (registered[ancestor.id]) return;
+          ancestor = ancestor.parentElement;
+        }
+
+        var tag = el.tagName.toLowerCase();
+        var isTextTag = /^(h[1-6]|p|li|span|a|button)$/.test(tag);
+        var hasLabel = el.dataset && el.dataset.label;
+        var hasDirectText = (el.textContent || '').trim().length > 0;
+        var isText = isTextTag || (hasLabel && hasDirectText && !(/^(img|svg|canvas|video)$/.test(tag)));
+        var isImage = tag === 'img';
+
+        if (isText && !(el.textContent || '').trim()) return;
+
+        if (!el.id) el.id = 'cench-' + tag + '-' + (domIdx++);
+        if (window.__elements[el.id]) return;
+
+        var label = hasLabel ? el.dataset.label : null;
+        if (!label) {
+          if (isText) label = (el.textContent || '').trim().slice(0, 40) || tag;
+          else if (isImage) { var src = el.getAttribute('src') || ''; label = src.split('/').pop().split('?')[0] || 'Image'; }
+          else label = tag + ' element';
+        }
+
+        registered[el.id] = true;
+        window.__register({
+          id: el.id,
+          type: isText ? 'dom-text' : isImage ? 'dom-image' : 'dom-container',
+          label: label,
+          bbox: { x: rect.left / bodyScale, y: rect.top / bodyScale, w: rect.width / bodyScale, h: rect.height / bodyScale },
+          visible: true, opacity: parseFloat(cs.opacity) || 1,
+          animStartTime: 0, animDuration: 0,
+          text: isText ? (el.textContent || '') : '',
+          color: cs.color, backgroundColor: cs.backgroundColor,
+          fontSize: parseFloat(cs.fontSize) || 16, fontFamily: cs.fontFamily,
+          fontWeight: cs.fontWeight, textAlign: cs.textAlign,
+          padding: cs.padding, borderRadius: parseFloat(cs.borderRadius) || 0,
+          gap: cs.gap || '0px', display: cs.display, flexDirection: cs.flexDirection,
+          alignItems: cs.alignItems, justifyContent: cs.justifyContent,
+          src: isImage ? el.getAttribute('src') : undefined, objectFit: cs.objectFit,
+          width: rect.width / bodyScale, height: rect.height / bodyScale,
+        });
+      });
+    }
+
+    function __reportElements() {
       window.parent.postMessage({
         source: 'cench-scene',
         type: 'elements_list',
         elements: JSON.parse(JSON.stringify(window.__elements)),
       }, '*');
-    }, 100);
+    }
+
+    var rr = document.getElementById('react-root');
+    if (rr) {
+      // Always wait for React to render (createRoot is async)
+      var attempts = 0;
+      var waitForReact = setInterval(function() {
+        attempts++;
+        if (rr.children.length > 0 || attempts > 50) {
+          clearInterval(waitForReact);
+          if (rr.children.length > 0) __scanReactDOM(rr);
+          __reportElements();
+        }
+      }, 80);
+    } else {
+      // No React root — just report SVG elements
+      setTimeout(__reportElements, 100);
+    }
   });
 })();
 `

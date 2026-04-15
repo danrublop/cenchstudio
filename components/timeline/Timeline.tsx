@@ -20,6 +20,13 @@ import TrackRow from './TrackRow'
 import Playhead from './Playhead'
 import type { Track } from '@/lib/types'
 
+function formatTimecode(s: number) {
+  const m = Math.floor(s / 60)
+  const sec = Math.floor(s % 60)
+  const fr = Math.floor((s % 1) * 10)
+  return `${m}:${sec.toString().padStart(2, '0')}.${fr}`
+}
+
 const DIVIDER_HEIGHT = 6
 const SCROLLBAR_WIDTH = 14
 const LEFT_GUTTER = TOOLBAR_WIDTH + TRACK_HEADER_WIDTH
@@ -48,18 +55,22 @@ export default function Timeline({ currentTime, totalDuration, onSeek, trackHeig
     getTimeline,
     selectedClipIds,
     setSelectedClipIds,
+    isAgentRunning,
   } = useVideoStore()
   const containerRef = useRef<HTMLDivElement>(null)
 
+  // Use a fallback duration so the ruler/zoom math works even with 0 scenes
+  const effectiveDuration = totalDuration > 0 ? totalDuration : 30
+
   const { pps, totalWidth, maxScrollX, usableWidth, zoomIn, zoomOut, fitAll } = useTimelineZoom(
     containerRef,
-    totalDuration,
+    effectiveDuration,
     LEFT_GUTTER + SCROLLBAR_WIDTH,
   )
 
   useEffect(() => {
-    if (scenes.length > 0 && !project.timeline) initTimeline()
-  }, [scenes.length, project.timeline, initTimeline])
+    if (!project.timeline) initTimeline()
+  }, [project.timeline, initTimeline])
 
   const prevScenesSigRef = useRef('')
   useEffect(() => {
@@ -173,10 +184,10 @@ export default function Timeline({ currentTime, totalDuration, onSeek, trackHeig
         setSelectedClipIds([])
         const rect = e.currentTarget.getBoundingClientRect()
         const time = (timelineScrollX + (e.clientX - rect.left)) / pps
-        onSeek(Math.max(0, Math.min(totalDuration, time)))
+        onSeek(Math.max(0, Math.min(effectiveDuration, time)))
       }
     },
-    [timelineScrollX, pps, totalDuration, onSeek, setSelectedClipIds],
+    [timelineScrollX, pps, effectiveDuration, onSeek, setSelectedClipIds],
   )
 
   // ── Clip Drag ──
@@ -211,6 +222,7 @@ export default function Timeline({ currentTime, totalDuration, onSeek, trackHeig
 
   const handleClipDragStart = useCallback(
     (clipId: string, trackId: string, e: React.PointerEvent) => {
+      if (isAgentRunning) return
       const clip = timeline?.tracks.flatMap((t) => t.clips).find((c) => c.id === clipId)
       if (!clip) return
       e.preventDefault()
@@ -332,6 +344,7 @@ export default function Timeline({ currentTime, totalDuration, onSeek, trackHeig
       audioRowHeight,
       moveClip,
       selectedClipIds,
+      isAgentRunning,
     ],
   )
 
@@ -339,6 +352,7 @@ export default function Timeline({ currentTime, totalDuration, onSeek, trackHeig
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+      if (useVideoStore.getState().isAgentRunning) return
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedClipIds.length > 0) {
         e.preventDefault()
         const { removeClip } = useVideoStore.getState()
@@ -367,23 +381,37 @@ export default function Timeline({ currentTime, totalDuration, onSeek, trackHeig
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [selectedClipIds, currentTime, timeline, setSelectedClipIds])
 
-  if (scenes.length === 0 || totalDuration === 0) return null
-
   return (
     <div
-      className="w-full border-t border-[var(--color-border)] bg-[var(--color-timeline-bg,var(--color-panel))] flex flex-col"
-      style={{ height: trackHeight, position: 'relative', overflow: 'hidden' }}
+      className="w-full flex flex-col"
+      style={{ height: trackHeight, position: 'relative', overflow: 'hidden', background: 'var(--tl-bg)', borderTop: '1px solid var(--tl-border)' }}
       ref={containerRef}
     >
-      {/* Ruler - offset by toolbar + headers */}
-      <div className="flex-shrink-0" style={{ marginLeft: LEFT_GUTTER, marginRight: SCROLLBAR_WIDTH }}>
-        <TimeRuler
-          pps={pps}
-          totalWidth={totalWidth}
-          scrollX={timelineScrollX}
-          containerWidth={usableWidth}
-          onSeek={onSeek}
-        />
+      {/* Ruler row: timecode gutter + ruler */}
+      <div className="flex-shrink-0 flex" style={{ marginRight: SCROLLBAR_WIDTH }}>
+        <div
+          className="flex items-center justify-center flex-shrink-0 font-mono tabular-nums select-none"
+          style={{
+            width: LEFT_GUTTER,
+            height: RULER_HEIGHT,
+            fontSize: 10,
+            color: 'var(--tl-ruler-tick)',
+            background: 'var(--tl-ruler-bg)',
+            borderBottom: '1px solid var(--tl-border)',
+          }}
+        >
+          {formatTimecode(currentTime)}
+        </div>
+        <div className="flex-1 min-w-0">
+          <TimeRuler
+            pps={pps}
+            totalWidth={totalWidth}
+            scrollX={timelineScrollX}
+            containerWidth={usableWidth}
+            onSeek={onSeek}
+            contentDuration={totalDuration}
+          />
+        </div>
       </div>
 
       {/* Main content row: toolbar | sections */}
@@ -405,7 +433,7 @@ export default function Timeline({ currentTime, totalDuration, onSeek, trackHeig
             pps={pps}
             scrollX={timelineScrollX}
             usableWidth={usableWidth}
-            totalDuration={totalDuration}
+            totalDuration={effectiveDuration}
             currentTime={currentTime}
             activeTool={activeTool}
             dragState={dragState}
@@ -424,13 +452,13 @@ export default function Timeline({ currentTime, totalDuration, onSeek, trackHeig
               cursor: 'row-resize',
               position: 'relative',
               zIndex: 30,
-              background: isDividerDragging ? 'var(--color-accent)' : 'var(--color-border)',
+              background: isDividerDragging ? 'var(--tl-playhead)' : 'var(--tl-border)',
               transition: isDividerDragging ? 'none' : 'background 0.15s',
             }}
             onPointerDown={handleDividerPointerDown}
           >
             <div
-              style={{ width: 30, height: 2, borderRadius: 1, background: 'var(--color-text-muted)', opacity: 0.5 }}
+              style={{ width: 30, height: 2, borderRadius: 1, background: 'var(--tl-toolbar-text)', opacity: 0.5 }}
             />
           </div>
 
@@ -446,7 +474,7 @@ export default function Timeline({ currentTime, totalDuration, onSeek, trackHeig
             pps={pps}
             scrollX={timelineScrollX}
             usableWidth={usableWidth}
-            totalDuration={totalDuration}
+            totalDuration={effectiveDuration}
             currentTime={currentTime}
             activeTool={activeTool}
             dragState={dragState}
@@ -484,27 +512,12 @@ export default function Timeline({ currentTime, totalDuration, onSeek, trackHeig
         />
       </div>
 
-      {/* Zoom controls */}
-      <div className="absolute top-0 flex items-center gap-1 z-20 p-0.5" style={{ right: SCROLLBAR_WIDTH }}>
-        <span
-          className="cursor-pointer px-1.5 py-0.5 rounded text-sm hover:bg-white/10 text-[var(--color-text-muted)]"
-          onClick={zoomOut}
-        >
-          −
-        </span>
-        <span
-          className="cursor-pointer px-1.5 py-0.5 rounded text-sm hover:bg-white/10 text-[var(--color-text-muted)]"
-          onClick={fitAll}
-        >
-          Fit
-        </span>
-        <span
-          className="cursor-pointer px-1.5 py-0.5 rounded text-sm hover:bg-white/10 text-[var(--color-text-muted)]"
-          onClick={zoomIn}
-        >
-          +
-        </span>
-      </div>
+      {/* Streaming lock indicator */}
+      {isAgentRunning && (
+        <div className="absolute top-0 left-0 right-0 z-50 pointer-events-none"
+          style={{ height: 2, background: 'var(--tl-playhead)', opacity: 0.6 }} />
+      )}
+
     </div>
   )
 }
@@ -603,7 +616,7 @@ function VerticalScrollbar({
     <div
       ref={trackRef}
       className="flex-shrink-0 relative"
-      style={{ width, background: 'rgba(0,0,0,0.2)', cursor: 'default' }}
+      style={{ width, background: 'var(--tl-scrollbar-bg)', cursor: 'default' }}
       onClick={handleTrackClick}
     >
       {/* Thumb */}
@@ -614,7 +627,7 @@ function VerticalScrollbar({
           right: 1,
           top: thumbTop,
           height: thumbHeight,
-          background: 'rgba(255,255,255,0.18)',
+          background: 'var(--tl-scrollbar-thumb)',
           borderRadius: 3,
           cursor: canScroll ? 'grab' : 'default',
         }}
@@ -707,8 +720,12 @@ function TrackSection({
   onTrimSnap,
 }: TrackSectionProps) {
   const { addTrack } = useVideoStore()
-  const addBtnHeight = 22
-  const totalContentHeight = tracks.length * rowHeight + addBtnHeight
+  const totalContentHeight = tracks.length * rowHeight
+
+  // For video sections, anchor tracks to the bottom (V1 at bottom, like Premiere)
+  const isBottomAnchored = sectionType === 'video'
+  // When bottom-anchored, offset so content sticks to the bottom of the section
+  const bottomOffset = isBottomAnchored ? Math.max(0, height - totalContentHeight) : 0
 
   const handleWheel = useCallback(
     (e: React.WheelEvent) => {
@@ -716,36 +733,28 @@ function TrackSection({
       if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && totalContentHeight > height) {
         e.stopPropagation()
         const maxY = Math.max(0, totalContentHeight - height)
-        onScrollY(Math.max(0, Math.min(maxY, scrollY + e.deltaY)))
+        // Invert scroll for video section (bottom-anchored)
+        const delta = isBottomAnchored ? -e.deltaY : e.deltaY
+        onScrollY(Math.max(0, Math.min(maxY, scrollY + delta)))
       }
     },
-    [totalContentHeight, height, scrollY, onScrollY],
+    [totalContentHeight, height, scrollY, onScrollY, isBottomAnchored],
   )
 
   return (
     <div className="flex flex-shrink-0 overflow-hidden" style={{ height }}>
       {/* Track headers */}
       <div className="flex-shrink-0 overflow-hidden" style={{ width: TRACK_HEADER_WIDTH }}>
-        <div style={{ transform: `translateY(${-scrollY}px)` }}>
+        <div style={{ transform: `translateY(${bottomOffset - scrollY}px)` }}>
           {tracks.map((track) => (
             <TrackHeader key={track.id} track={track} height={rowHeight} />
           ))}
-          <div
-            className="flex items-center justify-center border-b border-r border-[var(--color-border)] cursor-pointer hover:bg-white/5"
-            style={{ width: TRACK_HEADER_WIDTH, height: addBtnHeight, fontSize: 9, color: 'var(--color-text-muted)' }}
-            onClick={() => {
-              if (sectionType === 'audio') addTrack('audio', `A${tracks.length + 1}`)
-              else addTrack('video', `V${tracks.length + 1}`)
-            }}
-          >
-            + {sectionType === 'audio' ? 'Audio' : 'Video'}
-          </div>
         </div>
       </div>
 
       {/* Track content */}
-      <div className="flex-1 overflow-hidden relative" onClick={onContentClick} onWheel={handleWheel}>
-        <div style={{ transform: `translateY(${-scrollY}px)` }}>
+      <div className="flex-1 overflow-hidden relative" style={{ background: 'var(--tl-track-bg)' }} onClick={onContentClick} onWheel={handleWheel}>
+        <div style={{ transform: `translateY(${bottomOffset - scrollY}px)` }}>
           {tracks.map((track) => {
             const isDropTarget =
               dragState?.active && dragState.targetTrackId === track.id && dragState.sourceTrackId !== track.id
@@ -754,7 +763,9 @@ function TrackSection({
                 key={track.id}
                 className="relative"
                 style={{
-                  background: isDropTarget ? 'rgba(59,130,246,0.15)' : undefined,
+                  height: rowHeight,
+                  background: isDropTarget ? 'var(--tl-ghost)' : undefined,
+                  borderBottom: '1px solid var(--tl-border)',
                   transition: 'background 0.1s',
                 }}
               >
@@ -776,7 +787,7 @@ function TrackSection({
               </div>
             )
           })}
-          <div className="border-b border-[var(--color-border)]" style={{ height: addBtnHeight }} />
+
         </div>
 
         {/* Drag ghost */}
@@ -789,14 +800,14 @@ function TrackSection({
             if (idx < 0) return null
             return (
               <div
-                className="absolute pointer-events-none rounded-[3px]"
+                className="absolute pointer-events-none rounded-[2px]"
                 style={{
                   left: dragState.ghostLeft - scrollX,
-                  top: idx * rowHeight - scrollY + 2,
+                  top: idx * rowHeight + bottomOffset - scrollY + 3,
                   width: clip.duration * pps,
-                  height: rowHeight - 4,
-                  background: 'rgba(59,130,246,0.4)',
-                  border: '2px dashed rgba(255,255,255,0.6)',
+                  height: rowHeight - 6,
+                  background: 'var(--tl-ghost)',
+                  border: '1px solid var(--tl-ghost-border)',
                   zIndex: 50,
                 }}
               />
@@ -810,7 +821,7 @@ function TrackSection({
             style={{
               left: trimSnapTime * pps - scrollX,
               width: 1,
-              background: '#22d3ee',
+              background: 'var(--tl-snap)',
               opacity: 0.8,
               zIndex: 45,
             }}

@@ -10,42 +10,44 @@ import AgentChat from '../AgentChat'
 const MonacoEditor = dynamic(() => import('@monaco-editor/react'), { ssr: false })
 
 interface Props {
-  scene: Scene
+  scene?: Scene | null
 }
 
 export default function PromptTab({ scene }: Props) {
   const { updateScene, saveSceneHTML } = useVideoStore()
   const [showCodeEditor, setShowCodeEditor] = useState(false)
-  
-  const isSVG = scene.sceneType === 'svg'
-  const isCanvas = scene.sceneType === 'canvas2d'
+
+  const isSVG = scene?.sceneType === 'svg'
+  const isCanvas = scene?.sceneType === 'canvas2d'
 
   const handleCodeEdit = useCallback(
     (value: string | undefined) => {
+      if (!scene) return
       if (isSVG) updateScene(scene.id, { svgContent: value ?? '' })
       else if (isCanvas) updateScene(scene.id, { canvasCode: value ?? '' })
       else updateScene(scene.id, { sceneCode: value ?? '' })
     },
-    [scene.id, isSVG, isCanvas, updateScene]
+    [scene?.id, isSVG, isCanvas, updateScene]
   )
 
   const handleCodeEditorSave = useCallback(async () => {
+    if (!scene) return
     await saveSceneHTML(scene.id)
     setShowCodeEditor(false)
-  }, [scene.id, saveSceneHTML])
+  }, [scene?.id, saveSceneHTML])
 
   const editorLanguage = isSVG ? 'xml' : 'javascript'
-  const editorValue = isSVG ? scene.svgContent : isCanvas ? scene.canvasCode : scene.sceneCode
+  const editorValue = scene ? (isSVG ? scene.svgContent : isCanvas ? scene.canvasCode : scene.sceneCode) : ''
 
   return (
     <div className="flex flex-col h-full bg-[var(--color-bg)] overflow-hidden">
       {/* Main Agent Chat Interface */}
       <div className="flex-1 overflow-hidden">
-        <AgentChat scene={scene} onOpenEditor={() => setShowCodeEditor(true)} />
+        <AgentChat scene={scene} onOpenEditor={scene ? () => setShowCodeEditor(true) : undefined} />
       </div>
 
       {/* Code Editor Modal */}
-      {showCodeEditor && (
+      {showCodeEditor && scene && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-6">
           <div className="w-full max-w-4xl h-[80vh] bg-[var(--color-panel)] border border-[var(--color-border)] rounded-xl flex flex-col overflow-hidden">
             <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)]">

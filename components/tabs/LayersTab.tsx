@@ -1,10 +1,11 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import dynamic from 'next/dynamic'
 import {
   Film,
-  Music,
   Type,
+  BarChart3,
   Plus,
   Trash2,
   ChevronDown,
@@ -12,7 +13,6 @@ import {
   Layers,
   Palette,
   Grid3X3,
-  RefreshCw,
   Volume2,
   X,
   Box,
@@ -21,14 +21,20 @@ import {
   Sparkles,
   Camera,
   User,
-  LayoutTemplate,
   Clapperboard,
+  Code2,
+  SlidersHorizontal,
+  Paintbrush,
+  Boxes,
+  Stamp,
 } from 'lucide-react'
+
+const MonacoEditor = dynamic(() => import('@monaco-editor/react'), { ssr: false })
 import { useVideoStore } from '@/lib/store'
 import type {
+  AILayer,
+  AvatarLayer,
   Scene,
-  SFXTrack,
-  MusicTrack,
   InteractionElement,
   CameraMove,
   D3ChartLayer,
@@ -36,36 +42,28 @@ import type {
   PhysicsLayer,
   PhysicsSimulationType,
 } from '@/lib/types'
-import { TRANSITION_UI_GROUPS } from '@/lib/transitions'
+import TransitionPickerGrid from '@/components/transitions/TransitionPickerGrid'
+import CameraEffectPickerGrid from '@/components/camera/CameraEffectPickerGrid'
 import type { GridConfig } from '@/lib/grid'
 import type { SceneStyleOverride, SceneStylePresetName } from '@/lib/types'
 import { SCENE_STYLE_PRESETS, getScenePresetName } from '@/lib/styles/scene-presets'
-import { normalizeAudioLayer } from '@/lib/audio/normalize'
-import AILayersPanel from '@/components/AILayersPanel'
+import AudioTabPanel from '@/components/audio/AudioTabPanel'
 import { createDefaultInteraction, TYPE_COLORS, TYPE_ICONS } from '@/components/tabs/InteractTab'
 import StylePresetPicker from '@/components/StylePresetPicker'
 import FontPicker from '@/components/FontPicker'
+import BrandKitPanel from '@/components/brand/BrandKitPanel'
 import { STYLE_PRESETS, type StylePresetId } from '@/lib/styles/presets'
-import { SFXSearchPopover } from '@/components/audio/SFXSearchPopover'
-import { MusicSearchPopover } from '@/components/audio/MusicSearchPopover'
 import { ElementInspector } from '@/components/inspector/PropertyInspector'
 import { highlightElementInIframe, patchElementInIframe, requestElementsFromIframe } from '@/lib/scene-patcher'
 import { compileD3SceneFromLayers } from '@/lib/charts/compile'
 import { compilePhysicsSceneFromLayers } from '@/lib/physics/compile'
 import ZdogOutliner from '@/components/zdog-studio/ZdogOutliner'
-import CanvasMotionTemplatesPanel from '@/components/CanvasMotionTemplatesPanel'
 import ColorSelect from '@/components/ui/ColorSelect'
+import { ASPECT_RATIO_OPTIONS, resolveProjectDimensions, type AspectRatio } from '@/lib/dimensions'
 import SceneLayersStackPanel from '@/components/layers/SceneLayersStackPanel'
-import LayerStackPropertiesPanel from '@/components/layers/LayerStackPropertiesPanel'
-import LayersTabSubheader from '@/components/layers/LayersTabSubheader'
-import SceneList from '@/components/SceneList'
 import TextTab from '@/components/tabs/TextTab'
-import {
-  DEFAULT_LAYERS_VISIBLE_TABS,
-  loadLayersTabHeader,
-  saveLayersTabHeader,
-  type LayersTabSectionId,
-} from '@/lib/layers-tab-header'
+import AvatarLayerPropertiesForm from '@/components/layers/AvatarLayerPropertiesForm'
+import type { LayersTabSectionId } from '@/lib/layers-tab-header'
 import { CENCH_THREE_ENVIRONMENTS } from '@/lib/three-environments/registry'
 import {
   parseAppliedThreeEnvironmentId,
@@ -213,10 +211,66 @@ function extractCameraMovesFromSceneHTML(sceneHTML: string): CameraMove[] {
 
 interface Props {
   scene: Scene
-  /** Electron left rail: project scene list + New Scene under subheader */
+  /** Electron left rail: New Scene shortcut above setup (scene list lives in timeline / layer stack) */
   showScenesSection?: boolean
   isLeftCollapsed?: boolean
-  onToggleLeftCollapse?: () => void
+}
+
+// Top-level group dropdown for the reorganized Controls tab
+function SectionGroup({
+  title,
+  icon: Icon,
+  color,
+  count,
+  defaultOpen = false,
+  children,
+}: {
+  title: string
+  icon: any
+  color: string
+  count?: number
+  defaultOpen?: boolean
+  children: React.ReactNode
+}) {
+  const [isOpen, setIsOpen] = useState(defaultOpen)
+  return (
+    <div className="border-b border-[var(--color-border)]">
+      <div
+        className="flex items-center gap-2.5 px-3 py-2.5 cursor-pointer select-none hover:bg-white/[0.03] transition-colors"
+        onClick={() => setIsOpen(!isOpen)}
+      >
+        <div
+          className="w-6 h-6 rounded-md flex items-center justify-center shrink-0"
+          style={{ background: color + '18' }}
+        >
+          <Icon size={13} style={{ color }} />
+        </div>
+        <span
+          className="text-[12px] font-semibold tracking-wide flex-1"
+          style={{ color: 'var(--color-text-primary)' }}
+        >
+          {title}
+        </span>
+        {count !== undefined && count > 0 && (
+          <span
+            className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+            style={{ background: color + '20', color }}
+          >
+            {count}
+          </span>
+        )}
+        <ChevronDown
+          size={14}
+          className={`transition-transform duration-200 shrink-0 text-[var(--color-text-muted)]${isOpen ? '' : ' -rotate-90'}`}
+        />
+      </div>
+      {isOpen && (
+        <div className="pb-1">
+          {children}
+        </div>
+      )}
+    </div>
+  )
 }
 
 // Stable colors for section headers when active
@@ -342,7 +396,6 @@ export default function LayersTab({
   scene,
   showScenesSection = false,
   isLeftCollapsed = false,
-  onToggleLeftCollapse,
 }: Props) {
   const {
     addScene,
@@ -351,22 +404,13 @@ export default function LayersTab({
     addTextOverlay,
     updateTextOverlay,
     removeTextOverlay,
-    addSvgObject,
-    updateSvgObject,
-    removeSvgObject,
-    generateSvgObject,
-    isGenerating,
-    generatingSceneId,
     globalStyle,
     updateGlobalStyle,
     gridConfig,
     updateGridConfig,
-    generateNarration,
-    addSFXToScene,
-    removeSFXFromScene,
-    setSceneMusic,
     addInteraction,
     project,
+    updateProject,
     inspectorSelectedElement,
     inspectorElements,
     selectInspectorElement,
@@ -375,16 +419,16 @@ export default function LayersTab({
     selectedSceneId,
     layersTabSectionPending,
     clearLayersTabSectionPending,
+    openLayersSection,
+    addAILayer,
+    removeAILayer,
   } = useVideoStore()
 
-  const [showSFXSearch, setShowSFXSearch] = useState(false)
-  const [showMusicSearch, setShowMusicSearch] = useState(false)
   const [isRecordingScreen, setIsRecordingScreen] = useState(false)
   const [recordingFps, setRecordingFps] = useState<number>(30)
   const [recordingResolution, setRecordingResolution] = useState<'source' | '720p' | '1080p' | '1440p' | '2160p'>(
     '1080p',
   )
-  const [generatingTTS, setGeneratingTTS] = useState(false)
   const [cameraParamsDraft, setCameraParamsDraft] = useState<Record<number, string>>({})
   const [chartDataDraft, setChartDataDraft] = useState<Record<string, string>>({})
   const [chartConfigDraft, setChartConfigDraft] = useState<Record<string, string>>({})
@@ -398,87 +442,49 @@ export default function LayersTab({
     startW: number
   } | null>(null)
 
-  const [objectPrompts, setObjectPrompts] = useState<Record<string, string>>({})
   const zdogStudioMode = useVideoStore((s) => s.zdogStudioMode)
   const setZdogStudioMode = useVideoStore((s) => s.setZdogStudioMode)
   const [threeEnvPatchHint, setThreeEnvPatchHint] = useState<string | null>(null)
-
-  const [layersVisibleTabIds, setLayersVisibleTabIds] = useState<LayersTabSectionId[]>(
-    () => loadLayersTabHeader().visibleTabIds,
-  )
-  const [layersActiveTab, setLayersActiveTab] = useState<LayersTabSectionId>(() => loadLayersTabHeader().activeTabId)
-
-  useEffect(() => {
-    saveLayersTabHeader({
-      visibleTabIds: layersVisibleTabIds,
-      activeTabId: layersActiveTab,
-    })
-  }, [layersVisibleTabIds, layersActiveTab])
-
-  useEffect(() => {
-    if (!layersVisibleTabIds.includes(layersActiveTab)) {
-      setLayersActiveTab(layersVisibleTabIds[0])
-    }
-  }, [layersVisibleTabIds, layersActiveTab])
+  const [layerViewMode, setLayerViewMode] = useState<
+    'properties' | 'scene' | 'transitions' | 'effects' | 'audio' | 'text' | 'charts' | 'avatar' | 'three' | 'elements' | 'code'
+  >('properties')
+  const [avatarTabLayerId, setAvatarTabLayerId] = useState<string | null>(null)
+  const [codeSubTab, setCodeSubTab] = useState<'jsx' | 'css'>('jsx')
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     if (!layersTabSectionPending) return
-    setLayersActiveTab(layersTabSectionPending)
-    setLayersVisibleTabIds((prev) =>
-      prev.includes(layersTabSectionPending) ? prev : [...prev, layersTabSectionPending],
-    )
+    const avatarPick = useVideoStore.getState().layersTabAvatarLayerIdPending
+    const pendingToMode: Partial<
+      Record<
+        LayersTabSectionId,
+        'properties' | 'scene' | 'transitions' | 'audio' | 'text' | 'charts' | 'avatar' | 'three' | 'elements'
+      >
+    > = {
+      properties: 'properties',
+      scene: 'scene',
+      transitions: 'transitions',
+      audio: 'audio',
+      text: 'text',
+      charts: 'charts',
+      avatar: 'avatar',
+      three: 'three',
+      elements: 'elements',
+    }
+    const mode = pendingToMode[layersTabSectionPending]
+    if (mode) {
+      setLayerViewMode(mode)
+      if (mode === 'avatar' && avatarPick) setAvatarTabLayerId(avatarPick)
+    }
     clearLayersTabSectionPending()
   }, [layersTabSectionPending, clearLayersTabSectionPending])
-
-  useEffect(() => {
-    if (!showScenesSection) return
-    setLayersVisibleTabIds((prev) => (prev.includes('scenes') ? prev : ['scenes', ...prev]))
-  }, [showScenesSection])
-
-  useEffect(() => {
-    if (!showScenesSection && layersActiveTab === 'scenes') {
-      setLayersActiveTab('scene')
-    }
-  }, [showScenesSection, layersActiveTab])
-
-  const subheaderVisibleIds = useMemo(
-    () => (showScenesSection ? layersVisibleTabIds : layersVisibleTabIds.filter((id) => id !== 'scenes')),
-    [showScenesSection, layersVisibleTabIds],
-  )
-
-  const subheaderActiveId = useMemo(() => {
-    if (showScenesSection) return layersActiveTab
-    return layersActiveTab === 'scenes' ? 'scene' : layersActiveTab
-  }, [showScenesSection, layersActiveTab])
-
-  const handleVisibleTabIdsChange = useCallback(
-    (ids: LayersTabSectionId[]) => {
-      if (showScenesSection) {
-        setLayersVisibleTabIds(ids)
-        return
-      }
-      const hadScenes = layersVisibleTabIds.includes('scenes')
-      const without = ids.filter((id) => id !== 'scenes')
-      setLayersVisibleTabIds(hadScenes ? (['scenes', ...without] as LayersTabSectionId[]) : without)
-    },
-    [showScenesSection, layersVisibleTabIds],
-  )
-
-  useEffect(() => {
-    if (project.outputMode === 'interactive') return
-    setLayersVisibleTabIds((prev) => {
-      const next = prev.filter((id) => id !== 'interact')
-      return next.length > 0 ? next : [...DEFAULT_LAYERS_VISIBLE_TABS]
-    })
-    setLayersActiveTab((a) => (a === 'interact' ? 'scene' : a))
-  }, [project.outputMode])
 
   useEffect(() => {
     setThreeEnvPatchHint(null)
   }, [scene.id])
 
   useEffect(() => {
-    const marker = scene.videoLayer.src
+    const marker = scene.videoLayer?.src
     if (!marker || !marker.startsWith('recording://request')) return
     try {
       const qs = marker.includes('?') ? marker.split('?')[1] : ''
@@ -501,7 +507,7 @@ export default function LayersTab({
     updateScene(scene.id, { videoLayer: { ...scene.videoLayer, src: null, enabled: true } })
     void handleToggleScreenRecord()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scene.videoLayer.src, scene.id])
+  }, [scene.videoLayer?.src, scene.id])
 
   // Get palette for inline inspector
   const palette = globalStyle.paletteOverride ?? ['#2d2d2d', '#e84545', '#4a90d9', '#50c878']
@@ -517,6 +523,44 @@ export default function LayersTab({
     },
     [patchInspectorElement, selectedSceneId],
   )
+
+  // ── Code editor handlers ─────────────────────────────────
+  const handleCodeEdit = useCallback(
+    (value: string | undefined) => {
+      if (!scene) return
+      const isReact = scene.sceneType === 'react'
+      if (codeSubTab === 'jsx') {
+        if (isReact) updateScene(scene.id, { reactCode: value ?? '' })
+        else if (scene.sceneType === 'svg') updateScene(scene.id, { svgContent: value ?? '' })
+        else if (scene.sceneType === 'canvas2d') updateScene(scene.id, { canvasCode: value ?? '' })
+        else updateScene(scene.id, { sceneCode: value ?? '' })
+      } else {
+        updateScene(scene.id, { sceneStyles: value ?? '' })
+      }
+      // Debounced auto-save for live preview
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+      saveTimerRef.current = setTimeout(() => {
+        saveSceneHTML(scene.id)
+      }, 800)
+    },
+    [scene?.id, scene?.sceneType, codeSubTab, updateScene, saveSceneHTML],
+  )
+
+  const codeEditorLanguage = useMemo(() => {
+    if (codeSubTab === 'css') return 'css'
+    if (scene?.sceneType === 'svg') return 'xml'
+    if (scene?.sceneType === 'react') return 'typescript'
+    return 'javascript'
+  }, [codeSubTab, scene?.sceneType])
+
+  const codeEditorValue = useMemo(() => {
+    if (!scene) return ''
+    if (codeSubTab === 'css') return scene.sceneStyles || ''
+    if (scene.sceneType === 'react') return scene.reactCode || ''
+    if (scene.sceneType === 'svg') return scene.svgContent || ''
+    if (scene.sceneType === 'canvas2d') return scene.canvasCode || ''
+    return scene.sceneCode || ''
+  }, [scene, codeSubTab])
 
   const handleSelectElement = useCallback(
     (element: any) => {
@@ -543,7 +587,6 @@ export default function LayersTab({
   }, [selectedSceneId])
 
   const videoInputRef = useRef<HTMLInputElement>(null)
-  const audioInputRef = useRef<HTMLInputElement>(null)
   const screenRecorderRef = useRef<MediaRecorder | null>(null)
   const screenStreamRef = useRef<MediaStream | null>(null)
   const screenChunksRef = useRef<Blob[]>([])
@@ -555,21 +598,6 @@ export default function LayersTab({
       try {
         const url = await uploadFile(file)
         updateScene(scene.id, { videoLayer: { ...scene.videoLayer, src: url, enabled: true } })
-        await saveSceneHTML(scene.id)
-      } catch {
-        alert('Upload failed')
-      }
-    },
-    [scene, updateScene, saveSceneHTML],
-  )
-
-  const handleAudioUpload = useCallback(
-    async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0]
-      if (!file) return
-      try {
-        const url = await uploadFile(file)
-        updateScene(scene.id, { audioLayer: { ...scene.audioLayer, src: url, enabled: true } })
         await saveSceneHTML(scene.id)
       } catch {
         alert('Upload failed')
@@ -696,24 +724,6 @@ export default function LayersTab({
     updateScene,
   ])
 
-  const handleGenerateVoiceover = useCallback(async () => {
-    const text = scene.prompt
-    if (!text) return
-    try {
-      const res = await fetch('/api/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, sceneId: scene.id }),
-      })
-      if (!res.ok) throw new Error('TTS failed')
-      const { url } = await res.json()
-      updateScene(scene.id, { audioLayer: { ...scene.audioLayer, src: url, enabled: true } })
-      await saveSceneHTML(scene.id)
-    } catch (err) {
-      alert('TTS generation failed. Check your ElevenLabs API key.')
-    }
-  }, [scene, updateScene, saveSceneHTML])
-
   const commitLayer = useCallback(async () => {
     await saveSceneHTML(scene.id)
   }, [scene.id, saveSceneHTML])
@@ -745,15 +755,6 @@ export default function LayersTab({
     },
     [cameraMoves, updateScene, scene.id, commitLayerDebounced],
   )
-
-  const addCameraMove = useCallback(() => {
-    const next = [
-      ...cameraMoves,
-      { type: 'presetReveal', params: { at: 0, duration: Math.max(1, scene.duration - 0.5) } },
-    ]
-    updateScene(scene.id, { cameraMotion: next })
-    commitLayer()
-  }, [cameraMoves, updateScene, scene.id, scene.duration, commitLayer])
 
   const removeCameraMove = useCallback(
     (index: number) => {
@@ -818,6 +819,72 @@ export default function LayersTab({
     },
     [updateScene, scene.id, commitLayerDebounced],
   )
+
+  const avatarLayers = useMemo(
+    () => (scene.aiLayers ?? []).filter((l): l is AvatarLayer => l.type === 'avatar'),
+    [scene.aiLayers],
+  )
+
+  const resolvedAvatarLayerId = useMemo(() => {
+    if (avatarLayers.length === 0) return null
+    if (avatarTabLayerId && avatarLayers.some((l) => l.id === avatarTabLayerId)) return avatarTabLayerId
+    return avatarLayers[0]!.id
+  }, [avatarLayers, avatarTabLayerId])
+
+  const addTalkingHeadAvatar = useCallback(async () => {
+    const id = crypto.randomUUID()
+    const script = 'Welcome! Let me explain this scene.'
+    const layer: AvatarLayer = {
+      id,
+      type: 'avatar',
+      avatarId: '',
+      voiceId: '',
+      script,
+      removeBackground: false,
+      x: 1640,
+      y: 800,
+      width: 320,
+      height: 320,
+      opacity: 1,
+      zIndex: 100,
+      videoUrl: null,
+      thumbnailUrl: null,
+      status: 'ready',
+      heygenVideoId: null,
+      estimatedDuration: scene.duration,
+      startAt: 0,
+      label: 'Avatar Overlay',
+      avatarPlacement: 'pip_bottom_right',
+      avatarProvider: 'talkinghead',
+      talkingHeadUrl: `talkinghead://render?text=${encodeURIComponent(script)}&audio=&character=friendly`,
+      narrationScript: {
+        mood: 'happy',
+        view: 'upper',
+        lipsyncHeadMovement: true,
+        eyeContact: 0.7,
+        position: 'pip_bottom_right',
+        pipSize: 320,
+        pipShape: 'circle',
+        avatarScale: 1.15,
+        containerEnabled: true,
+        background: '#6366f1',
+        character: 'friendly',
+        containerBlur: 16,
+        containerBorderColor: '#ffffff',
+        containerBorderOpacity: 0.35,
+        containerBorderWidth: 2,
+        containerShadowOpacity: 0.35,
+        containerInnerGlow: 0.08,
+        containerBgOpacity: 0.2,
+        entranceAnimation: 'fade',
+        exitAnimation: 'fade',
+        lines: [],
+      },
+    }
+    addAILayer(scene.id, layer as AILayer)
+    setAvatarTabLayerId(id)
+    await saveSceneHTML(scene.id)
+  }, [addAILayer, scene.id, scene.duration, saveSceneHTML])
 
   const addPhysicsLayer = useCallback(() => {
     const next: PhysicsLayer[] = [
@@ -905,25 +972,508 @@ export default function LayersTab({
     }
   }, [physicsCardDrag, physicsLayers, updatePhysicsLayers])
 
-  const panelSectionId =
-    layersActiveTab === 'scenes' && !showScenesSection ? 'scene' : layersActiveTab
-
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <LayersTabSubheader
-        visibleTabIds={subheaderVisibleIds}
-        onVisibleTabIdsChange={handleVisibleTabIdsChange}
-        activeTabId={subheaderActiveId}
-        onActiveTabChange={setLayersActiveTab}
-        hasInteractTab={project.outputMode === 'interactive'}
-        catalogExcludeIds={showScenesSection ? [] : ['scenes']}
+      <input
+        ref={videoInputRef}
+        type="file"
+        accept="video/mp4,video/webm"
+        onChange={handleVideoUpload}
+        className="hidden"
+        aria-hidden
       />
-      {layersActiveTab === 'scenes' && showScenesSection ? (
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <div
-            className="flex flex-shrink-0 border-b px-2 py-2"
-            style={{ borderBottomColor: 'var(--color-hairline)' }}
-          >
+      {/* ── Tab bar ── */}
+      <div className="flex items-center gap-1 px-2 pt-1.5 pb-1 shrink-0 overflow-x-auto scrollbar-none" role="tablist">
+        {([
+          { id: 'properties' as const, label: 'Properties', icon: SlidersHorizontal },
+          { id: 'scene' as const, label: 'Scene', icon: Film },
+          { id: 'transitions' as const, label: 'Transitions', icon: Clapperboard },
+          { id: 'effects' as const, label: 'Effects', icon: Sparkles },
+          { id: 'audio' as const, label: 'Audio', icon: Volume2 },
+          { id: 'text' as const, label: 'Text', icon: Type },
+          { id: 'charts' as const, label: 'Charts', icon: BarChart3 },
+          { id: 'avatar' as const, label: 'Avatar', icon: User },
+          { id: 'three' as const, label: '3D', icon: Boxes },
+          { id: 'elements' as const, label: 'Elements', icon: Box },
+          { id: 'code' as const, label: 'Code', icon: Code2 },
+        ] as const).map((tab) => {
+          const isActive = layerViewMode === tab.id
+          const TabIcon = tab.icon
+          return (
+            <span
+              key={tab.id}
+              role="tab"
+              aria-selected={isActive}
+              onClick={() => setLayerViewMode(tab.id)}
+              className={`flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-medium rounded-md cursor-pointer transition-colors select-none whitespace-nowrap ${
+                isActive
+                  ? 'bg-[var(--agent-chat-user-surface)]'
+                  : 'hover:text-[var(--color-text-primary)]'
+              }`}
+            >
+              <TabIcon size={11} />
+              {tab.label}
+            </span>
+          )
+        })}
+      </div>
+
+      {/* ── Code tab ── */}
+      {layerViewMode === 'code' && (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="flex items-center gap-1 px-3 py-1.5 border-b border-[var(--color-border)] shrink-0">
+            <span
+              role="tab"
+              aria-selected={codeSubTab === 'jsx'}
+              onClick={() => setCodeSubTab('jsx')}
+              className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded cursor-pointer transition-all ${
+                codeSubTab === 'jsx' ? 'bg-[#e84545]/15 text-[#e84545]' : 'text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]'
+              }`}
+            >
+              {scene.sceneType === 'react' ? 'JSX' : scene.sceneType === 'svg' ? 'SVG' : 'JS'}
+            </span>
+            <span
+              role="tab"
+              aria-selected={codeSubTab === 'css'}
+              onClick={() => setCodeSubTab('css')}
+              className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded cursor-pointer transition-all ${
+                codeSubTab === 'css' ? 'bg-[#4a90d9]/15 text-[#4a90d9]' : 'text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]'
+              }`}
+            >
+              CSS
+            </span>
+            <span className="ml-auto text-[10px] text-[var(--color-text-muted)] font-mono">{scene.sceneType}</span>
+          </div>
+          <div className="flex-1 min-h-0">
+            <MonacoEditor
+              language={codeEditorLanguage} value={codeEditorValue} onChange={handleCodeEdit} theme="vs-dark"
+              options={{ minimap: { enabled: false }, fontSize: 12, lineNumbers: 'on', wordWrap: 'on', scrollBeyondLastLine: false, tabSize: 2, renderWhitespace: 'none', folding: true, automaticLayout: true }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* ── Text tab ── */}
+      {layerViewMode === 'text' && (
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <TextTab scene={scene} />
+        </div>
+      )}
+
+      {/* ── Charts tab ── */}
+      {layerViewMode === 'charts' && (
+        <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <div>
+              <h3 className="text-[12px] font-semibold text-[var(--color-text-primary)]">Charts</h3>
+              <p className="text-[10px] text-[var(--color-text-muted)]">
+                {chartLayers.length} chart{chartLayers.length === 1 ? '' : 's'} · D3 / data viz layers
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={addChartLayer}
+              className="kbd flex h-7 shrink-0 items-center gap-1 px-2 text-[11px] text-[#6b6b7a] hover:text-[#e84545]"
+            >
+              <Plus size={11} />
+              Add
+            </button>
+          </div>
+
+          {scene.sceneType !== 'd3' && chartLayers.length === 0 && (
+            <div
+              className="mb-3 text-[11px] text-[#6b6b7a] border rounded p-2"
+              style={{ borderColor: 'var(--color-border)' }}
+            >
+              Add a chart to convert this scene to D3 mode.
+            </div>
+          )}
+          {chartLayers.length === 0 ? (
+            <div
+              className="text-[11px] text-[#6b6b7a] text-center py-8 border border-dashed rounded"
+              style={{ borderColor: 'var(--color-border)' }}
+            >
+              No chart layers yet. Use Add to create one.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {chartLayers.map((layer, idx) => (
+                <div
+                  key={layer.id}
+                  className="border rounded p-2.5 space-y-2"
+                  style={{ borderColor: 'var(--color-border)' }}
+                >
+                  <div className="flex items-center gap-2">
+                    <input
+                      value={layer.name}
+                      onChange={(e) => {
+                        const next = [...chartLayers]
+                        next[idx] = { ...layer, name: e.target.value }
+                        updateChartLayers(next)
+                      }}
+                      className="flex-1 border rounded px-2 py-1 text-[12px] focus:outline-none focus:border-[#e84545]"
+                      style={{
+                        backgroundColor: 'var(--color-input-bg)',
+                        borderColor: 'var(--color-border)',
+                        color: 'var(--color-text-primary)',
+                      }}
+                    />
+                    <ColorSelect
+                      value={layer.chartType}
+                      onChange={(v) => {
+                        const next = [...chartLayers]
+                        next[idx] = { ...layer, chartType: v as D3ChartType }
+                        updateChartLayers(next)
+                      }}
+                      options={D3_CHART_TYPES.map((t) => ({ value: t, label: t }))}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = chartLayers.filter((_, i) => i !== idx)
+                        updateChartLayers(next)
+                      }}
+                      className="text-[#6b6b7a] hover:text-[#e84545]"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-4 gap-2">
+                    <input
+                      type="number"
+                      value={layer.layout.x}
+                      min={0}
+                      max={100}
+                      step={1}
+                      onChange={(e) => {
+                        const next = [...chartLayers]
+                        next[idx] = { ...layer, layout: { ...layer.layout, x: parseFloat(e.target.value) || 0 } }
+                        updateChartLayers(next)
+                      }}
+                      className="border rounded px-2 py-1 text-[11px]"
+                      style={{
+                        backgroundColor: 'var(--color-input-bg)',
+                        borderColor: 'var(--color-border)',
+                        color: 'var(--color-text-primary)',
+                      }}
+                    />
+                    <input
+                      type="number"
+                      value={layer.layout.y}
+                      min={0}
+                      max={100}
+                      step={1}
+                      onChange={(e) => {
+                        const next = [...chartLayers]
+                        next[idx] = { ...layer, layout: { ...layer.layout, y: parseFloat(e.target.value) || 0 } }
+                        updateChartLayers(next)
+                      }}
+                      className="border rounded px-2 py-1 text-[11px]"
+                      style={{
+                        backgroundColor: 'var(--color-input-bg)',
+                        borderColor: 'var(--color-border)',
+                        color: 'var(--color-text-primary)',
+                      }}
+                    />
+                    <input
+                      type="number"
+                      value={layer.layout.width}
+                      min={1}
+                      max={100}
+                      step={1}
+                      onChange={(e) => {
+                        const next = [...chartLayers]
+                        next[idx] = {
+                          ...layer,
+                          layout: { ...layer.layout, width: parseFloat(e.target.value) || 1 },
+                        }
+                        updateChartLayers(next)
+                      }}
+                      className="border rounded px-2 py-1 text-[11px]"
+                      style={{
+                        backgroundColor: 'var(--color-input-bg)',
+                        borderColor: 'var(--color-border)',
+                        color: 'var(--color-text-primary)',
+                      }}
+                    />
+                    <input
+                      type="number"
+                      value={layer.layout.height}
+                      min={1}
+                      max={100}
+                      step={1}
+                      onChange={(e) => {
+                        const next = [...chartLayers]
+                        next[idx] = {
+                          ...layer,
+                          layout: { ...layer.layout, height: parseFloat(e.target.value) || 1 },
+                        }
+                        updateChartLayers(next)
+                      }}
+                      className="border rounded px-2 py-1 text-[11px]"
+                      style={{
+                        backgroundColor: 'var(--color-input-bg)',
+                        borderColor: 'var(--color-border)',
+                        color: 'var(--color-text-primary)',
+                      }}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2 items-center">
+                    <input
+                      type="number"
+                      value={layer.timing.startAt}
+                      min={0}
+                      step={0.1}
+                      title="Start (s)"
+                      onChange={(e) => {
+                        const next = [...chartLayers]
+                        next[idx] = {
+                          ...layer,
+                          timing: { ...layer.timing, startAt: parseFloat(e.target.value) || 0 },
+                        }
+                        updateChartLayers(next)
+                      }}
+                      className="border rounded px-2 py-1 text-[11px]"
+                      style={{
+                        backgroundColor: 'var(--color-input-bg)',
+                        borderColor: 'var(--color-border)',
+                        color: 'var(--color-text-primary)',
+                      }}
+                    />
+                    <input
+                      type="number"
+                      value={layer.timing.duration}
+                      min={0.1}
+                      step={0.1}
+                      title="Duration (s)"
+                      onChange={(e) => {
+                        const next = [...chartLayers]
+                        next[idx] = {
+                          ...layer,
+                          timing: { ...layer.timing, duration: parseFloat(e.target.value) || 0.1 },
+                        }
+                        updateChartLayers(next)
+                      }}
+                      className="border rounded px-2 py-1 text-[11px]"
+                      style={{
+                        backgroundColor: 'var(--color-input-bg)',
+                        borderColor: 'var(--color-border)',
+                        color: 'var(--color-text-primary)',
+                      }}
+                    />
+                    <label className="flex items-center gap-1 text-[11px] text-[#6b6b7a]">
+                      <input
+                        type="checkbox"
+                        checked={layer.timing.animated}
+                        onChange={(e) => {
+                          const next = [...chartLayers]
+                          next[idx] = { ...layer, timing: { ...layer.timing, animated: e.target.checked } }
+                          updateChartLayers(next)
+                        }}
+                      />
+                      animated
+                    </label>
+                  </div>
+
+                  <details>
+                    <summary className="text-[11px] text-[#6b6b7a] cursor-pointer">Data JSON</summary>
+                    <textarea
+                      rows={4}
+                      value={chartDataDraft[layer.id] ?? JSON.stringify(layer.data ?? [], null, 2)}
+                      onChange={(e) => setChartDataDraft((p) => ({ ...p, [layer.id]: e.target.value }))}
+                      onBlur={(e) => {
+                        try {
+                          const parsed = JSON.parse(e.target.value || '[]')
+                          const next = [...chartLayers]
+                          next[idx] = { ...layer, data: parsed }
+                          updateChartLayers(next)
+                          setChartDataDraft((p) => {
+                            const n = { ...p }
+                            delete n[layer.id]
+                            return n
+                          })
+                        } catch {
+                          /* keep draft */
+                        }
+                      }}
+                      className="w-full mt-1 border rounded px-2 py-1 text-[11px] font-mono"
+                      style={{
+                        backgroundColor: 'var(--color-input-bg)',
+                        borderColor: 'var(--color-border)',
+                        color: 'var(--color-text-primary)',
+                      }}
+                    />
+                  </details>
+
+                  <details>
+                    <summary className="text-[11px] text-[#6b6b7a] cursor-pointer">Config JSON</summary>
+                    <textarea
+                      rows={4}
+                      value={chartConfigDraft[layer.id] ?? JSON.stringify(layer.config ?? {}, null, 2)}
+                      onChange={(e) => setChartConfigDraft((p) => ({ ...p, [layer.id]: e.target.value }))}
+                      onBlur={(e) => {
+                        try {
+                          const parsed = JSON.parse(e.target.value || '{}')
+                          const next = [...chartLayers]
+                          next[idx] = { ...layer, config: parsed }
+                          updateChartLayers(next)
+                          setChartConfigDraft((p) => {
+                            const n = { ...p }
+                            delete n[layer.id]
+                            return n
+                          })
+                        } catch {
+                          /* keep draft */
+                        }
+                      }}
+                      className="w-full mt-1 border rounded px-2 py-1 text-[11px] font-mono"
+                      style={{
+                        backgroundColor: 'var(--color-input-bg)',
+                        borderColor: 'var(--color-border)',
+                        color: 'var(--color-text-primary)',
+                      }}
+                    />
+                  </details>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Avatar tab ── */}
+      {layerViewMode === 'avatar' && (
+        <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <div>
+              <h3 className="text-[12px] font-semibold text-[var(--color-text-primary)]">Avatar</h3>
+              <p className="text-[10px] text-[var(--color-text-muted)]">
+                {avatarLayers.length} avatar layer{avatarLayers.length === 1 ? '' : 's'} · talking-head & HeyGen-style
+                overlays
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void addTalkingHeadAvatar()}
+              className="kbd flex h-7 shrink-0 items-center gap-1 px-2 text-[11px] text-[#6b6b7a] hover:text-[#e84545]"
+            >
+              <Plus size={11} />
+              Add
+            </button>
+          </div>
+
+          {avatarLayers.length === 0 ? (
+            <div
+              className="text-[11px] text-[#6b6b7a] text-center py-8 border border-dashed rounded space-y-2"
+              style={{ borderColor: 'var(--color-border)' }}
+            >
+              <p>No avatar layer yet. Add a local talking-head overlay or use the Agent / HeyGen flows to generate one.</p>
+              <button
+                type="button"
+                onClick={() => void addTalkingHeadAvatar()}
+                className="kbd inline-flex h-8 items-center gap-1 px-3 text-[11px] text-[#e84545] border-[#e84545]/40"
+              >
+                <Plus size={12} />
+                Add talking-head avatar
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {avatarLayers.length > 1 && (
+                <div className="flex flex-wrap gap-1">
+                  {avatarLayers.map((l) => {
+                    const active = l.id === resolvedAvatarLayerId
+                    return (
+                      <button
+                        key={l.id}
+                        type="button"
+                        onClick={() => setAvatarTabLayerId(l.id)}
+                        className={`kbd px-2 py-1 text-[10px] font-medium ${
+                          active
+                            ? 'border-[#e84545] text-[#e84545] bg-[#e84545]/10'
+                            : 'text-[var(--color-text-muted)]'
+                        }`}
+                      >
+                        {l.label?.trim() || 'Avatar'}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+              {resolvedAvatarLayerId && (
+                <>
+                  <AvatarLayerPropertiesForm
+                    scene={scene}
+                    layerId={resolvedAvatarLayerId}
+                    onCommit={() => void saveSceneHTML(scene.id)}
+                    openLayersSection={openLayersSection}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      removeAILayer(scene.id, resolvedAvatarLayerId)
+                      setAvatarTabLayerId(null)
+                      void saveSceneHTML(scene.id)
+                    }}
+                    className="text-[11px] text-[#6b6b7a] hover:text-[#e84545]"
+                  >
+                    Remove this avatar layer
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Effects tab ── */}
+      {layerViewMode === 'effects' && (
+        <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+          <CameraEffectPickerGrid
+            sceneDuration={scene.duration}
+            cameraMotion={scene.cameraMotion}
+            onApplyMotion={(motion) => {
+              updateScene(scene.id, { cameraMotion: motion })
+              commitLayer()
+            }}
+            onUpdateTiming={(patch) => {
+              const m = cameraMoves[0]
+              if (!m) return
+              const next = [...cameraMoves]
+              next[0] = { ...m, params: { ...m.params, ...patch } }
+              updateScene(scene.id, { cameraMotion: next })
+              commitLayerDebounced()
+            }}
+            importableCount={importableCameraMoves.length}
+            onImportFromCode={() => {
+              if (importableCameraMoves.length === 0) return
+              updateScene(scene.id, { cameraMotion: [importableCameraMoves[0]!] })
+              commitLayer()
+            }}
+          />
+        </div>
+      )}
+
+      {/* ── Transitions tab ── */}
+      {layerViewMode === 'transitions' && (
+        <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+          <TransitionPickerGrid
+            selectedId={scene.transition}
+            onSelect={(id) => {
+              updateScene(scene.id, { transition: id })
+              commitLayer()
+            }}
+          />
+        </div>
+      )}
+
+      {/* ── Scene tab ── */}
+      {layerViewMode === 'scene' && (
+      <div className="min-h-0 flex-1 overflow-y-auto py-1">
+        {showScenesSection && (
+          <div className="mb-2 flex flex-shrink-0 border-b px-2 py-2" style={{ borderBottomColor: 'var(--color-hairline)' }}>
             <button
               type="button"
               onClick={() => addScene()}
@@ -935,166 +1485,132 @@ export default function LayersTab({
               {!isLeftCollapsed && <span className="whitespace-nowrap">New Scene</span>}
             </button>
           </div>
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-            <SceneList
-              isCollapsed={isLeftCollapsed}
-              onToggleCollapse={onToggleLeftCollapse ?? (() => {})}
-            />
-          </div>
-        </div>
-      ) : panelSectionId === 'text' ? (
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <TextTab scene={scene} />
-        </div>
-      ) : panelSectionId === 'properties' ? (
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
-          <LayerStackPropertiesPanel scene={scene} />
-        </div>
-      ) : (
-        <div className="min-h-0 flex-1 overflow-y-auto pl-1 pr-4 py-2 space-y-1">
-          {panelSectionId === 'scene' && (
-            <>
-              <CollapsibleSection title="Scene Settings" icon={Film} active>
-                <div>
-                  <label className="text-[#6b6b7a] text-[11px] uppercase tracking-wider block mb-1.5">Name</label>
+        )}
+
+          {/* ═══ SCENE ═══ */}
+          <SectionGroup title="Scene" icon={Film} color="#e8a849" defaultOpen>
+          <CollapsibleSection title="Scene Settings" icon={Film} active>
+            <div>
+              <label className="text-[#6b6b7a] text-[11px] uppercase tracking-wider block mb-1.5">Name</label>
+              <input
+                type="text"
+                placeholder="Untitled scene"
+                value={scene.name}
+                onChange={(e) => updateScene(scene.id, { name: e.target.value })}
+                onBlur={commitLayer}
+                className="w-full border rounded px-3 py-2 text-sm placeholder-[#6b6b7a] focus:outline-none focus:border-[#e84545] transition-colors"
+                style={{
+                  backgroundColor: 'var(--color-input-bg)',
+                  borderColor: 'var(--color-border)',
+                  color: 'var(--color-text-primary)',
+                }}
+              />
+            </div>
+            <div>
+              <label className="text-[#6b6b7a] text-[11px] uppercase tracking-wider block mb-1.5">
+                Duration: {scene.duration}s
+              </label>
+              <input
+                type="range"
+                min={3}
+                max={20}
+                step={1}
+                value={scene.duration}
+                onChange={(e) => updateScene(scene.id, { duration: parseInt(e.target.value) })}
+                onMouseUp={commitLayer}
+                className="w-full"
+              />
+              <div className="flex justify-between text-[10px] text-[#6b6b7a] mt-0.5">
+                <span>3s</span>
+                <span>20s</span>
+              </div>
+            </div>
+            <div>
+              <label className="text-[#6b6b7a] text-[11px] uppercase tracking-wider block mb-1.5">
+                Background color
+              </label>
+              <div className="flex items-center gap-2">
+                <label className="relative cursor-pointer group flex-shrink-0">
+                  <div
+                    className="w-8 h-8 rounded-lg border-2 transition-all overflow-hidden group-hover:border-[#e84545]"
+                    style={{ background: scene.bgColor, borderColor: 'var(--color-border)' }}
+                  />
                   <input
-                    type="text"
-                    placeholder="Untitled scene"
-                    value={scene.name}
-                    onChange={(e) => updateScene(scene.id, { name: e.target.value })}
+                    type="color"
+                    value={scene.bgColor}
+                    onChange={(e) => updateScene(scene.id, { bgColor: e.target.value })}
                     onBlur={commitLayer}
-                    className="w-full border rounded px-3 py-2 text-sm placeholder-[#6b6b7a] focus:outline-none focus:border-[#e84545] transition-colors"
-                    style={{
-                      backgroundColor: 'var(--color-input-bg)',
-                      borderColor: 'var(--color-border)',
-                      color: 'var(--color-text-primary)',
-                    }}
+                    className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
                   />
-                </div>
-                <div>
-                  <label className="text-[#6b6b7a] text-[11px] uppercase tracking-wider block mb-1.5">
-                    Duration: {scene.duration}s
-                  </label>
-                  <input
-                    type="range"
-                    min={3}
-                    max={20}
-                    step={1}
-                    value={scene.duration}
-                    onChange={(e) => updateScene(scene.id, { duration: parseInt(e.target.value) })}
-                    onMouseUp={commitLayer}
-                    className="w-full"
-                  />
-                  <div className="flex justify-between text-[10px] text-[#6b6b7a] mt-0.5">
-                    <span>3s</span>
-                    <span>20s</span>
-                  </div>
-                </div>
-                <div>
-                  <label className="text-[#6b6b7a] text-[11px] uppercase tracking-wider block mb-1.5">
-                    Background color
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <label className="relative cursor-pointer group flex-shrink-0">
-                      <div
-                        className="w-8 h-8 rounded-lg border-2 transition-all overflow-hidden group-hover:border-[#e84545]"
-                        style={{ background: scene.bgColor, borderColor: 'var(--color-border)' }}
-                      />
-                      <input
-                        type="color"
-                        value={scene.bgColor}
-                        onChange={(e) => updateScene(scene.id, { bgColor: e.target.value })}
-                        onBlur={commitLayer}
-                        className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
-                      />
-                    </label>
-                    <input
-                      type="text"
-                      value={scene.bgColor}
-                      onChange={(e) => {
-                        if (/^#[0-9a-fA-F]{0,6}$/.test(e.target.value))
-                          updateScene(scene.id, { bgColor: e.target.value })
+                </label>
+                <input
+                  type="text"
+                  value={scene.bgColor}
+                  onChange={(e) => {
+                    if (/^#[0-9a-fA-F]{0,6}$/.test(e.target.value))
+                      updateScene(scene.id, { bgColor: e.target.value })
+                  }}
+                  onBlur={commitLayer}
+                  className="flex-1 border rounded px-3 py-1.5 text-sm font-mono focus:outline-none focus:border-[#e84545] transition-colors"
+                  style={{
+                    backgroundColor: 'var(--color-input-bg)',
+                    borderColor: 'var(--color-border)',
+                    color: 'var(--color-text-primary)',
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Aspect Ratio */}
+            <div>
+              <label className="text-[#6b6b7a] text-[11px] uppercase tracking-wider block mb-1.5">Aspect Ratio</label>
+              <div className="flex gap-1.5">
+                {ASPECT_RATIO_OPTIONS.map((opt) => {
+                  const active = (project.mp4Settings?.aspectRatio ?? '16:9') === opt.value
+                  return (
+                    <button
+                      key={opt.value}
+                      onClick={() => {
+                        updateProject({ mp4Settings: { ...project.mp4Settings, aspectRatio: opt.value } })
                       }}
-                      onBlur={commitLayer}
-                      className="flex-1 border rounded px-3 py-1.5 text-sm font-mono focus:outline-none focus:border-[#e84545] transition-colors"
+                      className="flex flex-col items-center gap-1 px-2 py-1.5 rounded-md border text-[10px] transition-all flex-1"
                       style={{
-                        backgroundColor: 'var(--color-input-bg)',
-                        borderColor: 'var(--color-border)',
-                        color: 'var(--color-text-primary)',
+                        borderColor: active ? '#e84545' : 'var(--color-border)',
+                        backgroundColor: active ? 'rgba(232,69,69,0.1)' : 'var(--color-input-bg)',
+                        color: active ? '#e84545' : 'var(--color-text-secondary)',
                       }}
-                    />
-                  </div>
-                </div>
+                    >
+                      <div
+                        className="rounded-sm border"
+                        style={{
+                          borderColor: active ? '#e84545' : 'var(--color-border)',
+                          width: opt.value === '16:9' ? 24 : opt.value === '9:16' ? 14 : opt.value === '1:1' ? 18 : 16,
+                          height: opt.value === '16:9' ? 14 : opt.value === '9:16' ? 24 : opt.value === '1:1' ? 18 : 20,
+                        }}
+                      />
+                      <span>{opt.label}</span>
+                    </button>
+                  )
+                })}
+              </div>
+              <div className="text-[10px] text-[#6b6b7a] mt-1">
+                {(() => {
+                  const d = resolveProjectDimensions(project.mp4Settings?.aspectRatio, project.mp4Settings?.resolution)
+                  return `${d.width}×${d.height}`
+                })()}
+              </div>
+            </div>
 
-                <div className="space-y-2 border-t pt-3 mt-1" style={{ borderColor: 'var(--color-border)' }}>
-                  <div className="flex items-center gap-2">
-                    <Box size={12} className="text-[#6b6b7a] shrink-0" />
-                    <span className="text-[#6b6b7a] text-[11px] uppercase tracking-wider">3D stage environment</span>
-                  </div>
-                  <p className="text-[10px] leading-snug text-[#6b6b7a]">
-                    For Three.js scenes: built-in world behind your models (
-                    <span className="font-mono text-[var(--color-text-muted)]">applyCenchThreeEnvironment</span>
-                    ). With an empty scene code, choosing an environment creates a starter Three.js scene you can edit.
-                    Animated worlds need{' '}
-                    <span className="font-mono text-[var(--color-text-muted)]">
-                      updateCenchThreeEnvironment(t)
-                    </span>{' '}
-                    each frame.
-                  </p>
-                  <ColorSelect
-                    size="md"
-                    value={
-                      parseAppliedThreeEnvironmentId(scene.sceneCode || '') ?? scene.threeEnvironmentPresetId ?? ''
-                    }
-                    onChange={async (v) => {
-                      const envId = v === '' ? null : v
-                      const code = scene.sceneCode || ''
-                      const res = patchThreeEnvironmentInSceneCode(code, envId)
+          </CollapsibleSection>
+          </SectionGroup>
 
-                      if (envId && res.injectFailed && !code.trim()) {
-                        setThreeEnvPatchHint(null)
-                        updateScene(scene.id, {
-                          sceneType: 'three',
-                          threeEnvironmentPresetId: envId,
-                          sceneCode: buildThreeEnvironmentShowcaseSceneCode(envId),
-                        })
-                        await saveSceneHTML(scene.id)
-                        return
-                      }
+              {/* ═══ BRAND KIT ═══ */}
+              <SectionGroup title="Brand Kit" icon={Stamp} color="#e8a849">
+                <BrandKitPanel />
+              </SectionGroup>
 
-                      if (res.injectFailed && envId) {
-                        setThreeEnvPatchHint(
-                          'Could not patch this code. Add camera.lookAt(...) or applyCenchThreeEnvironment, or clear Three.js code and pick an environment again for a fresh starter.',
-                        )
-                        updateScene(scene.id, { threeEnvironmentPresetId: envId })
-                        await saveSceneHTML(scene.id)
-                        return
-                      }
-
-                      setThreeEnvPatchHint(null)
-                      updateScene(scene.id, {
-                        threeEnvironmentPresetId: envId,
-                        sceneCode: res.sceneCode,
-                      })
-                      await saveSceneHTML(scene.id)
-                    }}
-                    options={[
-                      { value: '', label: 'None (custom backdrop only)' },
-                      ...CENCH_THREE_ENVIRONMENTS.map((env) => ({ value: env.id, label: env.name })),
-                    ]}
-                  />
-                  {threeEnvPatchHint ? (
-                    <p className="text-[10px] leading-snug text-amber-600 dark:text-amber-400/90">{threeEnvPatchHint}</p>
-                  ) : null}
-                </div>
-
-                <p className="text-[10px] leading-snug text-[#6b6b7a]">
-                  Transitions and camera moves are in the{' '}
-                  <span className="text-[var(--color-text-muted)]">Transitions</span> tab.
-                </p>
-              </CollapsibleSection>
-
-              {/* Project-wide style preset */}
+              {/* ═══ PRESETS ═══ */}
+              <SectionGroup title="Presets" icon={Paintbrush} color="#c678dd">
               <CollapsibleSection title="Style" icon={Palette} active={!!globalStyle.presetId}>
                 <StylePresetPicker
                   currentPresetId={globalStyle.presetId}
@@ -1342,228 +1858,78 @@ export default function LayersTab({
                   <span className="text-[12px] text-[var(--color-text-primary)]">Snap to other elements</span>
                 </label>
               </CollapsibleSection>
-            </>
-          )}
+              </SectionGroup>
 
-          {panelSectionId === 'transitions' && (
-            <>
-              <CollapsibleSection title="Transition to Next Scene" icon={Clapperboard} active={!!scene.transition && scene.transition !== 'none'}>
-                <p className="mb-2 text-[11px] leading-snug text-[#6b6b7a]">
-                  How this scene hands off to the next in MP4 export (FFmpeg xfade). The hosted player uses a short fade
-                  for any blend style.
-                </p>
-                <div className="max-h-[min(52vh,420px)] overflow-y-auto pr-0.5 space-y-3">
-                  {TRANSITION_UI_GROUPS.map((group) => (
-                    <div key={group.category}>
-                      <div className="text-[10px] font-semibold uppercase tracking-wide text-[#8b8b99] mb-1.5">
-                        {group.category}
-                      </div>
-                      <div className="grid grid-cols-2 gap-1.5">
-                        {group.items.map((t) => (
-                          <button
-                            key={t.id}
-                            type="button"
-                            onClick={() => {
-                              updateScene(scene.id, { transition: t.id })
-                              commitLayer()
-                            }}
-                            className={`kbd h-7 text-[11px] text-left px-2 truncate ${
-                              scene.transition === t.id
-                                ? 'border-[#e84545] text-[#e84545] shadow-[#800]'
-                                : 'text-[#6b6b7a] hover:text-[#f0ece0]'
-                            }`}
-                            title={t.label}
-                          >
-                            {t.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
+      </div>
+      )}
+
+      {/* ── 3D tab ── */}
+      {layerViewMode === 'three' && (
+        <div className="min-h-0 flex-1 overflow-y-auto py-1">
+          <SectionGroup title="3D" icon={Boxes} color="#56b6c2" defaultOpen>
+              <div className="space-y-2 border-t pt-3 mt-1" style={{ borderColor: 'var(--color-border)' }}>
+                <div className="flex items-center gap-2">
+                  <Box size={12} className="text-[#6b6b7a] shrink-0" />
+                  <span className="text-[#6b6b7a] text-[11px] uppercase tracking-wider">3D stage environment</span>
                 </div>
-              </CollapsibleSection>
+                <p className="text-[10px] leading-snug text-[#6b6b7a]">
+                  For Three.js scenes: built-in world behind your models (
+                  <span className="font-mono text-[var(--color-text-muted)]">applyCenchThreeEnvironment</span>
+                  ). With an empty scene code, choosing an environment creates a starter Three.js scene you can edit.
+                  Animated worlds need{' '}
+                  <span className="font-mono text-[var(--color-text-muted)]">
+                    updateCenchThreeEnvironment(t)
+                  </span>{' '}
+                  each frame.
+                </p>
+                <ColorSelect
+                  size="md"
+                  value={
+                    parseAppliedThreeEnvironmentId(scene.sceneCode || '') ?? scene.threeEnvironmentPresetId ?? ''
+                  }
+                  onChange={async (v) => {
+                    const envId = v === '' ? null : v
+                    const code = scene.sceneCode || ''
+                    const res = patchThreeEnvironmentInSceneCode(code, envId)
 
-              <CollapsibleSection
-                title="Camera Animation"
-                icon={Camera}
-                active={cameraMoves.length > 0}
-                extraHeaderContent={
-                  <button
-                    type="button"
-                    onClick={addCameraMove}
-                    className="kbd h-6 px-2 text-[#6b6b7a] hover:text-[#e84545]"
-                  >
-                    <Plus size={11} />
-                    <span className="text-[11px]">Add</span>
-                  </button>
-                }
-                badge={
-                  <span className="text-[11px] text-[#6b6b7a]">
-                    {cameraMoves.length} move{cameraMoves.length === 1 ? '' : 's'}
-                  </span>
-                }
-              >
-                {importableCameraMoves.length > 0 && (
-                  <div
-                    className="space-y-2 rounded border p-2 text-[11px]"
-                    style={{ borderColor: 'var(--color-border)' }}
-                  >
-                    <p className="text-[#6b6b7a]">
-                      Found {importableCameraMoves.length} camera move{importableCameraMoves.length === 1 ? '' : 's'} in
-                      scene code. Import to make them editable here.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        updateScene(scene.id, { cameraMotion: importableCameraMoves })
-                        commitLayer()
-                      }}
-                      className="kbd h-7 px-2 text-[11px] text-[#6b6b7a] hover:text-[#e84545]"
-                    >
-                      Import Camera Moves
-                    </button>
-                  </div>
-                )}
+                    if (envId && res.injectFailed && !code.trim()) {
+                      setThreeEnvPatchHint(null)
+                      updateScene(scene.id, {
+                        sceneType: 'three',
+                        threeEnvironmentPresetId: envId,
+                        sceneCode: buildThreeEnvironmentShowcaseSceneCode(envId),
+                      })
+                      await saveSceneHTML(scene.id)
+                      return
+                    }
 
-                {cameraMoves.length === 0 ? (
-                  <div
-                    className="space-y-1 rounded border border-dashed py-3 text-center text-[11px] text-[#6b6b7a]"
-                    style={{ borderColor: 'var(--color-border)' }}
-                  >
-                    <div>No camera moves. Add one to animate scene framing.</div>
-                    {(scene.sceneCode?.includes('camera') || scene.sceneCode?.includes('scene-camera')) && (
-                      <div className="text-[10px] text-[#8b8b99]">
-                        This scene appears to use inline camera logic in code (not structured `cameraMotion` data).
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {cameraMoves.map((move, idx) => {
-                      const at = typeof move.params?.at === 'number' ? move.params.at : 0
-                      const duration = typeof move.params?.duration === 'number' ? move.params.duration : 1
-                      const paramsText = cameraParamsDraft[idx] ?? JSON.stringify(move.params ?? {}, null, 2)
-                      return (
-                        <div
-                          key={`${move.type}-${idx}`}
-                          className="space-y-2 rounded border p-2.5"
-                          style={{ borderColor: 'var(--color-border)' }}
-                        >
-                          <div className="flex items-center gap-2">
-                            <span className="text-[10px] text-[#6b6b7a]">#{idx + 1}</span>
-                            <ColorSelect
-                              className="flex-1"
-                              value={move.type}
-                              onChange={(v) => updateCameraMove(idx, { type: v as CameraMove['type'] })}
-                              options={CAMERA_MOVE_TYPES.map((type) => ({ value: type, label: type }))}
-                            />
-                            <button
-                              type="button"
-                              onClick={() => moveCameraMove(idx, idx - 1)}
-                              className="kbd h-7 w-7 text-[11px]"
-                            >
-                              ↑
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => moveCameraMove(idx, idx + 1)}
-                              className="kbd h-7 w-7 text-[11px]"
-                            >
-                              ↓
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => removeCameraMove(idx)}
-                              className="text-[#6b6b7a] hover:text-[#e84545]"
-                            >
-                              <Trash2 size={12} />
-                            </button>
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <label className="mb-0.5 block text-[10px] text-[#6b6b7a]">At (s)</label>
-                              <input
-                                type="number"
-                                min={0}
-                                step={0.1}
-                                value={at}
-                                onChange={(e) =>
-                                  updateCameraMove(idx, {
-                                    params: { ...(move.params ?? {}), at: parseFloat(e.target.value) || 0 },
-                                  })
-                                }
-                                className="w-full rounded border px-2 py-1 text-[12px] focus:border-[#e84545] focus:outline-none"
-                                style={{
-                                  backgroundColor: 'var(--color-input-bg)',
-                                  borderColor: 'var(--color-border)',
-                                  color: 'var(--color-text-primary)',
-                                }}
-                              />
-                            </div>
-                            <div>
-                              <label className="mb-0.5 block text-[10px] text-[#6b6b7a]">Duration (s)</label>
-                              <input
-                                type="number"
-                                min={0.1}
-                                step={0.1}
-                                value={duration}
-                                onChange={(e) =>
-                                  updateCameraMove(idx, {
-                                    params: {
-                                      ...(move.params ?? {}),
-                                      duration: Math.max(0.1, parseFloat(e.target.value) || 1),
-                                    },
-                                  })
-                                }
-                                className="w-full rounded border px-2 py-1 text-[12px] focus:border-[#e84545] focus:outline-none"
-                                style={{
-                                  backgroundColor: 'var(--color-input-bg)',
-                                  borderColor: 'var(--color-border)',
-                                  color: 'var(--color-text-primary)',
-                                }}
-                              />
-                            </div>
-                          </div>
-
-                          <div>
-                            <label className="mb-0.5 block text-[10px] text-[#6b6b7a]">Advanced params (JSON)</label>
-                            <textarea
-                              value={paramsText}
-                              onChange={(e) => setCameraParamsDraft((prev) => ({ ...prev, [idx]: e.target.value }))}
-                              onBlur={(e) => {
-                                try {
-                                  const parsed = JSON.parse(e.target.value || '{}')
-                                  updateCameraMove(idx, { params: parsed })
-                                  setCameraParamsDraft((prev) => {
-                                    const next = { ...prev }
-                                    delete next[idx]
-                                    return next
-                                  })
-                                } catch {
-                                  /* keep draft */
-                                }
-                              }}
-                              rows={4}
-                              className="w-full rounded border px-2 py-1 font-mono text-[11px] focus:border-[#e84545] focus:outline-none"
-                              style={{
-                                backgroundColor: 'var(--color-input-bg)',
-                                borderColor: 'var(--color-border)',
-                                color: 'var(--color-text-primary)',
-                              }}
-                            />
-                          </div>
-                        </div>
+                    if (res.injectFailed && envId) {
+                      setThreeEnvPatchHint(
+                        'Could not patch this code. Add camera.lookAt(...) or applyCenchThreeEnvironment, or clear Three.js code and pick an environment again for a fresh starter.',
                       )
-                    })}
-                  </div>
-                )}
-              </CollapsibleSection>
-            </>
-          )}
+                      updateScene(scene.id, { threeEnvironmentPresetId: envId })
+                      await saveSceneHTML(scene.id)
+                      return
+                    }
 
-          {panelSectionId === 'scene' && (
-            <>
+                    setThreeEnvPatchHint(null)
+                    updateScene(scene.id, {
+                      threeEnvironmentPresetId: envId,
+                      sceneCode: res.sceneCode,
+                    })
+                    await saveSceneHTML(scene.id)
+                  }}
+                  options={[
+                    { value: '', label: 'None (custom backdrop only)' },
+                    ...CENCH_THREE_ENVIRONMENTS.map((env) => ({ value: env.id, label: env.name })),
+                  ]}
+                />
+                {threeEnvPatchHint ? (
+                  <p className="text-[10px] leading-snug text-amber-600 dark:text-amber-400/90">{threeEnvPatchHint}</p>
+                ) : null}
+              </div>
+
+
               <CollapsibleSection
                 title="Physics"
                 icon={Sparkles}
@@ -1849,7 +2215,8 @@ export default function LayersTab({
                                 max={1.2}
                                 step={0.01}
                                 value={Number(
-                                  (layer.params as any)?.ui_simScale ?? (layer.layout === 'fullscreen' ? 1 : 0.82),
+                                  (layer.params as any)?.ui_simScale ??
+                                    (String(layer.layout) === 'fullscreen' ? 1 : 0.82),
                                 )}
                                 onChange={(e) => {
                                   const next = [...physicsLayers]
@@ -2217,1170 +2584,6 @@ export default function LayersTab({
               </CollapsibleSection>
 
               <CollapsibleSection
-                title="Charts"
-                icon={Grid3X3}
-                active={chartLayers.length > 0}
-                extraHeaderContent={
-                  <button onClick={addChartLayer} className="kbd h-6 px-2 text-[#6b6b7a] hover:text-[#e84545]">
-                    <Plus size={11} />
-                    <span className="text-[11px]">Add</span>
-                  </button>
-                }
-                badge={
-                  <span className="text-[11px] text-[#6b6b7a]">
-                    {chartLayers.length} chart{chartLayers.length === 1 ? '' : 's'}
-                  </span>
-                }
-              >
-                {scene.sceneType !== 'd3' && chartLayers.length === 0 && (
-                  <div
-                    className="text-[11px] text-[#6b6b7a] border rounded p-2"
-                    style={{ borderColor: 'var(--color-border)' }}
-                  >
-                    Add a chart to convert this scene to D3 mode.
-                  </div>
-                )}
-                {chartLayers.length === 0 ? (
-                  <div
-                    className="text-[11px] text-[#6b6b7a] text-center py-3 border border-dashed rounded"
-                    style={{ borderColor: 'var(--color-border)' }}
-                  >
-                    No chart layers yet. Add one to edit directly in Layers.
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {chartLayers.map((layer, idx) => (
-                      <div
-                        key={layer.id}
-                        className="border rounded p-2.5 space-y-2"
-                        style={{ borderColor: 'var(--color-border)' }}
-                      >
-                        <div className="flex items-center gap-2">
-                          <input
-                            value={layer.name}
-                            onChange={(e) => {
-                              const next = [...chartLayers]
-                              next[idx] = { ...layer, name: e.target.value }
-                              updateChartLayers(next)
-                            }}
-                            className="flex-1 border rounded px-2 py-1 text-[12px] focus:outline-none focus:border-[#e84545]"
-                            style={{
-                              backgroundColor: 'var(--color-input-bg)',
-                              borderColor: 'var(--color-border)',
-                              color: 'var(--color-text-primary)',
-                            }}
-                          />
-                          <ColorSelect
-                            value={layer.chartType}
-                            onChange={(v) => {
-                              const next = [...chartLayers]
-                              next[idx] = { ...layer, chartType: v as D3ChartType }
-                              updateChartLayers(next)
-                            }}
-                            options={D3_CHART_TYPES.map((t) => ({ value: t, label: t }))}
-                          />
-                          <button
-                            onClick={() => {
-                              const next = chartLayers.filter((_, i) => i !== idx)
-                              updateChartLayers(next)
-                            }}
-                            className="text-[#6b6b7a] hover:text-[#e84545]"
-                          >
-                            <Trash2 size={12} />
-                          </button>
-                        </div>
-
-                        <div className="grid grid-cols-4 gap-2">
-                          <input
-                            type="number"
-                            value={layer.layout.x}
-                            min={0}
-                            max={100}
-                            step={1}
-                            onChange={(e) => {
-                              const next = [...chartLayers]
-                              next[idx] = { ...layer, layout: { ...layer.layout, x: parseFloat(e.target.value) || 0 } }
-                              updateChartLayers(next)
-                            }}
-                            className="border rounded px-2 py-1 text-[11px]"
-                            style={{
-                              backgroundColor: 'var(--color-input-bg)',
-                              borderColor: 'var(--color-border)',
-                              color: 'var(--color-text-primary)',
-                            }}
-                          />
-                          <input
-                            type="number"
-                            value={layer.layout.y}
-                            min={0}
-                            max={100}
-                            step={1}
-                            onChange={(e) => {
-                              const next = [...chartLayers]
-                              next[idx] = { ...layer, layout: { ...layer.layout, y: parseFloat(e.target.value) || 0 } }
-                              updateChartLayers(next)
-                            }}
-                            className="border rounded px-2 py-1 text-[11px]"
-                            style={{
-                              backgroundColor: 'var(--color-input-bg)',
-                              borderColor: 'var(--color-border)',
-                              color: 'var(--color-text-primary)',
-                            }}
-                          />
-                          <input
-                            type="number"
-                            value={layer.layout.width}
-                            min={1}
-                            max={100}
-                            step={1}
-                            onChange={(e) => {
-                              const next = [...chartLayers]
-                              next[idx] = {
-                                ...layer,
-                                layout: { ...layer.layout, width: parseFloat(e.target.value) || 1 },
-                              }
-                              updateChartLayers(next)
-                            }}
-                            className="border rounded px-2 py-1 text-[11px]"
-                            style={{
-                              backgroundColor: 'var(--color-input-bg)',
-                              borderColor: 'var(--color-border)',
-                              color: 'var(--color-text-primary)',
-                            }}
-                          />
-                          <input
-                            type="number"
-                            value={layer.layout.height}
-                            min={1}
-                            max={100}
-                            step={1}
-                            onChange={(e) => {
-                              const next = [...chartLayers]
-                              next[idx] = {
-                                ...layer,
-                                layout: { ...layer.layout, height: parseFloat(e.target.value) || 1 },
-                              }
-                              updateChartLayers(next)
-                            }}
-                            className="border rounded px-2 py-1 text-[11px]"
-                            style={{
-                              backgroundColor: 'var(--color-input-bg)',
-                              borderColor: 'var(--color-border)',
-                              color: 'var(--color-text-primary)',
-                            }}
-                          />
-                        </div>
-
-                        <div className="grid grid-cols-3 gap-2 items-center">
-                          <input
-                            type="number"
-                            value={layer.timing.startAt}
-                            min={0}
-                            step={0.1}
-                            onChange={(e) => {
-                              const next = [...chartLayers]
-                              next[idx] = {
-                                ...layer,
-                                timing: { ...layer.timing, startAt: parseFloat(e.target.value) || 0 },
-                              }
-                              updateChartLayers(next)
-                            }}
-                            className="border rounded px-2 py-1 text-[11px]"
-                            style={{
-                              backgroundColor: 'var(--color-input-bg)',
-                              borderColor: 'var(--color-border)',
-                              color: 'var(--color-text-primary)',
-                            }}
-                          />
-                          <input
-                            type="number"
-                            value={layer.timing.duration}
-                            min={0.1}
-                            step={0.1}
-                            onChange={(e) => {
-                              const next = [...chartLayers]
-                              next[idx] = {
-                                ...layer,
-                                timing: { ...layer.timing, duration: parseFloat(e.target.value) || 0.1 },
-                              }
-                              updateChartLayers(next)
-                            }}
-                            className="border rounded px-2 py-1 text-[11px]"
-                            style={{
-                              backgroundColor: 'var(--color-input-bg)',
-                              borderColor: 'var(--color-border)',
-                              color: 'var(--color-text-primary)',
-                            }}
-                          />
-                          <label className="flex items-center gap-1 text-[11px] text-[#6b6b7a]">
-                            <input
-                              type="checkbox"
-                              checked={layer.timing.animated}
-                              onChange={(e) => {
-                                const next = [...chartLayers]
-                                next[idx] = { ...layer, timing: { ...layer.timing, animated: e.target.checked } }
-                                updateChartLayers(next)
-                              }}
-                            />
-                            animated
-                          </label>
-                        </div>
-
-                        <details>
-                          <summary className="text-[11px] text-[#6b6b7a] cursor-pointer">Data JSON</summary>
-                          <textarea
-                            rows={4}
-                            value={chartDataDraft[layer.id] ?? JSON.stringify(layer.data ?? [], null, 2)}
-                            onChange={(e) => setChartDataDraft((p) => ({ ...p, [layer.id]: e.target.value }))}
-                            onBlur={(e) => {
-                              try {
-                                const parsed = JSON.parse(e.target.value || '[]')
-                                const next = [...chartLayers]
-                                next[idx] = { ...layer, data: parsed }
-                                updateChartLayers(next)
-                                setChartDataDraft((p) => {
-                                  const n = { ...p }
-                                  delete n[layer.id]
-                                  return n
-                                })
-                              } catch {}
-                            }}
-                            className="w-full mt-1 border rounded px-2 py-1 text-[11px] font-mono"
-                            style={{
-                              backgroundColor: 'var(--color-input-bg)',
-                              borderColor: 'var(--color-border)',
-                              color: 'var(--color-text-primary)',
-                            }}
-                          />
-                        </details>
-
-                        <details>
-                          <summary className="text-[11px] text-[#6b6b7a] cursor-pointer">Config JSON</summary>
-                          <textarea
-                            rows={4}
-                            value={chartConfigDraft[layer.id] ?? JSON.stringify(layer.config ?? {}, null, 2)}
-                            onChange={(e) => setChartConfigDraft((p) => ({ ...p, [layer.id]: e.target.value }))}
-                            onBlur={(e) => {
-                              try {
-                                const parsed = JSON.parse(e.target.value || '{}')
-                                const next = [...chartLayers]
-                                next[idx] = { ...layer, config: parsed }
-                                updateChartLayers(next)
-                                setChartConfigDraft((p) => {
-                                  const n = { ...p }
-                                  delete n[layer.id]
-                                  return n
-                                })
-                              } catch {}
-                            }}
-                            className="w-full mt-1 border rounded px-2 py-1 text-[11px] font-mono"
-                            style={{
-                              backgroundColor: 'var(--color-input-bg)',
-                              borderColor: 'var(--color-border)',
-                              color: 'var(--color-text-primary)',
-                            }}
-                          />
-                        </details>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CollapsibleSection>
-            </>
-          )}
-
-          {panelSectionId === 'scene' && (
-            <>
-              {/* SVG Layer (always) */}
-              <CollapsibleSection
-                title="SVG Layer"
-                icon={Layers}
-                active={!!scene.sceneCode}
-                badge={<span className="text-[11px] text-[#6b6b7a] ml-auto">always present</span>}
-              >
-                <div
-                  className="w-full h-full"
-                  style={{ pointerEvents: 'none', overflow: 'hidden', backgroundColor: 'var(--color-input-bg)' }}
-                >
-                  {scene.svgContent
-                    ? `${scene.svgContent.length.toLocaleString()} chars · z-index 2`
-                    : 'No SVG generated yet'}
-                </div>
-              </CollapsibleSection>
-
-              {/* Video Layer */}
-              <CollapsibleSection
-                title="Video Layer"
-                icon={Film}
-                enabled={scene.videoLayer.enabled}
-                onEnabledChange={(val) => {
-                  updateScene(scene.id, {
-                    videoLayer: { ...scene.videoLayer, enabled: val },
-                  })
-                  commitLayer()
-                }}
-              >
-                {/* Upload / URL */}
-                <div className="space-y-2">
-                  <input
-                    ref={videoInputRef}
-                    type="file"
-                    accept="video/mp4,video/webm"
-                    onChange={handleVideoUpload}
-                    className="hidden"
-                  />
-                  <button
-                    onClick={() => videoInputRef.current?.click()}
-                    className="kbd w-full h-8 border-dashed border-[#444] text-[#6b6b7a] hover:text-[#e84545] hover:border-[#e84545] transition-colors"
-                  >
-                    <Plus size={14} />
-                    <span className="text-sm">{scene.videoLayer.src ? 'Replace video' : 'Upload MP4'}</span>
-                  </button>
-                  <button
-                    onClick={handleToggleScreenRecord}
-                    className={`kbd w-full h-8 transition-colors ${
-                      isRecordingScreen
-                        ? 'border-[#e84545] text-[#e84545]'
-                        : 'border-dashed border-[#444] text-[#6b6b7a] hover:text-[#e84545] hover:border-[#e84545]'
-                    }`}
-                  >
-                    <Camera size={14} />
-                    <span className="text-sm">{isRecordingScreen ? 'Stop recording' : 'Record Screen'}</span>
-                  </button>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <ColorSelect
-                        className="w-full"
-                        size="md"
-                        label="Recording FPS"
-                        value={String(recordingFps)}
-                        onChange={(v) => setRecordingFps(parseInt(v, 10) || 30)}
-                        options={[
-                          { value: '24', label: '24' },
-                          { value: '30', label: '30' },
-                          { value: '60', label: '60' },
-                        ]}
-                      />
-                    </div>
-                    <div>
-                      <ColorSelect
-                        className="w-full"
-                        size="md"
-                        label="Resolution hint"
-                        value={recordingResolution}
-                        onChange={(v) =>
-                          setRecordingResolution((v as typeof recordingResolution) || '1080p')
-                        }
-                        options={[
-                          { value: 'source', label: 'Source/native' },
-                          { value: '720p', label: '1280x720' },
-                          { value: '1080p', label: '1920x1080' },
-                          { value: '1440p', label: '2560x1440' },
-                          { value: '2160p', label: '3840x2160' },
-                        ]}
-                      />
-                    </div>
-                  </div>
-                  {scene.videoLayer.src && (
-                    <p className="text-[#6b6b7a] text-[11px] truncate">{scene.videoLayer.src}</p>
-                  )}
-                  <div>
-                    <label className="text-[11px] text-[#6b6b7a] block mb-1">Or paste URL</label>
-                    <input
-                      type="text"
-                      placeholder="https://..."
-                      value={scene.videoLayer.src ?? ''}
-                      onChange={(e) =>
-                        updateScene(scene.id, {
-                          videoLayer: { ...scene.videoLayer, src: e.target.value || null },
-                        })
-                      }
-                      onBlur={commitLayer}
-                      className="w-full border rounded px-2 py-1 text-sm placeholder-[#6b6b7a] focus:outline-none focus:border-[#e84545] transition-colors"
-                      style={{
-                        backgroundColor: 'var(--color-input-bg)',
-                        borderColor: 'var(--color-border)',
-                        color: 'var(--color-text-primary)',
-                      }}
-                    />
-                  </div>
-                </div>
-
-                {/* Opacity */}
-                <div>
-                  <label className="text-[11px] text-[#6b6b7a] block mb-1">
-                    Opacity: {Math.round(scene.videoLayer.opacity * 100)}%
-                  </label>
-                  <input
-                    type="range"
-                    min={0}
-                    max={1}
-                    step={0.05}
-                    value={scene.videoLayer.opacity}
-                    onChange={(e) => {
-                      updateScene(scene.id, {
-                        videoLayer: { ...scene.videoLayer, opacity: parseFloat(e.target.value) },
-                      })
-                      commitLayerDebounced()
-                    }}
-                    className="w-full"
-                  />
-                </div>
-
-                {/* Trim */}
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="text-[11px] text-[#6b6b7a] block mb-1">Trim start (s)</label>
-                    <input
-                      type="number"
-                      min={0}
-                      step={0.1}
-                      value={scene.videoLayer.trimStart}
-                      onChange={(e) =>
-                        updateScene(scene.id, {
-                          videoLayer: { ...scene.videoLayer, trimStart: parseFloat(e.target.value) || 0 },
-                        })
-                      }
-                      onBlur={commitLayer}
-                      className="w-full border rounded px-2 py-1 text-sm focus:outline-none focus:border-[#e84545] transition-colors"
-                      style={{
-                        backgroundColor: 'var(--color-input-bg)',
-                        borderColor: 'var(--color-border)',
-                        color: 'var(--color-text-primary)',
-                      }}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[11px] text-[#6b6b7a] block mb-1">Trim end (s)</label>
-                    <input
-                      type="number"
-                      min={0}
-                      step={0.1}
-                      value={scene.videoLayer.trimEnd ?? ''}
-                      placeholder="auto"
-                      onChange={(e) =>
-                        updateScene(scene.id, {
-                          videoLayer: {
-                            ...scene.videoLayer,
-                            trimEnd: e.target.value ? parseFloat(e.target.value) : null,
-                          },
-                        })
-                      }
-                      onBlur={commitLayer}
-                      className="w-full border rounded px-2 py-1 text-sm focus:outline-none focus:border-[#e84545] transition-colors"
-                      style={{
-                        backgroundColor: 'var(--color-input-bg)',
-                        borderColor: 'var(--color-border)',
-                        color: 'var(--color-text-primary)',
-                      }}
-                    />
-                  </div>
-                </div>
-              </CollapsibleSection>
-            </>
-          )}
-
-          {panelSectionId === 'audio' && (
-            <>
-              {/* Audio Layer */}
-              <CollapsibleSection
-                title="Audio Layer"
-                icon={Music}
-                enabled={scene.audioLayer.enabled}
-                onEnabledChange={(val) => {
-                  updateScene(scene.id, {
-                    audioLayer: { ...scene.audioLayer, enabled: val },
-                  })
-                  commitLayer()
-                }}
-              >
-                {(() => {
-                  const audio = normalizeAudioLayer(scene.audioLayer)
-                  return (
-                    <>
-                      <input
-                        ref={audioInputRef}
-                        type="file"
-                        accept="audio/mp3,audio/wav,audio/mpeg"
-                        onChange={handleAudioUpload}
-                        className="hidden"
-                      />
-
-                      <div className="flex gap-2">
-                        <span
-                          onClick={() => audioInputRef.current?.click()}
-                          className="kbd flex-1 h-8 border-dashed border-[#444] text-[#6b6b7a] hover:text-[#e84545] hover:border-[#e84545] flex items-center justify-center gap-1 cursor-pointer"
-                        >
-                          <Plus size={14} />
-                          <span className="text-[11px] shrink-0 whitespace-nowrap">
-                            {scene.audioLayer.src ? 'Replace' : 'Upload MP3'}
-                          </span>
-                        </span>
-                        <span
-                          onClick={handleGenerateVoiceover}
-                          className="kbd flex-1 h-8 text-[#6b6b7a] hover:text-[#f0ece0] flex items-center justify-center gap-1 cursor-pointer"
-                        >
-                          <Music size={14} />
-                          <span className="text-[11px]">ElevenLabs</span>
-                        </span>
-                      </div>
-
-                      {/* TTS Narration */}
-                      {audio.tts && audio.tts.text && (
-                        <div className="space-y-1.5">
-                          <div className="flex items-center gap-2">
-                            <span className="text-[11px] text-[#6b6b7a]">Narration</span>
-                            <span
-                              className="text-[10px] px-1.5 py-0.5 rounded"
-                              style={{ backgroundColor: 'var(--color-accent)', color: '#fff' }}
-                            >
-                              {audio.tts.provider}
-                            </span>
-                            {audio.tts.status === 'ready' && <span className="text-[10px] text-green-500">ready</span>}
-                            {audio.tts.status === 'generating' && (
-                              <span className="text-[10px] text-yellow-500">generating...</span>
-                            )}
-                            {audio.tts.status === 'error' && <span className="text-[10px] text-red-400">error</span>}
-                          </div>
-                          <textarea
-                            readOnly
-                            value={audio.tts.text}
-                            rows={2}
-                            className="w-full border rounded px-2 py-1 text-[11px] resize-none"
-                            style={{
-                              backgroundColor: 'var(--color-input-bg)',
-                              borderColor: 'var(--color-border)',
-                              color: 'var(--color-text-muted)',
-                            }}
-                          />
-                          <span
-                            onClick={async () => {
-                              if (generatingTTS || !audio.tts?.text) return
-                              setGeneratingTTS(true)
-                              try {
-                                await generateNarration(
-                                  scene.id,
-                                  audio.tts.text,
-                                  audio.tts.provider,
-                                  audio.tts.voiceId || undefined,
-                                )
-                              } catch {}
-                              setGeneratingTTS(false)
-                            }}
-                            className="kbd w-full h-7 flex items-center justify-center gap-1 text-[11px] cursor-pointer"
-                          >
-                            <RefreshCw size={10} className={generatingTTS ? 'animate-spin' : ''} />
-                            {generatingTTS ? 'Regenerating...' : 'Regenerate'}
-                          </span>
-                        </div>
-                      )}
-
-                      {scene.audioLayer.src && (
-                        <p className="text-[#6b6b7a] text-[11px] truncate">{scene.audioLayer.src}</p>
-                      )}
-
-                      {/* Volume */}
-                      <div>
-                        <label className="text-[11px] text-[#6b6b7a] block mb-1">
-                          Volume: {Math.round(scene.audioLayer.volume * 100)}%
-                        </label>
-                        <input
-                          type="range"
-                          min={0}
-                          max={1}
-                          step={0.05}
-                          value={scene.audioLayer.volume}
-                          onChange={(e) => {
-                            updateScene(scene.id, {
-                              audioLayer: { ...scene.audioLayer, volume: parseFloat(e.target.value) },
-                            })
-                            commitLayerDebounced()
-                          }}
-                          className="w-full"
-                        />
-                      </div>
-
-                      {/* Start offset */}
-                      <div>
-                        <label className="text-[11px] text-[#6b6b7a] block mb-1">Start offset (s)</label>
-                        <input
-                          type="number"
-                          min={0}
-                          step={0.1}
-                          value={scene.audioLayer.startOffset}
-                          onChange={(e) =>
-                            updateScene(scene.id, {
-                              audioLayer: {
-                                ...scene.audioLayer,
-                                startOffset: parseFloat(e.target.value) || 0,
-                              },
-                            })
-                          }
-                          onBlur={commitLayer}
-                          className="w-full border rounded px-2 py-1 text-sm focus:outline-none focus:border-[#e84545] transition-colors"
-                          style={{
-                            backgroundColor: 'var(--color-input-bg)',
-                            borderColor: 'var(--color-border)',
-                            color: 'var(--color-text-primary)',
-                          }}
-                        />
-                      </div>
-
-                      {/* Fade toggles */}
-                      <div className="flex gap-4">
-                        {[
-                          { key: 'fadeIn', label: 'Fade In' },
-                          { key: 'fadeOut', label: 'Fade Out' },
-                        ].map(({ key, label }) => (
-                          <label key={key} className="flex items-center gap-1.5 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={scene.audioLayer[key as 'fadeIn' | 'fadeOut']}
-                              onChange={(e) => {
-                                updateScene(scene.id, {
-                                  audioLayer: { ...scene.audioLayer, [key]: e.target.checked },
-                                })
-                                commitLayer()
-                              }}
-                              className="w-3 h-3 accent-[#e84545]"
-                            />
-                            <span className="text-[11px] text-[#6b6b7a]">{label}</span>
-                          </label>
-                        ))}
-                      </div>
-
-                      {/* SFX Sub-section */}
-                      <div className="border-t pt-3 space-y-2" style={{ borderColor: 'var(--color-border)' }}>
-                        <div className="flex items-center justify-between">
-                          <span className="text-[11px] font-medium text-[var(--color-text-primary)]">
-                            Sound Effects
-                          </span>
-                          <span
-                            onClick={() => setShowSFXSearch(!showSFXSearch)}
-                            className="kbd h-6 px-2 flex items-center gap-1 text-[11px] cursor-pointer"
-                          >
-                            <Plus size={10} />
-                            Add SFX
-                          </span>
-                        </div>
-                        {showSFXSearch && (
-                          <SFXSearchPopover
-                            onSelect={(result, triggerAt) => {
-                              const sfx: SFXTrack = {
-                                id: result.id,
-                                name: result.name,
-                                provider: 'freesound' as const,
-                                src: result.audioUrl,
-                                triggerAt,
-                                volume: 1,
-                                duration: result.duration,
-                              }
-                              addSFXToScene(scene.id, sfx)
-                              commitLayer()
-                            }}
-                            onClose={() => setShowSFXSearch(false)}
-                          />
-                        )}
-                        {audio.sfx && audio.sfx.length > 0 && (
-                          <div className="space-y-1">
-                            {audio.sfx.map((sfx) => (
-                              <div
-                                key={sfx.id}
-                                className="flex items-center gap-2 text-[11px]"
-                                style={{ color: 'var(--color-text-primary)' }}
-                              >
-                                <span className="flex-1 truncate">{sfx.name}</span>
-                                <span style={{ color: 'var(--color-text-muted)' }}>@{sfx.triggerAt}s</span>
-                                <span
-                                  onClick={() => {
-                                    removeSFXFromScene(scene.id, sfx.id)
-                                    commitLayer()
-                                  }}
-                                  className="cursor-pointer hover:text-red-400"
-                                >
-                                  <X size={10} />
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Music Sub-section */}
-                      <div className="border-t pt-3 space-y-2" style={{ borderColor: 'var(--color-border)' }}>
-                        <div className="flex items-center justify-between">
-                          <span className="text-[11px] font-medium text-[var(--color-text-primary)]">Music</span>
-                          {!audio.music && (
-                            <span
-                              onClick={() => setShowMusicSearch(!showMusicSearch)}
-                              className="kbd h-6 px-2 flex items-center gap-1 text-[11px] cursor-pointer"
-                            >
-                              <Plus size={10} />
-                              Add Music
-                            </span>
-                          )}
-                        </div>
-                        {showMusicSearch && !audio.music && (
-                          <MusicSearchPopover
-                            onSelect={(result) => {
-                              const music: MusicTrack = {
-                                name: result.name,
-                                provider: 'pixabay-music' as const,
-                                src: result.audioUrl,
-                                volume: 0.5,
-                                loop: true,
-                                duckDuringTTS: true,
-                                duckLevel: 0.15,
-                              }
-                              setSceneMusic(scene.id, music)
-                              commitLayer()
-                            }}
-                            onClose={() => setShowMusicSearch(false)}
-                          />
-                        )}
-                        {audio.music && (
-                          <div className="space-y-2">
-                            <div
-                              className="flex items-center gap-2 text-[11px]"
-                              style={{ color: 'var(--color-text-primary)' }}
-                            >
-                              <span className="flex-1 truncate">{audio.music.name}</span>
-                              <span
-                                onClick={() => {
-                                  setSceneMusic(scene.id, null)
-                                  commitLayer()
-                                }}
-                                className="cursor-pointer hover:text-red-400"
-                              >
-                                <X size={10} />
-                              </span>
-                            </div>
-                            {/* Music volume */}
-                            <div className="flex items-center gap-2">
-                              <Volume2 size={10} className="text-[#6b6b7a]" />
-                              <input
-                                type="range"
-                                min={0}
-                                max={1}
-                                step={0.05}
-                                value={audio.music.volume}
-                                onChange={(e) => {
-                                  if (!audio.music) return
-                                  setSceneMusic(scene.id, { ...audio.music, volume: parseFloat(e.target.value) })
-                                  commitLayerDebounced()
-                                }}
-                                className="flex-1"
-                              />
-                              <span className="text-[10px] w-7" style={{ color: 'var(--color-text-muted)' }}>
-                                {Math.round(audio.music.volume * 100)}%
-                              </span>
-                            </div>
-                            {/* Loop toggle */}
-                            <label className="flex items-center gap-1.5 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={audio.music.loop}
-                                onChange={(e) => {
-                                  if (!audio.music) return
-                                  setSceneMusic(scene.id, { ...audio.music, loop: e.target.checked })
-                                  commitLayer()
-                                }}
-                                className="w-3 h-3 accent-[#e84545]"
-                              />
-                              <span className="text-[11px] text-[#6b6b7a]">Loop</span>
-                            </label>
-                            {/* Duck toggle */}
-                            <label className="flex items-center gap-1.5 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={audio.music.duckDuringTTS}
-                                onChange={(e) => {
-                                  if (!audio.music) return
-                                  setSceneMusic(scene.id, { ...audio.music, duckDuringTTS: e.target.checked })
-                                  commitLayer()
-                                }}
-                                className="w-3 h-3 accent-[#e84545]"
-                              />
-                              <span className="text-[11px] text-[#6b6b7a]">Duck during narration</span>
-                            </label>
-                          </div>
-                        )}
-                      </div>
-                    </>
-                  )
-                })()}
-              </CollapsibleSection>
-            </>
-          )}
-
-          {panelSectionId === 'scene' && (
-            <>
-              {/* SVG Objects */}
-              <CollapsibleSection
-                title="SVG Objects"
-                icon={Layers}
-                active={(scene.svgObjects ?? []).length > 0}
-                badge={<span className="text-[11px] text-[#6b6b7a]">transparent stickers</span>}
-                extraHeaderContent={
-                  <button
-                    onClick={() => addSvgObject(scene.id)}
-                    className="kbd h-6 px-2 text-[#6b6b7a] hover:text-[#e84545]"
-                  >
-                    <Plus size={11} />
-                    <span className="text-[11px]">Add</span>
-                  </button>
-                }
-              >
-                {(scene.svgObjects ?? []).length === 0 ? (
-                  <div
-                    className="text-[11px] text-[#6b6b7a] text-center py-3 border border-dashed rounded"
-                    style={{ borderColor: 'var(--color-border)' }}
-                  >
-                    No SVG objects
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {(scene.svgObjects ?? []).map((obj, idx) => {
-                      const isThisGenerating = isGenerating && generatingSceneId === scene.id
-                      const prompt = objectPrompts[obj.id] ?? obj.prompt
-                      return (
-                        <div
-                          key={obj.id}
-                          className="border rounded p-2.5 space-y-2"
-                          style={{ borderColor: 'var(--color-border)' }}
-                        >
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[10px] text-[#6b6b7a] shrink-0">#{idx + 1}</span>
-                            <input
-                              type="text"
-                              value={prompt}
-                              onChange={(e) => setObjectPrompts((p) => ({ ...p, [obj.id]: e.target.value }))}
-                              placeholder="Describe this object..."
-                              className="flex-1 border rounded px-2 py-1 text-[11px] placeholder-[#6b6b7a] focus:outline-none focus:border-[#e84545] transition-colors"
-                              style={{
-                                backgroundColor: 'var(--color-input-bg)',
-                                borderColor: 'var(--color-border)',
-                                color: 'var(--color-text-primary)',
-                              }}
-                            />
-                            <button
-                              onClick={async () => {
-                                if (!prompt.trim() || isThisGenerating) return
-                                setObjectPrompts((p) => ({ ...p, [obj.id]: prompt }))
-                                await generateSvgObject(scene.id, obj.id, prompt)
-                              }}
-                              disabled={!prompt.trim() || isThisGenerating}
-                              className="kbd h-8 px-2 bg-[#e84545] border-[#e84545] shadow-[#800] text-white disabled:opacity-40 shrink-0"
-                            >
-                              <span className="text-[11px] uppercase tracking-wider">
-                                {isThisGenerating ? '...' : obj.svgContent ? 'Regen' : 'Gen'}
-                              </span>
-                            </button>
-                            <button
-                              onClick={() => {
-                                removeSvgObject(scene.id, obj.id)
-                                saveSceneHTML(scene.id)
-                              }}
-                              className="text-[#6b6b7a] hover:text-[#e84545] transition-colors"
-                            >
-                              <Trash2 size={11} />
-                            </button>
-                          </div>
-
-                          <div className="space-y-2.5">
-                            <div className="grid grid-cols-2 gap-x-3 gap-y-2.5">
-                              {/* X Position */}
-                              <div>
-                                <div className="flex justify-between items-end mb-1">
-                                  <label className="text-[10px] text-[#6b6b7a] uppercase tracking-wider">
-                                    X Position
-                                  </label>
-                                  <span className="text-[10px] text-[var(--color-text-muted)] font-mono">
-                                    {Math.round(obj.x)}%
-                                  </span>
-                                </div>
-                                <input
-                                  type="range"
-                                  min={0}
-                                  max={100}
-                                  step={1}
-                                  value={Math.round(obj.x)}
-                                  onChange={(e) => {
-                                    updateSvgObject(scene.id, obj.id, { x: parseFloat(e.target.value) || 0 })
-                                    commitLayerDebounced()
-                                  }}
-                                  className="w-full"
-                                />
-                              </div>
-
-                              {/* Y Position */}
-                              <div>
-                                <div className="flex justify-between items-end mb-1">
-                                  <label className="text-[10px] text-[#6b6b7a] uppercase tracking-wider">
-                                    Y Position
-                                  </label>
-                                  <span className="text-[10px] text-[var(--color-text-muted)] font-mono">
-                                    {Math.round(obj.y)}%
-                                  </span>
-                                </div>
-                                <input
-                                  type="range"
-                                  min={0}
-                                  max={100}
-                                  step={1}
-                                  value={Math.round(obj.y)}
-                                  onChange={(e) => {
-                                    updateSvgObject(scene.id, obj.id, { y: parseFloat(e.target.value) || 0 })
-                                    commitLayerDebounced()
-                                  }}
-                                  className="w-full"
-                                />
-                              </div>
-
-                              {/* Scale (Width) */}
-                              <div>
-                                <div className="flex justify-between items-end mb-1">
-                                  <label className="text-[10px] text-[#6b6b7a] uppercase tracking-wider">Scale</label>
-                                  <span className="text-[10px] text-[var(--color-text-muted)] font-mono">
-                                    {Math.round(obj.width)}%
-                                  </span>
-                                </div>
-                                <input
-                                  type="range"
-                                  min={5}
-                                  max={150}
-                                  step={1}
-                                  value={Math.round(obj.width)}
-                                  onChange={(e) => {
-                                    updateSvgObject(scene.id, obj.id, { width: parseFloat(e.target.value) || 50 })
-                                    commitLayerDebounced()
-                                  }}
-                                  className="w-full"
-                                />
-                              </div>
-
-                              {/* Opacity */}
-                              <div>
-                                <div className="flex justify-between items-end mb-1">
-                                  <label className="text-[10px] text-[#6b6b7a] uppercase tracking-wider">Opacity</label>
-                                  <span className="text-[10px] text-[var(--color-text-muted)] font-mono">
-                                    {Math.round(obj.opacity * 100)}%
-                                  </span>
-                                </div>
-                                <input
-                                  type="range"
-                                  min={0}
-                                  max={1}
-                                  step={0.01}
-                                  value={obj.opacity}
-                                  onChange={(e) => {
-                                    updateSvgObject(scene.id, obj.id, { opacity: parseFloat(e.target.value) })
-                                    commitLayerDebounced()
-                                  }}
-                                  className="w-full"
-                                />
-                              </div>
-                            </div>
-                          </div>
-
-                          {obj.svgContent && (
-                            <div className="text-[10px] text-[#6b6b7a]">
-                              {obj.svgContent.length.toLocaleString()} chars generated
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-              </CollapsibleSection>
-
-              {/* Text Overlays */}
-              <CollapsibleSection
-                title="Text Overlays"
-                icon={Type}
-                active={(scene.textOverlays ?? []).length > 0}
-                extraHeaderContent={
-                  <button
-                    onClick={() => addTextOverlay(scene.id)}
-                    className="kbd h-6 px-2 text-[#6b6b7a] hover:text-[#e84545]"
-                  >
-                    <Plus size={11} />
-                    <span className="text-[11px]">Add</span>
-                  </button>
-                }
-              >
-                {scene.textOverlays.length === 0 ? (
-                  <div
-                    className="text-[11px] text-[#6b6b7a] text-center py-3 border border-dashed rounded"
-                    style={{ borderColor: 'var(--color-border)' }}
-                  >
-                    No text overlays
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {scene.textOverlays.map((overlay) => (
-                      <div
-                        key={overlay.id}
-                        className="border rounded p-2.5 space-y-2"
-                        style={{ borderColor: 'var(--color-border)' }}
-                      >
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="text"
-                            value={overlay.content}
-                            onChange={(e) => {
-                              updateTextOverlay(scene.id, overlay.id, { content: e.target.value })
-                              commitLayerDebounced()
-                            }}
-                            className="flex-1 border rounded px-2 py-1 text-sm focus:outline-none focus:border-[#e84545] transition-colors"
-                            style={{
-                              backgroundColor: 'var(--color-input-bg)',
-                              borderColor: 'var(--color-border)',
-                              color: 'var(--color-text-primary)',
-                            }}
-                          />
-                          <button
-                            onClick={() => {
-                              removeTextOverlay(scene.id, overlay.id)
-                              commitLayer()
-                            }}
-                            className="text-[#6b6b7a] hover:text-[#e84545] transition-colors"
-                          >
-                            <Trash2 size={12} />
-                          </button>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <label className="text-[10px] text-[#6b6b7a] block mb-0.5">X%</label>
-                            <input
-                              type="number"
-                              min={0}
-                              max={100}
-                              value={overlay.x}
-                              onChange={(e) => {
-                                updateTextOverlay(scene.id, overlay.id, { x: parseFloat(e.target.value) || 0 })
-                                commitLayerDebounced()
-                              }}
-                              className="w-full border rounded px-2 py-0.5 text-[11px] focus:outline-none focus:border-[#e84545] transition-colors"
-                              style={{
-                                backgroundColor: 'var(--color-input-bg)',
-                                borderColor: 'var(--color-border)',
-                                color: 'var(--color-text-primary)',
-                              }}
-                            />
-                          </div>
-                          <div>
-                            <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Y%</label>
-                            <input
-                              type="number"
-                              min={0}
-                              max={100}
-                              value={overlay.y}
-                              onChange={(e) => {
-                                updateTextOverlay(scene.id, overlay.id, { y: parseFloat(e.target.value) || 0 })
-                                commitLayerDebounced()
-                              }}
-                              className="w-full border rounded px-2 py-0.5 text-[11px] focus:outline-none focus:border-[#e84545] transition-colors"
-                              style={{
-                                backgroundColor: 'var(--color-input-bg)',
-                                borderColor: 'var(--color-border)',
-                                color: 'var(--color-text-primary)',
-                              }}
-                            />
-                          </div>
-                          <div>
-                            <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Size</label>
-                            <input
-                              type="number"
-                              min={10}
-                              max={200}
-                              value={overlay.size}
-                              onChange={(e) => {
-                                updateTextOverlay(scene.id, overlay.id, { size: parseInt(e.target.value) || 48 })
-                                commitLayerDebounced()
-                              }}
-                              className="w-full border rounded px-2 py-0.5 text-[11px] focus:outline-none focus:border-[#e84545] transition-colors"
-                              style={{
-                                backgroundColor: 'var(--color-input-bg)',
-                                borderColor: 'var(--color-border)',
-                                color: 'var(--color-text-primary)',
-                              }}
-                            />
-                          </div>
-                          <div>
-                            <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Color</label>
-                            <input
-                              type="color"
-                              value={overlay.color}
-                              onChange={(e) => {
-                                updateTextOverlay(scene.id, overlay.id, { color: e.target.value })
-                                commitLayerDebounced()
-                              }}
-                              className="w-full h-6 bg-transparent border border-[#2a2a32] rounded cursor-pointer"
-                            />
-                          </div>
-                          <div>
-                            <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Delay (s)</label>
-                            <input
-                              type="number"
-                              min={0}
-                              step={0.1}
-                              value={overlay.delay}
-                              onChange={(e) => {
-                                updateTextOverlay(scene.id, overlay.id, { delay: parseFloat(e.target.value) || 0 })
-                                commitLayerDebounced()
-                              }}
-                              className="w-full border rounded px-2 py-0.5 text-[11px] focus:outline-none focus:border-[#e84545] transition-colors"
-                              style={{
-                                backgroundColor: 'var(--color-input-bg)',
-                                borderColor: 'var(--color-border)',
-                                color: 'var(--color-text-primary)',
-                              }}
-                            />
-                          </div>
-                          <div>
-                            <ColorSelect
-                              className="w-full"
-                              label="Animation"
-                              value={overlay.animation}
-                              onChange={(v) => {
-                                updateTextOverlay(scene.id, overlay.id, {
-                                  animation: v as 'fade-in' | 'slide-up' | 'typewriter',
-                                })
-                                commitLayerDebounced()
-                              }}
-                              options={[
-                                { value: 'fade-in', label: 'Fade In' },
-                                { value: 'slide-up', label: 'Slide Up' },
-                                { value: 'typewriter', label: 'Typewriter' },
-                              ]}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CollapsibleSection>
-
-              <CollapsibleSection
-                title="Canvas motion templates"
-                icon={LayoutTemplate}
-                active={scene.sceneType === 'canvas2d' || scene.sceneType === 'motion'}
-                defaultOpen={false}
-                badge={<span className="text-[11px] text-[#6b6b7a]">backgrounds</span>}
-              >
-                <CanvasMotionTemplatesPanel scene={scene} />
-              </CollapsibleSection>
-
-              {/* AI Generated Layers */}
-              <CollapsibleSection title="AI Layers" icon={Sparkles} active={(scene.aiLayers ?? []).length > 0}>
-                <AILayersPanel scene={scene} />
-              </CollapsibleSection>
-
-              <CollapsibleSection
                 title="Zdog Studio"
                 icon={User}
                 active={zdogStudioMode}
@@ -3414,23 +2617,28 @@ export default function LayersTab({
                   </div>
                 )}
               </CollapsibleSection>
-            </>
-          )}
 
-          {/* Scene Elements (registered from iframe) */}
-          {panelSectionId === 'elements' && Object.keys(inspectorElements).length > 0 && (
-            <CollapsibleSection
-              title="Scene Elements"
-              icon={Box}
-              active={Object.keys(inspectorElements).length > 0}
-              badge={
-                <span className="text-[11px] text-[#6b6b7a] ml-auto">
-                  {Object.keys(inspectorElements).length} element
-                  {Object.keys(inspectorElements).length !== 1 ? 's' : ''}
-                </span>
-              }
-            >
-              <div className="space-y-1">
+          </SectionGroup>
+        </div>
+      )}
+
+
+      {/* ── Audio tab ── */}
+      {layerViewMode === 'audio' && (
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <AudioTabPanel scene={scene} />
+        </div>
+      )}
+
+      {/* ── Elements tab ── */}
+      {(layerViewMode === 'elements' || layerViewMode === 'properties') && (
+      <div className="min-h-0 flex-1 overflow-y-auto py-1">
+              {/* ═══ ELEMENTS ═══ */}
+              <SectionGroup title="Elements" icon={Box} color="#e8a849" count={Object.keys(inspectorElements).length} defaultOpen>
+
+              {/* Scene Elements (registered from iframe) — primary content */}
+              {Object.keys(inspectorElements).length > 0 ? (
+              <div className="px-2 py-1 space-y-1">
                 {Object.values(inspectorElements).map((element) => {
                   const isSelected = inspectorSelectedElement?.id === element.id
                   return (
@@ -3446,9 +2654,7 @@ export default function LayersTab({
                         <Box size={10} className={isSelected ? 'text-[#e84545]' : 'text-[#6b6b7a]'} />
                         <span
                           className={`text-[12px] flex-1 truncate ${
-                            isSelected
-                              ? 'text-[var(--color-text-primary)] font-medium'
-                              : 'text-[var(--color-text-primary)]'
+                            isSelected ? 'text-[var(--color-text-primary)] font-medium' : 'text-[var(--color-text-primary)]'
                           }`}
                         >
                           {element.label || element.id}
@@ -3478,6 +2684,14 @@ export default function LayersTab({
                             sceneId={selectedSceneId}
                             palette={palette}
                             onPatch={handleInspectorPatch}
+                            hasOverrides={!!(scene.elementOverrides?.[inspectorSelectedElement.id] && Object.keys(scene.elementOverrides[inspectorSelectedElement.id]).length > 0)}
+                            onResetOverrides={() => {
+                              if (!scene.elementOverrides?.[inspectorSelectedElement.id]) return
+                              const next = { ...scene.elementOverrides }
+                              delete next[inspectorSelectedElement.id]
+                              updateScene(scene.id, { elementOverrides: next })
+                              saveSceneHTML(scene.id)
+                            }}
                           />
                         </div>
                       )}
@@ -3485,17 +2699,15 @@ export default function LayersTab({
                   )
                 })}
               </div>
-            </CollapsibleSection>
-          )}
-
-          {panelSectionId === 'elements' && Object.keys(inspectorElements).length === 0 && (
-            <p className="py-8 text-center text-[11px] text-[var(--color-text-muted)]">
-              No elements listed yet. Click something in the preview to inspect it here.
-            </p>
-          )}
+              ) : (
+                <p className="py-4 text-center text-[11px] text-[var(--color-text-muted)]">
+                  Click an element in the preview to inspect it.
+                </p>
+              )}
+              </SectionGroup>
 
           {/* Interactions (only in interactive mode) */}
-          {panelSectionId === 'interact' && project.outputMode === 'interactive' && (
+          {layerViewMode === 'elements' && project.outputMode === 'interactive' && (
             <CollapsibleSection
               title="Interactions"
               icon={Layers}
@@ -3509,10 +2721,11 @@ export default function LayersTab({
               <InteractionsSection scene={scene} addInteraction={addInteraction} />
             </CollapsibleSection>
           )}
-        </div>
+      </div>
       )}
 
       <SceneLayersStackPanel scene={scene} />
+
     </div>
   )
 }

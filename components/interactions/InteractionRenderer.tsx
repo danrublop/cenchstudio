@@ -16,9 +16,11 @@ export interface InteractionCallbacks {
   onQuizAnswer: (el: InteractionElement & { type: 'quiz' }, selectedOptionId: string, correct: boolean) => void
   onGateContinue: (el: InteractionElement & { type: 'gate' }) => void
   onFormSubmit: (el: InteractionElement & { type: 'form' }, values: Record<string, string>) => void
+  onSliderChange?: (el: InteractionElement & { type: 'slider' }, value: number) => void
+  onToggleChange?: (el: InteractionElement & { type: 'toggle' }, value: boolean) => void
   onResume?: () => void
-  variables?: Record<string, string>
-  setVariable?: (name: string, value: string) => void
+  variables?: Record<string, unknown>
+  setVariable?: (name: string, value: unknown) => void
 }
 
 // ── Style helpers ────────────────────────────────────────────────────────────
@@ -117,6 +119,12 @@ const STYLES = `
 @keyframes cench-float { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-6px); } }
 @keyframes cench-check { 0% { stroke-dashoffset: 24; } 100% { stroke-dashoffset: 0; } }
 @keyframes cench-shake { 0%, 100% { transform: translateX(0); } 20% { transform: translateX(-4px); } 40% { transform: translateX(4px); } 60% { transform: translateX(-3px); } 80% { transform: translateX(3px); } }
+.cench-slider-input { -webkit-appearance: none; appearance: none; background: transparent; cursor: pointer; }
+.cench-slider-input::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 0; height: 0; }
+.cench-slider-input::-moz-range-thumb { appearance: none; width: 0; height: 0; border: none; background: transparent; }
+.cench-slider-input::-webkit-slider-runnable-track { background: transparent; }
+.cench-slider-input::-moz-range-track { background: transparent; }
+.cench-slider-input:focus { outline: none; }
 `
 
 function getEntranceAnimation(anim: string | undefined): string | undefined {
@@ -214,6 +222,10 @@ export function InteractionRenderer({
       return <TooltipRenderer element={el} style={wrapStyle} />
     case 'form':
       return <FormRenderer element={el} callbacks={callbacks} style={wrapStyle} />
+    case 'slider':
+      return <SliderRenderer element={el} callbacks={callbacks} style={wrapStyle} />
+    case 'toggle':
+      return <ToggleRenderer element={el} callbacks={callbacks} style={wrapStyle} />
     default:
       return null
   }
@@ -230,97 +242,88 @@ function HotspotRenderer({
   callbacks: InteractionCallbacks
   style: React.CSSProperties
 }) {
+  const [open, setOpen] = useState(false)
   const [hover, setHover] = useState(false)
   const s = useStyle(el)
-  const rgb = hexToRgb(el.color)
-  const borderRadius = el.shape === 'circle' ? '50%' : el.shape === 'pill' ? '999px' : `${s.borderRadius}px`
 
   return (
-    <div
-      style={{
-        ...style,
-        borderRadius,
-        cursor: 'pointer',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        position: 'absolute',
-      }}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      onClick={() => callbacks.onHotspotClick(el)}
-    >
-      {el.style === 'pulse' && (
-        <div
-          style={{
-            position: 'absolute',
-            inset: -4,
-            borderRadius,
-            border: `2px solid rgba(${rgb}, 0.3)`,
-            animation: 'cench-ripple 2s ease-out infinite',
-          }}
-        />
-      )}
+    <div style={{ ...style, position: 'absolute', overflow: 'visible' }}>
+      {/* Dot trigger */}
       <div
         style={{
-          width: '100%',
-          height: '100%',
-          borderRadius,
-          position: 'relative',
-          overflow: 'hidden',
-          background: hover
-            ? `rgba(${hexToRgb(s.bgColor)}, ${s.bgOpacity * 2})`
-            : `rgba(${hexToRgb(s.bgColor)}, ${s.bgOpacity})`,
-          border: `${s.borderWidth}px solid rgba(${rgb}, ${hover ? s.borderOpacity * 2 : s.borderOpacity})`,
-          backdropFilter: s.blur > 0 ? `blur(${s.blur}px)` : undefined,
-          boxShadow: [
-            `0 8px ${s.shadowSpread}px rgba(${hexToRgb(s.shadowColor)}, ${s.shadowOpacity})`,
-            hover ? `0 0 20px rgba(${rgb}, 0.3)` : `0 0 12px rgba(${rgb}, 0.15)`,
-            s.innerGlow > 0 ? `inset 0 1px 0 rgba(${hexToRgb(s.bgColor)}, ${s.innerGlow})` : '',
-            s.innerGlow > 0 ? `inset 0 0 20px 10px rgba(${hexToRgb(s.bgColor)}, ${s.innerGlow * 0.6})` : '',
-          ]
-            .filter(Boolean)
-            .join(', '),
-          transition: `all ${s.transitionSpeed}ms ease`,
-          transform: hover ? `scale(${s.hoverScale})` : 'scale(1)',
+          position: 'absolute',
+          left: '50%',
+          top: '50%',
+          transform: `translate(-50%, -50%) scale(${hover ? 1.15 : 1})`,
+          width: 26,
+          height: 26,
+          borderRadius: '50%',
+          background: el.color,
+          border: '2px solid white',
+          cursor: 'pointer',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          animation:
-            el.style === 'pulse'
-              ? 'cench-pulse 2.5s ease-in-out infinite'
-              : el.style === 'glow'
-                ? 'cench-glow 2s ease-in-out infinite'
-                : undefined,
-          ...(el.style === 'glow' ? ({ '--glow-color': `rgba(${rgb}, 0.25)` } as any) : {}),
+          fontSize: 14,
+          fontWeight: 700,
+          color: 'white',
+          boxShadow: '0 1px 4px rgba(0,0,0,0.15)',
+          transition: 'transform 0.15s ease',
+          zIndex: 2,
         }}
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
+        onClick={() => { setOpen(!open); callbacks.onHotspotClick(el) }}
       >
-        {s.innerGlow > 0 && (
-          <div
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              height: 1,
-              background: `linear-gradient(90deg, transparent, rgba(${hexToRgb(s.bgColor)}, 0.6), transparent)`,
-            }}
-          />
-        )}
-        {el.label && (
-          <span
-            style={{
-              color: s.textColor,
-              fontSize: s.fontSize,
-              fontWeight: s.fontWeight,
-              fontFamily: s.fontFamily,
-              textShadow: `0 1px 4px rgba(0,0,0,0.4)`,
-            }}
-          >
-            {el.label}
-          </span>
-        )}
+        {open ? '×' : '+'}
       </div>
+
+      {/* Pulse ring */}
+      {el.style === 'pulse' && !open && (
+        <div style={{
+          position: 'absolute', left: '50%', top: '50%',
+          transform: 'translate(-50%, -50%)',
+          width: 26, height: 26, borderRadius: '50%',
+          border: `2px solid ${el.color}`,
+          opacity: 0.4,
+          animation: 'cench-ripple 2s ease-out infinite',
+          pointerEvents: 'none',
+        }} />
+      )}
+
+      {/* Popover card */}
+      {open && (
+        <div style={{
+          position: 'absolute',
+          left: 'calc(50% + 18px)',
+          top: 'calc(50% - 40px)',
+          background: 'white',
+          border: '0.5px solid rgba(0,0,0,0.12)',
+          borderRadius: 8,
+          padding: '10px 13px',
+          minWidth: 160,
+          maxWidth: 220,
+          boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+          zIndex: 10,
+          fontFamily: s.fontFamily || '-apple-system, BlinkMacSystemFont, sans-serif',
+          animation: 'cench-entrance-fade 0.15s ease-out',
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div style={{ fontWeight: 500, fontSize: 13, color: '#1a1a18', marginBottom: 3, lineHeight: 1.4 }}>
+              {el.label}
+            </div>
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={(e) => { e.stopPropagation(); setOpen(false) }}
+              onKeyDown={(e) => { if (e.key === 'Enter') setOpen(false) }}
+              style={{ color: '#aaa', fontSize: 13, cursor: 'pointer', marginLeft: 6, lineHeight: 1 }}
+            >
+              ×
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -391,234 +394,132 @@ function QuizRenderer({
   callbacks: InteractionCallbacks
   style: React.CSSProperties
 }) {
-  const [answered, setAnswered] = useState<string | null>(null)
-  const [hoveredId, setHoveredId] = useState<string | null>(null)
+  const [selected, setSelected] = useState<string | null>(null)
+  const [submitted, setSubmitted] = useState(false)
   const [shaking, setShaking] = useState(false)
   const s = useStyle(el)
-  const isCorrect = answered === el.correctOptionId
+  const isCorrect = selected === el.correctOptionId
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  useEffect(() => {
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current)
-    }
-  }, [])
+  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current) }, [])
 
-  const handleAnswer = (optId: string) => {
-    if (answered) return
-    setAnswered(optId)
-    const correct = optId === el.correctOptionId
-    if (!correct) {
-      setShaking(true)
-      setTimeout(() => setShaking(false), 500)
-    }
-    callbacks.onQuizAnswer(el, optId, correct)
+  const submit = () => {
+    if (!selected || submitted) return
+    setSubmitted(true)
+    const correct = selected === el.correctOptionId
+    if (!correct) { setShaking(true); setTimeout(() => setShaking(false), 500) }
+    callbacks.onQuizAnswer(el, selected, correct)
     timerRef.current = setTimeout(() => {
       if (correct) {
-        if (el.onCorrect === 'jump' && el.onCorrectSceneId) {
-          /* handled */
-        } else callbacks.onResume?.()
+        if (!(el.onCorrect === 'jump' && el.onCorrectSceneId)) callbacks.onResume?.()
       } else {
-        if (el.onWrong === 'retry') setAnswered(null)
-        else if (el.onWrong === 'jump' && el.onWrongSceneId) {
-          /* handled */
-        } else callbacks.onResume?.()
+        if (el.onWrong === 'retry') { setSubmitted(false); setSelected(null) }
+        else if (!(el.onWrong === 'jump' && el.onWrongSceneId)) callbacks.onResume?.()
       }
-    }, 1500)
+    }, 2000)
   }
 
+  const font = s.fontFamily || '-apple-system, BlinkMacSystemFont, sans-serif'
+
   return (
-    <StyledPanel s={s} extra={style}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: s.gap, marginBottom: s.gap * 2 }}>
-        <div
-          style={{
-            width: 30,
-            height: 30,
-            borderRadius: Math.max(s.borderRadius / 2, 8),
-            flexShrink: 0,
-            background: `rgba(${hexToRgb(s.accentColor)}, ${s.bgOpacity})`,
-            border: `1px solid rgba(${hexToRgb(s.accentColor)}, ${s.borderOpacity * 0.6})`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 14,
-            color: s.accentColor,
-          }}
-        >
-          ?
-        </div>
-        <p
-          style={{
-            color: s.textColor,
-            fontSize: s.fontSize + 3,
-            fontWeight: 700,
-            fontFamily: s.fontFamily,
-            margin: 0,
-            lineHeight: 1.3,
-            textAlign: 'left',
-          }}
-        >
-          {el.question}
-        </p>
-      </div>
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: s.gap,
-          animation: shaking ? 'cench-shake 0.4s ease' : undefined,
-        }}
-      >
+    <div style={{
+      ...style,
+      background: 'white',
+      border: '0.5px solid rgba(0,0,0,0.1)',
+      borderRadius: 12,
+      padding: '20px 24px',
+      fontFamily: font,
+      boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+    }}>
+      {/* Question */}
+      <p style={{ fontSize: 15, fontWeight: 500, color: '#1a1a18', margin: '0 0 14px', lineHeight: 1.55 }}>
+        {el.question}
+      </p>
+
+      {/* Options */}
+      <div style={{
+        display: 'flex', flexDirection: 'column', gap: 7,
+        animation: shaking ? 'cench-shake 0.4s ease' : undefined,
+      }}>
         {el.options.map((opt, i) => {
-          const selected = answered === opt.id
-          const correct = opt.id === el.correctOptionId
-          const isHovered = hoveredId === opt.id && !answered
           const letter = String.fromCharCode(65 + i)
+          const isSel = selected === opt.id
+          const isOk = submitted && opt.id === el.correctOptionId
+          const isWrong = submitted && isSel && !isCorrect
 
-          let bg = s.bgOpacity > 0 ? `rgba(${hexToRgb(s.bgColor)}, ${s.bgOpacity * 0.2})` : 'transparent'
-          let border = `${s.borderWidth}px solid rgba(${hexToRgb(s.borderColor)}, ${s.borderOpacity * 0.4})`
-          let indicatorBg = `rgba(${hexToRgb(s.bgColor)}, 0.06)`
-          let indicatorColor = `rgba(${hexToRgb(s.textColor)}, 0.35)`
+          let bg = '#f9f9f7'
+          let border = '0.5px solid rgba(0,0,0,0.1)'
+          let color = '#333'
+          let circColor = 'currentColor'
 
-          if (answered && correct) {
-            bg = 'rgba(34,197,94,0.1)'
-            border = '1.5px solid rgba(34,197,94,0.5)'
-            indicatorBg = 'rgba(34,197,94,0.2)'
-            indicatorColor = '#22c55e'
-          } else if (answered && selected) {
-            bg = 'rgba(239,68,68,0.08)'
-            border = '1.5px solid rgba(239,68,68,0.5)'
-            indicatorBg = 'rgba(239,68,68,0.2)'
-            indicatorColor = '#ef4444'
-          } else if (isHovered) {
-            bg = `rgba(${hexToRgb(s.accentColor)}, 0.06)`
-            border = `${s.borderWidth}px solid rgba(${hexToRgb(s.accentColor)}, 0.35)`
-            indicatorBg = `rgba(${hexToRgb(s.accentColor)}, 0.15)`
-            indicatorColor = s.accentColor
-          }
+          if (isOk) { bg = '#f0fdf4'; border = '1px solid #16a34a'; color = '#15803d'; circColor = '#16a34a' }
+          else if (isWrong) { bg = '#fef2f2'; border = '1px solid #dc2626'; color = '#b91c1c'; circColor = '#dc2626' }
+          else if (isSel && !submitted) { bg = '#f0f4ff'; border = '1px solid ' + (s.accentColor || '#2563eb'); color = s.accentColor || '#2563eb'; circColor = s.accentColor || '#2563eb' }
 
           return (
-            <span
+            <div
               key={opt.id}
               role="button"
               tabIndex={0}
-              onClick={() => handleAnswer(opt.id)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleAnswer(opt.id)
-              }}
-              onMouseEnter={() => setHoveredId(opt.id)}
-              onMouseLeave={() => setHoveredId(null)}
+              onClick={() => { if (!submitted) setSelected(opt.id) }}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !submitted) setSelected(opt.id) }}
               style={{
-                padding: `${Math.max(s.paddingY * 0.5, 10)}px ${Math.max(s.paddingX * 0.6, 14)}px`,
-                borderRadius: Math.max(s.borderRadius - 8, 6),
-                border,
-                background: bg,
-                color: s.textColor,
-                fontSize: s.fontSize,
-                fontWeight: 500,
-                fontFamily: s.fontFamily,
-                cursor: answered ? 'default' : 'pointer',
-                textAlign: 'left',
-                transition: `all ${s.transitionSpeed}ms ease`,
-                display: 'flex',
-                alignItems: 'center',
-                gap: s.gap + 2,
-                transform: isHovered ? 'translateX(4px)' : 'none',
-                position: 'relative',
-                overflow: 'hidden',
+                display: 'flex', alignItems: 'flex-start', gap: 9,
+                padding: '10px 14px',
+                border, borderRadius: 8,
+                cursor: submitted ? 'default' : 'pointer',
+                fontSize: 13, color, background: bg,
+                transition: 'all 0.15s ease',
+                lineHeight: 1.45,
               }}
             >
-              <div
-                style={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: Math.max(s.borderRadius / 2.5, 6),
-                  flexShrink: 0,
-                  background: indicatorBg,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: 12,
-                  fontWeight: 700,
-                  color: indicatorColor,
-                  transition: `all ${s.transitionSpeed}ms ease`,
-                }}
-              >
-                {answered && correct ? (
-                  <svg
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="#22c55e"
-                    strokeWidth="3"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <polyline
-                      points="20 6 9 17 4 12"
-                      style={{ strokeDasharray: 24, animation: 'cench-check 0.3s ease forwards' }}
-                    />
-                  </svg>
-                ) : answered && selected && !correct ? (
-                  <svg
-                    width="12"
-                    height="12"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="#ef4444"
-                    strokeWidth="3"
-                    strokeLinecap="round"
-                  >
-                    <line x1="18" y1="6" x2="6" y2="18" />
-                    <line x1="6" y1="6" x2="18" y2="18" />
-                  </svg>
-                ) : (
-                  letter
-                )}
+              <div style={{
+                width: 20, minWidth: 20, height: 20, borderRadius: '50%',
+                border: `1.5px solid ${circColor}`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 10, fontWeight: 500, marginTop: 1, flexShrink: 0,
+              }}>
+                {isOk ? '✓' : isWrong ? '✗' : letter}
               </div>
-              {opt.label}
-            </span>
+              <span>{opt.label}</span>
+            </div>
           )
         })}
       </div>
-      {answered && (
-        <div
-          style={{
-            marginTop: s.gap * 1.5,
-            padding: `${s.paddingY * 0.5}px ${s.paddingX * 0.6}px`,
-            borderRadius: Math.max(s.borderRadius - 8, 6),
-            background: isCorrect ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.06)',
-            border: `1px solid ${isCorrect ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.12)'}`,
-          }}
-        >
-          <p
+
+      {/* Footer */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, flexWrap: 'wrap', gap: 8 }}>
+        <span style={{ fontSize: 12, color: '#aaa' }}>
+          Question {el.options.indexOf(el.options.find(o => o.id === el.correctOptionId)!) + 1 > 0 ? '' : ''}
+        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {submitted && (
+            <span style={{ fontSize: 13, color: isCorrect ? '#15803d' : '#b91c1c' }}>
+              {isCorrect
+                ? (el.explanation || 'Correct!')
+                : (el.explanation || 'Incorrect')}
+            </span>
+          )}
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={submit}
+            onKeyDown={(e) => { if (e.key === 'Enter') submit() }}
             style={{
-              color: isCorrect ? '#4ade80' : '#f87171',
-              fontSize: s.fontSize - 2,
-              fontWeight: 700,
-              margin: 0,
-              marginBottom: el.explanation ? 6 : 0,
+              padding: '8px 18px', borderRadius: 8, fontSize: 13, fontWeight: 500,
+              cursor: !selected || submitted ? 'default' : 'pointer',
+              border: '0.5px solid rgba(0,0,0,0.15)',
+              background: selected && !submitted ? (s.accentColor || '#2563eb') : '#f0f0ee',
+              color: selected && !submitted ? 'white' : '#666',
+              transition: 'all 0.15s ease',
+              opacity: !selected ? 0.5 : 1,
             }}
           >
-            {isCorrect ? 'Correct!' : 'Incorrect'}
-          </p>
-          {el.explanation && (
-            <p
-              style={{
-                color: `rgba(${hexToRgb(s.textColor)}, 0.6)`,
-                fontSize: s.fontSize - 2,
-                lineHeight: 1.5,
-                margin: 0,
-                fontFamily: s.fontFamily,
-              }}
-            >
-              {el.explanation}
-            </p>
-          )}
+            {submitted ? (el.onWrong === 'retry' && !isCorrect ? 'Retrying...' : 'Answered') : 'Check answer'}
+          </span>
         </div>
-      )}
-    </StyledPanel>
+      </div>
+    </div>
   )
 }
 
@@ -1151,5 +1052,204 @@ function FormRenderer({
         {el.submitLabel || 'Continue'}
       </span>
     </StyledPanel>
+  )
+}
+
+// ── Slider ──────────────────────────────────────────────────────────────────
+
+function SliderRenderer({
+  element: el,
+  callbacks,
+  style,
+}: {
+  element: InteractionElement & { type: 'slider' }
+  callbacks: InteractionCallbacks
+  style: React.CSSProperties
+}) {
+  const s = useStyle(el)
+  const accent = el.trackColor || s.accentColor
+  const accentRgb = hexToRgb(accent)
+  const [value, setValue] = useState<number>(el.defaultValue)
+  const [dragging, setDragging] = useState(false)
+
+  // Sync from parent variable changes
+  const extVal = callbacks.variables?.[el.setsVariable]
+  useEffect(() => {
+    if (typeof extVal === 'number' && extVal !== value) setValue(extVal)
+  }, [extVal])
+
+  const pct = ((value - el.min) / (el.max - el.min)) * 100
+  const speed = Math.min(s.transitionSpeed, 200)
+
+  return (
+    <div style={style}>
+      <div
+        style={{
+          ...panelCSS(s, { padding: `${Math.max(s.paddingY * 0.7, 12)}px ${s.paddingX}px` }),
+          display: 'flex',
+          flexDirection: 'column',
+          gap: Math.max(s.gap, 8),
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: s.fontSize, fontWeight: s.fontWeight, color: s.textColor }}>
+            {el.label}
+          </span>
+          {el.showValue && (
+            <span
+              style={{
+                fontSize: s.fontSize * 1.15,
+                fontWeight: 700,
+                color: accent,
+                fontVariantNumeric: 'tabular-nums',
+                minWidth: '3em',
+                textAlign: 'right',
+              }}
+            >
+              {Number(value).toFixed(el.step < 1 ? 1 : 0)}{el.unit || ''}
+            </span>
+          )}
+        </div>
+        <div style={{ position: 'relative', height: 36, display: 'flex', alignItems: 'center' }}>
+          {/* Track background */}
+          <div style={{ position: 'absolute', left: 0, right: 0, height: 6, borderRadius: 3, background: `rgba(${hexToRgb(s.textColor)}, 0.12)` }} />
+          {/* Track fill */}
+          <div style={{ position: 'absolute', left: 0, width: `${pct}%`, height: 6, borderRadius: 3, background: accent, transition: dragging ? 'none' : `width ${speed}ms ease-out` }} />
+          {/* Custom thumb */}
+          <div
+            style={{
+              position: 'absolute',
+              left: `${pct}%`,
+              transform: `translateX(-50%) scale(${dragging ? 1.15 : 1})`,
+              width: 24,
+              height: 24,
+              borderRadius: '50%',
+              background: el.thumbColor || accent,
+              boxShadow: dragging
+                ? `0 0 0 6px rgba(${accentRgb}, 0.15), 0 4px 12px rgba(${accentRgb}, 0.4)`
+                : `0 2px 8px rgba(${accentRgb}, 0.35)`,
+              transition: dragging ? 'transform 100ms ease-out, box-shadow 100ms ease-out' : `all ${speed}ms ease-out`,
+              pointerEvents: 'none',
+              zIndex: 1,
+            }}
+          />
+          {/* Native range input — fully reset via CSS class, captures all events */}
+          <input
+            type="range"
+            className="cench-slider-input"
+            min={el.min}
+            max={el.max}
+            step={el.step}
+            value={value}
+            onPointerDown={() => setDragging(true)}
+            onPointerUp={() => setDragging(false)}
+            onPointerCancel={() => setDragging(false)}
+            onChange={(e) => {
+              const v = Number(e.target.value)
+              setValue(v)
+              callbacks.onSliderChange?.(el, v)
+            }}
+            style={{
+              position: 'absolute',
+              width: '100%',
+              height: '100%',
+              margin: 0,
+              padding: 0,
+              zIndex: 2,
+              cursor: 'pointer',
+            }}
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Toggle ──────────────────────────────────────────────────────────────────
+
+function ToggleRenderer({
+  element: el,
+  callbacks,
+  style,
+}: {
+  element: InteractionElement & { type: 'toggle' }
+  callbacks: InteractionCallbacks
+  style: React.CSSProperties
+}) {
+  const s = useStyle(el)
+  const [on, setOn] = useState<boolean>(el.defaultValue)
+  const activeColor = el.activeColor || s.accentColor
+  const activeRgb = hexToRgb(activeColor)
+  const speed = Math.min(s.transitionSpeed, 200)
+
+  // Sync from parent variable changes
+  const extVal = callbacks.variables?.[el.setsVariable]
+  useEffect(() => {
+    if (typeof extVal === 'boolean' && extVal !== on) setOn(extVal)
+  }, [extVal])
+
+  const toggle = () => {
+    const next = !on
+    setOn(next)
+    callbacks.onToggleChange?.(el, next)
+  }
+
+  return (
+    <div style={style}>
+      <div
+        style={{
+          ...panelCSS(s, { padding: `${Math.max(s.paddingY * 0.7, 12)}px ${s.paddingX}px` }),
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: s.gap * 2,
+          cursor: 'pointer',
+          userSelect: 'none',
+        }}
+        role="switch"
+        aria-checked={on}
+        tabIndex={0}
+        onClick={toggle}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle() } }}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: 1 }}>
+          <span style={{ fontSize: s.fontSize, fontWeight: s.fontWeight, color: s.textColor }}>
+            {el.label}
+          </span>
+          {(el.onLabel || el.offLabel) && (
+            <span style={{ fontSize: s.fontSize * 0.8, color: `rgba(${hexToRgb(s.textColor)}, 0.45)`, transition: `color ${speed}ms ease` }}>
+              {on ? (el.onLabel || 'ON') : (el.offLabel || 'OFF')}
+            </span>
+          )}
+        </div>
+        {/* Toggle track */}
+        <div
+          style={{
+            flexShrink: 0,
+            width: 52,
+            height: 28,
+            borderRadius: 14,
+            background: on ? activeColor : `rgba(${hexToRgb(s.textColor)}, 0.18)`,
+            boxShadow: on ? `0 0 0 1px rgba(${activeRgb}, 0.3), inset 0 1px 2px rgba(0,0,0,0.1)` : `inset 0 1px 3px rgba(0,0,0,0.15)`,
+            transition: `background ${speed}ms ease, box-shadow ${speed}ms ease`,
+            position: 'relative',
+          }}
+        >
+          <div
+            style={{
+              position: 'absolute',
+              top: 3,
+              left: on ? 27 : 3,
+              width: 22,
+              height: 22,
+              borderRadius: '50%',
+              background: '#fff',
+              boxShadow: '0 1px 4px rgba(0,0,0,0.2), 0 0 1px rgba(0,0,0,0.1)',
+              transition: `left ${speed}ms cubic-bezier(0.16, 1, 0.3, 1)`,
+            }}
+          />
+        </div>
+      </div>
+    </div>
   )
 }

@@ -104,6 +104,7 @@ export function instantiateTemplate(
     canvasCode: '',
     canvasBackgroundCode: '',
     sceneCode: '',
+    reactCode: '',
     sceneHTML: '',
     sceneStyles: '',
     lottieSource: '',

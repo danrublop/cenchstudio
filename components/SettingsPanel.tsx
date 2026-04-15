@@ -19,6 +19,7 @@ interface Props {
 export default function SettingsPanel({ onClose }: Props) {
   const {
     seedTestScenes,
+    seedReactShowcaseScenes,
     seedCapabilityShowcaseScenes,
     seedThreeEnvironmentShowcaseScenes,
     seedInteractiveTestScenes,
@@ -37,6 +38,7 @@ export default function SettingsPanel({ onClose }: Props) {
   const [isSeeding, setIsSeeding] = useState(false)
   const [isSeedingAvatarShowcase, setIsSeedingAvatarShowcase] = useState(false)
   const [isSeedingTalkingHeadLipSync, setIsSeedingTalkingHeadLipSync] = useState(false)
+  const [isSeedingReact, setIsSeedingReact] = useState(false)
   const [isSeedingCapability, setIsSeedingCapability] = useState(false)
   const [isSeedingEnvGallery, setIsSeedingEnvGallery] = useState(false)
   const [isSeedingInteractive, setIsSeedingInteractive] = useState(false)
@@ -168,6 +170,18 @@ export default function SettingsPanel({ onClose }: Props) {
             >
               <FlaskConical size={13} />
               {isSeeding ? 'Loading test scenes...' : 'Load Test Scenes'}
+            </button>
+            <button
+              onClick={async () => {
+                setIsSeedingReact(true)
+                await seedReactShowcaseScenes()
+                setIsSeedingReact(false)
+              }}
+              disabled={isSeedingReact}
+              className="kbd w-full h-8 flex items-center justify-center gap-2 text-[12px] text-[#6b6b7a] hover:text-[#f0ece0] disabled:opacity-40"
+            >
+              <FlaskConical size={13} />
+              {isSeedingReact ? 'Loading...' : 'Load React showcase (6 scenes)'}
             </button>
             <button
               onClick={async () => {

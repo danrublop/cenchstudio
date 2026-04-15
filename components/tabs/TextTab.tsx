@@ -157,11 +157,14 @@ export default function TextTab({ scene }: Props) {
   const openTextTabForSlot = useVideoStore((s) => s.openTextTabForSlot)
   const addTextOverlay = useVideoStore((s) => s.addTextOverlay)
   const updateTextOverlay = useVideoStore((s) => s.updateTextOverlay)
+  const inspectorElements = useVideoStore((s) => s.inspectorElements)
+  const patchInspectorElement = useVideoStore((s) => s.patchInspectorElement)
+  const selectedSceneId = useVideoStore((s) => s.selectedSceneId)
 
   const [slots, setSlots] = useState<TextSlot[]>([])
   useEffect(() => {
-    setSlots(collectTextSlots(scene))
-  }, [scene])
+    setSlots(collectTextSlots(scene, { inspectorElements }))
+  }, [scene, inspectorElements])
 
   const activeSlot = useMemo(
     () => (textEditorSlotKey ? slots.find((s) => s.key === textEditorSlotKey) : null),
@@ -174,7 +177,7 @@ export default function TextTab({ scene }: Props) {
       setDraft('')
       return
     }
-    setDraft(getTextSlotValue(scene, textEditorSlotKey))
+    setDraft(getTextSlotValue(scene, textEditorSlotKey, inspectorElements))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [textEditorSlotKey])
 
@@ -186,11 +189,21 @@ export default function TextTab({ scene }: Props) {
 
   const commitDraft = useCallback(() => {
     if (!textEditorSlotKey) return
-    const { patch, saveHtml } = applyTextSlotValue(scene, textEditorSlotKey, draft)
+    const { patch, saveHtml, domElementId } = applyTextSlotValue(scene, textEditorSlotKey, draft)
     if (Object.keys(patch).length === 0) return
     updateScene(scene.id, patch)
+    // For DOM text, also patch the inspector and iframe for live preview
+    if (domElementId) {
+      patchInspectorElement(domElementId, 'text', draft)
+      const iframe = document.querySelector(`iframe[data-scene-id="${selectedSceneId}"]`) as HTMLIFrameElement | null
+      if (iframe) {
+        import('@/lib/scene-patcher').then(({ patchElementInIframe }) => {
+          patchElementInIframe(iframe, domElementId, 'text', draft)
+        })
+      }
+    }
     if (saveHtml) void saveSceneHTML(scene.id)
-  }, [textEditorSlotKey, draft, scene, updateScene, saveSceneHTML])
+  }, [textEditorSlotKey, draft, scene, updateScene, saveSceneHTML, patchInspectorElement, selectedSceneId])
 
   const overlay =
     textEditorSlotKey?.startsWith('overlay:') === true

@@ -336,7 +336,86 @@ export type InteractionElement =
   | GateElement
   | TooltipElement
   | FormInputElement
+  | SliderElement
+  | ToggleElement
+  | RevealElement
+  | CountdownElement
+
+// ── Scene Variables ─────────────────────────────────────────────────────────
+
+export type VariableType = 'string' | 'number' | 'boolean'
 
 export interface SceneVariable {
   name: string
+  type?: VariableType // defaults to 'string' for backwards compat
+  defaultValue?: string | number | boolean
+}
+
+// ── Variable Conditions ─────────────────────────────────────────────────────
+
+export type ConditionOperator =
+  | 'eq'       // equals
+  | 'neq'      // not equals
+  | 'gt'       // greater than (number)
+  | 'lt'       // less than (number)
+  | 'gte'      // greater than or equal (number)
+  | 'lte'      // less than or equal (number)
+  | 'contains' // string contains substring
+  | 'truthy'   // boolean truthiness check (no value needed)
+  | 'falsy'    // boolean falsiness check (no value needed)
+
+export interface VariableCondition {
+  variableName: string
+  operator: ConditionOperator
+  value?: string | number | boolean // not needed for truthy/falsy
+}
+
+// ── Slider Interaction ──────────────────────────────────────────────────────
+
+export interface SliderElement extends BaseInteraction {
+  type: 'slider'
+  label: string
+  min: number
+  max: number
+  step: number
+  defaultValue: number
+  setsVariable: string // variable name to bind to
+  showValue: boolean
+  unit: string | null // e.g. '%', '$', 'ms'
+  trackColor: string | null
+  thumbColor: string | null
+}
+
+// ── Toggle Interaction ──────────────────────────────────────────────────────
+
+export interface ToggleElement extends BaseInteraction {
+  type: 'toggle'
+  label: string
+  defaultValue: boolean
+  setsVariable: string // variable name to bind to
+  onLabel: string | null  // e.g. 'ON', 'Enabled'
+  offLabel: string | null // e.g. 'OFF', 'Disabled'
+  activeColor: string | null
+}
+
+// ── Reveal Interaction ──────────────────────────────────────────────────────
+
+export interface RevealElement extends BaseInteraction {
+  type: 'reveal'
+  triggerLabel: string
+  revealedContent: string // HTML or markdown text
+  revealAnimation: 'expand' | 'fade' | 'slide-down'
+  startRevealed: boolean
+}
+
+// ── Countdown Interaction ───────────────────────────────────────────────────
+
+export interface CountdownElement extends BaseInteraction {
+  type: 'countdown'
+  durationSeconds: number
+  label: string | null
+  onComplete: 'continue' | 'jump'
+  onCompleteSceneId: string | null
+  showProgress: boolean
+  urgentColor: string | null // color when < 25% remaining
 }

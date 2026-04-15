@@ -12,7 +12,7 @@ type HeroEditorChromeMockProps = {
 }
 
 /**
- * Static replica of the electron `Editor` chrome: compact titlebar with tab strip +
+ * Static replica of the electron `Editor` chrome: titlebar with search + project title,
  * agent icon only (top right). No bottom status bar (marketing hero).
  */
 export function HeroEditorChromeMock({ className = '' }: HeroEditorChromeMockProps) {
@@ -33,39 +33,20 @@ export function HeroEditorChromeMock({ className = '' }: HeroEditorChromeMockPro
             <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-[var(--color-text-muted)]/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] ring-1 ring-black/20" />
           </div>
 
-          {/* Mirrors `HeaderTabSwitcher` inside `Editor` titlebar center */}
-          <div className="flex h-full min-w-0 max-w-[60vw] items-center justify-center justify-self-center gap-1">
-            <div
-              className="flex h-6 items-center gap-0 rounded-md border border-[var(--color-border)] bg-[var(--agent-chat-user-surface)] px-4 py-0 shadow-sm"
-              role="tablist"
+          {/* Mirrors `Editor` titlebar center: search + project title (no tab strip) */}
+          <div className="flex h-full min-w-0 max-w-[min(60vw,360px)] items-center justify-center justify-self-center gap-1.5 px-2">
+            <span
+              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[var(--color-text-muted)]"
+              aria-hidden
             >
-              <span
-                className="mr-[-3px] flex h-5 w-5 shrink-0 items-center justify-center rounded text-[var(--color-text-muted)]"
-                aria-hidden
-              >
-                <Search size={12} strokeWidth={2} />
-              </span>
-              <span
-                className="max-w-[120px] cursor-default truncate px-1.5 py-px text-[10px] font-medium text-[var(--color-text-muted)] transition-all select-none rounded"
-                title="Untitled Project"
-                role="tab"
-              >
-                Untitled Project
-              </span>
-              <span
-                className="cursor-default select-none rounded bg-white/10 px-1.5 py-px text-[10px] font-medium text-[var(--color-text-primary)] shadow-[0_1px_2px_rgba(0,0,0,0.18)]"
-                role="tab"
-                aria-selected
-              >
-                Studio
-              </span>
-              <span
-                className="cursor-default select-none rounded px-1.5 py-px text-[10px] font-medium text-[var(--color-text-muted)]"
-                role="tab"
-              >
-                Record
-              </span>
-            </div>
+              <Search size={14} strokeWidth={2} />
+            </span>
+            <span
+              className="min-w-0 truncate text-[11px] font-normal text-[var(--color-text-muted)]"
+              title="Untitled project"
+            >
+              Untitled project
+            </span>
           </div>
 
           <div className="flex items-center justify-self-end">

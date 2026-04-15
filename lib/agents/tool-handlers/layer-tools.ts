@@ -14,6 +14,7 @@ import {
   CANVAS_MOTION_TEMPLATE_IDS,
 } from '@/lib/templates/canvas-animation-templates'
 import { buildThreeDataScatterSceneCode } from '@/lib/three-environments/build-three-data-scatter-scene-code'
+import { wrapSceneAsReact } from '@/lib/generation/react-wrappers'
 import { ok, err, findScene, updateScene, type ToolResult } from './_shared'
 
 // ── Tool Names ───────────────────────────────────────────────────────────────
@@ -33,6 +34,7 @@ export const LAYER_TOOL_NAMES = [
   'set_layer_timing',
   'regenerate_layer',
   'patch_layer_code',
+  'migrate_to_react',
 ] as const
 
 // ── Factory ──────────────────────────────────────────────────────────────────
@@ -88,6 +90,7 @@ export function createLayerToolHandler(deps: {
           )
         }
         if (!result.success) return err(result.error || 'Layer generation failed')
+        if (!result.code?.trim()) return err('Layer generation returned empty code — nothing to render')
 
         const layerId = uuidv4()
 
@@ -117,6 +120,7 @@ export function createLayerToolHandler(deps: {
           const updates: Partial<Scene> = { ...staleClears, sceneType: layerType }
           if (layerType === 'canvas2d') updates.canvasCode = result.code || ''
           else if (layerType === 'lottie') updates.lottieSource = result.code || ''
+          else if (layerType === 'react') updates.reactCode = result.code || ''
           else updates.sceneCode = result.code || ''
           updateScene(world, sceneId, updates)
         }
@@ -555,6 +559,7 @@ export function createLayerToolHandler(deps: {
         const updates: Partial<Scene> = { prompt }
         if (layerType === 'canvas2d') updates.canvasCode = result.code || ''
         else if (layerType === 'lottie') updates.lottieSource = result.code || ''
+        else if (layerType === 'react') updates.reactCode = result.code || ''
         else updates.sceneCode = result.code || ''
         updateScene(world, sceneId, updates)
         await regenerateHTML(world, sceneId, logger)
@@ -594,7 +599,7 @@ export function createLayerToolHandler(deps: {
 
         // Try patching sceneCode/canvasCode/lottieSource
         const codeField =
-          scene.sceneType === 'canvas2d' ? 'canvasCode' : scene.sceneType === 'lottie' ? 'lottieSource' : 'sceneCode'
+          scene.sceneType === 'canvas2d' ? 'canvasCode' : scene.sceneType === 'lottie' ? 'lottieSource' : scene.sceneType === 'react' ? 'reactCode' : 'sceneCode'
         const code: string = (scene[codeField as keyof Scene] as string) || ''
         if (!code.includes(oldCode)) {
           // Try whitespace-normalized matching as a fallback
@@ -623,6 +628,32 @@ export function createLayerToolHandler(deps: {
         await regenerateHTML(world, sceneId, logger)
         const warning = matchCount > 1 ? ` (warning: oldCode matched ${matchCount} times, only first was replaced)` : ''
         return ok(sceneId, `Patched ${codeField} in scene ${sceneId}${warning}`)
+      }
+
+      // ── migrate_to_react ──────────────────────────────────────────────
+
+      case 'migrate_to_react': {
+        const { sceneId } = args as { sceneId: string }
+        const scene = findScene(world, sceneId)
+        if (!scene) return err(`Scene ${sceneId} not found`)
+
+        if (scene.sceneType === 'react') {
+          return err(`Scene ${sceneId} is already a React scene`)
+        }
+
+        const reactCode = wrapSceneAsReact(scene)
+        if (!reactCode) {
+          return err(`Scene type "${scene.sceneType}" cannot be automatically migrated to React`)
+        }
+
+        updateScene(world, sceneId, {
+          sceneType: 'react',
+          reactCode,
+        })
+        await regenerateHTML(world, sceneId, logger)
+        return ok(sceneId, `Migrated ${scene.sceneType} scene to React wrapper`, {
+          previousType: scene.sceneType,
+        })
       }
 
       default:

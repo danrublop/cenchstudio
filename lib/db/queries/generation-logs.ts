@@ -2,6 +2,16 @@ import { db } from '../index'
 import { generationLogs } from '../schema'
 import { eq, desc, sql, isNotNull, and } from 'drizzle-orm'
 
+/** Truncate text to a max byte size to prevent DB bloat from unbounded text columns */
+function truncateForDB(text: string | undefined, maxBytes: number): string | undefined {
+  if (!text || text.length <= maxBytes) return text
+  return text.slice(0, maxBytes)
+}
+
+const MAX_THINKING_CONTENT = 500 * 1024 // 500KB
+const MAX_USER_PROMPT = 100 * 1024      // 100KB
+const MAX_ANALYSIS_NOTES = 100 * 1024   // 100KB
+
 export interface CreateGenerationLogInput {
   projectId?: string
   sceneId?: string
@@ -48,7 +58,7 @@ export async function createGenerationLog(input: CreateGenerationLogInput): Prom
       projectId: input.projectId,
       sceneId: input.sceneId,
       layerId: input.layerId,
-      userPrompt: input.userPrompt,
+      userPrompt: truncateForDB(input.userPrompt, MAX_USER_PROMPT) ?? '',
       systemPromptHash: input.systemPromptHash,
       systemPromptSnapshot: input.systemPromptSnapshot,
       injectedRules: input.injectedRules,
@@ -62,9 +72,15 @@ export async function createGenerationLog(input: CreateGenerationLogInput): Prom
 }
 
 export async function updateGenerationLog(id: string, updates: UpdateGenerationLogInput): Promise<void> {
+  const truncated = {
+    ...updates,
+    thinkingContent: truncateForDB(updates.thinkingContent, MAX_THINKING_CONTENT),
+    analysisNotes: truncateForDB(updates.analysisNotes, MAX_ANALYSIS_NOTES),
+    updatedAt: new Date(),
+  }
   await db
     .update(generationLogs)
-    .set({ ...updates, updatedAt: new Date() })
+    .set(truncated)
     .where(eq(generationLogs.id, id))
 }
 

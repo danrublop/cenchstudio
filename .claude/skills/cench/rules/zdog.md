@@ -126,10 +126,10 @@ without adding more individual shapes.
     </style>
   </head>
   <body>
-    <canvas id="zdog-canvas" width="1920" height="1080"></canvas>
+    <canvas id="zdog-canvas" width="{{WIDTH}}" height="{{HEIGHT}}"></canvas>
     <script src="https://unpkg.com/zdog@1/dist/zdog.dist.min.js"></script>
     <script>
-      const WIDTH = 1920, HEIGHT = 1080;
+      const WIDTH = {{WIDTH}}, HEIGHT = {{HEIGHT}};
       const PALETTE = {{PALETTE}};
       const DURATION = {{DURATION}};
       window.__animFrame = null;

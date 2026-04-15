@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Download, Loader2, AlertTriangle, FolderOpen } from 'lucide-react'
 import { useVideoStore } from '@/lib/store'
+import { resolveProjectDimensions } from '@/lib/dimensions'
 import type { ExportFPS, ExportResolution, ExportSettings } from '@/lib/types'
 
 type OSType = 'mac' | 'windows' | 'linux' | 'unknown'
@@ -27,11 +28,12 @@ const OS_WARNINGS: Partial<Record<OSType, { title: string; body: string }>> = {
   },
 }
 
-const RESOLUTIONS: { value: ExportResolution; label: string; desc: string }[] = [
-  { value: '720p', label: '720p', desc: '1280×720' },
-  { value: '1080p', label: '1080p', desc: '1920×1080' },
-  { value: '4k', label: '4K', desc: '3840×2160' },
-]
+function getResolutions(aspectRatio?: import('@/lib/dimensions').AspectRatio | null): { value: ExportResolution; label: string; desc: string }[] {
+  return (['720p', '1080p', '4k'] as const).map((res) => {
+    const d = resolveProjectDimensions(aspectRatio, res)
+    return { value: res, label: res === '4k' ? '4K' : res, desc: `${d.width}×${d.height}` }
+  })
+}
 
 const FPS_OPTIONS: ExportFPS[] = [24, 30, 60]
 
@@ -122,7 +124,7 @@ export default function ExportModal() {
                   Resolution
                 </label>
                 <div className="grid grid-cols-3 gap-2">
-                  {RESOLUTIONS.map((r) => (
+                  {getResolutions(project.mp4Settings?.aspectRatio).map((r) => (
                     <button
                       key={r.value}
                       onClick={() => setResolution(r.value)}

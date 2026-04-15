@@ -24,7 +24,6 @@ export function createSceneActions(set: Set, get: Get) {
         return {
           scenes: newScenes,
           selectedSceneId: scene.id,
-          _isDirty: true,
           project: {
             ...state.project,
             sceneGraph: { ...state.project.sceneGraph, nodes: newNodes },
@@ -37,8 +36,7 @@ export function createSceneActions(set: Set, get: Get) {
     updateScene: (id: string, updates: Partial<Scene>) => {
       get()._pushUndoDebounced()
       set((state) => ({
-        scenes: state.scenes.map((s) => (s.id === id ? { ...s, ...updates } : s)),
-        _isDirty: true,
+        scenes: state.scenes.map((s) => (s.id === id ? { ...s, ...updates, updatedAt: Date.now() } : s)),
       }))
     },
 
@@ -60,7 +58,6 @@ export function createSceneActions(set: Set, get: Get) {
         return {
           scenes: newScenes,
           selectedSceneId: newSelectedId,
-          _isDirty: true,
           project: { ...state.project, sceneGraph: newGraph },
         }
       })
@@ -88,7 +85,6 @@ export function createSceneActions(set: Set, get: Get) {
         return {
           scenes,
           selectedSceneId: newScene.id,
-          _isDirty: true,
           project: { ...state.project, sceneGraph: { ...state.project.sceneGraph, nodes: newNodes } },
         }
       })
@@ -101,7 +97,7 @@ export function createSceneActions(set: Set, get: Get) {
         const scenes = [...state.scenes]
         const [removed] = scenes.splice(fromIndex, 1)
         scenes.splice(toIndex, 0, removed)
-        return { scenes, _isDirty: true }
+        return { scenes }
       })
     },
 
@@ -115,7 +111,7 @@ export function createSceneActions(set: Set, get: Get) {
         } else if (direction === 'down' && idx < scenes.length - 1) {
           ;[scenes[idx], scenes[idx + 1]] = [scenes[idx + 1], scenes[idx]]
         }
-        return { scenes, _isDirty: true }
+        return { scenes }
       })
     },
 
@@ -125,6 +121,7 @@ export function createSceneActions(set: Set, get: Get) {
         selectedSceneId: id,
         textEditorSlotKey: null,
         layersTabSectionPending: null,
+        layersTabAvatarLayerIdPending: null,
         layerStackPropertiesKey: null,
       })
     },
@@ -214,6 +211,43 @@ export function createSceneActions(set: Set, get: Get) {
       }
       get().saveSceneHTML(sceneId)
     },
+
+    // ── Variable actions ──
+
+    addSceneVariable: (sceneId: string, variable: import('@/lib/types').SceneVariable) => {
+      const scene = get().scenes.find((s) => s.id === sceneId)
+      if (!scene) return
+      // Don't add duplicates
+      if ((scene.variables ?? []).some((v) => v.name === variable.name)) return
+      get().updateScene(sceneId, {
+        variables: [...(scene.variables ?? []), variable],
+      })
+    },
+
+    removeSceneVariable: (sceneId: string, variableName: string) => {
+      const scene = get().scenes.find((s) => s.id === sceneId)
+      if (!scene) return
+      get().updateScene(sceneId, {
+        variables: (scene.variables ?? []).filter((v) => v.name !== variableName),
+      })
+    },
+
+    runtimeVariables: {},
+
+    setRuntimeVariable: (sceneId: string, name: string, value: unknown) => {
+      set((state) => ({
+        runtimeVariables: {
+          ...state.runtimeVariables,
+          [sceneId]: { ...(state.runtimeVariables[sceneId] ?? {}), [name]: value },
+        },
+      }))
+    },
+
+    getRuntimeVariables: (sceneId: string) => {
+      return get().runtimeVariables[sceneId] ?? {}
+    },
+
+    // ── Interaction actions ──
 
     addInteraction: (sceneId: string, element: InteractionElement) => {
       get()._pushUndo()

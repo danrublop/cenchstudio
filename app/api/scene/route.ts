@@ -117,6 +117,8 @@ export async function POST(req: NextRequest) {
       aiLayers: bodyAiLayers,
       audioLayer: bodyAudioLayer,
       transition: bodyTransition,
+      interactions: bodyInteractions,
+      variables: bodyVariables,
     } = body
 
     const name = typeof rawName === 'string' ? rawName.slice(0, LIMITS.MAX_NAME_LENGTH) : 'Untitled Scene'
@@ -220,8 +222,8 @@ export async function POST(req: NextRequest) {
       activeBranchId: null,
       transition: normalizeTransition(typeof bodyTransition === 'string' ? bodyTransition : undefined),
       sceneType: type,
-      interactions: [],
-      variables: [],
+      interactions: Array.isArray(bodyInteractions) ? bodyInteractions : [],
+      variables: Array.isArray(bodyVariables) ? bodyVariables : [],
       aiLayers: Array.isArray(bodyAiLayers) ? bodyAiLayers : [],
       messages: [],
     }
@@ -260,11 +262,13 @@ export async function POST(req: NextRequest) {
 
     // Generate HTML (but write DB first to avoid orphaned HTML on conflict)
     const { generateSceneHTML } = await import('@/lib/sceneTemplate')
+    const { resolveProjectDimensions } = await import('@/lib/dimensions')
     const html = generateSceneHTML(
       newScene as any,
       project.globalStyle ?? undefined,
       undefined,
       project.audioSettings ?? undefined,
+      resolveProjectDimensions(project.mp4Settings?.aspectRatio, project.mp4Settings?.resolution),
     )
 
     // Save to project JSONB with optimistic locking (DB first — source of truth)
@@ -339,6 +343,9 @@ export async function PATCH(req: NextRequest) {
       audioLayer: bodyAudioLayer,
       aiLayers: bodyAiLayers,
       sceneType: bodySceneType,
+      interactions: bodyInteractions,
+      variables: bodyVariables,
+      sceneGraph: bodySceneGraph,
     } = body
 
     if (!projectId || !sceneId) {
@@ -387,7 +394,10 @@ export async function PATCH(req: NextRequest) {
       sceneName !== undefined ||
       bodyAudioLayer !== undefined ||
       bodyAiLayers !== undefined ||
-      bodySceneType !== undefined
+      bodySceneType !== undefined ||
+      bodyInteractions !== undefined ||
+      bodyVariables !== undefined ||
+      bodySceneGraph !== undefined
     if (!code && !hasPropertyUpdate) {
       return NextResponse.json(
         { error: 'generatedCode, svgContent, or a scene property update is required' },
@@ -470,11 +480,19 @@ export async function PATCH(req: NextRequest) {
     if (sceneName !== undefined) scene.name = sceneName
     if (bodyAudioLayer !== undefined) scene.audioLayer = { ...scene.audioLayer, ...bodyAudioLayer }
     if (bodyAiLayers !== undefined) scene.aiLayers = bodyAiLayers
+    if (bodyInteractions !== undefined && Array.isArray(bodyInteractions)) scene.interactions = bodyInteractions
+    if (bodyVariables !== undefined && Array.isArray(bodyVariables)) scene.variables = bodyVariables
 
     scenes[sceneIdx] = scene
 
+    // Update scene graph if provided (for connecting scenes with conditions)
+    if (bodySceneGraph && typeof bodySceneGraph === 'object') {
+      existingData.sceneGraph = { ...existingData.sceneGraph, ...bodySceneGraph }
+    }
+
     // Regenerate HTML
     const { generateSceneHTML } = await import('@/lib/sceneTemplate')
+    const { resolveProjectDimensions: resolveDims } = await import('@/lib/dimensions')
     let html: string
     try {
       html = generateSceneHTML(
@@ -482,6 +500,7 @@ export async function PATCH(req: NextRequest) {
         project.globalStyle ?? undefined,
         undefined,
         project.audioSettings ?? undefined,
+        resolveDims(project.mp4Settings?.aspectRatio, project.mp4Settings?.resolution),
       )
     } catch (genErr) {
       console.error(`[PATCH /api/scene] generateSceneHTML failed:`, genErr)
@@ -493,7 +512,10 @@ export async function PATCH(req: NextRequest) {
     const [updated] = await db
       .update(schema.projects)
       .set({
-        description: writeProjectSceneBlob(project.description, { scenes }),
+        description: writeProjectSceneBlob(project.description, {
+          scenes,
+          ...(bodySceneGraph ? { sceneGraph: existingData.sceneGraph } : {}),
+        }),
         version: currentVersion + 1,
         updatedAt: new Date(),
       })

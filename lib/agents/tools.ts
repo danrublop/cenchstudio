@@ -119,7 +119,7 @@ For react (DEFAULT): generates a React component with bridge components for mixe
 For motion: generates CSS/JS choreographed animation and text-heavy explainer layouts.
 For canvas2d: generates rough hand-drawn Canvas2D animation code.
 For d3: generates D3.js chart/visualization.
-For three: generates Three.js 3D scene.
+For three: generates Three.js 3D scene with r183 ES modules — supports 3D text (troika), CSG booleans, post-processing (bloom/DOF/SSAO), PBR materials (clearcoat/iridescent/velvet/lowpoly), animated GLTF models, and 34 pre-built components. Use createStudioScene() for instant studio setup, createPostProcessing() for bloom.
 For svg: generates rough hand-drawn SVG illustration.
 For lottie: generates Lottie JSON animation.
 For zdog: generates Zdog pseudo-3D illustration.`,
@@ -1069,7 +1069,7 @@ const PLAN_SCENES_INPUT_SCHEMA: ClaudeToolDefinition['input_schema'] = {
             type: 'string',
             enum: ['svg', 'canvas2d', 'd3', 'three', 'motion', 'lottie', 'zdog', 'physics', 'avatar_scene', '3d_world'],
             description:
-              'Renderer type. motion=default for layouts/text/cards/explainers, canvas2d=hand-drawn/particles/procedural, d3=data/charts, three=3D depth/products, 3d_world=immersive environments, zdog=pseudo-3D illustration, avatar_scene=presenter focus, physics=live simulations, svg=rare vector draw-on, lottie=icon loops',
+              'Renderer type. motion=default for layouts/text/cards/explainers, canvas2d=hand-drawn/particles/procedural, d3=data/charts, three=3D with text/CSG/postprocessing/models/materials, 3d_world=immersive environments, zdog=pseudo-3D illustration, avatar_scene=presenter focus, physics=live simulations, svg=rare vector draw-on, lottie=icon loops',
           },
           duration: {
             type: 'number',
@@ -1188,7 +1188,11 @@ for production-ready visuals. The style auto-detects from the scene preset if se
 
 Types: hotspot (clickable/hover info on diagram parts), choice (branching options),
 quiz (assessment with correct/incorrect feedback), gate (blocks progression until condition met),
-tooltip (persistent or triggered info overlay), form (data collection mid-scene).
+tooltip (persistent or triggered info overlay), form (data collection mid-scene),
+slider (numeric input bound to a variable — "adjust interest rate"), toggle (boolean on/off bound to a variable).
+
+Slider and toggle are variable-driven: pair them with useVariable() in the scene code so the scene
+reactively updates when the viewer adjusts the control.
 
 Interaction components are professional and production-ready — provide content/config only,
 the visual design is handled by the CenchInteract component library with 6 preset styles.`,
@@ -1198,7 +1202,7 @@ the visual design is handled by the CenchInteract component library with 6 prese
       sceneId: { type: 'string', description: 'Scene ID' },
       type: {
         type: 'string',
-        enum: ['hotspot', 'choice', 'quiz', 'gate', 'tooltip', 'form'],
+        enum: ['hotspot', 'choice', 'quiz', 'gate', 'tooltip', 'form', 'slider', 'toggle'],
         description: 'Interaction element type',
       },
       style: {
@@ -1240,7 +1244,7 @@ multiple labeled hotspots, or assessment scenes with quiz + gate combination.`,
         items: {
           type: 'object',
           properties: {
-            type: { type: 'string', enum: ['hotspot', 'choice', 'quiz', 'gate', 'tooltip', 'form'] },
+            type: { type: 'string', enum: ['hotspot', 'choice', 'quiz', 'gate', 'tooltip', 'form', 'slider', 'toggle'] },
             style: {
               type: 'string',
               enum: ['professional', 'glassmorphic', 'minimal', 'terminal', 'chalk', 'edu', 'auto'],
@@ -1278,6 +1282,33 @@ export const EDIT_INTERACTION: ClaudeToolDefinition = {
   },
 }
 
+export const DEFINE_SCENE_VARIABLE: ClaudeToolDefinition = {
+  name: 'define_scene_variable',
+  description: `Define a typed variable on a scene. Variables are used by:
+- Slider/toggle overlays (setsVariable binds to this)
+- useVariable() hook in React scene code (reads/writes this)
+- Variable conditions on scene graph edges (branches based on this)
+
+Define variables BEFORE adding sliders/toggles that reference them, or before generating
+React scene code that uses useVariable(). The variable persists across the scene session.`,
+  input_schema: {
+    type: 'object',
+    properties: {
+      sceneId: { type: 'string', description: 'Scene ID' },
+      name: { type: 'string', description: 'Variable name (camelCase, e.g. "interestRate", "showLabels")' },
+      type: {
+        type: 'string',
+        enum: ['string', 'number', 'boolean'],
+        description: 'Variable type',
+      },
+      defaultValue: {
+        description: 'Default value matching the type',
+      },
+    },
+    required: ['sceneId', 'name', 'type', 'defaultValue'],
+  },
+}
+
 export const CONNECT_SCENES: ClaudeToolDefinition = {
   name: 'connect_scenes',
   description: 'Create an edge in the scene graph connecting two scenes (for Interactive mode).',
@@ -1288,8 +1319,17 @@ export const CONNECT_SCENES: ClaudeToolDefinition = {
       toSceneId: { type: 'string', description: 'Destination scene ID' },
       conditionType: {
         type: 'string',
-        enum: ['auto', 'hotspot', 'choice', 'quiz', 'gate'],
-        description: '"auto" = plays automatically after duration',
+        enum: ['auto', 'hotspot', 'choice', 'quiz', 'gate', 'variable', 'slider', 'toggle'],
+        description: '"auto" = plays automatically after duration. "variable" = jumps when a variable condition is met.',
+      },
+      variableCondition: {
+        type: 'object',
+        description: 'For "variable" conditionType: evaluate a variable to decide navigation',
+        properties: {
+          variableName: { type: 'string' },
+          operator: { type: 'string', enum: ['eq', 'neq', 'gt', 'lt', 'gte', 'lte', 'contains', 'truthy', 'falsy'] },
+          value: { description: 'Comparison value (not needed for truthy/falsy)' },
+        },
       },
       interactionId: {
         type: 'string',
@@ -1312,6 +1352,8 @@ The project's configured avatar provider determines quality and cost:
 - heygen: Premium quality via HeyGen API
 
 The result is automatically composited into the scene as a picture-in-picture overlay or full-screen presenter.
+
+PIP avatars are true overlays — do NOT add padding, margins, maxWidth restrictions, or reserved columns in scene code to make room. The scene should use the full viewport; the avatar floats on top and may partially overlap content. Only avatar_scene uses a split layout.
 
 Use when the user asks for a presenter, host, narrator avatar, talking head, or person explaining something on screen.
 Do NOT add an avatar unless the user asks for one. Many explainer videos work better without a presenter.`,
@@ -1924,6 +1966,7 @@ export const INTERACTION_TOOLS: ClaudeToolDefinition[] = [
   ADD_MULTIPLE_INTERACTIONS,
   EDIT_INTERACTION,
   CONNECT_SCENES,
+  DEFINE_SCENE_VARIABLE,
 ]
 
 /** 3D model library tools */
@@ -2577,6 +2620,53 @@ Use the returned assetId in create_world_scene's objects array.`,
 
 export const WORLD_TOOLS: ClaudeToolDefinition[] = [CREATE_WORLD_SCENE, LIST_3D_ASSETS]
 
+// ── SVG-to-3D Extrusion Tool ────────────────────────────────────────────────
+
+export const EXTRUDE_SVG_TO_3D: ClaudeToolDefinition = {
+  name: 'extrude_svg_to_3d',
+  description: `Extrude an uploaded SVG asset (logo, icon, text) into 3D geometry with PBR materials, lighting, and optional rotation animation.
+The SVG's paths are converted to Three.js ExtrudeGeometry with bevel. The scene gets studio lighting and a floor.
+Use this when the user wants to make their logo or SVG graphic 3-dimensional.`,
+  input_schema: {
+    type: 'object',
+    properties: {
+      sceneId: { type: 'string', description: 'Target scene ID' },
+      assetId: { type: 'string', description: 'SVG asset ID from the project media library' },
+      depth: { type: 'number', description: 'Extrusion depth in units (default: 20)' },
+      materialStyle: {
+        type: 'string',
+        enum: ['chrome', 'matte', 'glass', 'gold'],
+        description: 'Material preset. chrome = reflective metallic, matte = diffuse, glass = translucent, gold = warm metallic',
+      },
+      animate: { type: 'boolean', description: 'Whether to add slow Y-axis rotation (default: true)' },
+    },
+    required: ['sceneId', 'assetId'],
+  },
+}
+
+// ── Brand Kit Tools ─────────────────────────────────────────────────────────
+
+export const GET_BRAND_KIT: ClaudeToolDefinition = {
+  name: 'get_brand_kit',
+  description: `Retrieve the project's brand kit — logos (with URLs and extracted colors), color palette, fonts, and brand guidelines.
+Use this to understand the brand before generating scenes so you can match brand colors, fonts, and include the logo.`,
+  input_schema: {
+    type: 'object',
+    properties: {},
+  },
+}
+
+export const APPLY_BRAND_KIT: ClaudeToolDefinition = {
+  name: 'apply_brand_kit',
+  description: `Apply the brand kit's palette and primary font to the project's global style.
+This sets the project's color palette override to the first 4 brand colors and the font override to the primary brand font.
+Use this when the user wants to "apply branding" or "use brand colors" project-wide.`,
+  input_schema: {
+    type: 'object',
+    properties: {},
+  },
+}
+
 // ── Skill Discovery Tools ────────────────────────────────────────────────────
 
 export const SEARCH_SKILLS: ClaudeToolDefinition = {
@@ -2653,6 +2743,28 @@ export const LIST_SKILL_CATEGORIES: ClaudeToolDefinition = {
 
 export const SKILL_TOOLS: ClaudeToolDefinition[] = [SEARCH_SKILLS, LOAD_SKILL, LIST_SKILL_CATEGORIES]
 
+/**
+ * Patch hardcoded 1920/1080 dimension references in tool descriptions
+ * to match the project's actual dimensions.
+ * Returns a shallow clone of the tools array with updated descriptions.
+ */
+export function patchToolDimensions(
+  tools: ClaudeToolDefinition[],
+  W: number = 1920,
+  H: number = 1080,
+): ClaudeToolDefinition[] {
+  if (W === 1920 && H === 1080) return tools
+  return tools.map((tool) => {
+    const json = JSON.stringify(tool.input_schema)
+    if (!json.includes('1920') && !json.includes('1080')) return tool
+    // Match both en-dash (\u2013) and hyphen-minus (-) variants
+    const patched = json
+      .replace(/0[\u2013\-]1920/g, `0\u2013${W}`)
+      .replace(/0[\u2013\-]1080/g, `0\u2013${H}`)
+    return { ...tool, input_schema: JSON.parse(patched) }
+  })
+}
+
 /** All tools combined */
 export const ALL_TOOLS: ClaudeToolDefinition[] = [
   ...SCENE_TOOLS,
@@ -2669,6 +2781,9 @@ export const ALL_TOOLS: ClaudeToolDefinition[] = [
   ...INTERACTION_TOOLS,
   ...PHYSICS_TOOLS,
   ...WORLD_TOOLS,
+  EXTRUDE_SVG_TO_3D,
+  GET_BRAND_KIT,
+  APPLY_BRAND_KIT,
   ...EXPORT_TOOLS,
   ...TIMELINE_TOOLS,
   CAPTURE_FRAME,
@@ -2760,6 +2875,7 @@ export const TOOL_CATEGORY_MAP: Record<string, string[]> = {
     'create_world_scene',
     'list_3d_assets',
     'three_data_scatter_scene',
+    'extrude_svg_to_3d',
   ],
   lottie: ['add_layer', 'search_lottie'],
   zdog: [
@@ -2778,10 +2894,12 @@ export const TOOL_CATEGORY_MAP: Record<string, string[]> = {
     'animate_ai_layer',
     'set_layer_filter',
     'crop_image_layer',
+    'get_brand_kit',
+    'apply_brand_kit',
   ],
   audio: ['set_audio_layer', 'add_narration', 'add_sound_effect', 'add_background_music'],
   video: ['set_video_layer'],
-  avatars: ['generate_avatar', 'list_avatars', 'generate_avatar_narration', 'generate_avatar_scene'],
-  interactions: ['add_interaction', 'add_multiple_interactions', 'edit_interaction', 'connect_scenes'],
+  avatars: ['generate_avatar_narration', 'generate_avatar_scene'],
+  interactions: ['add_interaction', 'add_multiple_interactions', 'edit_interaction', 'connect_scenes', 'define_scene_variable'],
   physics: ['generate_physics_scene', 'explain_physics_concept', 'annotate_simulation', 'set_simulation_params'],
 }

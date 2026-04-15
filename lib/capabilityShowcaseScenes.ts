@@ -12,6 +12,7 @@ function base(): Omit<Scene, 'id' | 'name' | 'sceneType' | 'prompt'> {
     canvasCode: '',
     canvasBackgroundCode: '',
     sceneCode: '',
+    reactCode: '',
     sceneHTML: '',
     sceneStyles: '',
     lottieSource: '',

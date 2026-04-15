@@ -33,7 +33,7 @@ import type {
 } from './types'
 import { getModelPricing, getModelProvider, messageContentToText, serializeRunProgress } from './types'
 import { THINKING_BUDGETS } from './context-builder'
-import { routeMessage } from './router'
+// import { routeMessage } from './router' // preserved for future builder delegation
 import {
   buildAgentContext,
   trimHistory,
@@ -41,7 +41,7 @@ import {
   buildWorldState,
   serializeWorldState,
 } from './context-builder'
-import { executeTool, type WorldStateMutable } from './tool-executor'
+import { executeTool, resetToolStats, getToolStats, type WorldStateMutable } from './tool-executor'
 import { logSpend, logAgentUsage } from '../db'
 import { persistRunCheckpoint } from '../db/queries/projects'
 import { AgentLogger } from './logger'
@@ -133,6 +133,43 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
     }),
   ]).finally(() => clearTimeout(timer!))
 }
+
+/** Wrap an async iterable with an inactivity timeout.
+ *  Resets the timer on each yielded value. If no value arrives within `timeoutMs`, throws. */
+async function* withInactivityTimeout<T>(
+  iterable: AsyncIterable<T>,
+  timeoutMs: number,
+  label: string,
+): AsyncGenerator<T> {
+  let timer: ReturnType<typeof setTimeout>
+  let rejectTimeout: ((err: Error) => void) | null = null
+
+  const resetTimer = () => {
+    clearTimeout(timer)
+    timer = setTimeout(() => {
+      rejectTimeout?.(new Error(`Stream inactivity timeout after ${timeoutMs}ms: ${label}`))
+    }, timeoutMs)
+  }
+
+  try {
+    const iterator = iterable[Symbol.asyncIterator]()
+    resetTimer()
+    while (true) {
+      const result = await Promise.race([
+        iterator.next(),
+        new Promise<never>((_, reject) => { rejectTimeout = reject }),
+      ])
+      if (result.done) break
+      resetTimer()
+      yield result.value
+    }
+  } finally {
+    clearTimeout(timer!)
+    rejectTimeout = null
+  }
+}
+
+const STREAM_INACTIVITY_TIMEOUT_MS = 90_000 // 90 seconds
 
 /** Errors worth retrying — transient timeouts and empty generation results */
 function isRetryableError(err: Error): boolean {
@@ -365,6 +402,16 @@ export interface RunnerOptions {
   runConfig?: Partial<RunConfig>
   /** Model configs for resolving local model endpoints */
   modelConfigs?: import('./model-config').ModelConfig[]
+  /** When true, agent stops after plan_scenes for user review (plan-first mode) */
+  planFirstMode?: boolean
+  /** Director template variant (explainer, onboarding, product-demo) */
+  directorTemplate?: string
+  /** MP4/export settings including aspect ratio — threaded to scene HTML generation */
+  mp4Settings?: import('../types').MP4Settings
+  /** Project assets for brand kit and SVG extrusion tools */
+  projectAssets?: import('../types/media').ProjectAsset[]
+  /** Brand kit data for branding tools */
+  brandKit?: import('../types/media').BrandKit | null
 }
 
 // ── Vision content formatters ──────────────────────────────────────────────
@@ -460,12 +507,12 @@ export async function runAgent(opts: RunnerOptions): Promise<{
   } = opts
   const logger = opts.logger ?? new AgentLogger()
   const rc: RunConfig = { ...DEFAULT_RUN_CONFIG, ...opts.runConfig }
+  resetToolStats()
 
   // Declare tracking variables outside try so catch can access them for partial usage logging
   const pid = opts.projectId ?? 'unknown'
   const runStartTime = Date.now()
   let agentType: AgentType = agentOverride ?? 'scene-maker'
-  let resolvedRouteMethod: 'override' | 'heuristic' | 'llm' | 'fallback' = agentOverride ? 'override' : 'heuristic'
   let modelId: ModelId = 'claude-sonnet-4-6'
   let fullText = ''
   const allToolCalls: ToolCallRecord[] = []
@@ -496,53 +543,16 @@ export async function runAgent(opts: RunnerOptions): Promise<{
     if (agentOverride) {
       agentType = agentOverride
       logger.log('route', `Agent override: ${agentType}`)
-    } else if (opts.modelConfigs && opts.modelConfigs.length > 0) {
-      // Local models: skip LLM routing, use heuristic only (avoids calling Anthropic API)
-      logger.log('route', 'Local mode — using heuristic routing (no LLM router)')
-      try {
-        const routeResult = await routeMessage(
-          messageText,
-          scenes,
-          globalStyle,
-          projectName,
-          outputMode,
-          opts.projectId,
-          logger,
-          [], // empty enabledModelIds forces heuristic fallback
-        )
-        agentType = routeResult.agent
-        resolvedRouteMethod = routeResult.method
-        const routeMs = logger.endPhase('route')
-        logger.log('route', `Heuristic routed to ${agentType}`, { durationMs: routeMs })
-      } catch {
-        logger.endPhase('route')
-        agentType = 'scene-maker'
-        resolvedRouteMethod = 'fallback'
-      }
     } else {
-      try {
-        const routeResult = await routeMessage(
-          messageText,
-          scenes,
-          globalStyle,
-          projectName,
-          outputMode,
-          opts.projectId,
-          logger,
-          opts.enabledModelIds,
-        )
-        agentType = routeResult.agent
-        resolvedRouteMethod = routeResult.method
-        const routeMs = logger.endPhase('route')
-        logger.log('route', `Routed to ${agentType}`, { durationMs: routeMs })
-      } catch (err) {
-        logger.endPhase('route')
-        logger.error('route', `Router failed: ${(err as Error).message}`, { stack: (err as Error).stack })
-        emit({ type: 'error', error: `Router error: ${(err as Error).message}` })
-        agentType = 'scene-maker' // fallback
-        resolvedRouteMethod = 'fallback'
-      }
+      // Master Builder is the default — no routing needed
+      agentType = 'scene-maker'
+      logger.log('route', 'Using Master Builder (default)')
     }
+    logger.endPhase('route')
+
+    // Resolve thinking mode: Master Builder defaults to 'deep' for creative reasoning
+    const isBuilder = !agentOverride
+    const effectiveThinkingMode = thinkingMode ?? (isBuilder ? 'deep' : 'adaptive')
 
     // ── 2. Build context ─────────────────────────────────────────────────────
 
@@ -555,6 +565,8 @@ export async function runAgent(opts: RunnerOptions): Promise<{
       audioProviderEnabled,
       mediaGenEnabled,
       projectAssets: opts.projectAssets,
+      mp4Settings: opts.mp4Settings,
+      brandKit: opts.brandKit,
     }
 
     logger.startPhase('context')
@@ -569,11 +581,12 @@ export async function runAgent(opts: RunnerOptions): Promise<{
         outputMode,
         modelOverride,
         opts.modelTier,
-        thinkingMode ?? 'adaptive',
+        effectiveThinkingMode,
         opts.enabledModelIds,
         opts.initialStoryboard ?? null,
         opts.userMemories,
         opts.focusedSceneType,
+        opts.directorTemplate,
       )
     } catch (err) {
       logger.error('context', `Context build failed: ${(err as Error).message}`)
@@ -582,7 +595,7 @@ export async function runAgent(opts: RunnerOptions): Promise<{
     }
     const ctxMs = logger.endPhase('context')
 
-    modelId = ctx.modelId
+    modelId = ctx.modelId ?? 'claude-sonnet-4-6'
     logger.log('context', 'Context built', {
       durationMs: ctxMs,
       modelId,
@@ -600,8 +613,7 @@ export async function runAgent(opts: RunnerOptions): Promise<{
       type: 'agent_routed',
       agentType: agentType as import('./types').AgentType,
       modelId: modelId as import('./types').ModelId,
-      routeMethod: resolvedRouteMethod,
-      isFallback: resolvedRouteMethod === 'fallback',
+      routeMethod: agentOverride ? 'override' : 'default',
       focusedSceneType: opts.focusedSceneType,
       toolCount: ctx.tools.length,
     })
@@ -629,7 +641,6 @@ export async function runAgent(opts: RunnerOptions): Promise<{
       sceneGraph: sceneGraph ? JSON.parse(JSON.stringify(sceneGraph)) : { nodes: [], edges: [], startSceneId: '' },
       modelId,
       modelTier: opts.modelTier ?? 'auto',
-      snapshots: [], // per-run snapshot store (Fix 9)
       ...(opts.initialStoryboard
         ? { storyboard: JSON.parse(JSON.stringify(opts.initialStoryboard)) as Storyboard }
         : {}),
@@ -640,6 +651,9 @@ export async function runAgent(opts: RunnerOptions): Promise<{
       ...(opts.generationOverrides ? { generationOverrides: opts.generationOverrides } : {}),
       ...(opts.autoChooseDefaults ? { autoChooseDefaults: opts.autoChooseDefaults } : {}),
       ...(opts.modelConfigs ? { modelConfigs: opts.modelConfigs, localMode: true } : {}),
+      ...(opts.mp4Settings ? { mp4Settings: opts.mp4Settings } : {}),
+      ...(opts.projectAssets ? { projectAssets: opts.projectAssets } : {}),
+      ...(opts.brandKit !== undefined ? { brandKit: opts.brandKit } : {}),
     }
 
     // ── 4.5 Resume a blocked tool call (permission flow) ───────────────────────
@@ -748,10 +762,7 @@ export async function runAgent(opts: RunnerOptions): Promise<{
     const provider = getModelProvider(modelId, opts.modelConfigs)
     if (provider === 'local') {
       const localConfig = opts.modelConfigs?.find((m) => m.id === modelId || m.modelId === modelId)
-      logger.log(
-        'run',
-        `Local mode: provider=${provider} model=${modelId} endpoint=${localConfig?.endpoint ?? 'http://localhost:11434'} localModelName=${localConfig?.localModelName ?? modelId}`,
-      )
+      logger.log('run', `Local mode: provider=${provider} model=${modelId} endpoint=${localConfig?.endpoint ?? 'http://localhost:11434'} localModelName=${localConfig?.localModelName ?? modelId}`)
     } else {
       logger.log('run', `Provider: ${provider} model=${modelId}`)
     }
@@ -886,59 +897,14 @@ export async function runAgent(opts: RunnerOptions): Promise<{
       totalApiCalls++
 
       // Cost guardrail: abort if accumulated LLM cost exceeds the per-run cap
-      const runningCost = calculateCost(
-        modelId,
-        totalInputTokens,
-        totalOutputTokens,
-        totalCacheCreationTokens,
-        totalCacheReadTokens,
-      )
+      const runningCost = calculateCost(modelId, totalInputTokens, totalOutputTokens, totalCacheCreationTokens, totalCacheReadTokens)
       if (runningCost > rc.maxRunCostUsd) {
         logger.warn('cost', `Run cost $${runningCost.toFixed(3)} exceeds cap $${rc.maxRunCostUsd} — stopping`, {
           iteration,
           inputTokens: totalInputTokens,
           outputTokens: totalOutputTokens,
         })
-        // Save checkpoint so user can resume
-        if (opts.projectId && world.storyboard && runProgress.scenesCreated.length > 0) {
-          try {
-            const checkpoint: import('./types').RunCheckpoint = {
-              runId: logger.runId,
-              agentType,
-              modelId,
-              storyboard: world.storyboard,
-              completedSceneIds: runProgress.scenesCreated,
-              remainingSceneIndexes: world.storyboard.scenes
-                .map((_, i) => i)
-                .filter(
-                  (i) =>
-                    !world.scenes.some((s) => s.name.toLowerCase() === world.storyboard!.scenes[i].name.toLowerCase()),
-                ),
-              progress: { ...runProgress },
-              worldSnapshot: {
-                scenes: JSON.parse(JSON.stringify(world.scenes)),
-                globalStyle: JSON.parse(JSON.stringify(world.globalStyle)),
-                sceneGraph: JSON.parse(JSON.stringify(world.sceneGraph)),
-              },
-              originalMessage: messageContentToText(message),
-              partialUsage: {
-                inputTokens: totalInputTokens,
-                outputTokens: totalOutputTokens,
-                apiCalls: totalApiCalls,
-                costUsd: runningCost,
-                totalDurationMs: Date.now() - runStartTime,
-              },
-              createdAt: new Date().toISOString(),
-              reason: 'cost_cap' as const,
-            }
-            await persistRunCheckpoint(opts.projectId, checkpoint)
-            emit({ type: 'checkpoint_saved', reason: 'cost_cap', scenesBuilt: runProgress.scenesCreated.length })
-          } catch (e) {
-            logger.error('cost', `Failed to save cost-cap checkpoint: ${(e as Error).message}`)
-          }
-        }
-        const remaining = (world.storyboard?.scenes.length ?? 0) - runProgress.scenesCreated.length
-        const msg = `\n\n⚠ Cost limit reached ($${runningCost.toFixed(2)}). Built ${runProgress.scenesCreated.length} of ${world.storyboard?.scenes.length ?? '?'} scenes.${remaining > 0 ? ` Say "continue" to resume the remaining ${remaining} scenes.` : ''}`
+        const msg = `\n\n⚠ Cost limit reached ($${runningCost.toFixed(2)} / $${rc.maxRunCostUsd.toFixed(2)} cap). Stopping to prevent overspend.`
         fullText += msg
         emit({ type: 'token', token: msg })
         break
@@ -950,52 +916,7 @@ export async function runAgent(opts: RunnerOptions): Promise<{
           iteration,
           toolCalls: allToolCalls.length,
         })
-        // Save checkpoint so user can resume
-        if (opts.projectId && world.storyboard && runProgress.scenesCreated.length > 0) {
-          try {
-            const checkpoint: import('./types').RunCheckpoint = {
-              runId: logger.runId,
-              agentType,
-              modelId,
-              storyboard: world.storyboard,
-              completedSceneIds: runProgress.scenesCreated,
-              remainingSceneIndexes: world.storyboard.scenes
-                .map((_, i) => i)
-                .filter(
-                  (i) =>
-                    !world.scenes.some((s) => s.name.toLowerCase() === world.storyboard!.scenes[i].name.toLowerCase()),
-                ),
-              progress: { ...runProgress },
-              worldSnapshot: {
-                scenes: JSON.parse(JSON.stringify(world.scenes)),
-                globalStyle: JSON.parse(JSON.stringify(world.globalStyle)),
-                sceneGraph: JSON.parse(JSON.stringify(world.sceneGraph)),
-              },
-              originalMessage: messageContentToText(message),
-              partialUsage: {
-                inputTokens: totalInputTokens,
-                outputTokens: totalOutputTokens,
-                apiCalls: totalApiCalls,
-                costUsd: calculateCost(
-                  modelId,
-                  totalInputTokens,
-                  totalOutputTokens,
-                  totalCacheCreationTokens,
-                  totalCacheReadTokens,
-                ),
-                totalDurationMs: Date.now() - runStartTime,
-              },
-              createdAt: new Date().toISOString(),
-              reason: 'tool_limit' as const,
-            }
-            await persistRunCheckpoint(opts.projectId, checkpoint)
-            emit({ type: 'checkpoint_saved', reason: 'tool_limit', scenesBuilt: runProgress.scenesCreated.length })
-          } catch (e) {
-            logger.error('tools', `Failed to save tool-limit checkpoint: ${(e as Error).message}`)
-          }
-        }
-        const remaining = (world.storyboard?.scenes.length ?? 0) - runProgress.scenesCreated.length
-        const msg = `\n\n⚠ Tool call limit reached (${allToolCalls.length} calls). Built ${runProgress.scenesCreated.length} of ${world.storyboard?.scenes.length ?? '?'} scenes.${remaining > 0 ? ` Say "continue" to resume the remaining ${remaining} scenes.` : ''}`
+        const msg = `\n\n⚠ Tool call limit reached (${allToolCalls.length} calls). Stopping to prevent runaway execution.`
         fullText += msg
         emit({ type: 'token', token: msg })
         break
@@ -1007,13 +928,7 @@ export async function runAgent(opts: RunnerOptions): Promise<{
         runProgress: {
           toolCallsUsed: allToolCalls.length,
           toolCallsMax: rc.maxToolCalls,
-          costUsd: calculateCost(
-            modelId,
-            totalInputTokens,
-            totalOutputTokens,
-            totalCacheCreationTokens,
-            totalCacheReadTokens,
-          ),
+          costUsd: calculateCost(modelId, totalInputTokens, totalOutputTokens, totalCacheCreationTokens, totalCacheReadTokens),
           costMax: rc.maxRunCostUsd,
           iteration,
           iterationMax: effectiveMaxIterations,
@@ -1228,11 +1143,12 @@ export async function runAgent(opts: RunnerOptions): Promise<{
             outputMode,
             modelOverride,
             opts.modelTier,
-            thinkingMode ?? 'adaptive',
+            effectiveThinkingMode,
             opts.enabledModelIds,
             world.storyboard,
             opts.userMemories,
             opts.focusedSceneType,
+            opts.directorTemplate,
           )
           ctx.systemPrompt = refreshed.systemPrompt
           ctx.staticPrompt = refreshed.staticPrompt
@@ -1251,11 +1167,7 @@ export async function runAgent(opts: RunnerOptions): Promise<{
 
             // Compact messages to prevent unbounded growth during long builds
             const before = messages.length
-            const compacted = compactInFlightMessages(messages, {
-              maxTokens: rc.compactionMaxTokens,
-              preserveRecent: Math.max(rc.compactionPreserveRecent, world.scenes.length * 2),
-              protectedIds: world.scenes.map((s) => s.id),
-            })
+            const compacted = compactInFlightMessages(messages, { maxTokens: rc.compactionMaxTokens, preserveRecent: rc.compactionPreserveRecent })
             if (compacted.length < before) {
               messages.length = 0
               messages.push(...compacted)
@@ -1265,19 +1177,13 @@ export async function runAgent(opts: RunnerOptions): Promise<{
         }
 
         // Orchestrator handoff (Gemini path)
-        const geminiScenesBuiltByDirector = allToolCalls.filter(
-          (tc) => tc.toolName === 'add_layer' || tc.toolName === 'create_scene',
-        ).length
-        const geminiStylingComplete = allToolCalls.some(
-          (tc) => tc.toolName === 'set_global_style' || tc.toolName === 'set_all_transitions',
-        )
         if (
           agentType === 'director' &&
           !opts.isSubAgent &&
           world.storyboard &&
-          world.storyboard.scenes.length >= 2 &&
-          geminiStylingComplete &&
-          geminiScenesBuiltByDirector <= 4
+          world.storyboard.scenes.length >= 3 &&
+          allToolCalls.some((tc) => tc.toolName === 'set_global_style' || tc.toolName === 'set_all_transitions') &&
+          !allToolCalls.some((tc) => tc.toolName === 'add_layer')
         ) {
           logger.log('orchestrator', `Handing off to orchestrator (Gemini): ${world.storyboard.scenes.length} scenes`)
           const { runOrchestrated } = await import('./orchestrator')
@@ -1288,13 +1194,7 @@ export async function runAgent(opts: RunnerOptions): Promise<{
             emit,
             logger,
             toolBudgetRemaining: rc.maxToolCalls - allToolCalls.length,
-            parentCostUsd: calculateCost(
-              modelId,
-              totalInputTokens,
-              totalOutputTokens,
-              totalCacheCreationTokens,
-              totalCacheReadTokens,
-            ),
+            parentCostUsd: calculateCost(modelId, totalInputTokens, totalOutputTokens, totalCacheCreationTokens, totalCacheReadTokens),
             maxRunCostUsd: rc.maxRunCostUsd,
           })
           for (const sr of subResults) {
@@ -1322,8 +1222,8 @@ export async function runAgent(opts: RunnerOptions): Promise<{
           inputTokens: iterInputTokens,
           outputTokens: iterOutputTokens,
         })
-        if (agentType === 'planner' && world.storyboard) {
-          logger.log('planner', 'Plan-only run: storyboard saved, stopping loop')
+        if ((agentType === 'planner' || opts.planFirstMode) && world.storyboard) {
+          logger.log('plan-mode', 'Plan-first mode: storyboard saved, stopping loop')
           break
         }
         if (toolCallBlocks.length === 0) break
@@ -1391,8 +1291,7 @@ export async function runAgent(opts: RunnerOptions): Promise<{
         }
 
         // Local models may not support tools — skip tool parameter if supportsTools is false
-        const localConfig =
-          provider === 'local' ? opts.modelConfigs?.find((m) => m.id === modelId || m.modelId === modelId) : null
+        const localConfig = provider === 'local' ? opts.modelConfigs?.find((m) => m.id === modelId || m.modelId === modelId) : null
         const supportsTools = localConfig ? localConfig.supportsTools !== false : true
 
         let stream: any
@@ -1409,10 +1308,9 @@ export async function runAgent(opts: RunnerOptions): Promise<{
         } catch (connectErr) {
           const errMsg = (connectErr as Error).message ?? 'Unknown error'
           logger.error('iteration', `Failed to connect to ${provider === 'local' ? 'Ollama' : 'OpenAI'}: ${errMsg}`)
-          const userMsg =
-            provider === 'local'
-              ? `Failed to connect to Ollama at ${(oaiClient as any)?.baseURL ?? 'localhost:11434'}. Make sure Ollama is running (\`ollama serve\`) and the model is pulled.`
-              : `Failed to connect to OpenAI: ${errMsg}`
+          const userMsg = provider === 'local'
+            ? `Failed to connect to Ollama at ${(oaiClient as any)?.baseURL ?? 'localhost:11434'}. Make sure Ollama is running (\`ollama serve\`) and the model is pulled.`
+            : `Failed to connect to OpenAI: ${errMsg}`
           fullText += `\n\n${userMsg}`
           emit({ type: 'token', token: `\n\n${userMsg}` })
           break
@@ -1424,7 +1322,7 @@ export async function runAgent(opts: RunnerOptions): Promise<{
         let oaiIterInputTokens = 0
         let oaiIterOutputTokens = 0
 
-        for await (const chunk of stream) {
+        for await (const chunk of withInactivityTimeout<any>(stream, STREAM_INACTIVITY_TIMEOUT_MS, 'OpenAI/local stream')) {
           const delta = chunk.choices[0]?.delta
           if (chunk.usage) {
             const inTok = chunk.usage.prompt_tokens ?? 0
@@ -1462,13 +1360,9 @@ export async function runAgent(opts: RunnerOptions): Promise<{
         const toolUseBlocks = Object.values(toolCallAccum)
 
         // Execute tools
-        logger.log(
-          'iteration',
-          `${provider === 'local' ? 'Local' : 'OpenAI'}: ${toolUseBlocks.length} tool calls to execute`,
-          {
-            toolCallCount: toolUseBlocks.length,
-          },
-        )
+        logger.log('iteration', `${provider === 'local' ? 'Local' : 'OpenAI'}: ${toolUseBlocks.length} tool calls to execute`, {
+          toolCallCount: toolUseBlocks.length,
+        })
         const toolResultMsgs: OpenAI.ChatCompletionToolMessageParam[] = []
         let stopBecausePermission = false
         let stopBecauseInvalidToolArgs = false
@@ -1590,11 +1484,12 @@ export async function runAgent(opts: RunnerOptions): Promise<{
             outputMode,
             modelOverride,
             opts.modelTier,
-            thinkingMode ?? 'adaptive',
+            effectiveThinkingMode,
             opts.enabledModelIds,
             world.storyboard,
             opts.userMemories,
             opts.focusedSceneType,
+            opts.directorTemplate,
           )
           ctx.systemPrompt = refreshed.systemPrompt
           ctx.staticPrompt = refreshed.staticPrompt
@@ -1613,11 +1508,7 @@ export async function runAgent(opts: RunnerOptions): Promise<{
 
             // Compact messages to prevent unbounded growth during long builds
             const before = messages.length
-            const compacted = compactInFlightMessages(messages, {
-              maxTokens: rc.compactionMaxTokens,
-              preserveRecent: Math.max(rc.compactionPreserveRecent, world.scenes.length * 2),
-              protectedIds: world.scenes.map((s) => s.id),
-            })
+            const compacted = compactInFlightMessages(messages, { maxTokens: rc.compactionMaxTokens, preserveRecent: rc.compactionPreserveRecent })
             if (compacted.length < before) {
               messages.length = 0
               messages.push(...compacted)
@@ -1627,24 +1518,15 @@ export async function runAgent(opts: RunnerOptions): Promise<{
         }
 
         // Orchestrator handoff (OpenAI path)
-        const openaiScenesBuiltByDirector = allToolCalls.filter(
-          (tc) => tc.toolName === 'add_layer' || tc.toolName === 'create_scene',
-        ).length
-        const openaiStylingComplete = allToolCalls.some(
-          (tc) => tc.toolName === 'set_global_style' || tc.toolName === 'set_all_transitions',
-        )
         if (
           agentType === 'director' &&
           !opts.isSubAgent &&
           world.storyboard &&
-          world.storyboard.scenes.length >= 2 &&
-          openaiStylingComplete &&
-          openaiScenesBuiltByDirector <= 4
+          world.storyboard.scenes.length >= 3 &&
+          allToolCalls.some((tc) => tc.toolName === 'set_global_style' || tc.toolName === 'set_all_transitions') &&
+          !allToolCalls.some((tc) => tc.toolName === 'add_layer')
         ) {
-          logger.log(
-            'orchestrator',
-            `Handing off to orchestrator (${provider}): ${world.storyboard.scenes.length} scenes`,
-          )
+          logger.log('orchestrator', `Handing off to orchestrator (${provider}): ${world.storyboard.scenes.length} scenes`)
           const { runOrchestrated } = await import('./orchestrator')
           const subResults = await runOrchestrated({
             storyboard: world.storyboard,
@@ -1653,13 +1535,7 @@ export async function runAgent(opts: RunnerOptions): Promise<{
             emit,
             logger,
             toolBudgetRemaining: rc.maxToolCalls - allToolCalls.length,
-            parentCostUsd: calculateCost(
-              modelId,
-              totalInputTokens,
-              totalOutputTokens,
-              totalCacheCreationTokens,
-              totalCacheReadTokens,
-            ),
+            parentCostUsd: calculateCost(modelId, totalInputTokens, totalOutputTokens, totalCacheCreationTokens, totalCacheReadTokens),
             maxRunCostUsd: rc.maxRunCostUsd,
           })
           for (const sr of subResults) {
@@ -1688,8 +1564,8 @@ export async function runAgent(opts: RunnerOptions): Promise<{
           inputTokens: oaiIterInputTokens,
           outputTokens: oaiIterOutputTokens,
         })
-        if (agentType === 'planner' && world.storyboard) {
-          logger.log('planner', 'Plan-only run: storyboard saved, stopping loop')
+        if ((agentType === 'planner' || opts.planFirstMode) && world.storyboard) {
+          logger.log('plan-mode', 'Plan-first mode: storyboard saved, stopping loop')
           break
         }
         // ── Local model fallback: generate scene code directly ─────────
@@ -1720,6 +1596,7 @@ export async function runAgent(opts: RunnerOptions): Promise<{
                 // Update scene directly
                 const { updateScene } = await import('./tool-handlers/_shared')
                 const { generateSceneHTML } = await import('../sceneTemplate')
+                const { resolveProjectDimensions } = await import('../dimensions')
                 const fs = await import('fs/promises')
                 const path = await import('path')
 
@@ -1731,25 +1608,14 @@ export async function runAgent(opts: RunnerOptions): Promise<{
                 })
                 // Generate and write HTML
                 const updatedScene = world.scenes.find((s) => s.id === focusedScene.id)!
-                const html = generateSceneHTML(updatedScene, world.globalStyle)
+                const html = generateSceneHTML(updatedScene, world.globalStyle, undefined, undefined, resolveProjectDimensions(world.mp4Settings?.aspectRatio, world.mp4Settings?.resolution))
                 updateScene(world, focusedScene.id, { sceneHTML: html })
                 const scenesDir = path.join(process.cwd(), 'public', 'scenes')
                 await fs.mkdir(scenesDir, { recursive: true })
                 await fs.writeFile(path.join(scenesDir, `${focusedScene.id}.html`), html, 'utf-8')
 
-                emit({
-                  type: 'preview_update',
-                  sceneId: focusedScene.id,
-                  changes: [
-                    { type: 'scene_updated', sceneId: focusedScene.id, description: 'Generated scene code (local)' },
-                  ],
-                })
-                emit({
-                  type: 'state_change',
-                  changes: [
-                    { type: 'scene_updated', sceneId: focusedScene.id, description: 'Generated scene code (local)' },
-                  ],
-                })
+                emit({ type: 'preview_update', sceneId: focusedScene.id, changes: [{ type: 'scene_updated', sceneId: focusedScene.id, description: 'Generated scene code (local)' }] })
+                emit({ type: 'state_change', changes: [{ type: 'scene_updated', sceneId: focusedScene.id, description: 'Generated scene code (local)' }] })
 
                 const doneMsg = `_Scene generated successfully._`
                 fullText += doneMsg
@@ -1843,7 +1709,7 @@ export async function runAgent(opts: RunnerOptions): Promise<{
         let currentToolIndex = -1
         let stopReason: string | null = null
 
-        for await (const event of stream) {
+        for await (const event of withInactivityTimeout(stream, STREAM_INACTIVITY_TIMEOUT_MS, 'Anthropic stream')) {
           switch (event.type) {
             case 'content_block_start': {
               const blockType = (event.content_block as { type: string }).type
@@ -1930,11 +1796,8 @@ export async function runAgent(opts: RunnerOptions): Promise<{
           console.error('[Agent] finalMessage() failed:', err)
           // Abort the stream to release the underlying HTTP connection
           // instead of leaving it in a partially-consumed state.
-          try {
-            stream.abort()
-          } catch {
-            /* best-effort cleanup */
-          }
+          try { stream.abort() } catch { /* best-effort cleanup */ }
+          logger.warn('tokens', 'finalMessage() failed — using streaming token counts as fallback')
           finalMsg = {
             id: '',
             type: 'message',
@@ -1946,6 +1809,23 @@ export async function runAgent(opts: RunnerOptions): Promise<{
             usage: { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
           }
         }
+
+        // Use finalMessage().usage as source of truth for token counts.
+        // Streaming deltas can undercount by 2-5% due to cache overhead and framing.
+        if (finalMsg.usage && (finalMsg.usage.input_tokens > 0 || finalMsg.usage.output_tokens > 0)) {
+          const streamInput = totalInputTokens
+          const streamOutput = totalOutputTokens
+          totalInputTokens = finalMsg.usage.input_tokens
+          totalOutputTokens = finalMsg.usage.output_tokens
+          totalCacheCreationTokens = (finalMsg.usage as any).cache_creation_input_tokens ?? totalCacheCreationTokens
+          totalCacheReadTokens = (finalMsg.usage as any).cache_read_input_tokens ?? totalCacheReadTokens
+          const inputDelta = Math.abs(totalInputTokens - streamInput)
+          const outputDelta = Math.abs(totalOutputTokens - streamOutput)
+          if ((streamInput > 0 && inputDelta > streamInput * 0.01) || (streamOutput > 0 && outputDelta > streamOutput * 0.01)) {
+            logger.warn('tokens', `Token count discrepancy >1%: input Δ${inputDelta} (${streamInput}→${totalInputTokens}), output Δ${outputDelta} (${streamOutput}→${totalOutputTokens})`)
+          }
+        }
+
         const assistantContent = finalMsg.content
 
         // Execute tools and collect results
@@ -2166,21 +2046,11 @@ export async function runAgent(opts: RunnerOptions): Promise<{
 
         // Post-tool cost check: catch single-tool overspend that the pre-iteration
         // check at the top of the loop can't see (it only fires before the next iteration).
-        const postToolCost = calculateCost(
-          modelId,
-          totalInputTokens,
-          totalOutputTokens,
-          totalCacheCreationTokens,
-          totalCacheReadTokens,
-        )
+        const postToolCost = calculateCost(modelId, totalInputTokens, totalOutputTokens, totalCacheCreationTokens, totalCacheReadTokens)
         if (postToolCost > rc.maxRunCostUsd) {
-          logger.warn(
-            'cost',
-            `Post-tool cost $${postToolCost.toFixed(3)} exceeds cap — stopping after this iteration`,
-            {
-              iteration,
-            },
-          )
+          logger.warn('cost', `Post-tool cost $${postToolCost.toFixed(3)} exceeds cap — stopping after this iteration`, {
+            iteration,
+          })
           const costMsg = `\n\n⚠ Cost limit reached ($${postToolCost.toFixed(2)} / $${rc.maxRunCostUsd.toFixed(2)} cap). Stopping to prevent overspend.`
           fullText += costMsg
           emit({ type: 'token', token: costMsg })
@@ -2206,7 +2076,7 @@ export async function runAgent(opts: RunnerOptions): Promise<{
             outputMode,
             modelOverride,
             opts.modelTier,
-            thinkingMode ?? 'adaptive',
+            effectiveThinkingMode,
             opts.enabledModelIds,
             world.storyboard,
             opts.userMemories,
@@ -2228,11 +2098,7 @@ export async function runAgent(opts: RunnerOptions): Promise<{
 
             // Compact messages to prevent unbounded growth during long builds
             const before = messages.length
-            const compacted = compactInFlightMessages(messages, {
-              maxTokens: rc.compactionMaxTokens,
-              preserveRecent: Math.max(rc.compactionPreserveRecent, world.scenes.length * 2),
-              protectedIds: world.scenes.map((s) => s.id),
-            })
+            const compacted = compactInFlightMessages(messages, { maxTokens: rc.compactionMaxTokens, preserveRecent: rc.compactionPreserveRecent })
             if (compacted.length < before) {
               messages.length = 0
               messages.push(...compacted)
@@ -2244,19 +2110,15 @@ export async function runAgent(opts: RunnerOptions): Promise<{
         // ── Orchestrator handoff ──────────────────────────────────────────────
         // After the Director has set up the storyboard and style, delegate
         // per-scene building to focused SceneMaker sub-agents.
-        const anthropicScenesBuiltByDirector = allToolCalls.filter(
-          (tc) => tc.toolName === 'add_layer' || tc.toolName === 'create_scene',
-        ).length
-        const anthropicStylingComplete = allToolCalls.some(
-          (tc) => tc.toolName === 'set_global_style' || tc.toolName === 'set_all_transitions',
-        )
         if (
           agentType === 'director' &&
           !opts.isSubAgent &&
           world.storyboard &&
-          world.storyboard.scenes.length >= 2 &&
-          anthropicStylingComplete &&
-          anthropicScenesBuiltByDirector <= 4
+          world.storyboard.scenes.length >= 3 &&
+          // Only hand off once style tools have been called (PLAN+STYLE complete)
+          allToolCalls.some((tc) => tc.toolName === 'set_global_style' || tc.toolName === 'set_all_transitions') &&
+          // Don't hand off if we've already created scenes (Director is in BUILD phase already)
+          !allToolCalls.some((tc) => tc.toolName === 'add_layer')
         ) {
           logger.log('orchestrator', `Handing off to orchestrator: ${world.storyboard.scenes.length} scenes to build`)
 
@@ -2268,13 +2130,7 @@ export async function runAgent(opts: RunnerOptions): Promise<{
             emit,
             logger,
             toolBudgetRemaining: rc.maxToolCalls - allToolCalls.length,
-            parentCostUsd: calculateCost(
-              modelId,
-              totalInputTokens,
-              totalOutputTokens,
-              totalCacheCreationTokens,
-              totalCacheReadTokens,
-            ),
+            parentCostUsd: calculateCost(modelId, totalInputTokens, totalOutputTokens, totalCacheCreationTokens, totalCacheReadTokens),
             maxRunCostUsd: rc.maxRunCostUsd,
           })
 
@@ -2305,69 +2161,14 @@ export async function runAgent(opts: RunnerOptions): Promise<{
           stopReason: effectiveStopReason,
           textLength: chunkText.length,
         })
-        if (agentType === 'planner' && world.storyboard) {
-          logger.log('planner', 'Plan-only run: storyboard saved, stopping loop')
+        if ((agentType === 'planner' || opts.planFirstMode) && world.storyboard) {
+          logger.log('plan-mode', 'Plan-first mode: storyboard saved, stopping loop')
           break
         }
         if (toolUseBlocks.length === 0 || effectiveStopReason === 'end_turn') {
           break
         }
       } // end Anthropic path
-    }
-
-    // Checkpoint on iteration limit — save progress if the while loop exhausted all iterations
-    if (
-      iteration >= effectiveMaxIterations &&
-      opts.projectId &&
-      world.storyboard &&
-      runProgress.scenesCreated.length > 0
-    ) {
-      try {
-        const checkpoint: import('./types').RunCheckpoint = {
-          runId: logger.runId,
-          agentType,
-          modelId,
-          storyboard: world.storyboard,
-          completedSceneIds: runProgress.scenesCreated,
-          remainingSceneIndexes: world.storyboard.scenes
-            .map((_, i) => i)
-            .filter(
-              (i) => !world.scenes.some((s) => s.name.toLowerCase() === world.storyboard!.scenes[i].name.toLowerCase()),
-            ),
-          progress: { ...runProgress },
-          worldSnapshot: {
-            scenes: JSON.parse(JSON.stringify(world.scenes)),
-            globalStyle: JSON.parse(JSON.stringify(world.globalStyle)),
-            sceneGraph: JSON.parse(JSON.stringify(world.sceneGraph)),
-          },
-          originalMessage: messageContentToText(message),
-          partialUsage: {
-            inputTokens: totalInputTokens,
-            outputTokens: totalOutputTokens,
-            apiCalls: totalApiCalls,
-            costUsd: calculateCost(
-              modelId,
-              totalInputTokens,
-              totalOutputTokens,
-              totalCacheCreationTokens,
-              totalCacheReadTokens,
-            ),
-            totalDurationMs: Date.now() - runStartTime,
-          },
-          createdAt: new Date().toISOString(),
-          reason: 'iteration_limit' as const,
-        }
-        await persistRunCheckpoint(opts.projectId, checkpoint)
-        emit({ type: 'checkpoint_saved', reason: 'iteration_limit', scenesBuilt: runProgress.scenesCreated.length })
-        const remaining = world.storyboard.scenes.length - runProgress.scenesCreated.length
-        if (remaining > 0) {
-          const msg = `\n\n⚠ Iteration limit reached (${iteration} iterations). Built ${runProgress.scenesCreated.length} of ${world.storyboard.scenes.length} scenes. Say "continue" to resume the remaining ${remaining} scenes.`
-          fullText += msg
-          emit({ type: 'token', token: msg })
-        }
-      } catch (e) {
-        logger.error('iteration', `Failed to save iteration-limit checkpoint: ${(e as Error).message}`)
-      }
     }
 
     // ── 6. Calculate usage and cost ──────────────────────────────────────────
@@ -2437,6 +2238,13 @@ export async function runAgent(opts: RunnerOptions): Promise<{
       toolCalls: allToolCalls,
       usage,
     })
+
+    // Log per-tool success/failure rates for observability
+    const stats = getToolStats()
+    const failedTools = Object.entries(stats).filter(([, s]) => s.failure > 0)
+    if (failedTools.length > 0) {
+      logger.warn('tool_stats', `Tool failures this run: ${failedTools.map(([name, s]) => `${name}=${s.failure}/${s.success + s.failure}`).join(', ')}`)
+    }
 
     return {
       agentType,
@@ -2516,15 +2324,7 @@ export async function runAgent(opts: RunnerOptions): Promise<{
           remainingSceneIndexes: storyboard.scenes
             .map((_, i) => i)
             .filter((i) => !opts.scenes.some((s) => s.name.toLowerCase() === storyboard.scenes[i].name.toLowerCase())),
-          progress: {
-            scenesCreated: opts.scenes.map((s) => s.id),
-            toolCallsTotal: allToolCalls.length,
-            iterationsUsed: 0,
-            phase: 'unknown',
-            storyboardScenesPlanned: storyboard.scenes.length,
-            errors: [],
-            scenesWithNarration: [],
-          },
+          progress: { scenesCreated: opts.scenes.map((s) => s.id), toolCallsTotal: allToolCalls.length, iterationsUsed: 0, phase: 'unknown', storyboardScenesPlanned: storyboard.scenes.length, errors: [], scenesWithNarration: [] },
           worldSnapshot: {
             scenes: JSON.parse(JSON.stringify(opts.scenes)),
             globalStyle: JSON.parse(JSON.stringify(opts.globalStyle)),

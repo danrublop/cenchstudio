@@ -1,7 +1,7 @@
 import fs from 'fs/promises'
 import path from 'path'
 import crypto from 'crypto'
-import type { SFXProviderInterface, SFXResult } from '../types'
+import type { SFXProviderInterface, SFXResult, SFXSearchOptions } from '../types'
 
 const API_BASE = 'https://api.elevenlabs.io/v1'
 
@@ -61,7 +61,7 @@ export const elevenlabsSFX: SFXProviderInterface = {
   name: 'ElevenLabs Sound Effects',
   requiresKey: 'ELEVENLABS_API_KEY',
 
-  async search(query: string, _limit?: number): Promise<SFXResult[]> {
+  async search(query: string, _limit?: number, _options?: SFXSearchOptions): Promise<SFXResult[]> {
     // ElevenLabs SFX is generative, not a search library.
     const result = await generateSFX(query)
     return [result]

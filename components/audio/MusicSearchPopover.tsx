@@ -1,5 +1,5 @@
 'use client'
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef } from 'react'
 import { Search, Play, Pause, Plus, Loader2 } from 'lucide-react'
 
 interface MusicResult {
@@ -12,7 +12,8 @@ interface MusicResult {
 
 interface MusicSearchPopoverProps {
   onSelect: (result: MusicResult) => void
-  onClose: () => void
+  /** @deprecated Closing is handled by the parent dropdown; kept for API compatibility. */
+  onClose?: () => void
 }
 
 export function MusicSearchPopover({ onSelect, onClose }: MusicSearchPopoverProps) {
@@ -22,14 +23,6 @@ export function MusicSearchPopover({ onSelect, onClose }: MusicSearchPopoverProp
   const [playing, setPlaying] = useState<string | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [onClose])
 
   const handleSearch = async () => {
     if (!query.trim()) return
@@ -68,8 +61,8 @@ export function MusicSearchPopover({ onSelect, onClose }: MusicSearchPopoverProp
   return (
     <div
       ref={ref}
-      className="border rounded-lg p-3 space-y-2 shadow-xl"
-      style={{ backgroundColor: 'var(--color-panel)', borderColor: 'var(--color-border)', minWidth: 280 }}
+      className="flex h-full min-h-0 w-full flex-col space-y-2 overflow-hidden p-3"
+      style={{ minWidth: 280 }}
     >
       <div className="flex gap-1">
         <input
@@ -89,7 +82,7 @@ export function MusicSearchPopover({ onSelect, onClose }: MusicSearchPopoverProp
         </span>
       </div>
       {results.length > 0 && (
-        <div className="max-h-40 overflow-y-auto space-y-1">
+        <div className="min-h-0 flex-1 space-y-1 overflow-y-auto">
           {results.map((r) => (
             <div
               key={r.id}
@@ -108,7 +101,7 @@ export function MusicSearchPopover({ onSelect, onClose }: MusicSearchPopoverProp
               <span
                 onClick={() => {
                   onSelect(r)
-                  onClose()
+                  onClose?.()
                 }}
                 className="cursor-pointer hover:text-[var(--color-accent)]"
               >

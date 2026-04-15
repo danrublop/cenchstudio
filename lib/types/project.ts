@@ -1,10 +1,11 @@
 import type { SceneType } from './scene'
 import type { InteractionElement, SceneVariable } from './interaction'
 import type { AudioSettings } from './audio'
-import type { WatermarkConfig } from './media'
+import type { WatermarkConfig, BrandKit } from './media'
 import type { APIPermissions } from './permissions'
 import type { TransitionType } from '../transitions'
 import type { Timeline } from './timeline'
+import type { AspectRatio } from '../dimensions'
 
 export interface GlobalStyle {
   presetId: import('../styles/presets').StylePresetId | null
@@ -61,10 +62,12 @@ export interface SceneNode {
 }
 
 export interface EdgeCondition {
-  type: 'auto' | 'hotspot' | 'choice' | 'quiz' | 'gate' | 'variable'
+  type: 'auto' | 'hotspot' | 'choice' | 'quiz' | 'gate' | 'variable' | 'slider' | 'toggle'
   interactionId: string | null
   variableName: string | null
   variableValue: string | null
+  /** Rich condition — when set, takes precedence over variableName/variableValue equality check */
+  variableCondition?: import('./interaction').VariableCondition | null
 }
 
 export interface SceneEdge {
@@ -84,6 +87,7 @@ export interface MP4Settings {
   resolution: '720p' | '1080p' | '4k'
   fps: 24 | 30 | 60
   format: 'mp4' | 'webm'
+  aspectRatio?: AspectRatio
 }
 
 export interface InteractiveSettings {
@@ -138,6 +142,7 @@ export interface Project {
     resolution: '720p' | '1080p' | '4k'
     fps: 24 | 30 | 60
     format: 'mp4' | 'webm'
+    aspectRatio?: AspectRatio
   }
 
   interactiveSettings: {
@@ -156,6 +161,7 @@ export interface Project {
   audioProviderEnabled: Record<string, boolean>
   mediaGenEnabled: Record<string, boolean>
   watermark: WatermarkConfig | null
+  brandKit: BrandKit | null
   pausedAgentRun?: {
     toolName: string
     toolInput: Record<string, unknown>

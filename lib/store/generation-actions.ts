@@ -3,6 +3,7 @@
 import { v4 as uuidv4 } from 'uuid'
 import type { Scene, SceneUsage, SvgObject, SvgBranch, AILayer, AvatarLayer } from '../types'
 import { generateSceneHTML } from '../sceneTemplate'
+import { resolveProjectDimensions } from '../dimensions'
 import { mergeAvatarLayerUpdates } from '../avatar-layer-sync'
 import { compileD3SceneFromLayers } from '../charts/compile'
 import type { Set, Get } from './types'
@@ -211,6 +212,52 @@ export function createGenerationActions(set: Set, get: Get) {
       } catch (err) {
         console.error('Motion generation error:', err)
         set({ lastGenerationError: err instanceof Error ? err.message : 'Motion generation failed' })
+      } finally {
+        set({ isGenerating: false, generatingSceneId: null })
+      }
+    },
+
+    generateReact: async (sceneId: string) => {
+      const { scenes, globalStyle } = get()
+      const scene = scenes.find((s) => s.id === sceneId)
+      if (!scene || !scene.prompt.trim()) return
+
+      const sceneIndex = scenes.findIndex((s) => s.id === sceneId)
+      const previousSummary = sceneIndex > 0 ? scenes[sceneIndex - 1].summary : ''
+
+      set({ isGenerating: true, generatingSceneId: sceneId, lastGenerationError: null })
+      get().updateScene(sceneId, { reactCode: '', sceneStyles: '' })
+
+      try {
+        const response = await fetch('/api/generate-react', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt: scene.prompt,
+            palette: getResolvedStyle(globalStyle).palette,
+            font: getResolvedStyle(globalStyle).font,
+            bgColor: scene.bgColor,
+            duration: scene.duration || 8,
+            previousSummary,
+          }),
+        })
+
+        if (!response.ok) {
+          const err = await response.text()
+          throw new Error(err || 'React generation failed')
+        }
+
+        const data = await response.json()
+        const { result } = data
+        get().updateScene(sceneId, {
+          reactCode: result.sceneCode ?? '',
+          sceneStyles: result.styles ?? '',
+          usage: data.usage ?? null,
+        })
+        await get().saveSceneHTML(sceneId)
+      } catch (err) {
+        console.error('React generation error:', err)
+        set({ lastGenerationError: err instanceof Error ? err.message : 'React generation failed' })
       } finally {
         set({ isGenerating: false, generatingSceneId: null })
       }
@@ -463,7 +510,8 @@ export function createGenerationActions(set: Set, get: Get) {
             watermarkWithUrl = { ...wm, publicUrl: asset.publicUrl }
           }
         }
-        const html = generateSceneHTML(scene, get().globalStyle, watermarkWithUrl, get().audioSettings)
+        const { mp4Settings } = get().project
+        const html = generateSceneHTML(scene, get().globalStyle, watermarkWithUrl, get().audioSettings, resolveProjectDimensions(mp4Settings?.aspectRatio, mp4Settings?.resolution))
         try {
           const res = await fetch('/api/scene', {
             method: 'POST',

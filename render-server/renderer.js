@@ -205,6 +205,12 @@ async function renderScene(browser, scene, opts) {
             try { window.draw() } catch(e) {}
           }
         }, timeMs)
+
+        // For React scenes: flush React state update after frame advance
+        // so the DOM reflects the new frame before screenshot
+        if (scene.sceneType === 'react') {
+          await page.evaluate(() => new Promise(r => requestAnimationFrame(r)))
+        }
       }
 
       // Capture the frame

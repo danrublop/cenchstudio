@@ -12,16 +12,17 @@ export function createTimelineActions(set: Set, get: Get) {
       const state = get()
       if (state.project.timeline && !force) return
       const scenes = state.scenes
-      if (scenes.length === 0) return
 
       const v1Id = uuidv4()
+      const v2Id = uuidv4()
       const a1Id = uuidv4()
       const a2Id = uuidv4()
 
       const tracks: Track[] = [
         { id: v1Id, name: 'V1', type: 'video', clips: [], muted: false, locked: false, position: 0 },
-        { id: a1Id, name: 'A1', type: 'audio', clips: [], muted: false, locked: false, position: 1 },
-        { id: a2Id, name: 'A2', type: 'audio', clips: [], muted: false, locked: false, position: 2 },
+        { id: v2Id, name: 'V2', type: 'video', clips: [], muted: false, locked: false, position: 1 },
+        { id: a1Id, name: 'A1', type: 'audio', clips: [], muted: false, locked: false, position: 2 },
+        { id: a2Id, name: 'A2', type: 'audio', clips: [], muted: false, locked: false, position: 3 },
       ]
 
       const makeClip = (
@@ -103,8 +104,10 @@ export function createTimelineActions(set: Set, get: Get) {
         acc += scene.duration
       }
 
-      // Remove empty audio tracks
-      const finalTracks = tracks.filter((t) => t.type === 'video' || t.clips.length > 0)
+      // Remove empty audio tracks (but keep all default tracks when no scenes exist)
+      const finalTracks = scenes.length === 0
+        ? tracks
+        : tracks.filter((t) => t.type === 'video' || t.clips.length > 0)
       // Ensure at least one audio track exists
       if (!finalTracks.some((t) => t.type === 'audio')) {
         finalTracks.push({ id: a1Id, name: 'A1', type: 'audio', clips: [], muted: false, locked: false, position: 1 })

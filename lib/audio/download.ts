@@ -61,7 +61,11 @@ function validateDownloadUrl(remoteUrl: string): void {
  */
 export async function downloadToLocal(remoteUrl: string, prefix: string = 'dl'): Promise<string> {
   // Already local
-  if (remoteUrl.startsWith('/audio/') || remoteUrl.startsWith('/uploads/')) {
+  if (
+    remoteUrl.startsWith('/audio/') ||
+    remoteUrl.startsWith('/uploads/') ||
+    remoteUrl.startsWith('/sfx-library/')
+  ) {
     return remoteUrl
   }
 

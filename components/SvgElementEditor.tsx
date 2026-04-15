@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { v4 as uuidv4 } from 'uuid'
 import { useVideoStore } from '@/lib/store'
+import { resolveProjectDimensions } from '@/lib/dimensions'
 import type { SvgObject } from '@/lib/types'
 
 interface SelectionBox {
@@ -21,7 +22,8 @@ interface Props {
 }
 
 export default function SvgElementEditor({ sceneId }: Props) {
-  const { scenes, updateScene, saveSceneHTML, openTextTabForSlot } = useVideoStore()
+  const { scenes, updateScene, saveSceneHTML, openTextTabForSlot, project } = useVideoStore()
+  const { width: projW, height: projH } = resolveProjectDimensions(project.mp4Settings?.aspectRatio, project.mp4Settings?.resolution)
   // keep a stable ref to scenes for use inside extract callback
   const scenesRef = useRef(scenes)
   useEffect(() => {
@@ -58,8 +60,8 @@ export default function SvgElementEditor({ sceneId }: Props) {
 
     const svgRect = svgEl.getBoundingClientRect()
     const vb = svgEl.viewBox.baseVal
-    const viewBoxW = vb.width || 1920
-    const viewBoxH = vb.height || 1080
+    const viewBoxW = vb.width || projW
+    const viewBoxH = vb.height || projH
     const scaleX = svgRect.width / viewBoxW
     const scaleY = svgRect.height / viewBoxH
 
@@ -133,8 +135,8 @@ export default function SvgElementEditor({ sceneId }: Props) {
       startBy: box.y,
       svgWidth: svgRect.width,
       svgHeight: svgRect.height,
-      viewBoxW: vb.width || 1920,
-      viewBoxH: vb.height || 1080,
+      viewBoxW: vb.width || projW,
+      viewBoxH: vb.height || projH,
       el: box.el,
       origTransform: box.el.getAttribute('transform') || '',
       type,
@@ -244,8 +246,8 @@ export default function SvgElementEditor({ sceneId }: Props) {
         if (bbox.width === 0 || bbox.height === 0) return
 
         const vb = svgEl.viewBox.baseVal
-        const viewBoxW = vb.width || 1920
-        const viewBoxH = vb.height || 1080
+        const viewBoxW = vb.width || projW
+        const viewBoxH = vb.height || projH
 
         const styleBlock = svgEl.querySelector('style')?.outerHTML ?? ''
         const defsBlock = svgEl.querySelector('defs')?.outerHTML ?? ''

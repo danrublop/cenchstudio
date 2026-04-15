@@ -8,6 +8,7 @@ export const INTERACTION_TOOL_NAMES = [
   'add_multiple_interactions',
   'edit_interaction',
   'connect_scenes',
+  'define_scene_variable',
 ] as const
 
 export function createInteractionToolHandler() {
@@ -46,6 +47,21 @@ export function createInteractionToolHandler() {
           ...config,
         }
         updateScene(world, sceneId, { interactions: [...(scene.interactions || []), element as any] })
+
+        // Auto-create scene variable for slider/toggle if it doesn't exist
+        if ((type === 'slider' || type === 'toggle') && config.setsVariable) {
+          const varName = config.setsVariable as string
+          const existingVars = scene.variables || []
+          if (!existingVars.some((v: any) => v.name === varName)) {
+            const newVar = {
+              name: varName,
+              type: type === 'slider' ? 'number' as const : 'boolean' as const,
+              defaultValue: type === 'slider' ? (config.defaultValue ?? 0) : (config.defaultValue ?? false),
+            }
+            updateScene(world, sceneId, { variables: [...existingVars, newVar] })
+          }
+        }
+
         return {
           success: true,
           affectedSceneId: sceneId,
@@ -87,6 +103,26 @@ export function createInteractionToolHandler() {
           ...item.config,
         }))
         updateScene(world, sceneId, { interactions: [...(scene.interactions || []), ...(newElements as any[])] })
+
+        // Auto-create scene variables for slider/toggle interactions
+        const existingVars = scene.variables || []
+        const newVars = [...existingVars]
+        for (const item of interactionsList) {
+          if ((item.type === 'slider' || item.type === 'toggle') && item.config.setsVariable) {
+            const varName = item.config.setsVariable as string
+            if (!newVars.some((v: any) => v.name === varName)) {
+              newVars.push({
+                name: varName,
+                type: item.type === 'slider' ? 'number' as const : 'boolean' as const,
+                defaultValue: item.type === 'slider' ? (item.config.defaultValue ?? 0) : (item.config.defaultValue ?? false),
+              })
+            }
+          }
+        }
+        if (newVars.length > existingVars.length) {
+          updateScene(world, sceneId, { variables: newVars })
+        }
+
         return {
           success: true,
           affectedSceneId: sceneId,
@@ -112,11 +148,12 @@ export function createInteractionToolHandler() {
       }
 
       case 'connect_scenes': {
-        const { fromSceneId, toSceneId, conditionType, interactionId } = args as {
+        const { fromSceneId, toSceneId, conditionType, interactionId, variableCondition } = args as {
           fromSceneId: string
           toSceneId: string
           conditionType: string
           interactionId?: string
+          variableCondition?: { variableName: string; operator: string; value?: unknown }
         }
         const edge: SceneEdge = {
           id: uuidv4(),
@@ -125,8 +162,9 @@ export function createInteractionToolHandler() {
           condition: {
             type: conditionType as SceneEdge['condition']['type'],
             interactionId: interactionId ?? null,
-            variableName: null,
+            variableName: variableCondition?.variableName ?? null,
             variableValue: null,
+            ...(variableCondition ? { variableCondition: variableCondition as any } : {}),
           },
         }
         world.sceneGraph.edges.push(edge)
@@ -144,6 +182,33 @@ export function createInteractionToolHandler() {
           changes: [{ type: 'project_updated', description: `Connected scene ${fromSceneId} → ${toSceneId}` }],
           data: { edge },
         }
+      }
+
+      case 'define_scene_variable': {
+        const { sceneId, name, type, defaultValue } = args as {
+          sceneId: string
+          name: string
+          type: 'string' | 'number' | 'boolean'
+          defaultValue: string | number | boolean
+        }
+        const scene = findScene(world, sceneId)
+        if (!scene) return err(`Scene ${sceneId} not found`)
+
+        const existingVars = scene.variables || []
+        if (existingVars.some((v: any) => v.name === name)) {
+          // Update existing variable's type and default
+          updateScene(world, sceneId, {
+            variables: existingVars.map((v: any) =>
+              v.name === name ? { ...v, type, defaultValue } : v,
+            ),
+          })
+          return ok(sceneId, `Updated variable "${name}" (${type}, default: ${defaultValue})`)
+        }
+
+        updateScene(world, sceneId, {
+          variables: [...existingVars, { name, type, defaultValue }],
+        })
+        return ok(sceneId, `Defined variable "${name}" (${type}, default: ${defaultValue})`)
       }
 
       default:

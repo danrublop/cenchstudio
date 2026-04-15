@@ -47,7 +47,7 @@ interface Props {
   scene: Scene
   layerId: string
   onCommit: () => void
-  openLayersSection: (id: LayersTabSectionId) => void
+  openLayersSection: (id: LayersTabSectionId, opts?: { avatarLayerId?: string }) => void
 }
 
 export default function AvatarLayerPropertiesForm({ scene, layerId, onCommit, openLayersSection }: Props) {
@@ -598,7 +598,7 @@ export default function AvatarLayerPropertiesForm({ scene, layerId, onCommit, op
         />
       </div>
 
-      <SubLink label="Setup tab — more layers & tools" onClick={() => openLayersSection('scene')} />
+      <SubLink label="Scene tab — video, charts, physics & more" onClick={() => openLayersSection('scene')} />
     </section>
   )
 }

@@ -2,10 +2,11 @@
 
 import { useState } from 'react'
 import {
-  Film, Scissors, Palette, Zap, Infinity, PenLine,
+  Film, Scissors, Palette, Zap, PenLine,
   Paintbrush, Sparkles, Box, BarChart2, Plus, X,
   Edit2, ToggleLeft, ToggleRight, Search
 } from 'lucide-react'
+import { CenchLogo as AgentIconLogo } from '../icons/CenchLogo'
 import { useVideoStore } from '@/lib/store'
 import type { AgentConfig, AgentCategory } from '@/lib/agents/agent-config'
 import { getAgentsByCategory } from '@/lib/agents/agent-config'
@@ -16,8 +17,8 @@ import type { ForwardRefExoticComponent, RefAttributes } from 'react'
 
 export type LucideIcon = ForwardRefExoticComponent<Omit<LucideProps, 'ref'> & RefAttributes<SVGSVGElement>>
 
-export const ICON_MAP: Record<string, LucideIcon> = {
-  'infinity': Infinity,
+export const ICON_MAP: Record<string, any> = {
+  'infinity': AgentIconLogo,
   'film': Film,
   'zap': Zap,
   'scissors': Scissors,

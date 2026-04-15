@@ -1,9 +1,9 @@
 export const MAX_PPS = 100 // max pixels per second
-export const RULER_HEIGHT = 20
+export const RULER_HEIGHT = 32
 export const SNAP_THRESHOLD = 5 // px for playhead snap
 export const TOOLBAR_WIDTH = 32
-export const TRACK_HEADER_WIDTH = 120
-export const TRACK_ROW_HEIGHT = 32
+export const TRACK_HEADER_WIDTH = 148
+export const TRACK_ROW_HEIGHT = 48
 export const CLIP_TRIM_HANDLE_WIDTH = 10
 export const MIN_CLIP_DURATION = 0.1 // seconds
 export const DRAG_DEAD_ZONE = 4 // px before drag starts

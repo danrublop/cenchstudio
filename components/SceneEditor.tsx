@@ -4,8 +4,8 @@ import { useVideoStore } from '@/lib/store'
 import PromptTab from './tabs/PromptTab'
 import LayersTab from './tabs/LayersTab'
 import MediaLibrary from './MediaLibrary'
-import { Infinity as AiIcon } from 'lucide-react'
-type Tab = 'prompt' | 'layers' | 'media'
+import { CenchLogo as AiIcon } from './icons/CenchLogo'
+type Tab = 'prompt' | 'layers' | 'media' | null
 
 export default function SceneEditor() {
   const useElectronLayout = true
@@ -15,7 +15,7 @@ export default function SceneEditor() {
 
   const selectedScene = scenes.find((s) => s.id === selectedSceneId)
 
-  if (!selectedScene && activeTab !== 'media') {
+  if (!selectedScene && activeTab !== 'media' && activeTab !== 'prompt') {
     return (
       <div className="flex items-center justify-center h-32 text-[#6b6b7a] text-sm p-4 text-center">
         Select or create a scene to edit
@@ -40,7 +40,7 @@ export default function SceneEditor() {
               <button
                 key={tab.key}
                 type="button"
-                onClick={() => setActiveTab(tab.key)}
+                onClick={() => setActiveTab(activeTab === tab.key ? null : tab.key)}
                 className={`kbd h-7 transition-all duration-200 ${
                   isIconOnly ? 'w-7 px-0 flex-shrink-0' : 'flex-1 px-0 text-sm'
                 } ${
@@ -51,7 +51,7 @@ export default function SceneEditor() {
                 data-tooltip={isIconOnly ? tab.label : undefined}
                 data-tooltip-pos={isIconOnly ? 'bottom-left' : undefined}
               >
-                {isIconOnly && Icon ? <Icon size={14} strokeWidth={2.5} /> : tab.label}
+                {isIconOnly && Icon ? <Icon size={21} strokeWidth={2.5} /> : tab.label}
               </button>
             )
           })}
@@ -59,7 +59,7 @@ export default function SceneEditor() {
       )}
       {/* Tab content: clip here; each tab (Layers, Agent, Media) scrolls inside its own panel */}
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        {activeTab === 'prompt' && selectedScene && <PromptTab scene={selectedScene} />}
+        {activeTab === 'prompt' && <PromptTab scene={selectedScene} />}
         {activeTab === 'layers' && selectedScene && <LayersTab scene={selectedScene} />}
         {activeTab === 'media' && <MediaLibrary />}
       </div>

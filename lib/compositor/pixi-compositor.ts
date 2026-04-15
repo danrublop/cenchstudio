@@ -439,7 +439,7 @@ export function applyAiLayerAnimation(
 
 // ── Text overlay animation ───────────────────────────────────────────────────
 
-export function applyTextAnimation(sprite: Text, overlay: TextOverlayConfig, tSec: number, fullContent: string) {
+export function applyTextAnimation(sprite: Text, overlay: TextOverlayConfig, tSec: number, fullContent: string, canvasHeight = 1080) {
   const start = Math.max(0, Number(overlay.delay || 0))
   const end = start + Math.max(0.01, Number(overlay.duration || 1))
   if (tSec < start) {
@@ -458,7 +458,7 @@ export function applyTextAnimation(sprite: Text, overlay: TextOverlayConfig, tSe
       break
     case 'slide-up':
       sprite.alpha = Math.min(1, p * 2)
-      sprite.y = (overlay.y / 100) * 1080 + 40 * (1 - p)
+      sprite.y = (overlay.y / 100) * canvasHeight + 40 * (1 - p)
       break
     case 'typewriter':
       sprite.alpha = 1

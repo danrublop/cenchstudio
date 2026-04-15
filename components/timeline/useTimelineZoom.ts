@@ -32,10 +32,16 @@ export function useTimelineZoom(
 
   // Usable width for timeline content (subtract track headers etc.)
   const usableWidth = Math.max(1, containerWidth - reservedWidth)
-  const safeDuration = Math.max(totalDuration, 0.1)
-  const minPPS = usableWidth / safeDuration
-  const pps = timelineZoom === 0 ? minPPS : clamp(timelineZoom, minPPS, MAX_PPS)
-  const totalWidth = safeDuration * pps
+  
+  // Use a 'working duration' that provides plenty of room beyond the actual content
+  const contentDuration = Math.max(totalDuration, 0.1)
+  const workingDuration = Math.max(contentDuration + 600, contentDuration * 2) // At least 10 mins extra or 2x
+  
+  // Allow zooming out much further than just 'fit all'
+  const minPPS = 0.1 
+  const pps = timelineZoom === 0 ? 20 : clamp(timelineZoom, minPPS, MAX_PPS)
+  
+  const totalWidth = Math.max(usableWidth, workingDuration * pps)
   const maxScrollX = Math.max(0, totalWidth - usableWidth)
 
   // Clamp scroll when it exceeds max
@@ -55,7 +61,7 @@ export function useTimelineZoom(
       const clamped = clamp(newPPS, minPPS, MAX_PPS)
       setTimelineZoom(clamped)
       const newScroll = timeAtCursor * clamped - cursorOffset
-      const newMax = Math.max(0, safeDuration * clamped - usableWidth)
+      const newMax = Math.max(0, workingDuration * clamped - usableWidth)
       setTimelineScrollX(clamp(newScroll, 0, newMax))
     },
     [
@@ -63,7 +69,7 @@ export function useTimelineZoom(
       pps,
       minPPS,
       timelineScrollX,
-      safeDuration,
+      workingDuration,
       usableWidth,
       reservedWidth,
       setTimelineZoom,

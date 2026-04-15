@@ -58,13 +58,16 @@ app.post('/render', async (req, res) => {
   }
 
   try {
-    const { resolution = '1080p', fps = 30 } = settings
+    const { resolution = '1080p', fps = 30, width: customW, height: customH } = settings
 
-    const dimensions = {
+    const defaultDims = {
       '720p':  { width: 1280, height: 720 },
       '1080p': { width: 1920, height: 1080 },
       '4k':    { width: 3840, height: 2160 },
     }[resolution] || { width: 1920, height: 1080 }
+
+    // Pre-resolved dimensions (from aspect ratio) take priority over resolution lookup
+    const dimensions = (customW && customH) ? { width: customW, height: customH } : defaultDims
 
     // Render each scene to an MP4 (silent)
     const silentVideoPaths = await renderScenes(scenes, {

@@ -1,4 +1,5 @@
-import type { SFXProviderInterface, SFXResult } from '../types'
+import type { SFXProviderInterface, SFXResult, SFXSearchOptions } from '../types'
+import { PIXABAY_SFX_LICENSE_NOTE } from '../sfx-license'
 
 const API_BASE = 'https://pixabay.com/api/audio/'
 
@@ -28,14 +29,16 @@ export const pixabaySFX: SFXProviderInterface = {
   name: 'Pixabay SFX',
   requiresKey: 'PIXABAY_API_KEY',
 
-  async search(query: string, limit?: number): Promise<SFXResult[]> {
+  async search(query: string, limit = 10, options?: SFXSearchOptions): Promise<SFXResult[]> {
     const apiKey = getApiKey()
-    const perPage = limit || 10
+    const perPage = Math.min(200, limit || 10)
+    const page = Math.max(1, options?.page ?? 1)
 
     const params = new URLSearchParams({
       key: apiKey,
       q: query,
       per_page: String(perPage),
+      page: String(page),
       safesearch: 'true',
       audio_type: 'sfx',
     })
@@ -61,6 +64,7 @@ export const pixabaySFX: SFXProviderInterface = {
         duration: hit.duration,
         provider: 'pixabay' as const,
         previewUrl: hit.audio,
+        license: PIXABAY_SFX_LICENSE_NOTE,
       }))
     } catch (err) {
       // If the audio API endpoint doesn't exist, return empty results

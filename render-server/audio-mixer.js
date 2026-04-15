@@ -44,8 +44,12 @@ export async function resolveAudioPath(urlOrPath, tempDir, baseUrl = 'http://loc
     return null
   }
 
-  // Local path relative to public/ (e.g. /audio/tts-xxx.mp3 or /uploads/music.mp3)
-  if (urlOrPath.startsWith('/audio/') || urlOrPath.startsWith('/uploads/')) {
+  // Local path relative to public/ (e.g. /audio/, /uploads/, /sfx-library/)
+  if (
+    urlOrPath.startsWith('/audio/') ||
+    urlOrPath.startsWith('/uploads/') ||
+    urlOrPath.startsWith('/sfx-library/')
+  ) {
     const localPath = path.join(getProjectRoot(), 'public', urlOrPath)
     if (fs.existsSync(localPath)) return localPath
     // Try fetching from Next.js server as fallback

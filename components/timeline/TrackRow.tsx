@@ -8,13 +8,13 @@ import { collectSnapTargets, findSnap, getTrackClipBounds } from './SnapEngine'
 import type { TimelineTool } from './TimelineToolbar'
 import { useWaveform } from './useWaveform'
 
-/** Colors per clip sourceType */
-const CLIP_COLORS: Record<string, string> = {
-  scene: '#3b82f6',
-  audio: '#a78bfa',
-  video: '#65a30d',
-  image: '#f59e0b',
-  title: '#ec4899',
+/** Clip color CSS variable names per sourceType */
+const CLIP_COLOR_VARS: Record<string, string> = {
+  scene: 'var(--tl-clip-video)',
+  audio: 'var(--tl-clip-audio)',
+  video: 'var(--tl-clip-video)',
+  image: 'var(--tl-clip-image)',
+  title: 'var(--tl-clip-title)',
 }
 
 interface Props {
@@ -46,16 +46,14 @@ export default function TrackRow({
   onClipDragStart,
   onTrimSnap,
 }: Props) {
-  const { selectedClipIds, toggleClipSelection, updateClip, getTimeline, splitClip } = useVideoStore()
+  const { selectedClipIds, toggleClipSelection, updateClip, getTimeline, splitClip, isAgentRunning } = useVideoStore()
 
   return (
     <div
-      className="relative border-b border-[var(--color-border)]"
+      className="relative"
       style={{
         height,
         minHeight: height,
-        minWidth: totalDuration * pps,
-        background: track.muted ? 'rgba(255,255,255,0.02)' : 'transparent',
       }}
     >
       <div className="absolute top-0 bottom-0 left-0" style={{ width: totalDuration * pps }}>
@@ -72,6 +70,7 @@ export default function TrackRow({
             activeTool={activeTool}
             isDragging={draggingClipId === clip.id}
             isSelected={selectedClipIds.includes(clip.id)}
+            isLocked={track.locked || isAgentRunning}
             onSelect={toggleClipSelection}
             onUpdate={updateClip}
             onSplit={splitClip}
@@ -98,6 +97,7 @@ interface ClipBlockProps {
   activeTool: TimelineTool
   isDragging: boolean
   isSelected: boolean
+  isLocked: boolean
   onSelect: (clipId: string, multi?: boolean) => void
   onUpdate: (clipId: string, updates: Partial<Clip>) => void
   onSplit: (clipId: string, atTime: number) => { leftId: string; rightId: string } | null
@@ -141,9 +141,9 @@ const WaveformSVG = memo(function WaveformSVG({ peaks }: { peaks: number[] }) {
       preserveAspectRatio="none"
       style={{ width: '100%', height: '100%', pointerEvents: 'none' }}
     >
-      <path d={d} fill="rgba(255,255,255,0.35)" />
+      <path d={d} fill="var(--tl-waveform)" opacity="0.55" />
       {/* Center line */}
-      <line x1="0" y1={mid} x2="1000" y2={mid} stroke="rgba(255,255,255,0.15)" strokeWidth="0.5" />
+      <line x1="0" y1={mid} x2="1000" y2={mid} stroke="rgba(255,255,255,0.2)" strokeWidth="0.5" />
     </svg>
   )
 })
@@ -175,6 +175,17 @@ function useAudioUrl(clip: Clip): string | null {
   }, [clip.sourceType, clip.sourceId, scenes])
 }
 
+function resolveSceneIdFromClip(clip: Clip, scenes: ReturnType<typeof useVideoStore.getState>['scenes']): string | null {
+  if (clip.sourceType === 'scene') return clip.sourceId
+  if (clip.sourceId.startsWith('aud-') || clip.sourceId.startsWith('tts-') || clip.sourceId.startsWith('mus-')) {
+    return clip.sourceId.slice(4)
+  }
+  for (const scene of scenes) {
+    if (scene.audioLayer?.sfx?.some((sfx) => sfx.id === clip.sourceId)) return scene.id
+  }
+  return null
+}
+
 function ClipBlock({
   clip,
   track,
@@ -186,6 +197,7 @@ function ClipBlock({
   activeTool,
   isDragging,
   isSelected,
+  isLocked,
   onSelect,
   onUpdate,
   onSplit,
@@ -204,12 +216,10 @@ function ClipBlock({
   const left = clip.startTime * pps
   const width = Math.max(2, clip.duration * pps)
 
-  // Cull clips outside visible range
-  if (left + width < scrollX - 50 || left > scrollX + containerWidth + 50) return null
 
-  const color = CLIP_COLORS[clip.sourceType] ?? '#64748b'
+
+  const color = CLIP_COLOR_VARS[clip.sourceType] ?? 'var(--tl-clip-video)'
   const isMuted = track.muted
-  const isLocked = track.locked
   const isRazor = activeTool === 'razor'
 
   // ── Trim ──
@@ -290,6 +300,7 @@ function ClipBlock({
   const handleClick = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation()
+      if (isLocked) return
       if (isRazor) {
         // Razor: split at click position
         const rect = clipRef.current?.getBoundingClientRect()
@@ -301,9 +312,15 @@ function ClipBlock({
         }
         return
       }
+      const { scenes, selectScene, openLayersSection } = useVideoStore.getState()
+      const relatedSceneId = resolveSceneIdFromClip(clip, scenes)
+      if (relatedSceneId) {
+        selectScene(relatedSceneId)
+        openLayersSection('properties')
+      }
       onSelect(clip.id, e.metaKey || e.ctrlKey)
     },
-    [clip.id, clip.duration, pps, isRazor, onSelect, onSplit],
+    [clip, pps, isLocked, isRazor, onSelect, onSplit],
   )
 
   // ── Pointer down (trim or drag) ──
@@ -339,19 +356,22 @@ function ClipBlock({
   let opacity = isMuted ? 0.5 : 1
   if (isDragging) opacity = 0.3
 
+  // Cull clips outside visible range
+  if (left + width < scrollX - 50 || left > scrollX + containerWidth + 50) return null
+
   return (
     <div
       ref={clipRef}
-      className="absolute overflow-hidden rounded-[3px] flex items-center"
+      className="absolute overflow-hidden rounded-[2px] flex items-center"
       style={{
         left,
         width,
-        top: 2,
-        bottom: 2,
-        background: isMuted ? `${color}44` : `${color}cc`,
-        border: trimActive ? '2px solid #22d3ee' : isSelected ? '2px solid #fff' : `1px solid ${color}`,
+        top: 3,
+        bottom: 3,
+        background: color,
+        border: trimActive ? '2px solid var(--tl-snap)' : isSelected ? '1px solid #fff' : '1px solid var(--tl-clip-border)',
         cursor,
-        opacity,
+        opacity: isMuted ? 0.4 : opacity,
         transition: isDragging ? 'opacity 0.15s' : 'border-color 0.1s',
       }}
       onClick={handleClick}
@@ -388,12 +408,11 @@ function ClipBlock({
       {/* Clip label */}
       {width > 30 && (
         <span
-          className="relative z-10 truncate px-1.5"
+          className="relative z-10 truncate px-2"
           style={{
-            fontSize: 10,
-            fontWeight: 600,
-            color: '#fff',
-            textShadow: '0 1px 2px rgba(0,0,0,0.5)',
+            fontSize: 11,
+            fontWeight: 500,
+            color: 'var(--tl-clip-label)',
             pointerEvents: 'none',
           }}
         >
@@ -401,20 +420,21 @@ function ClipBlock({
         </span>
       )}
 
-      {/* Duration badge */}
+      {/* FX badge */}
       {width > 60 && (
         <span
           className="absolute z-10"
           style={{
-            right: 4,
-            bottom: 1,
-            fontSize: 8,
-            fontFamily: 'monospace',
-            color: 'rgba(255,255,255,0.7)',
+            right: 6,
+            top: 3,
+            fontSize: 10,
+            fontStyle: 'italic',
+            fontWeight: 700,
+            color: 'var(--tl-clip-fx)',
             pointerEvents: 'none',
           }}
         >
-          {clip.duration.toFixed(1)}s
+          fx
         </span>
       )}
     </div>

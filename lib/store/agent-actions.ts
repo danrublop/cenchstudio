@@ -326,14 +326,14 @@ export function createAgentActions(set: Set, get: Get) {
           const snapshot: UndoableState = structuredClone({ scenes: safeScenes, globalStyle, project })
           const newStack = [..._undoStack, snapshot]
           if (newStack.length > MAX_UNDO) newStack.shift()
-          set({ _undoStack: newStack, _redoStack: [], isAgentRunning: running })
+          set({ _undoStack: newStack, _redoStack: [], isAgentRunning: running, _agentRunStartedAt: Date.now() })
         } catch (err) {
           console.error('[Store] structuredClone failed for undo snapshot — skipping undo capture:', err)
-          set({ isAgentRunning: running })
+          set({ isAgentRunning: running, _agentRunStartedAt: Date.now() })
         }
         return
       }
-      set({ isAgentRunning: running })
+      set({ isAgentRunning: running, ...(running ? { _agentRunStartedAt: Date.now() } : {}) })
     },
     setAgentType: (type: AgentType | null) => set({ agentType: type }),
     setAgentModelId: (id: ModelId | null) => set({ agentModelId: id }),
@@ -425,9 +425,17 @@ export function createAgentActions(set: Set, get: Get) {
         // When the agent returns, those placeholders must NOT overwrite the real content in the store.
         const isPlaceholderContent = (val: string | undefined | null): boolean => !!val && /^\[\d+ chars\]$/.test(val)
 
+        const agentRunStart = state._agentRunStartedAt || 0
+
         const mergedScenes = finalScenes.map((newScene) => {
           const existing = state.scenes.find((s) => s.id === newScene.id)
           if (!existing) return normalizeScene(newScene as Scene)
+
+          // If the user edited this scene AFTER the agent run started, preserve their version
+          if (agentRunStart > 0 && existing.updatedAt && existing.updatedAt > agentRunStart && sceneHasRenderableContent(existing)) {
+            console.log(`[Store] Preserving user-edited scene ${existing.id.slice(0, 8)}… (edited at ${existing.updatedAt}, agent started at ${agentRunStart})`)
+            return existing
+          }
 
           // Detect if the agent returned placeholder content — restore store's real content
           const hasPlaceholder =
@@ -468,6 +476,7 @@ export function createAgentActions(set: Set, get: Get) {
               svgContent: existing.svgContent,
               canvasCode: existing.canvasCode,
               sceneCode: existing.sceneCode,
+              reactCode: existing.reactCode,
               sceneHTML: existing.sceneHTML,
               lottieSource: existing.lottieSource,
               messages: existing.messages,

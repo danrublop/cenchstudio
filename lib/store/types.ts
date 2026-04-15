@@ -109,6 +109,7 @@ export interface VideoStore {
   setRecordingElapsed: (ms: number) => void
   setRecordingAttachSceneId: (sceneId: string | null) => void
   timelineHeight: number
+  graphExpandedScenes: string[]
   isPreviewFullscreen: boolean
   /** When true, preview uses the Pixi compositor instead of per-scene iframes (Electron continuous mode) */
   compositorPreview: boolean
@@ -159,9 +160,13 @@ export interface VideoStore {
   chatMessages: ChatMessage[]
   isChatOpen: boolean
   isAgentRunning: boolean
+  /** Timestamp when the current agent run started — used to detect user edits during a run */
+  _agentRunStartedAt: number
   agentType: AgentType | null
   agentModelId: ModelId | null
   agentOverride: AgentType | null
+  /** Director template (explainer, onboarding, product-demo) when using a Director agent */
+  directorTemplate: string | null
   modelOverride: ModelId | null
   modelTier: ModelTier
   thinkingMode: ThinkingMode
@@ -174,17 +179,19 @@ export interface VideoStore {
   chatInputValue: string
   settingsTab: 'models' | 'agents' | 'general' | null
   setSettingsTab: (tab: 'models' | 'agents' | 'general' | null) => void
-  rightPanelTab: 'prompt' | 'layers' | 'media'
-  setRightPanelTab: (tab: 'prompt' | 'layers' | 'media') => void
+  rightPanelTab: 'prompt' | 'layers' | 'media' | null
+  setRightPanelTab: (tab: 'prompt' | 'layers' | 'media' | null) => void
   /** Unified text editor: slot key from lib/text-slots (overlay:…, svg:…, ix:…, phys:…) */
   textEditorSlotKey: string | null
   setTextEditorSlotKey: (key: string | null) => void
   /** When set, Layers tab switches to this sub-section once (e.g. Text after double-click in layer stack). */
   layersTabSectionPending: LayersTabSectionId | null
+  /** With {@link layersTabSectionPending} `avatar`: select this AI avatar layer id in the Avatar tab. */
+  layersTabAvatarLayerIdPending: string | null
   clearLayersTabSectionPending: () => void
   openTextTabForSlot: (slotKey: string) => void
   /** Open Layers panel and activate a sub-tab once (e.g. Elements after clicking physics card). */
-  openLayersSection: (section: LayersTabSectionId) => void
+  openLayersSection: (section: LayersTabSectionId, opts?: { avatarLayerId?: string }) => void
   /** Layer stack row key (e.g. `bg:stage`, `scene:motion`) for the Properties sub-tab. */
   layerStackPropertiesKey: string | null
   setLayerStackPropertiesKey: (key: string | null) => void
@@ -199,6 +206,11 @@ export interface VideoStore {
   updateProjectAsset: (assetId: string, updates: Partial<import('../types').ProjectAsset>) => void
   removeProjectAsset: (assetId: string) => void
   setWatermark: (watermark: import('../types').WatermarkConfig | null) => void
+
+  // Brand Kit
+  brandKit: import('../types/media').BrandKit | null
+  updateBrandKit: (updates: Partial<import('../types/media').BrandKit>) => Promise<void>
+  applyBrandToStyle: () => void
 
   // Chat Actions
   setChatOpen: (open: boolean) => void
@@ -258,6 +270,7 @@ export interface VideoStore {
 
   // Actions
   setTimelineHeight: (height: number) => void
+  toggleGraphSceneExpanded: (sceneId: string) => void
   setPreviewFullscreen: (full: boolean) => void
   setTimelineZoom: (zoom: number) => void
   setTimelineScrollX: (x: number) => void
@@ -295,6 +308,14 @@ export interface VideoStore {
   splitClip: (clipId: string, atTime: number) => { leftId: string; rightId: string } | null
   moveClip: (clipId: string, toTrackId: string, startTime: number) => void
 
+  // Variable actions
+  addSceneVariable: (sceneId: string, variable: SceneVariable) => void
+  removeSceneVariable: (sceneId: string, variableName: string) => void
+  /** Runtime variable values for preview (not persisted to DB — used by PreviewPlayer) */
+  runtimeVariables: Record<string, Record<string, unknown>> // sceneId => name => value
+  setRuntimeVariable: (sceneId: string, name: string, value: unknown) => void
+  getRuntimeVariables: (sceneId: string) => Record<string, unknown>
+
   // Interaction actions
   addInteraction: (sceneId: string, element: InteractionElement) => void
   updateInteraction: (sceneId: string, elementId: string, updates: Partial<InteractionElement>) => void
@@ -328,6 +349,7 @@ export interface VideoStore {
   generateD3: (sceneId: string) => Promise<void>
   generateThree: (sceneId: string) => Promise<void>
   generateLottie: (sceneId: string, onToken?: (svg: string) => void) => Promise<void>
+  generateReact: (sceneId: string) => Promise<void>
   editSVG: (sceneId: string, instruction: string, onToken?: (svg: string) => void) => Promise<void>
   enhancePrompt: (sceneId: string) => Promise<void>
   saveSceneHTML: (sceneId: string, quiet?: boolean) => Promise<void>
@@ -427,6 +449,7 @@ export interface VideoStore {
 
   // Dev
   seedTestScenes: () => Promise<void>
+  seedReactShowcaseScenes: () => Promise<void>
   seedCapabilityShowcaseScenes: () => Promise<void>
   seedThreeEnvironmentShowcaseScenes: () => Promise<void>
   seedInteractiveTestScenes: () => Promise<void>

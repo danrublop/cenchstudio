@@ -50,7 +50,7 @@ When no preset: choose colors that serve the content (see visual-quality.md).
 
 ## Globals
 
-- Canvas is always **1920x1080** — fill the space deliberately
+- Canvas is **WIDTH×HEIGHT** (defaults to 1920×1080 for 16:9; changes per aspect ratio) — use the `WIDTH` and `HEIGHT` globals, never hardcode dimensions
 - Duration defaults to **8 seconds** unless specified
 
 ---
@@ -122,16 +122,16 @@ Narration pace: ~150 words per minute. A 30-word narration ≈ 12s scene.
 
 ## Safe area & viewport fitting
 
-**ALL content must fit within the 1920×1080 viewBox.** No element may be positioned beyond x=1920 or y=1080 — anything outside is clipped and invisible in the preview and export. If you have too many items (bullet points, list entries, diagram nodes), you MUST either:
+**ALL content must fit within the WIDTH×HEIGHT viewBox.** No element may be positioned beyond x=WIDTH or y=HEIGHT — anything outside is clipped and invisible in the preview and export. If you have too many items (bullet points, list entries, diagram nodes), you MUST either:
 
 - Reduce the number of items to fit
 - Use smaller font sizes / tighter spacing
 - Split across multiple scenes
 - Use a grid or multi-column layout instead of a single vertical list
 
-Keep important content within a 100px inset from all edges (i.e., between x=100 and x=1820, y=100 and y=980). Background graphics may bleed to edges.
+Keep important content within a 100px inset from all edges (i.e., between x=100 and x=WIDTH-100, y=100 and y=HEIGHT-100). Background graphics may bleed to edges.
 
-**Before finalizing**: mentally verify that your lowest element's y-coordinate + its height stays below 1080, and your rightmost element's x-coordinate + its width stays below 1920.
+**Before finalizing**: mentally verify that your lowest element's y-coordinate + its height stays below HEIGHT, and your rightmost element's x-coordinate + its width stays below WIDTH.
 
 ---
 
@@ -156,7 +156,7 @@ Every element definition must include:
 id: unique string, e.g. 'line-01', 'title-text'
 type: element type string (rough-line, rough-circle, rough-rect, rough-arrow, text, svg-path, svg-text, etc.)
 label: human-readable name shown in layers panel
-bbox: { x, y, w, h } bounding box in 1920x1080 space
+bbox: { x, y, w, h } bounding box in WIDTH×HEIGHT space
 animStartTime: when element starts animating (seconds)
 animDuration: how long the animation takes (seconds)
 visible: true
@@ -164,7 +164,7 @@ opacity: 1
 
 Canvas2D elements: register BEFORE adding to GSAP timeline.
 SVG elements: add id attributes, auto-registered by scene loader.
-Three.js: register with bbox: { x: 0, y: 0, w: 1920, h: 1080 }
+Three.js: register with bbox: { x: 0, y: 0, w: WIDTH, h: HEIGHT }
 (Three.js elements fill the scene, no sub-element selection)
 
 Label elements descriptively:

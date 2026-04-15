@@ -36,7 +36,7 @@ The JSX is transpiled in-browser via Babel. No imports needed — all APIs are a
 | `spring({ frame, fps, config?, from?, to? })`                          | Physics-based spring animation                                |
 | `Easing.ease / .easeIn / .easeOut / .easeInOut / .bezier(x1,y1,x2,y2)` | Easing functions for interpolate                              |
 | `<Sequence from={frame} durationInFrames={n}>`                         | Temporal composition — children see local frame starting at 0 |
-| `<AbsoluteFill style={{...}}>`                                         | Full-frame (1920×1080) absolute layer, stacks via z-index     |
+| `<AbsoluteFill style={{...}}>`                                         | Full-frame (WIDTH×HEIGHT) absolute layer, stacks via z-index  |
 
 ### Bridge components (for imperative renderers)
 
@@ -50,7 +50,7 @@ The JSX is transpiled in-browser via Babel. No imports needed — all APIs are a
 
 ### Scene globals (available on `window`)
 
-`PALETTE`, `DURATION`, `FONT`, `STROKE_COLOR`, `WIDTH` (1920), `HEIGHT` (1080), `ROUGHNESS`, `SCENE_ID`
+`PALETTE`, `DURATION`, `FONT`, `STROKE_COLOR`, `WIDTH` (default 1920), `HEIGHT` (default 1080), `ROUGHNESS`, `SCENE_ID` — WIDTH/HEIGHT change based on the project's aspect ratio (e.g. 1080×1920 for 9:16, 1080×1080 for 1:1)
 
 ---
 
@@ -301,12 +301,117 @@ spring({ frame, fps, config: spring.config.default }) // balanced
 
 ---
 
+## Interactive Scenes — Hooks for Viewer Input
+
+React scenes can respond to viewer input via three hooks. These are for **viewer-driven state** (clicks, sliders, toggles) — animation state should still be frame-based via `useCurrentFrame()`.
+
+### useVariable(name, defaultValue) — reactive state
+
+Synced with the parent player via postMessage. Persists across the session.
+
+```jsx
+function Scene() {
+  const frame = useCurrentFrame();
+  const [interestRate, setRate] = useVariable('interestRate', 5);
+
+  // Rate drives visual output — changes instantly when viewer adjusts slider
+  const monthlyPayment = (200000 * (interestRate / 100 / 12)) / (1 - Math.pow(1 + interestRate / 100 / 12, -360));
+
+  return (
+    <AbsoluteFill style={{ background: PALETTE[0], fontFamily: FONT }}>
+      <div style={{ fontSize: 120, fontWeight: 700, color: PALETTE[3] }}>
+        ${Math.round(monthlyPayment)}/mo
+      </div>
+      <div style={{ fontSize: 36, color: PALETTE[1] }}>
+        at {interestRate}% interest
+      </div>
+    </AbsoluteFill>
+  );
+}
+export default Scene;
+```
+
+Use `define_scene_variable` MCP tool to declare the variable, then `add_interaction` with type `slider` to let the viewer control it.
+
+### useInteraction(elementId) — click/hover handlers
+
+Returns handler props + hover/click state for visual feedback.
+
+```jsx
+function Scene() {
+  const frame = useCurrentFrame();
+  const card1 = useInteraction('card-pricing');
+  const card2 = useInteraction('card-enterprise');
+
+  return (
+    <AbsoluteFill style={{ display: 'flex', gap: 40, justifyContent: 'center', alignItems: 'center' }}>
+      <div
+        {...card1.handlers}
+        style={{
+          padding: 40, borderRadius: 16, background: PALETTE[1],
+          transform: `scale(${card1.isHovered ? 1.05 : 1})`,
+          boxShadow: card1.isHovered ? '0 20px 60px rgba(0,0,0,0.3)' : '0 4px 20px rgba(0,0,0,0.1)',
+          transition: 'all 200ms ease',
+        }}
+      >
+        Starter — $29/mo
+      </div>
+      <div
+        {...card2.handlers}
+        style={{
+          padding: 40, borderRadius: 16, background: PALETTE[2],
+          transform: `scale(${card2.isHovered ? 1.05 : 1})`,
+          transition: 'all 200ms ease',
+        }}
+      >
+        Enterprise — Custom
+      </div>
+    </AbsoluteFill>
+  );
+}
+export default Scene;
+```
+
+### useTrigger(name) — fire events to parent
+
+For one-shot events (completed a step, reached a milestone) that cross the iframe boundary.
+
+```jsx
+const milestone = useTrigger('completed-intro');
+// Call milestone.fire({ section: 'intro' }) when the viewer finishes
+```
+
+### When to use in-scene hooks vs overlay interactions
+
+| Scenario | Use |
+|----------|-----|
+| Hoverable cards, charts, 3D objects | `useInteraction` in scene code |
+| Slider that changes scene visuals | `useVariable` in scene + slider overlay |
+| Standard quiz, choice, gate | Overlay via `add_interaction` |
+| Toggle that shows/hides a scene layer | `useVariable` + toggle overlay |
+
+**Combine both**: A scene with hoverable D3 bars (`useInteraction`) + an overlay quiz (`add_interaction`).
+
+---
+
 ## Performance & Limits
 
 - **Max 1-2 ThreeJSLayers per scene.** Each creates a WebGL context. Browsers allow 8-16 total. If you need multiple 3D objects, compose them in ONE ThreeJSLayer setup function.
 - **D3Layer stability.** D3 manipulates the DOM directly. Wrap D3Layer in `React.memo` or give it a stable `key` to prevent React from unmounting it unexpectedly.
 - **Memoize expensive components.** Every frame triggers a React re-render of the full tree. Use `React.memo()` on components that don't need `useCurrentFrame()`.
 - **Canvas2DLayer:** Fine for up to ~500 objects per frame. For 1000+, consider simplifying or batching draw calls.
+
+---
+
+## Canvas bounds — WIDTH×HEIGHT (dynamic)
+
+The scene renders inside a WIDTH×HEIGHT container (defaults to 1920×1080 for 16:9) with `overflow: hidden`. Dimensions change based on the project's aspect ratio (e.g. 1080×1920 for 9:16, 1080×1080 for 1:1, 1080×1350 for 4:5). Any content positioned outside this area is clipped and invisible. All layout must fit within these bounds:
+
+- Use `<AbsoluteFill>` which fills the WIDTH×HEIGHT root — do not exceed it
+- When using absolute positioning, keep coordinates within 0–WIDTH (x) and 0–HEIGHT (y)
+- If content is too tall (e.g. long lists), reduce items, use smaller fonts, multi-column layouts, or split across scenes
+- Keep important content within a 100px inset from edges (100 to WIDTH-100 x, 100 to HEIGHT-100 y)
+- **Before finalizing**: verify that every element's position + size stays within the WIDTH×HEIGHT box
 
 ---
 

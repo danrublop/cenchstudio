@@ -78,7 +78,7 @@ Each scene is a self-contained HTML file at `/public/scenes/{id}.html`. Written 
 
 ## Globals available in every scene HTML
 
-- `WIDTH` = 1920, `HEIGHT` = 1080
+- `WIDTH`, `HEIGHT` = scene dimensions in pixels (default 1920x1080, varies by project aspect ratio)
 - `PALETTE` = 4-color array from style preset
 - `DURATION` = scene duration in seconds
 - `ROUGHNESS` = roughness level from style preset (0-3)
@@ -105,7 +105,7 @@ component that can compose multiple renderers via bridge components:
 Legacy types (svg, canvas2d, motion, d3, three, lottie) still work for
 existing scenes but new scenes should use React.
 
-All scenes render at **1920x1080** and must complete within their specified duration.
+All scenes render at the project's aspect ratio dimensions (default **1920x1080**; also supports 9:16, 1:1, 4:5) and must complete within their specified duration. Always use `WIDTH`/`HEIGHT` globals instead of hardcoding dimensions. Use `resolveProjectDimensions(aspectRatio, resolution)` from `lib/dimensions.ts` to get pixel values.
 
 ## Style System
 
@@ -170,6 +170,13 @@ agent tools (verify_scene, plan_scenes, TTS, charts, interactions) for parity.
 
 Design principles are shared: `lib/generation/design-principles.ts` is the single source
 of truth, mirrored in `.claude/skills/cench/rules/design-principles.md`.
+
+## Bundled SFX library (`public/sfx-library/`)
+
+- **ZzFX** (MIT): procedural presets → WAV via `npm run sfx-library:zzfx`; manifest uses `librarySource: "zzfx"`.
+- **SoLoud** ([jarikomppa/soloud](https://github.com/jarikomppa/soloud), **zlib/libpng** — commercial use allowed): optional imported assets should use filenames `soloud-*`, `librarySource: "soloud"`, and license text such as `zlib/libpng (SoLoud)`. See `THIRD_PARTY_AUDIO.md` for full notices.
+- **react-sounds** ([e3ntity/react-sounds](https://github.com/e3ntity/react-sounds), **MIT**): optional; vendor audio under `public/sfx-library/` with `react-sounds-*` filenames, `librarySource: "react-sounds"`, and `license: "MIT (react-sounds)"` — do not rely on CDN URLs in exported scenes unless you intend to. Details in `THIRD_PARTY_AUDIO.md`.
+- **Music Megathread** ([MoonWalker440/Music-Megathread](https://github.com/MoonWalker440/Music-Megathread)): **link directory only** — not a licensed music bundle. Do not treat it as a cleared catalog for shipped video; use Pixabay/Freesound APIs or user uploads. See `THIRD_PARTY_AUDIO.md`.
 
 ## When generating scenes with /cench
 

@@ -41,6 +41,7 @@ export const LIMITS = {
 } as const
 
 export const VALID_SCENE_TYPES = [
+  'react',
   'svg',
   'canvas2d',
   'd3',
@@ -55,6 +56,9 @@ export const VALID_SCENE_TYPES = [
 export const VALID_USER_ACTIONS = ['kept', 'edited', 'regenerated', 'deleted'] as const
 
 export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** Valid scene ID pattern — alphanumeric and hyphens only (no path traversal) */
+export const SCENE_ID_RE = /^[a-zA-Z0-9-]+$/
 
 /** Matches the exact scrypt hash format from lib/crypto.ts: 32-char hex salt + ":" + 128-char hex hash */
 export const SCRYPT_HASH_RE = /^[0-9a-f]{32}:[0-9a-f]{128}$/

@@ -1,4 +1,5 @@
-import type { SFXProviderInterface, SFXResult } from '../types'
+import type { SFXProviderInterface, SFXResult, SFXSearchOptions } from '../types'
+import { isCommercialFriendlyFreesoundLicense } from '../sfx-license'
 
 const API_BASE = 'https://freesound.org/apiv2'
 
@@ -31,12 +32,16 @@ export const freesoundSFX: SFXProviderInterface = {
   name: 'Freesound',
   requiresKey: 'FREESOUND_API_KEY',
 
-  async search(query: string, limit?: number): Promise<SFXResult[]> {
+  async search(query: string, limit = 10, options?: SFXSearchOptions): Promise<SFXResult[]> {
     const apiKey = getApiKey()
-    const pageSize = limit || 10
+    const commercialOnly = options?.commercialOnly ?? false
+    const page = Math.max(1, options?.page ?? 1)
+    // When filtering licenses, request a larger page and trim (Freesound mixes licenses in results)
+    const pageSize = Math.min(150, Math.max(limit * (commercialOnly ? 4 : 1), limit))
 
     const params = new URLSearchParams({
       query,
+      page: String(page),
       page_size: String(pageSize),
       fields: 'id,name,previews,duration,license',
       token: apiKey,
@@ -51,7 +56,7 @@ export const freesoundSFX: SFXProviderInterface = {
 
     const data = (await response.json()) as FreesoundSearchResponse
 
-    return data.results.map((result) => ({
+    let mapped: SFXResult[] = data.results.map((result) => ({
       id: String(result.id),
       name: result.name,
       audioUrl: result.previews['preview-hq-mp3'],
@@ -60,5 +65,11 @@ export const freesoundSFX: SFXProviderInterface = {
       previewUrl: result.previews['preview-hq-mp3'],
       license: result.license,
     }))
+
+    if (commercialOnly) {
+      mapped = mapped.filter((r) => isCommercialFriendlyFreesoundLicense(r.license))
+    }
+
+    return mapped.slice(0, limit)
   },
 }

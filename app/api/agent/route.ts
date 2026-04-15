@@ -26,7 +26,7 @@ import { runAgent } from '@/lib/agents/runner'
 import { AgentLogger } from '@/lib/agents/logger'
 import { createGenerationLog, updateGenerationLog } from '@/lib/db/queries/generation-logs'
 import { db } from '@/lib/db'
-import { projectAssets as projectAssetsTable } from '@/lib/db/schema'
+import { projectAssets as projectAssetsTable, projects as projectsTable } from '@/lib/db/schema'
 import { persistScenesFromAgentRun, getRunCheckpoint, clearRunCheckpoint } from '@/lib/db/queries/projects'
 import { assertProjectAccess } from '@/lib/auth-helpers'
 import { getMemoriesForUser, upsertMemory } from '@/lib/db/queries/user-memory'
@@ -37,6 +37,11 @@ import { eq, desc } from 'drizzle-orm'
 
 // Register built-in hooks once at module load
 registerBuiltInHooks()
+
+// Per-project mutex: prevents concurrent agent runs on the same project.
+// In-memory is fine for single-server deployments; use Redis for multi-server.
+const activeRuns = new Map<string, { startedAt: number }>()
+const STALE_RUN_TIMEOUT_MS = 10 * 60 * 1000 // 10 minutes
 
 export const runtime = 'nodejs'
 export const maxDuration = 300 // 5 minutes — multi-scene videos need time for sequential code generation
@@ -74,10 +79,16 @@ export interface AgentAPIRequest {
   userId?: string
   /** Resume an interrupted run from its checkpoint */
   resumeCheckpoint?: boolean
+  /** Director template variant (explainer, onboarding, product-demo) */
+  directorTemplate?: string
+  /** When true, agent plans first (calls plan_scenes then stops for review) */
+  planFirstMode?: boolean
   /** Local mode flag — routes all calls through local LLM */
   localMode?: boolean
   /** Model configs for resolving local model endpoints */
   modelConfigs?: import('@/lib/agents/model-config').ModelConfig[]
+  /** MP4/export settings including aspect ratio */
+  mp4Settings?: import('@/lib/types').MP4Settings
 }
 
 export async function POST(req: NextRequest) {
@@ -205,8 +216,16 @@ export async function POST(req: NextRequest) {
     } catch (e) {
       streamClosed = true
       console.error('[Agent API] Stream write failed:', (e as Error).message)
+      // Signal the runner to stop — no point continuing if we can't send results
+      abortController.abort()
     }
   }
+
+  // SSE keepalive heartbeat — prevents proxies (Cloudflare, Vercel, nginx)
+  // from closing the connection during long tool executions
+  const heartbeatInterval = setInterval(() => {
+    sendEvent({ type: 'heartbeat' })
+  }, 20_000)
 
   // Extract text portion of message for logging (images are not logged)
   const messageText = messageContentToText(body.message)
@@ -276,6 +295,20 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Fetch brand kit for agent context
+  let fetchedBrandKit: any = null
+  if (body.projectId) {
+    try {
+      const [row] = await db
+        .select({ brandKit: projectsTable.brandKit })
+        .from(projectsTable)
+        .where(eq(projectsTable.id, body.projectId))
+      fetchedBrandKit = row?.brandKit ?? null
+    } catch (e) {
+      console.warn('[Agent API] Failed to fetch brand kit:', e)
+    }
+  }
+
   // Fetch user memories for cross-session preference injection
   let userMemories: Array<{ category: string; key: string; value: string; confidence: number }> = []
   if (authenticatedUserId) {
@@ -308,6 +341,7 @@ export async function POST(req: NextRequest) {
       }
     } catch (e) {
       console.warn('[Agent API] Failed to fetch run checkpoint:', e)
+      sendEvent({ type: 'warning', message: 'Failed to load checkpoint — starting fresh' })
     }
   }
 
@@ -338,8 +372,10 @@ export async function POST(req: NextRequest) {
         // Scene only in client (user added it while agent was paused) — keep it
         merged.push(cs)
       } else if (resumedCheckpoint.completedSceneIds.includes(cs.id)) {
-        // Scene was completed by agent — use checkpoint version (has generated content)
-        merged.push(cpScene)
+        // Scene was completed by agent — use checkpoint version (has generated content),
+        // UNLESS the user edited the scene after the checkpoint was saved
+        const clientNewer = cs.updatedAt && cpScene.updatedAt && cs.updatedAt > cpScene.updatedAt
+        merged.push(clientNewer ? cs : cpScene)
       } else {
         // Scene exists in both but wasn't completed — prefer client version (user may have edited)
         merged.push(cs)
@@ -371,6 +407,19 @@ export async function POST(req: NextRequest) {
   if (body.localMode) {
     const localModelCount = body.modelConfigs?.length ?? 0
     logger.log('api', `Local mode enabled: modelOverride=${body.modelOverride}, ${localModelCount} local model configs`)
+  }
+
+  // Reject concurrent runs on the same project
+  if (body.projectId) {
+    const existing = activeRuns.get(body.projectId)
+    if (existing && Date.now() - existing.startedAt < STALE_RUN_TIMEOUT_MS) {
+      return new Response(
+        JSON.stringify({ error: 'Agent run already in progress for this project' }),
+        { status: 409, headers: { 'Content-Type': 'application/json' } },
+      )
+    }
+    // Clean up stale entry if any, then register this run
+    activeRuns.set(body.projectId, { startedAt: Date.now() })
   }
 
   // Run agent asynchronously
@@ -412,6 +461,10 @@ export async function POST(req: NextRequest) {
     userMemories: userMemories.length > 0 ? userMemories : undefined,
     userId: authenticatedUserId ?? undefined,
     modelConfigs: body.modelConfigs,
+    planFirstMode: body.planFirstMode,
+    directorTemplate: body.directorTemplate,
+    mp4Settings: body.mp4Settings,
+    brandKit: fetchedBrandKit,
   })
     .then(async (result) => {
       logger.log('api', 'Runner complete', {
@@ -595,6 +648,11 @@ export async function POST(req: NextRequest) {
       }
     })
     .finally(() => {
+      // Release per-project mutex
+      if (body.projectId) {
+        activeRuns.delete(body.projectId)
+      }
+      clearInterval(heartbeatInterval)
       logger.log('api', 'Stream closing')
       try {
         streamController.close()

@@ -4,6 +4,7 @@ import { useCallback, useState, useRef } from 'react'
 import { useVideoStore } from '@/lib/store'
 import type { Track } from '@/lib/types'
 import { TRACK_HEADER_WIDTH } from './constants'
+import { Lock, Eye, EyeOff, Mic } from 'lucide-react'
 
 interface Props {
   track: Track
@@ -11,7 +12,7 @@ interface Props {
 }
 
 export default function TrackHeader({ track, height }: Props) {
-  const { updateTrack, removeTrack, addTrack } = useVideoStore()
+  const { updateTrack, removeTrack, addTrack, isAgentRunning } = useVideoStore()
   const [isEditing, setIsEditing] = useState(false)
   const [editName, setEditName] = useState(track.name)
   const [showMenu, setShowMenu] = useState(false)
@@ -31,29 +32,117 @@ export default function TrackHeader({ track, height }: Props) {
     setIsEditing(false)
   }, [editName, track.id, track.name, updateTrack])
 
-  const typeIcon = track.type === 'audio' ? '♪' : track.type === 'overlay' ? '◆' : '▶'
-  const typeColor = track.type === 'audio' ? '#a78bfa' : track.type === 'overlay' ? '#f59e0b' : '#3b82f6'
+  const isAudio = track.type === 'audio'
 
   return (
     <div
-      className="relative flex items-center gap-1 border-b border-r border-[var(--color-border)] bg-[var(--color-panel)] select-none"
-      style={{ width: TRACK_HEADER_WIDTH, height, minHeight: height }}
+      className="relative flex items-center select-none"
+      style={{
+        width: TRACK_HEADER_WIDTH,
+        height,
+        minHeight: height,
+        background: 'var(--tl-header-bg)',
+        borderBottom: '1px solid var(--tl-border)',
+        borderRight: '1px solid var(--tl-border)',
+      }}
       onContextMenu={(e) => {
         e.preventDefault()
-        setShowMenu(!showMenu)
+        if (!isAgentRunning) setShowMenu(!showMenu)
       }}
     >
-      {/* Type indicator */}
-      <span className="flex-shrink-0 text-center" style={{ width: 18, fontSize: 10, color: typeColor }}>
-        {typeIcon}
+      {/* Track label */}
+      <span
+        className="flex-shrink-0 font-bold ml-2"
+        style={{
+          fontSize: 12,
+          color: 'var(--color-text-primary)',
+        }}
+        onDoubleClick={() => !isAgentRunning && handleDoubleClick()}
+      >
+        {track.name}
       </span>
 
-      {/* Track name */}
-      {isEditing ? (
+      {/* Controls */}
+      <div className="flex items-center gap-0 ml-1.5 flex-shrink-0" style={{ opacity: isAgentRunning ? 0.4 : 1, pointerEvents: isAgentRunning ? 'none' : 'auto' }}>
+        {/* Lock */}
+        <span
+          className="cursor-pointer w-5 h-5 flex items-center justify-center rounded hover:bg-white/10"
+          style={{
+            color: track.locked ? 'var(--tl-ruler-bar)' : 'var(--tl-ctrl-dim)',
+          }}
+          onClick={() => updateTrack(track.id, { locked: !track.locked })}
+          title={track.locked ? 'Unlock' : 'Lock'}
+        >
+          <Lock size={11} />
+        </span>
+
+        {/* Source patch indicator */}
+        <span
+          className="w-5 h-5 flex items-center justify-center"
+          style={{ fontSize: 9, color: 'var(--tl-ctrl-dim)' }}
+        >
+          <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <rect x="2" y="2" width="12" height="12" rx="2" />
+            <line x1="5" y1="8" x2="11" y2="8" />
+          </svg>
+        </span>
+
+        {isAudio ? (
+          <>
+            {/* Mute */}
+            <span
+              className="cursor-pointer w-5 h-5 flex items-center justify-center rounded hover:bg-white/10 font-bold"
+              style={{
+                fontSize: 10,
+                color: track.muted ? '#ef4444' : 'var(--tl-toolbar-text)',
+              }}
+              onClick={() => updateTrack(track.id, { muted: !track.muted })}
+              title={track.muted ? 'Unmute' : 'Mute'}
+            >
+              M
+            </span>
+            {/* Solo */}
+            <span
+              className="cursor-pointer w-5 h-5 flex items-center justify-center rounded hover:bg-white/10 font-bold"
+              style={{
+                fontSize: 10,
+                color: 'var(--tl-toolbar-text)',
+              }}
+              title="Solo"
+            >
+              S
+            </span>
+            {/* Mic */}
+            <span
+              className="w-5 h-5 flex items-center justify-center"
+              style={{ color: 'var(--tl-ctrl-dim)' }}
+            >
+              <Mic size={11} />
+            </span>
+          </>
+        ) : (
+          <>
+            {/* Visibility */}
+            <span
+              className="cursor-pointer w-5 h-5 flex items-center justify-center rounded hover:bg-white/10"
+              style={{
+                color: track.muted ? '#ef4444' : 'var(--tl-toolbar-text)',
+              }}
+              onClick={() => updateTrack(track.id, { muted: !track.muted })}
+              title={track.muted ? 'Show' : 'Hide'}
+            >
+              {track.muted ? <EyeOff size={11} /> : <Eye size={11} />}
+            </span>
+          </>
+        )}
+      </div>
+
+      {/* Editable name (double-click) */}
+      {isEditing && (
         <input
           ref={inputRef}
-          className="flex-1 min-w-0 bg-transparent border-b border-[var(--color-accent)] text-[var(--color-text-primary)] outline-none"
-          style={{ fontSize: 11, padding: '0 2px' }}
+          className="absolute inset-0 outline-none px-2 z-10"
+          style={{ fontSize: 11, background: 'var(--tl-bg)', border: '1px solid var(--tl-playhead)', color: 'var(--color-text-primary)' }}
           value={editName}
           onChange={(e) => setEditName(e.target.value)}
           onBlur={commitName}
@@ -62,55 +151,18 @@ export default function TrackHeader({ track, height }: Props) {
             if (e.key === 'Escape') setIsEditing(false)
           }}
         />
-      ) : (
-        <span
-          className="flex-1 min-w-0 truncate cursor-default"
-          style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-primary)' }}
-          onDoubleClick={handleDoubleClick}
-        >
-          {track.name}
-        </span>
       )}
-
-      {/* Controls */}
-      <div className="flex items-center gap-0.5 pr-1 flex-shrink-0">
-        {/* Mute */}
-        <span
-          className="cursor-pointer px-0.5 rounded hover:bg-white/10"
-          style={{
-            fontSize: 10,
-            color: track.muted ? '#ef4444' : 'var(--color-text-muted)',
-            opacity: track.muted ? 1 : 0.6,
-          }}
-          onClick={() => updateTrack(track.id, { muted: !track.muted })}
-          title={track.muted ? 'Unmute' : 'Mute'}
-        >
-          {track.muted ? 'M' : 'M'}
-        </span>
-        {/* Lock */}
-        <span
-          className="cursor-pointer px-0.5 rounded hover:bg-white/10"
-          style={{
-            fontSize: 10,
-            color: track.locked ? '#f59e0b' : 'var(--color-text-muted)',
-            opacity: track.locked ? 1 : 0.6,
-          }}
-          onClick={() => updateTrack(track.id, { locked: !track.locked })}
-          title={track.locked ? 'Unlock' : 'Lock'}
-        >
-          {track.locked ? '🔒' : '🔓'}
-        </span>
-      </div>
 
       {/* Context menu */}
       {showMenu && (
         <div
-          className="absolute left-full top-0 z-50 bg-[var(--color-panel)] border border-[var(--color-border)] rounded shadow-lg py-1"
-          style={{ minWidth: 140 }}
+          className="absolute left-full top-0 z-50 rounded shadow-lg py-1"
+          style={{ minWidth: 140, background: 'var(--tl-header-bg)', border: '1px solid var(--tl-border)' }}
           onMouseLeave={() => setShowMenu(false)}
         >
           <div
-            className="px-3 py-1 text-sm cursor-pointer hover:bg-white/10 text-[var(--color-text-primary)]"
+            className="px-3 py-1 text-sm cursor-pointer hover:bg-white/10"
+            style={{ color: 'var(--color-text-primary)' }}
             onClick={() => {
               addTrack(track.type, track.type === 'audio' ? 'A' : 'V')
               setShowMenu(false)

@@ -19,6 +19,7 @@ import { eq } from 'drizzle-orm'
 import { readProjectScenesFromTables, writeProjectScenesToTables } from '@/lib/db/project-scene-table'
 import { readProjectSceneBlob } from '@/lib/db/project-scene-storage'
 import { generateSceneHTML } from '@/lib/sceneTemplate'
+import { resolveProjectDimensions } from '@/lib/dimensions'
 import { resolveStyle } from '@/lib/styles/presets'
 import fs from 'fs/promises'
 import path from 'path'
@@ -69,6 +70,7 @@ export async function POST(req: NextRequest) {
       sessionPermissions: {},
       zdogLibrary: (project as any).zdogLibrary ?? [],
       timeline: (project as any).timeline ?? null,
+      mp4Settings: (project as any).mp4Settings ?? undefined,
     }
 
     // Execute tool
@@ -78,7 +80,7 @@ export async function POST(req: NextRequest) {
     if (result.success) {
       // Write updated scenes back
       try {
-        await writeProjectScenesToTables(projectId, world.scenes)
+        await writeProjectScenesToTables(projectId, world.scenes, world.sceneGraph)
       } catch (e) {
         console.error('[mcp-tool] Failed to persist scenes to tables:', e)
       }
@@ -89,7 +91,7 @@ export async function POST(req: NextRequest) {
         if (scene) {
           try {
             const resolved = resolveStyle(world.globalStyle.presetId, world.globalStyle)
-            const html = generateSceneHTML(scene, world.globalStyle)
+            const html = generateSceneHTML(scene, world.globalStyle, undefined, undefined, resolveProjectDimensions(world.mp4Settings?.aspectRatio, world.mp4Settings?.resolution))
             const scenesDir = path.join(process.cwd(), 'public', 'scenes')
             await fs.mkdir(scenesDir, { recursive: true })
             await fs.writeFile(path.join(scenesDir, `${scene.id}.html`), html, 'utf-8')

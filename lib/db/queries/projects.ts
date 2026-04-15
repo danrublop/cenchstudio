@@ -147,6 +147,7 @@ export async function persistScenesFromAgentRun(
 // ── Run Checkpoint (resume interrupted runs) ──────────────────────────────────
 
 import type { RunCheckpoint } from '@/lib/agents/types'
+import { RunCheckpointSchema } from '@/lib/agents/checkpoint-schema'
 
 /** Persist a run checkpoint so the user can resume after disconnect/timeout */
 export async function persistRunCheckpoint(projectId: string, checkpoint: RunCheckpoint): Promise<void> {
@@ -156,14 +157,22 @@ export async function persistRunCheckpoint(projectId: string, checkpoint: RunChe
     .where(eq(projects.id, projectId))
 }
 
-/** Fetch the run checkpoint for a project (null if none) */
+/** Fetch the run checkpoint for a project (null if none).
+ *  Validates shape with Zod — returns null and logs warning if data is malformed. */
 export async function getRunCheckpoint(projectId: string): Promise<RunCheckpoint | null> {
   const [row] = await db
     .select({ runCheckpoint: projects.runCheckpoint })
     .from(projects)
     .where(eq(projects.id, projectId))
     .limit(1)
-  return (row?.runCheckpoint as RunCheckpoint | null) ?? null
+  const raw = row?.runCheckpoint
+  if (!raw) return null
+  const parsed = RunCheckpointSchema.safeParse(raw)
+  if (!parsed.success) {
+    console.warn('[getRunCheckpoint] Invalid checkpoint data, ignoring:', parsed.error.issues)
+    return null
+  }
+  return parsed.data as unknown as RunCheckpoint
 }
 
 /** Clear the run checkpoint after successful resume or user discard */

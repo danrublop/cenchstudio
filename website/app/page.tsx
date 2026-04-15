@@ -2,12 +2,11 @@
 
 import { useState, useCallback, useRef, useLayoutEffect } from 'react'
 import Image from 'next/image'
-import { Box, ChevronDown, Globe, MousePointerClick, Sparkles, Volume2 } from 'lucide-react'
+import { Globe, PencilLine } from 'lucide-react'
 import { HomeScrollAnimations } from './components/HomeScrollAnimations'
+import DomeGallery, { DEFAULT_DOME_IMAGES, type DomeGalleryImageItem } from './components/DomeGallery'
 import { ebGaramond, sairaStencil } from './fonts'
 import { getHomeModelsList } from '../lib/home-models'
-import { CenchLogo } from '../../components/icons/CenchLogo'
-
 const homeModels = getHomeModelsList()
 
 /* Shared toast state — single toast for all ComingSoon triggers */
@@ -56,198 +55,33 @@ const agents = [
   },
 ]
 
-const heroLogos = [
-  { src: '/logos/elevenlabs.svg', alt: 'ElevenLabs' },
-  { src: '/logos/heygen.svg', alt: 'HeyGen' },
-  { src: '/logos/openai.svg', alt: 'OpenAI', size: 'lg' as const },
-  { src: '/logos/gemini.png', alt: 'Google Gemini', size: 'xl' as const },
-  { src: '/logos/fal.svg', alt: 'Fal' },
-  { src: '/logos/claude.png', alt: 'Anthropic Claude', size: 'xl' as const },
-  { src: '/logos/kling.svg', alt: 'Kling AI' },
-] as const
-
-const trustLogos = [
-  { src: '/logos/openai.svg', alt: 'OpenAI' },
-  { src: '/logos/gemini.png', alt: 'Google Gemini' },
-  { src: '/logos/claude.png', alt: 'Anthropic Claude' },
-  { src: '/logos/elevenlabs.svg', alt: 'ElevenLabs' },
-  { src: '/logos/heygen.svg', alt: 'HeyGen' },
-  { src: '/logos/kling.svg', alt: 'Kling' },
-  { src: '/logos/fal.svg', alt: 'Fal' },
-] as const
-
-function HeroLogoImg({
-  src,
-  alt,
-  size,
-}: {
-  src: string
-  alt: string
-  size?: 'lg' | 'xl'
-}) {
-  const cls =
-    size === 'xl'
-      ? 'hero-logo-img h-11 w-auto max-h-11 max-w-[min(14rem,48vw)] object-contain object-center sm:h-[3.25rem] sm:max-h-[3.25rem] sm:max-w-[min(15rem,42vw)]'
-      : size === 'lg'
-        ? 'hero-logo-img h-9 w-auto max-h-9 max-w-[min(11.5rem,40vw)] object-contain object-center sm:h-10 sm:max-h-10 sm:max-w-[min(12.5rem,38vw)]'
-        : 'hero-logo-img h-5 w-auto max-h-5 max-w-[min(5.5rem,22vw)] object-contain object-center sm:h-5 sm:max-h-5 sm:max-w-[min(6rem,20vw)]'
-  return <img src={src} alt={alt} className={cls} loading="lazy" />
-}
-
-function AttachImageIcon() {
+function ReactBrandMark({ className }: { className?: string }) {
   return (
-    <svg
-      width={17}
-      height={17}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <path d="M21.1935 16.793C20.8437 19.2739 20.6689 20.5143 19.7717 21.2572C18.8745 22 17.5512 22 14.9046 22H9.09536C6.44881 22 5.12553 22 4.22834 21.2572C3.33115 20.5143 3.15626 19.2739 2.80648 16.793L2.38351 13.793C1.93748 10.6294 1.71447 9.04765 2.66232 8.02383C3.61017 7 5.29758 7 8.67239 7H15.3276C18.7024 7 20.3898 7 21.3377 8.02383C22.0865 8.83268 22.1045 9.98979 21.8592 12" />
-      <path d="M19.5617 7C19.7904 5.69523 18.7863 4.5 17.4617 4.5H6.53788C5.21323 4.5 4.20922 5.69523 4.43784 7" />
-      <path d="M17.4999 4.5C17.5283 4.24092 17.5425 4.11135 17.5427 4.00435C17.545 2.98072 16.7739 2.12064 15.7561 2.01142C15.6497 2 15.5194 2 15.2588 2H8.74099C8.48035 2 8.35002 2 8.24362 2.01142C7.22584 2.12064 6.45481 2.98072 6.45704 4.00434C6.45727 4.11135 6.47146 4.2409 6.49983 4.5" />
-      <circle cx="16.5" cy="11.5" r="1.5" />
-      <path d="M19.9999 20L17.1157 17.8514C16.1856 17.1586 14.8004 17.0896 13.7766 17.6851L13.5098 17.8403C12.7984 18.2542 11.8304 18.1848 11.2156 17.6758L7.37738 14.4989C6.6113 13.8648 5.38245 13.8309 4.5671 14.4214L3.24316 15.3803" />
+    <svg className={className} viewBox="0 0 24 24" aria-hidden>
+      <circle cx="12" cy="12" r="2.2" fill="currentColor" />
+      <ellipse cx="12" cy="12" fill="none" stroke="currentColor" strokeWidth="1.2" rx="11" ry="4.2" />
+      <ellipse cx="12" cy="12" fill="none" stroke="currentColor" strokeWidth="1.2" rx="11" ry="4.2" transform="rotate(60 12 12)" />
+      <ellipse cx="12" cy="12" fill="none" stroke="currentColor" strokeWidth="1.2" rx="11" ry="4.2" transform="rotate(120 12 12)" />
     </svg>
   )
 }
 
-function ReactAtomIcon() {
+function ThreeJsBrandMark({ className }: { className?: string }) {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
-      <circle cx="12" cy="12" r="1.8" fill="currentColor" stroke="none" />
-      <ellipse cx="12" cy="12" rx="9" ry="3.8" />
-      <ellipse cx="12" cy="12" rx="9" ry="3.8" transform="rotate(60 12 12)" />
-      <ellipse cx="12" cy="12" rx="9" ry="3.8" transform="rotate(120 12 12)" />
+    <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M12 2L21 7v10l-9 5-9-5V7l9-5z"
+        stroke="currentColor"
+        strokeWidth="1.25"
+        strokeLinejoin="round"
+      />
+      <path d="M12 22V12M12 12L3 7M12 12l9-5" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" />
     </svg>
   )
 }
 
-function HeroPromptInputMock() {
-  const [promptText, setPromptText] = useState('')
-  return (
-    <div className="mx-auto mt-5 w-full max-w-3xl px-2 sm:mt-6" data-sr-hero>
-      <div className="hero-prompt-input">
-        <div className="hero-prompt-content">
-          <textarea
-            className="hero-prompt-typed"
-            value={promptText}
-            onChange={(e) => setPromptText(e.target.value)}
-            rows={2}
-            placeholder="Create a 45-second launch video for Cench Studio: bold intro, 3 feature beats, clean 3D motion, and a final CTA to start free."
-          />
-        </div>
-        <div className="hero-prompt-toolbar" aria-hidden>
-          <div className="hero-prompt-toolbar-left">
-            <button type="button" className="hero-pill-btn">
-              <CenchLogo size={15} />
-              <span>Agent</span>
-              <ChevronDown size={12} />
-            </button>
-            <button type="button" className="hero-pill-btn hero-pill-btn--ghost">
-              <span>Auto</span>
-              <ChevronDown size={12} />
-            </button>
-          </div>
-          <div className="hero-prompt-toolbar-right">
-            <span className="hero-media-attach" aria-label="Attach media">
-              <AttachImageIcon />
-            </span>
-            <button type="button" className="hero-send-btn" aria-label="Create for free">
-              Create for free
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function HeroWordFlowLoop() {
-  const terminalBlock = [
-    "console.log('final_video.mp4', out.path)",
-    '  _____  ______ _   _  _____ _    _ ',
-    ' / ____||  ____| \\ | |/ ____| |  | |',
-    "| |     | |__  |  \\| | |    | |__| |",
-    "| |     |  __| | . ` | |    |  __  |",
-    '| |____ | |____| |\\  | |____| |  | |',
-    ' \\_____||______|_| \\_|\\_____|_|  |_|',
-    '[====================] 100%',
-    '✓ export complete: final_video.mp4',
-  ] as const
-  const renderStaticLine = (line: string) => {
-    if (line.startsWith('console.log')) {
-      const parts = line.match(/'[^']*'|\bconsole\b|\blog\b|[A-Za-z_]\w*(?=\()|./g) ?? [line]
-      return parts.map((token, i) => {
-        if (/^'[^']*'$/.test(token)) {
-          return (
-            <span key={`${token}-${i}`} className="hero-code-str">
-              {token}
-            </span>
-          )
-        }
-        if (/^(console|log)$/.test(token)) {
-          return (
-            <span key={`${token}-${i}`} className="hero-code-fn">
-              {token}
-            </span>
-          )
-        }
-        return (
-          <span key={`${token}-${i}`} className="hero-code-dim">
-            {token}
-          </span>
-        )
-      })
-    }
-    if (line.startsWith('✓')) return <span className="hero-code-accent">{line}</span>
-    if (line.startsWith('[')) return <span className="hero-code-accent">{line}</span>
-    if (/^[\s_|/\\-]+$/.test(line)) return <span className="hero-code-accent">{line}</span>
-    return <span className="hero-code-terminal">{line}</span>
-  }
-
-  return (
-    <div className="relative z-20 mt-8 w-full sm:mt-10" data-sr-hero>
-      <HeroPromptInputMock />
-      <div className="hero-build-seq mx-auto w-full max-w-3xl px-2">
-        <div className="hero-scene-row" aria-hidden>
-          {[
-            { label: 'React', icon: <ReactAtomIcon /> },
-            { label: '3D', icon: <Box size={14} strokeWidth={1.9} /> },
-            { label: 'Interactive', icon: <MousePointerClick size={14} strokeWidth={1.9} /> },
-            { label: 'Animations', icon: <Sparkles size={14} strokeWidth={1.9} /> },
-            { label: 'Audio', icon: <Volume2 size={14} strokeWidth={1.9} /> },
-          ].map((item) => (
-            <div key={item.label} className="hero-scene-card hero-scene-card--visible">
-              <div className="hero-scene-thumb" />
-              <div className="hero-scene-title">
-                <span>{item.label}</span>
-                <span className="hero-scene-title-icon">{item.icon}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-        <div className="hero-build-script hero-build-script--visible">
-          <div className="hero-code-stage">
-            <pre className="hero-code-pre hero-code-pre--viewport">
-              <code className="hero-code-scroll">
-                {terminalBlock.map((line, i) => (
-                  <span className="hero-code-line" key={`${i}-${line}`}>
-                    {renderStaticLine(line)}
-                  </span>
-                ))}
-              </code>
-            </pre>
-          </div>
-          <span className="hero-build-fade" aria-hidden />
-        </div>
-      </div>
-    </div>
-  )
+function SvgFormatMark({ className }: { className?: string }) {
+  return <PencilLine className={className} strokeWidth={2} aria-hidden />
 }
 
 /** Centered column + horizontal inset that grows on large viewports */
@@ -256,9 +90,14 @@ const homePageShellClass =
 
 /** Header: same max-width and right inset as shell; slightly tighter left so logo sits closer to edge */
 const homeHeaderShellClass =
-  'mx-auto w-full max-w-screen-2xl pl-12 pr-12 sm:pl-14 sm:pr-16 md:pl-18 md:pr-20 lg:pl-28 lg:pr-28 xl:pl-32 xl:pr-36 2xl:pl-40 2xl:pr-44'
+  'w-full pl-1.5 pr-1.5 sm:pl-2 sm:pr-2 md:pl-2.5 md:pr-2.5 lg:pl-3 lg:pr-3 xl:pl-3.5 xl:pr-3.5 2xl:pl-4 2xl:pr-4'
 
 const agentsModelsMdQuery = '(min-width: 768px)'
+
+const heroDomeImages: DomeGalleryImageItem[] = [
+  { src: '/hero-desk.jpg', alt: 'Cench Studio' },
+  ...DEFAULT_DOME_IMAGES,
+]
 
 /** Inline with Models. title — assets in public/logos/models-title */
 const modelsTitleLogos = [
@@ -300,23 +139,23 @@ function AgentsModelsSection() {
   }, [])
 
   const cardClass =
-    'border border-[#e0d9cc]/60 bg-[#e8e4db] px-7 py-8 sm:px-9 sm:py-10'
+    'border border-white/10 bg-[#141414] px-7 py-8 sm:px-9 sm:py-10'
 
   return (
     <div className="grid gap-6 md:grid-cols-2 md:gap-8 md:items-start">
       <div ref={agentsRef} className={cardClass}>
-        <h2 className="text-2xl font-bold text-[#0a0a0b] mb-1.5">Agents.</h2>
-        <p className="text-neutral-500 text-sm mb-7">
+        <h2 className="text-2xl font-bold text-[#f5f4ef] mb-1.5">Agents.</h2>
+        <p className="text-neutral-400 text-sm mb-7">
           The product starts with one agent that can build everything, plus a deep skill library. Explainer and 3D agents
           focus those workflows; add custom agents whenever you want a different style or pipeline.
         </p>
         <div className="flex flex-col">
           {agents.map((a) => (
-            <div key={a.name} className="flex items-start gap-3 border-b border-[#d5cfc4]/60 py-3">
+            <div key={a.name} className="flex items-start gap-3 border-b border-white/10 py-3">
               <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: a.color }} />
               <div>
-                <span className="text-sm font-semibold text-[#0a0a0b]">{a.name}</span>
-                <span className="ml-2 text-sm text-neutral-500">{a.desc}</span>
+                <span className="text-sm font-semibold text-[#f5f4ef]">{a.name}</span>
+                <span className="ml-2 text-sm text-neutral-400">{a.desc}</span>
               </div>
             </div>
           ))}
@@ -334,7 +173,7 @@ function AgentsModelsSection() {
 
       <div ref={modelsRef} className={`flex min-h-0 flex-col ${cardClass}`}>
         <div className="mb-1.5 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 sm:gap-x-4">
-          <h2 className="text-2xl font-bold text-[#0a0a0b]">Models.</h2>
+          <h2 className="text-2xl font-bold text-[#f5f4ef]">Models.</h2>
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 sm:gap-2.5 sm:justify-end">
             {modelsTitleLogos.map((logo) => (
               <img
@@ -347,18 +186,18 @@ function AgentsModelsSection() {
             ))}
           </div>
         </div>
-        <p className="shrink-0 text-neutral-500 text-sm mb-7">
+        <p className="shrink-0 text-neutral-400 text-sm mb-7">
           Same stack as the app: agent LLMs, video and image generation, avatars, TTS, SFX, and music.
         </p>
         <div className="relative min-h-0 flex-1 overflow-hidden">
           <div className="models-list-scroll flex h-full min-h-0 flex-col overflow-y-auto overscroll-y-contain pr-1 -mr-1">
             {homeModels.map((m) => (
-              <div key={m.key} className="flex items-center justify-between border-b border-[#d5cfc4]/60 py-3">
+              <div key={m.key} className="flex items-center justify-between border-b border-white/10 py-3">
                 <div className="flex items-center gap-3 min-w-0">
-                  <span className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-[#0a0a0b]/20" />
-                  <span className="text-sm font-semibold text-[#0a0a0b] truncate">{m.name}</span>
+                  <span className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-white/20" />
+                  <span className="text-sm font-semibold text-[#f5f4ef] truncate">{m.name}</span>
                 </div>
-                <span className="text-xs text-neutral-500 shrink-0 pl-2">{m.tag}</span>
+                <span className="text-xs text-neutral-400 shrink-0 pl-2">{m.tag}</span>
               </div>
             ))}
             <div className="flex items-center justify-between py-3">
@@ -369,7 +208,7 @@ function AgentsModelsSection() {
             </div>
           </div>
           <div
-            className="pointer-events-none absolute inset-x-0 bottom-0 z-[1] h-14 bg-linear-to-t from-[#e8e4db] via-[#e8e4db]/70 to-transparent"
+            className="pointer-events-none absolute inset-x-0 bottom-0 z-[1] h-14 bg-linear-to-t from-[#141414] via-[#141414]/70 to-transparent"
             aria-hidden
           />
         </div>
@@ -378,171 +217,307 @@ function AgentsModelsSection() {
   )
 }
 
-function FlowingCodeBackground() {
-  const lines = [
-    'const scene = generateScene({ style: "clean", pace: "fast" })',
-    'await refine({ note: "tighten transitions, boost contrast" })',
-    'const media = upload(["brand.mp4", "voiceover.wav"])',
-    'exportMp4({ timeline, audio: mix, fps: 30 })',
-  ] as const
-  return (
-    <div className="code-flow-bg" aria-hidden>
-      <svg viewBox="0 0 1920 1080" preserveAspectRatio="none" className="h-full w-full">
-        <defs>
-          <path id="flow-path-1" d="M -320 210 C 120 40, 420 90, 760 260 S 1380 430, 1760 230 S 2460 120, 2920 260" />
-          <path id="flow-path-2" d="M -340 560 C 80 640, 420 500, 760 560 S 1380 660, 1760 540 S 2460 430, 3000 520" />
-          <path id="flow-path-3" d="M -300 880 C 180 700, 560 980, 920 860 S 1520 700, 1960 900 S 2580 1040, 3040 820" />
-        </defs>
-
-        {[0, 1, 2].map((row) => {
-          const segment = `${lines[row]} · ${lines[(row + 1) % lines.length]} · ${lines[(row + 2) % lines.length]}`
-          const repeated = Array.from({ length: 8 }, () => segment).join(' · ')
-          const dur = `${30 + row * 4}s`
-          return (
-            <text key={row} className={`code-flow-text code-flow-text--${row + 1}`}>
-              <textPath href={`#flow-path-${row + 1}`} startOffset="0%" method="align" spacing="auto">
-                {repeated}
-                <animate
-                  attributeName="startOffset"
-                  from="0"
-                  by="-2200"
-                  dur={dur}
-                  calcMode="linear"
-                  begin={`${-row * 3}s`}
-                  additive="sum"
-                  accumulate="sum"
-                  repeatCount="indefinite"
-                />
-              </textPath>
-            </text>
-          )
-        })}
-      </svg>
-    </div>
-  )
-}
-
 export default function Home() {
 
   return (
-    <div className="min-h-screen w-full bg-bone">
+    <div className="min-h-screen w-full bg-[#0a0a0b]">
       <HomeScrollAnimations />
       <ComingSoonToast />
-      <header className="sticky top-0 z-50 border-b border-[#0a0a0b]/10 bg-bone">
-        <div className={`relative flex items-center justify-between py-2.5 ${homeHeaderShellClass}`}>
-          <span className="pointer-events-none absolute inset-y-0 left-12 w-px bg-[#0a0a0b]/10 sm:left-16 md:left-20 lg:left-28 xl:left-36 2xl:left-44" />
-          <span className="pointer-events-none absolute inset-y-0 right-12 w-px bg-[#0a0a0b]/10 sm:right-16 md:right-20 lg:right-28 xl:right-36 2xl:right-44" />
-          <a
-            href="/"
-            className="relative z-10 flex shrink-0 items-center gap-0 transition-opacity hover:opacity-70 group"
-          >
-            <Image src="/cench2.0.svg" alt="Cench" width={46} height={46} className="shrink-0" />
-            <span
-              className={`${sairaStencil.className} text-[24px] font-semibold tracking-tight text-[#0a0a0b] uppercase ml-[-4px] leading-none`}
-            >
-              Cench
-            </span>
-          </a>
-          <nav
-            className="absolute left-1/2 top-1/2 z-10 hidden -translate-x-1/2 -translate-y-1/2 items-center gap-7 md:flex"
-            aria-label="Primary"
-          >
-            <a
-              href="#animations"
-              className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 hover:text-[#0a0a0b] transition-colors"
-            >
-              Animations
-            </a>
-            <a
-              href="/docs"
-              className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 hover:text-[#0a0a0b] transition-colors"
-            >
-              Docs
-            </a>
-          </nav>
-          <div className="relative z-10 flex shrink-0 items-center gap-2.5 sm:gap-3">
-            <ComingSoon>
-              <span
-                className="inline-flex h-7 cursor-pointer select-none items-center justify-center rounded-full border border-[#0a0a0b]/22 bg-transparent px-4 text-[11px] font-semibold leading-none text-[#0a0a0b] transition-[border-color,background-color] hover:border-[#0a0a0b]/40 hover:bg-[#0a0a0b]/[0.04] sm:px-5 sm:text-[12px]"
+
+      {/* Full-viewport cinematic hero + dark glass header */}
+      <section
+        id="animations"
+        className="relative min-h-screen w-full overflow-hidden scroll-mt-0 bg-black"
+        data-sr-hero-section
+      >
+        <div className="absolute inset-0 z-0 min-h-[100dvh] min-h-[100vh] w-full bg-black" aria-hidden>
+          <DomeGallery
+            images={heroDomeImages}
+            fit={0.68}
+            fitBasis="width"
+            heightGuardFactor={1.55}
+            minRadius={320}
+            padFactor={0.22}
+            overlayBlurColor="#000000"
+            grayscale
+            openedImageWidth="400px"
+            openedImageHeight="400px"
+          />
+        </div>
+        <div
+          className="pointer-events-none absolute inset-0 z-[1] bg-linear-to-b from-black/20 via-transparent to-black/35"
+          aria-hidden
+        />
+        <header className="fixed top-0 right-0 left-0 z-50">
+          <div
+            className="pointer-events-none absolute inset-0 bg-white/[0.02] backdrop-blur-xl [mask-image:linear-gradient(to_bottom,black_0%,black_68%,transparent_100%)]"
+            aria-hidden
+          />
+          <div className={`relative z-10 flex items-center justify-between py-2.5 ${homeHeaderShellClass}`}>
+            <div className="relative z-10 flex items-center gap-4 sm:gap-6 md:gap-8">
+              <a
+                href="/"
+                className="flex shrink-0 items-center gap-0 transition-opacity hover:opacity-85 group"
               >
-                Book a demo
-              </span>
-            </ComingSoon>
+                <Image src="/cench2.0.svg" alt="Cench" width={46} height={46} className="shrink-0 brightness-0 invert" />
+                <span
+                  className={`${sairaStencil.className} ml-[-4px] text-[24px] leading-none font-semibold tracking-tight text-white uppercase`}
+                >
+                  Cench
+                </span>
+              </a>
+              <nav className="hidden items-center gap-4 sm:gap-5 md:flex md:gap-6" aria-label="Primary">
+                <a
+                  href="#animations"
+                  className="font-sans text-[16px] font-normal tracking-normal text-white transition-colors hover:text-white"
+                >
+                  Animations
+                </a>
+                <a
+                  href="#videos"
+                  className="font-sans text-[16px] font-normal tracking-normal text-white transition-colors hover:text-white"
+                >
+                  Videos
+                </a>
+                <a
+                  href="#agents"
+                  className="font-sans text-[16px] font-normal tracking-normal text-white transition-colors hover:text-white"
+                >
+                  Agents
+                </a>
+                <a
+                  href="/docs"
+                  className="font-sans text-[16px] font-normal tracking-normal text-white transition-colors hover:text-white"
+                >
+                  Docs
+                </a>
+              </nav>
+            </div>
+            <div className="relative z-10 flex shrink-0 items-center gap-2.5 sm:gap-3">
+              <ComingSoon>
+                <span className="cursor-pointer font-sans text-[16px] font-normal tracking-normal text-white transition-colors hover:text-white">
+                  Book a demo
+                </span>
+              </ComingSoon>
+              <ComingSoon>
+                <span
+                  className="button-7-black px-5 sm:px-6"
+                  style={{ height: '2.5rem', minHeight: '2.5rem' }}
+                >
+                  <span className="text">Waitlist</span>
+                </span>
+              </ComingSoon>
+            </div>
+          </div>
+        </header>
+
+        <div className="relative z-10 flex min-h-screen flex-col items-center justify-center px-5 pt-24 pb-28 text-center sm:px-10 sm:pt-28 sm:pb-32 md:px-12">
+          <h1
+            className={`cinematic-hero-enter ${ebGaramond.className} max-w-[20ch] text-[2.6rem] leading-[1.05] font-semibold tracking-tight text-white sm:max-w-none sm:text-[4.2rem] md:text-[5.1rem] lg:text-[5.8rem]`}
+          >
+            <span className="sm:hidden">Turn anything into a interactive video</span>
+            <span className="hidden sm:inline">Create interactive videos with AI</span>
+          </h1>
+          <p className="cinematic-hero-enter cinematic-hero-enter--1 mx-auto mt-5 max-w-xl text-[20px] leading-relaxed font-semibold text-white/90 sm:mt-6 sm:max-w-2xl sm:text-[20px]">
+            Create interactive videos programticly with engaging animtiosn, AI image, video, music, voiceovers, and 3D
+            scences.
+          </p>
+          <div className="cinematic-hero-enter cinematic-hero-enter--2 mt-8 sm:mt-10">
             <ComingSoon>
-              <span className="inline-flex h-7 cursor-pointer select-none items-center justify-center rounded-full border border-[#0a0a0b] bg-[#0a0a0b] px-4 text-[11px] font-semibold leading-none text-white transition-colors hover:bg-[#252528] sm:px-5 sm:text-[12px]">
-                Waitlist
+              <span className="button-7-black">
+                <span className="text">Join The Waitlist</span>
               </span>
             </ComingSoon>
           </div>
+
+          <div className="cinematic-hero-enter cinematic-hero-enter--3 mt-12 w-full px-3 sm:mt-14 sm:px-5">
+            <div className="mx-auto w-full max-w-[72rem] rounded-[2rem] bg-[linear-gradient(180deg,rgba(255,255,255,0.92)_0%,rgba(255,255,255,0.58)_1.3%,rgba(255,255,255,0.18)_3%,transparent_9%,transparent_91%,rgba(255,255,255,0.18)_97%,rgba(255,255,255,0.58)_98.7%,rgba(255,255,255,0.92)_100%)] py-4 px-4 shadow-[0_0_10px_rgba(255,255,255,0.2),inset_0_0_0_1px_rgba(255,255,255,0.78),inset_0_0_18px_rgba(255,255,255,0.14)] backdrop-blur-[10px] sm:py-5 sm:px-5 xl:w-fit xl:max-w-full xl:rounded-[999px]">
+              <div className="grid w-full grid-cols-2 items-center justify-items-center gap-x-4 gap-y-2.5 sm:grid-cols-3 md:grid-cols-4 lg:gap-x-6 xl:flex xl:w-auto xl:flex-nowrap xl:items-center xl:justify-center xl:gap-x-6 xl:gap-y-0">
+                {(
+                  [
+                    {
+                      key: 'react',
+                      label: 'React',
+                      node: <ReactBrandMark className="h-[92%] w-[92%] text-white" />,
+                    },
+                    {
+                      key: 'veo',
+                      label: 'Veo',
+                      node: (
+                        <img
+                          src="/logos/google-g-logo.svg"
+                          alt=""
+                          className="h-[86%] w-[86%] object-contain brightness-0 invert"
+                          loading="lazy"
+                        />
+                      ),
+                    },
+                    {
+                      key: 'nano',
+                      label: 'Nano Banana',
+                      node: (
+                        <img
+                          src="/logos/google-g-logo.svg"
+                          alt=""
+                          className="h-[86%] w-[86%] object-contain brightness-0 invert"
+                          loading="lazy"
+                        />
+                      ),
+                    },
+                    {
+                      key: 'gpt',
+                      label: 'GPT image',
+                      node: (
+                        <img
+                          src="/logos/openai-white-monoblossom.svg"
+                          alt=""
+                          className="h-[88%] w-[88%] object-contain"
+                          loading="lazy"
+                        />
+                      ),
+                    },
+                    {
+                      key: 'eleven',
+                      label: 'Elevenlabs',
+                      node: (
+                        <img
+                          src="/logos/elevenlabs-symbol-white.svg"
+                          alt=""
+                          className="h-[72%] w-[72%] object-contain"
+                          loading="lazy"
+                        />
+                      ),
+                    },
+                    {
+                      key: 'kling',
+                      label: 'Kling',
+                      node: (
+                        <img
+                          src="/logos/kling-ai-icon.svg"
+                          alt=""
+                          className="h-[86%] w-[86%] object-contain brightness-0 invert"
+                          loading="lazy"
+                        />
+                      ),
+                    },
+                    {
+                      key: 'three',
+                      label: '3D',
+                      node: (
+                        <ThreeJsBrandMark className="h-full w-full text-white" />
+                      ),
+                    },
+                    {
+                      key: 'svg',
+                      label: 'SVG',
+                      node: (
+                        <SvgFormatMark className="h-[90%] w-[90%] text-white" />
+                      ),
+                    },
+                  ] as const
+                ).map((item) => (
+                      <div
+                        key={item.key}
+                        className={`flex items-center justify-center gap-1.5 whitespace-nowrap ${
+                          item.key === 'gpt'
+                            ? 'order-7 xl:order-none'
+                            : item.key === 'three'
+                              ? 'order-4 xl:order-none'
+                              : ''
+                        }`}
+                      >
+                    {item.node ? (
+                      <span
+                        className={`inline-flex h-4 w-4 shrink-0 items-center justify-center sm:h-5 sm:w-5 md:h-5 md:w-5 ${
+                          item.key === 'veo' || item.key === 'nano'
+                            ? '-translate-y-px sm:-translate-y-[1.5px]'
+                            : item.key === 'react'
+                              ? '-translate-y-px'
+                              : item.key === 'gpt'
+                                ? '-translate-y-px'
+                                : item.key === 'eleven'
+                                  ? '-translate-y-px'
+                                  : item.key === 'kling'
+                                    ? '-translate-y-px'
+                                    : item.key === 'three'
+                                      ? '-translate-y-px'
+                                      : ''
+                        }`}
+                      >
+                        {item.node}
+                      </span>
+                    ) : null}
+                    <span className="text-sm leading-none font-semibold tracking-tight text-white sm:text-base lg:text-lg">
+                      {item.label}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div
+            className="pointer-events-none absolute right-0 bottom-0 left-0 z-20 h-36 bg-linear-to-b from-transparent via-[#0a0a0b]/55 to-[#0a0a0b] sm:h-44"
+            aria-hidden
+          />
         </div>
-      </header>
+      </section>
 
       <main className={`relative ${homePageShellClass}`}>
-        <span className="pointer-events-none absolute inset-y-0 left-12 w-px bg-[#0a0a0b]/10 sm:left-16 md:left-20 lg:left-28 xl:left-36 2xl:left-44" />
-        <span className="pointer-events-none absolute inset-y-0 right-12 w-px bg-[#0a0a0b]/10 sm:right-16 md:right-20 lg:right-28 xl:right-36 2xl:right-44" />
-        {/* Hero */}
-        <section
-          id="animations"
-          className="relative overflow-hidden pt-10 pb-16 scroll-mt-24 sm:pt-12 sm:pb-20"
-          data-sr-hero-section
-        >
-          <FlowingCodeBackground />
-          <div className="relative z-10" data-sr-hero>
-            <h1
-              className={`${ebGaramond.className} text-center text-[3rem] font-semibold leading-[1.05] tracking-tight text-[#0a0a0b] sm:text-[3.9rem] lg:text-[5rem]`}
-            >
-              From prompt <span className="text-[#7b7b78]">to MP4.</span>
-            </h1>
-          </div>
-          <div className="relative z-10">
-            <HeroWordFlowLoop />
-          </div>
-        </section>
+        <span className="pointer-events-none absolute inset-y-0 left-10 w-px bg-white/[0.08] sm:left-12 md:left-16 lg:left-20 xl:left-24 2xl:left-28" />
+        <span className="pointer-events-none absolute inset-y-0 right-10 w-px bg-white/[0.08] sm:right-12 md:right-16 lg:right-20 xl:right-24 2xl:right-28" />
 
-        <section id="workflow-cards" className="pb-14 sm:pb-18" data-sr>
-          <div className="mx-auto max-w-6xl grid gap-y-12 md:grid-cols-2 md:gap-x-14">
-            {[
-              {
-                title: 'Describe it. Get it.',
-                desc: 'Write your idea in plain language and Cench turns it into a full first cut.',
-                align: 'left',
-              },
-              {
-                title: 'Make it yours.',
-                desc: 'Refine pacing, visuals, copy, and media until it matches your style and brand.',
-                align: 'right',
-              },
-              {
-                title: 'Post it.',
-                desc: 'Export MP4, embed on your website, or share with a custom link.',
-                align: 'left',
-              },
-            ].map((item, i) => (
-              <div
-                key={item.title}
-                className={`${item.align === 'right' ? 'md:col-start-2' : 'md:col-start-1'} ${i === 1 ? 'md:translate-y-10' : ''}`}
-              >
+        <section id="workflow-cards" className="relative z-10 pt-8 pb-14 sm:pt-10 sm:pb-18" data-sr>
+          <div className="mx-auto grid max-w-6xl gap-12 md:grid-cols-2 md:gap-x-14">
+            {(
+              [
+                [
+                  {
+                    title: 'Describe it. Get it.',
+                    desc: 'Write your idea in plain language and Cench turns it into a full first cut.',
+                  },
+                  {
+                    title: 'Post it.',
+                    desc: 'Export MP4, embed on your website, or share with a custom link.',
+                  },
+                ],
+                [
+                  {
+                    title: 'Make it yours.',
+                    desc: 'Refine pacing, visuals, copy, and media until it matches your style and brand.',
+                  },
+                  {
+                    title: 'Atuomate.',
+                    desc: 'For workflows. Make researched videos at scale.',
+                  },
+                ],
+              ]
+            ).map((column, columnIdx) => (
+              <div key={`workflow-col-${columnIdx}`} className="flex flex-col gap-12">
+                {column.map((item) => (
+                  <div key={item.title}>
                 <div className="w-full">
-                  <h3 className={`${ebGaramond.className} mb-2 text-[2rem] leading-tight text-[#0a0a0b] sm:text-[2.4rem]`}>
+                  <h3 className={`${ebGaramond.className} mb-2 text-[2rem] leading-tight text-[#f5f4ef] sm:text-[2.4rem]`}>
                     {item.title}
                   </h3>
-                  <p className="mb-2 text-sm leading-relaxed text-[#0a0a0b]/62 sm:text-[15px]">{item.desc}</p>
-                  <div className="rounded-[1.75rem] border border-[#d9d4c4] bg-[#f4f1de] px-6 py-6 sm:px-8 sm:py-7">
+                  {item.desc ? (
+                    <p className="mb-2 text-sm leading-relaxed text-[#a3a39a] sm:text-[15px]">{item.desc}</p>
+                  ) : null}
+                  <div className="rounded-[1.75rem] border border-white/10 bg-[#121212] px-6 py-6 sm:px-8 sm:py-7">
                     {item.title === 'Describe it. Get it.' ? (
-                      <div className="rounded-xl border border-[#d5d0bf] bg-[#ffffeb] p-4">
+                      <div className="rounded-xl border border-white/10 bg-[#181818] p-4">
                         <div className="mb-3 flex items-center justify-between">
-                          <span className="rounded-md bg-[#fff4ad] px-2 py-1 text-[11px] font-semibold text-[#3b351b]">Idea board</span>
-                          <span className="text-[11px] text-[#0a0a0b]/45">v1 notes</span>
+                          <span className="rounded-md bg-[#3d3520] px-2 py-1 text-[11px] font-semibold text-[#e8d89a]">Idea board</span>
+                          <span className="text-[11px] text-neutral-500">v1 notes</span>
                         </div>
                         <div className="grid grid-cols-2 gap-3">
-                          <div className="rounded-lg bg-[#fff4ad] p-2.5 text-[11px] leading-snug text-[#3b351b]">
+                          <div className="rounded-lg bg-[#2a2618] p-2.5 text-[11px] leading-snug text-[#e8d89a]">
                             Hook: “From prompt to MP4”
                           </div>
-                          <div className="rounded-lg bg-[#ffd9c2] p-2.5 text-[11px] leading-snug text-[#4a2b1f]">
+                          <div className="rounded-lg bg-[#3d2418] p-2.5 text-[11px] leading-snug text-[#f0c4a8]">
                             Keep pacing under 45s
                           </div>
-                          <div className="h-16 rounded-lg border border-[#cdc8b8] bg-[linear-gradient(135deg,#ece8d8,#d7d1bf)]" />
-                          <div className="rounded-lg border border-dashed border-[#b7b09d] p-2.5 text-[11px] leading-snug text-[#5d5645]">
+                          <div className="h-16 rounded-lg border border-white/10 bg-[linear-gradient(135deg,#252520,#1a1a16)]" />
+                          <div className="rounded-lg border border-dashed border-white/15 p-2.5 text-[11px] leading-snug text-[#a3a39a]">
                             Sketch: scene flow + transition arrows
                           </div>
                         </div>
@@ -588,9 +563,9 @@ export default function Home() {
                             lineClass: 'text-[11px] font-semibold text-[#a24178]',
                           },
                         ].map((frame) => (
-                          <div key={frame.id} className="rounded-lg border border-[#d5d0bf] bg-[#ffffeb] p-2">
+                          <div key={frame.id} className="rounded-lg border border-white/10 bg-[#16160f] p-2">
                             <div
-                              className="aspect-video rounded-md border border-[#cec9b9] px-3 py-2.5 flex flex-col items-center justify-center text-center"
+                              className="aspect-video rounded-md border border-white/10 px-3 py-2.5 flex flex-col items-center justify-center text-center"
                               style={{ background: frame.bg }}
                             >
                               {frame.multiLogo ? (
@@ -639,17 +614,17 @@ export default function Home() {
                             xmlns="http://www.w3.org/2000/svg"
                             aria-hidden
                           >
-                            <path d="M210 12 L210 62" stroke="#171717" strokeWidth="3.5" strokeLinecap="round" />
-                            <path d="M210 62 C190 102 122 108 72 132" stroke="#171717" strokeWidth="3.5" strokeLinecap="round" />
-                            <path d="M210 62 L210 132" stroke="#171717" strokeWidth="3.5" strokeLinecap="round" />
-                            <path d="M210 62 C230 102 298 108 348 132" stroke="#171717" strokeWidth="3.5" strokeLinecap="round" />
+                            <path d="M210 12 L210 62" stroke="#a3a39a" strokeWidth="3.5" strokeLinecap="round" />
+                            <path d="M210 62 C190 102 122 108 72 132" stroke="#a3a39a" strokeWidth="3.5" strokeLinecap="round" />
+                            <path d="M210 62 L210 132" stroke="#a3a39a" strokeWidth="3.5" strokeLinecap="round" />
+                            <path d="M210 62 C230 102 298 108 348 132" stroke="#a3a39a" strokeWidth="3.5" strokeLinecap="round" />
                           </svg>
 
                           <div className="-mt-[110px] grid w-full grid-cols-3 gap-3">
                             {[
                               { label: 'Instagram', src: '/instagram-liquid.png' },
                               { label: 'YouTube', src: '/youtube-liquid.png' },
-                              { label: 'Website', icon: <Globe className="h-5 w-5 text-[#e8e4cf]" strokeWidth={2.1} /> },
+                              { label: 'Website', icon: <Globe className="h-5 w-5 text-[#c4c4bc]" strokeWidth={2.1} /> },
                             ].map((platform) => (
                               <div key={platform.label} className="flex flex-col items-center">
                                 <div className="flex h-14 w-14 items-center justify-center">
@@ -659,103 +634,78 @@ export default function Home() {
                                     platform.icon
                                   )}
                                 </div>
-                                <p className="mt-2 text-center text-[12px] font-semibold tracking-tight text-[#e8e4cf]">{platform.label}</p>
+                                <p className="mt-2 text-center text-[12px] font-semibold tracking-tight text-[#d4d4cc]">{platform.label}</p>
                               </div>
                             ))}
                           </div>
                         </div>
                       </div>
+                    ) : item.title === 'Atuomate.' ? (
+                      <div className="space-y-4">
+                        <pre className="overflow-x-auto font-mono text-[10px] leading-[1.12] tracking-tight text-[#93c5fd] sm:text-[11px]">
+{`██████╗ ███████╗███╗   ██╗ ██████╗██╗  ██╗      █████╗ ██████╗ ██╗
+██╔════╝██╔════╝████╗  ██║██╔════╝██║  ██║      ██╔══██╗██╔══██╗██║
+██║     █████╗  ██╔██╗ ██║██║     ███████║      ███████║██████╔╝██║
+██║     ██╔══╝  ██║╚██╗██║██║     ██╔══██║      ██╔══██║██╔═══╝ ██║
+╚██████╗███████╗██║ ╚████║╚██████╗██║  ██║      ██║  ██║██║     ██║
+ ╚═════╝╚══════╝╚═╝  ╚═══╝ ╚═════╝╚═╝  ╚═╝      ╚═╝  ╚═╝╚═╝     ╚═╝`}
+                        </pre>
+                        <p className="overflow-x-auto font-mono text-[11px] leading-relaxed text-[#a3a39a] sm:text-[12px]">
+                          <span className="text-neutral-500">{'{'}</span>
+                          <span className="text-[#7dd3fc]">{` "job"`}</span>
+                          <span className="text-neutral-500">{`: `}</span>
+                          <span className="text-[#86efac]">&quot;batch_render&quot;</span>
+                          <span className="text-neutral-500">{`, `}</span>
+                          <span className="text-[#7dd3fc]">{`"total"`}</span>
+                          <span className="text-neutral-500">{`: `}</span>
+                          <span className="text-[#c4b5fd]">100</span>
+                          <span className="text-neutral-500">{`, `}</span>
+                          <span className="text-[#7dd3fc]">{`"completed"`}</span>
+                          <span className="text-neutral-500">{`: `}</span>
+                          <span className="text-[#c4b5fd]">45</span>
+                          <span className="text-neutral-500">{` `}</span>
+                          <span className="text-neutral-500">{'}'}</span>
+                        </p>
+                        <div className="space-y-1.5 font-mono text-[11px] leading-relaxed text-[#a3a39a] sm:text-[12px]">
+                          <p className="overflow-x-auto">
+                            <span className="text-neutral-500">user@cench:~$ </span>
+                            <span className="text-[#7dd3fc]">batch status</span>
+                          </p>
+                          <p className="overflow-x-auto">
+                            <span className="text-neutral-500">│ </span>
+                            <span className="text-[#7dd3fc]">[</span>
+                            <span className="text-[#86efac]">█████████░░░░░░░░░░░</span>
+                            <span className="text-[#7dd3fc]">]</span>
+                            <span className="text-neutral-500"> </span>
+                            <span className="text-[#c4b5fd]">45</span>
+                            <span className="text-neutral-500">/</span>
+                            <span className="text-[#c4b5fd]">100</span>
+                            <span className="text-[#d4d4cc]"> videos created</span>
+                          </p>
+                          <p className="overflow-x-auto">
+                            <span className="text-neutral-500">│ $ </span>
+                            <a
+                              href="/docs"
+                              className="text-[#7dd3fc] underline decoration-[#7dd3fc]/35 underline-offset-2 transition-colors hover:text-[#bae6fd] hover:decoration-[#7dd3fc]/55"
+                            >
+                              open docs
+                            </a>
+                            <span className="text-neutral-500"> — GET /docs</span>
+                          </p>
+                        </div>
+                      </div>
                     ) : (
-                      <p className="text-sm leading-relaxed text-[#0a0a0b]/68 sm:text-[15px]">{item.desc}</p>
+                      <p className="text-sm leading-relaxed text-[#a3a39a] sm:text-[15px]">{item.desc}</p>
                     )}
                   </div>
                 </div>
+              </div>
+                ))}
               </div>
             ))}
           </div>
         </section>
       </main>
-
-      {/* CTA + footer */}
-      <div className="relative bg-bone text-[#0a0a0b]">
-        <span className="pointer-events-none absolute inset-y-0 left-12 w-px bg-[#0a0a0b]/10 sm:left-16 md:left-20 lg:left-28 xl:left-36 2xl:left-44" />
-        <span className="pointer-events-none absolute inset-y-0 right-12 w-px bg-[#0a0a0b]/10 sm:right-16 md:right-20 lg:right-28 xl:right-36 2xl:right-44" />
-        <section id="get-started" className={`${homePageShellClass} pb-12`}>
-          <a
-            href="https://github.com"
-            className="flex w-full items-center justify-between border border-[#e0d9cc]/60 bg-[#e8e4db] px-7 py-8 transition-colors hover:bg-[#e2ded4] sm:px-9 sm:py-10"
-            data-sr
-          >
-            <div>
-              <h2 className="text-2xl font-bold text-[#0a0a0b] mb-1.5">GitHub.</h2>
-              <p className="text-neutral-500 text-sm">API docs, integrations, and collaboration.</p>
-            </div>
-            <svg viewBox="0 0 24 24" className="h-8 w-8 shrink-0 text-[#0a0a0b]/70" fill="currentColor" aria-hidden>
-              <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
-            </svg>
-          </a>
-        </section>
-
-        <footer className="text-[#0a0a0b]">
-          <div className={`${homePageShellClass} pt-10 pb-6 sm:pt-14`}>
-          {/* Top tier */}
-          <div className="grid grid-cols-1 items-center gap-8 sm:grid-cols-3 sm:gap-6" data-sr>
-            <div className="flex items-center justify-center gap-2.5 sm:justify-start">
-              <Image src="/cench2.0.svg" alt="Cench" width={32} height={32} />
-              <span className="text-lg font-semibold tracking-tight">Cench</span>
-            </div>
-            <nav
-              className="flex flex-wrap items-center justify-center gap-x-8 gap-y-3 text-[11px] font-medium uppercase tracking-[0.14em] text-[#0a0a0b]/75 sm:gap-x-10"
-              aria-label="Footer"
-            >
-              <a href="/docs" className="hover:text-[#0a0a0b] transition-colors">
-                Docs
-              </a>
-              <ComingSoon>
-                <span className="hover:text-[#0a0a0b] transition-colors">GitHub</span>
-              </ComingSoon>
-              <ComingSoon>
-                <span className="hover:text-[#0a0a0b] transition-colors">Email us</span>
-              </ComingSoon>
-            </nav>
-            <div className="flex items-center justify-center gap-5 sm:justify-end">
-              <ComingSoon>
-                <span className="text-[#0a0a0b]/70 hover:text-[#0a0a0b] transition-colors">
-                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor" aria-hidden>
-                    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-                  </svg>
-                </span>
-              </ComingSoon>
-              <ComingSoon>
-                <span className="text-[#0a0a0b]/70 hover:text-[#0a0a0b] transition-colors">
-                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor" aria-hidden>
-                    <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
-                  </svg>
-                </span>
-              </ComingSoon>
-            </div>
-          </div>
-
-          <div className="my-8 h-px bg-[#0a0a0b]/10" aria-hidden />
-
-          {/* Bottom tier */}
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between" data-sr>
-            <p className="text-sm text-[#0a0a0b]/55">Copyright &copy; 2026 Cench</p>
-            <div className="flex flex-wrap items-center gap-x-8 gap-y-2 text-sm text-[#0a0a0b]/55">
-              <ComingSoon>
-                <span className="hover:text-[#0a0a0b] transition-colors">Status</span>
-              </ComingSoon>
-              <ComingSoon>
-                <span className="hover:text-[#0a0a0b] transition-colors">Terms of Use</span>
-              </ComingSoon>
-              <ComingSoon>
-                <span className="hover:text-[#0a0a0b] transition-colors">Privacy Policy</span>
-              </ComingSoon>
-            </div>
-          </div>
-          </div>
-        </footer>
-      </div>
     </div>
   )
 }

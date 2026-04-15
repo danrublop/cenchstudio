@@ -1,0 +1,264 @@
+/* Hover previews: single image in a “viewport” with motion approximating each camera effect. */
+
+.ce-card {
+  --ce-dur: 1.45s;
+}
+
+.ce-layer {
+  transform-origin: 50% 50%;
+  will-change: transform, filter;
+}
+
+/* ── Basics ── */
+.ce-m-none {
+  transform: none;
+  filter: none;
+}
+
+/* ── Presets ── */
+.ce-card:hover .ce-m-preset-reveal {
+  animation: ce-preset-reveal var(--ce-dur) ease-out infinite;
+}
+
+@keyframes ce-preset-reveal {
+  0%,
+  100% {
+    transform: scale(1.05) translate(0, 0);
+  }
+  50% {
+    transform: scale(1) translate(0, 0);
+  }
+}
+
+.ce-card:hover .ce-m-preset-emphasis {
+  animation: ce-preset-emphasis var(--ce-dur) ease-in-out infinite;
+}
+
+@keyframes ce-preset-emphasis {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  35%,
+  65% {
+    transform: scale(1.06);
+  }
+}
+
+.ce-card:hover .ce-m-preset-cinematic-push {
+  animation: ce-preset-cinematic-push var(--ce-dur) ease-in-out infinite;
+}
+
+@keyframes ce-preset-cinematic-push {
+  0%,
+  100% {
+    transform: scale(1.08) translate(0, 1%);
+  }
+  50% {
+    transform: scale(1) translate(0, 0);
+  }
+}
+
+.ce-card:hover .ce-m-preset-rack-transition {
+  animation: ce-preset-rack-transition var(--ce-dur) ease-in-out infinite;
+}
+
+@keyframes ce-preset-rack-transition {
+  0%,
+  100% {
+    transform: scale(1.03) translateX(0);
+    filter: blur(0);
+  }
+  40% {
+    filter: blur(2.5px);
+  }
+  55% {
+    transform: scale(1) translateX(0);
+    filter: blur(0);
+  }
+}
+
+/* ── 2D motion ── */
+.ce-card:hover .ce-m-ken-burns {
+  animation: ce-ken-burns calc(var(--ce-dur) * 1.2) ease-in-out infinite;
+}
+
+@keyframes ce-ken-burns {
+  0%,
+  100% {
+    transform: scale(1.12) translate(-3%, -2%);
+  }
+  50% {
+    transform: scale(1.04) translate(2%, 1%);
+  }
+}
+
+.ce-card:hover .ce-m-dolly-in {
+  animation: ce-dolly-in var(--ce-dur) ease-in infinite;
+}
+
+@keyframes ce-dolly-in {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.14);
+  }
+}
+
+.ce-card:hover .ce-m-dolly-out {
+  animation: ce-dolly-out var(--ce-dur) ease-out infinite;
+}
+
+@keyframes ce-dolly-out {
+  0%,
+  100% {
+    transform: scale(1.12);
+  }
+  50% {
+    transform: scale(1);
+  }
+}
+
+.ce-card:hover .ce-m-pan {
+  animation: ce-pan var(--ce-dur) ease-in-out infinite;
+}
+
+@keyframes ce-pan {
+  0%,
+  100% {
+    transform: translateX(-6%);
+  }
+  50% {
+    transform: translateX(6%);
+  }
+}
+
+.ce-card:hover .ce-m-rack-focus {
+  animation: ce-rack-focus var(--ce-dur) ease-in-out infinite;
+}
+
+@keyframes ce-rack-focus {
+  0%,
+  100% {
+    filter: blur(0);
+  }
+  45% {
+    filter: blur(3px);
+  }
+  55% {
+    filter: blur(0);
+  }
+}
+
+.ce-card:hover .ce-m-cut {
+  animation: ce-cut var(--ce-dur) steps(3, end) infinite;
+}
+
+@keyframes ce-cut {
+  0%,
+  45% {
+    transform: scale(1);
+  }
+  48% {
+    transform: scale(1.04);
+  }
+  52%,
+  100% {
+    transform: scale(1);
+  }
+}
+
+.ce-card:hover .ce-m-shake {
+  animation: ce-shake 0.55s linear infinite;
+}
+
+@keyframes ce-shake {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  20% {
+    transform: translate(-2px, 1px);
+  }
+  40% {
+    transform: translate(2px, -1px);
+  }
+  60% {
+    transform: translate(-1px, -2px);
+  }
+  80% {
+    transform: translate(1px, 2px);
+  }
+}
+
+.ce-card:hover .ce-m-reset {
+  animation: ce-reset var(--ce-dur) ease-in-out infinite;
+}
+
+@keyframes ce-reset {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  30% {
+    transform: scale(0.94);
+  }
+  60% {
+    transform: scale(1);
+  }
+}
+
+/* ── 3D ── */
+.ce-card:hover .ce-m-orbit {
+  animation: ce-orbit var(--ce-dur) ease-in-out infinite;
+}
+
+@keyframes ce-orbit {
+  0%,
+  100% {
+    transform: rotateY(-8deg) scale(1.05);
+  }
+  50% {
+    transform: rotateY(8deg) scale(1.05);
+  }
+}
+
+.ce-stage-3d {
+  perspective: 900px;
+  transform-style: preserve-3d;
+}
+
+.ce-card:hover .ce-m-dolly-3d {
+  animation: ce-dolly-3d var(--ce-dur) ease-in-out infinite;
+}
+
+@keyframes ce-dolly-3d {
+  0%,
+  100% {
+    transform: translateZ(0) scale(1);
+  }
+  50% {
+    transform: translateZ(40px) scale(1.08);
+  }
+}
+
+.ce-card:hover .ce-m-rack-focus-3d {
+  animation: ce-rack-focus-3d var(--ce-dur) ease-in-out infinite;
+}
+
+@keyframes ce-rack-focus-3d {
+  0%,
+  100% {
+    transform: rotateX(0) scale(1);
+    filter: blur(0);
+  }
+  40% {
+    filter: blur(2.5px);
+  }
+  50% {
+    transform: rotateX(4deg) scale(1.04);
+    filter: blur(0);
+  }
+}

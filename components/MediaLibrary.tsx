@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback } from 'react'
 import { useVideoStore } from '@/lib/store'
+import { resolveProjectDimensions } from '@/lib/dimensions'
 import type { ProjectAsset, AssetType } from '@/lib/types'
 import {
   Upload,
@@ -15,6 +16,7 @@ import {
   Check,
   Plus,
   ChevronDown,
+  Box,
 } from 'lucide-react'
 
 const SUGGESTED_TAGS = ['logo', 'watermark', 'brand', 'background', 'broll']
@@ -56,9 +58,10 @@ interface AssetCardProps {
   asset: ProjectAsset
   onDelete: (id: string) => void
   onAddToTimeline: (asset: ProjectAsset) => void
+  onExtrude3D?: (asset: ProjectAsset) => void
 }
 
-function AssetCard({ asset, onDelete, onAddToTimeline }: AssetCardProps) {
+function AssetCard({ asset, onDelete, onAddToTimeline, onExtrude3D }: AssetCardProps) {
   const [isEditing, setIsEditing] = useState(false)
   const [editName, setEditName] = useState(asset.name)
   const [showTags, setShowTags] = useState(false)
@@ -133,6 +136,16 @@ function AssetCard({ asset, onDelete, onAddToTimeline }: AssetCardProps) {
           >
             <Plus size={11} /> Timeline
           </span>
+          {asset.type === 'svg' && onExtrude3D && (
+            <span
+              onClick={() => onExtrude3D(asset)}
+              className="kbd h-6 px-2 text-[11px] cursor-pointer text-[#56b6c2]"
+              data-tooltip="Extrude to 3D"
+              data-tooltip-pos="bottom"
+            >
+              <Box size={11} /> 3D
+            </span>
+          )}
           <span
             onClick={() => onDelete(asset.id)}
             className="kbd h-6 w-6 p-0 flex items-center justify-center cursor-pointer text-red-400"
@@ -152,6 +165,15 @@ function AssetCard({ asset, onDelete, onAddToTimeline }: AssetCardProps) {
         {asset.type === 'video' && asset.durationSeconds != null && (
           <div className="absolute bottom-1.5 right-1.5 bg-black/70 text-[11px] px-1.5 py-0.5 rounded text-white/80">
             {Math.floor(asset.durationSeconds / 60)}:{String(Math.floor(asset.durationSeconds % 60)).padStart(2, '0')}
+          </div>
+        )}
+
+        {/* Extracted colors strip */}
+        {asset.extractedColors && asset.extractedColors.length > 0 && (
+          <div className="absolute bottom-0 left-0 right-0 flex">
+            {asset.extractedColors.slice(0, 6).map((c, i) => (
+              <div key={i} className="flex-1 h-1.5" style={{ background: c }} />
+            ))}
           </div>
         )}
       </div>
@@ -362,8 +384,8 @@ export default function MediaLibrary() {
       imageUrl: asset.publicUrl,
       x: 960,
       y: 540,
-      width: asset.width ? Math.min(asset.width, 1920) : 800,
-      height: asset.height ? Math.min(asset.height, 1080) : 600,
+      width: asset.width ? Math.min(asset.width, resolveProjectDimensions(store.project.mp4Settings?.aspectRatio, store.project.mp4Settings?.resolution).width) : 800,
+      height: asset.height ? Math.min(asset.height, resolveProjectDimensions(store.project.mp4Settings?.aspectRatio, store.project.mp4Settings?.resolution).height) : 600,
       rotation: 0,
       opacity: 1,
       zIndex: 10,
@@ -375,6 +397,110 @@ export default function MediaLibrary() {
       aiLayers: [...(scene.aiLayers || []), newLayer],
     })
     store.saveSceneHTML(scene.id)
+  }
+
+  const handleExtrude3D = (asset: ProjectAsset) => {
+    const store = useVideoStore.getState()
+    const sceneId = store.addScene(`3D: ${asset.name}`)
+    const baseUrl = window.location.origin
+    const svgUrl = `${baseUrl}${asset.publicUrl}`
+
+    const sceneCode = `import * as THREE from 'three';
+import { SVGLoader } from 'three/addons/loaders/SVGLoader.js';
+
+const { WIDTH, HEIGHT, PALETTE, DURATION, MATERIALS, mulberry32, setupEnvironment } = window;
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setSize(WIDTH, HEIGHT);
+renderer.setClearColor(PALETTE[3] || '#1a1a2e');
+renderer.shadowMap.enabled = true;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(50, WIDTH / HEIGHT, 0.1, 1000);
+camera.position.set(0, 0, 8);
+
+window.THREE = THREE;
+window.scene = scene;
+window.camera = camera;
+window.renderer = renderer;
+
+setupEnvironment(scene, renderer);
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+const key = new THREE.DirectionalLight(0xffffff, 1.5);
+key.position.set(5, 8, 5);
+key.castShadow = true;
+key.shadow.mapSize.set(1024, 1024);
+scene.add(key);
+const fill = new THREE.DirectionalLight(0xffffff, 0.4);
+fill.position.set(-4, 3, -2);
+scene.add(fill);
+scene.add(Object.assign(new THREE.DirectionalLight(0xffffff, 0.6), {})).position.set(0, -2, -5);
+
+const floor = new THREE.Mesh(
+  new THREE.PlaneGeometry(30, 30),
+  new THREE.MeshStandardMaterial({ color: PALETTE[3] || '#1a1a2e', roughness: 0.3, metalness: 0.6 })
+);
+floor.rotation.x = -Math.PI / 2;
+floor.position.y = -3.5;
+floor.receiveShadow = true;
+scene.add(floor);
+
+const pivot = new THREE.Group();
+scene.add(pivot);
+
+fetch('${svgUrl}').then(r => r.text()).then(text => {
+  const inner = new THREE.Group();
+  const data = new SVGLoader().parse(text);
+  let i = 0;
+  for (const path of data.paths) {
+    const shapes = SVGLoader.createShapes(path);
+    for (const shape of shapes) {
+      const geo = new THREE.ExtrudeGeometry(shape, {
+        depth: 20, bevelEnabled: true, bevelThickness: 2, bevelSize: 1.5,
+        bevelSegments: 8, curveSegments: 24
+      });
+      const mat = new THREE.MeshPhysicalMaterial({
+        color: PALETTE[i % PALETTE.length],
+        metalness: 0.75, roughness: 0.15,
+        clearcoat: 0.4, clearcoatRoughness: 0.1, envMapIntensity: 1.5,
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.castShadow = true;
+      inner.add(mesh);
+      i++;
+    }
+  }
+  const box = new THREE.Box3().setFromObject(inner);
+  const center = box.getCenter(new THREE.Vector3());
+  const size = box.getSize(new THREE.Vector3());
+  inner.position.set(-center.x, -center.y, -center.z);
+  const maxDim = Math.max(size.x, size.y, size.z);
+  const s = 4 / maxDim;
+  pivot.scale.set(s, -s, s);
+  pivot.add(inner);
+});
+
+window.__tl.to({}, {
+  duration: DURATION,
+  onUpdate() {
+    const elapsed = window.__tl.time();
+    pivot.rotation.y = elapsed * 0.3;
+    renderer.render(scene, camera);
+  }
+}, 0);
+`
+
+    store.updateScene(sceneId, {
+      sceneType: 'three',
+      sceneCode,
+      name: `3D: ${asset.name}`,
+    })
+    store.selectScene(sceneId)
+    store.saveSceneHTML(sceneId)
   }
 
   const filteredAssets = typeFilter === 'all' ? projectAssets : projectAssets.filter((a) => a.type === typeFilter)
@@ -471,7 +597,7 @@ export default function MediaLibrary() {
         ) : (
           <div className="grid grid-cols-2 gap-2">
             {filteredAssets.map((asset) => (
-              <AssetCard key={asset.id} asset={asset} onDelete={handleDelete} onAddToTimeline={handleAddToTimeline} />
+              <AssetCard key={asset.id} asset={asset} onDelete={handleDelete} onAddToTimeline={handleAddToTimeline} onExtrude3D={handleExtrude3D} />
             ))}
           </div>
         )}

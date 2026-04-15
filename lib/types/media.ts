@@ -17,6 +17,7 @@ export interface ProjectAsset {
   name: string
   tags: string[]
   thumbnailUrl: string | null
+  extractedColors: string[]
   createdAt: string
 }
 
@@ -25,6 +26,15 @@ export interface WatermarkConfig {
   position: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
   opacity: number
   sizePercent: number
+}
+
+export interface BrandKit {
+  brandName: string | null
+  logoAssetIds: string[]
+  palette: string[]
+  fontPrimary: string | null
+  fontSecondary: string | null
+  guidelines: string | null
 }
 
 export type ImageModel =

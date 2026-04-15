@@ -1,0 +1,765 @@
+/* Hover-only preview animations approximating FFmpeg xfade for the Transitions library grid.
+   Layer A = bottom image, layer B = top image (animates on .tp-card:hover). */
+
+.tp-card {
+  --tp-dur: 1.35s;
+}
+
+/* At rest (not hovering), show A: hide or offset B to match animation start */
+.tp-b-fade,
+.tp-b-dissolve {
+  opacity: 0;
+}
+.tp-b-cut {
+  opacity: 0;
+}
+.tp-b-wipeleft {
+  clip-path: inset(0 100% 0 0);
+}
+.tp-b-wiperight {
+  clip-path: inset(0 0 0 100%);
+}
+.tp-b-wipeup {
+  clip-path: inset(100% 0 0 0);
+}
+.tp-b-wipedown {
+  clip-path: inset(0 0 100% 0);
+}
+.tp-b-wipetl {
+  clip-path: polygon(0 0, 0 0, 0 100%, 0 100%);
+}
+.tp-b-wipetr {
+  clip-path: polygon(100% 0, 100% 0, 100% 100%, 100% 100%);
+}
+.tp-b-wipebl {
+  clip-path: polygon(0 100%, 0 100%, 0 100%, 0 100%);
+}
+.tp-b-wipebr {
+  clip-path: polygon(100% 100%, 100% 100%, 100% 100%, 100% 100%);
+}
+.tp-b-slideleft {
+  transform: translateX(100%);
+}
+.tp-b-slideright {
+  transform: translateX(-100%);
+}
+.tp-b-slideup {
+  transform: translateY(100%);
+}
+.tp-b-slidedown {
+  transform: translateY(-100%);
+}
+.tp-b-smoothleft {
+  clip-path: inset(0 100% 0 0);
+  filter: blur(1px);
+}
+.tp-b-smoothright {
+  clip-path: inset(0 0 0 100%);
+  filter: blur(1px);
+}
+.tp-b-smoothup {
+  clip-path: inset(100% 0 0 0);
+  filter: blur(1px);
+}
+.tp-b-smoothdown {
+  clip-path: inset(0 0 100% 0);
+  filter: blur(1px);
+}
+.tp-b-circleopen,
+.tp-b-radial {
+  clip-path: circle(0% at 50% 50%);
+}
+.tp-b-circleclose {
+  clip-path: circle(0% at 50% 50%);
+}
+.tp-b-vertopen {
+  clip-path: inset(50% 0 50% 0);
+}
+.tp-b-horzopen {
+  clip-path: inset(0 50% 0 50%);
+}
+.tp-b-coverleft {
+  transform: translateX(-100%);
+}
+.tp-b-coverright {
+  transform: translateX(100%);
+}
+.tp-b-diagtl {
+  clip-path: polygon(-10% -10%, -10% -10%, -10% 110%, -10% 110%);
+}
+.tp-b-diagtr {
+  clip-path: polygon(110% -10%, 110% -10%, 110% 110%, 110% 110%);
+}
+.tp-b-diagbl {
+  clip-path: polygon(-10% 110%, -10% 110%, -10% -10%, -10% -10%);
+}
+.tp-b-diagbr {
+  clip-path: polygon(110% 110%, 110% 110%, 110% -10%, 110% -10%);
+}
+.tp-b-zoomin {
+  opacity: 0;
+  transform: scale(0.4);
+}
+.tp-b-distance {
+  opacity: 0;
+  transform: scale(1.35);
+  filter: blur(4px);
+}
+.tp-a-fadeblack,
+.tp-a-fadewhite {
+  opacity: 1;
+}
+.tp-mid-fadeblack,
+.tp-mid-fadewhite {
+  opacity: 0;
+}
+.tp-b-fadeblack,
+.tp-b-fadewhite {
+  opacity: 0;
+}
+
+.tp-card:hover .tp-a-fadeblack {
+  animation: tp-fb-a var(--tp-dur) ease-in-out infinite;
+}
+.tp-card:hover .tp-mid-fadeblack {
+  animation: tp-fb-mid var(--tp-dur) ease-in-out infinite;
+}
+.tp-card:hover .tp-b-fadeblack {
+  animation: tp-fb-b var(--tp-dur) ease-in-out infinite;
+}
+
+.tp-card:hover .tp-a-fadewhite {
+  animation: tp-fw-a var(--tp-dur) ease-in-out infinite;
+}
+.tp-card:hover .tp-mid-fadewhite {
+  animation: tp-fw-mid var(--tp-dur) ease-in-out infinite;
+}
+.tp-card:hover .tp-b-fadewhite {
+  animation: tp-fw-b var(--tp-dur) ease-in-out infinite;
+}
+
+@keyframes tp-fb-a {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  22% {
+    opacity: 0;
+  }
+  78% {
+    opacity: 0;
+  }
+}
+
+@keyframes tp-fb-mid {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  18% {
+    opacity: 0;
+  }
+  28% {
+    opacity: 1;
+  }
+  42% {
+    opacity: 1;
+  }
+  52% {
+    opacity: 0;
+  }
+}
+
+@keyframes tp-fb-b {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  48% {
+    opacity: 0;
+  }
+  62% {
+    opacity: 1;
+  }
+  94% {
+    opacity: 1;
+  }
+}
+
+@keyframes tp-fw-a {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  22% {
+    opacity: 0;
+  }
+  78% {
+    opacity: 0;
+  }
+}
+
+@keyframes tp-fw-mid {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  18% {
+    opacity: 0;
+  }
+  28% {
+    opacity: 1;
+  }
+  42% {
+    opacity: 1;
+  }
+  52% {
+    opacity: 0;
+  }
+}
+
+@keyframes tp-fw-b {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  48% {
+    opacity: 0;
+  }
+  62% {
+    opacity: 1;
+  }
+  94% {
+    opacity: 1;
+  }
+}
+
+/* --- Single top layer (B) animations --- */
+
+.tp-card:hover .tp-b-cut {
+  animation: tp-cut var(--tp-dur) steps(2, end) infinite;
+}
+
+@keyframes tp-cut {
+  0%,
+  49% {
+    opacity: 0;
+  }
+  50%,
+  100% {
+    opacity: 1;
+  }
+}
+
+.tp-card:hover .tp-b-fade,
+.tp-card:hover .tp-b-dissolve {
+  animation: tp-fade var(--tp-dur) ease-in-out infinite;
+}
+
+@keyframes tp-fade {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  38%,
+  58% {
+    opacity: 1;
+  }
+}
+
+.tp-card:hover .tp-b-dissolve {
+  animation: tp-dissolve var(--tp-dur) ease-in-out infinite;
+}
+
+@keyframes tp-dissolve {
+  0%,
+  100% {
+    opacity: 0;
+    filter: blur(0);
+  }
+  40%,
+  56% {
+    opacity: 1;
+    filter: blur(0.5px);
+  }
+}
+
+.tp-card:hover .tp-b-wipeleft {
+  animation: tp-wipeleft var(--tp-dur) ease-in-out infinite;
+}
+
+@keyframes tp-wipeleft {
+  0%,
+  100% {
+    clip-path: inset(0 100% 0 0);
+  }
+  38%,
+  58% {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+.tp-card:hover .tp-b-wiperight {
+  animation: tp-wiperight var(--tp-dur) ease-in-out infinite;
+}
+
+@keyframes tp-wiperight {
+  0%,
+  100% {
+    clip-path: inset(0 0 0 100%);
+  }
+  38%,
+  58% {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+.tp-card:hover .tp-b-wipeup {
+  animation: tp-wipeup var(--tp-dur) ease-in-out infinite;
+}
+
+@keyframes tp-wipeup {
+  0%,
+  100% {
+    clip-path: inset(100% 0 0 0);
+  }
+  38%,
+  58% {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+.tp-card:hover .tp-b-wipedown {
+  animation: tp-wipedown var(--tp-dur) ease-in-out infinite;
+}
+
+@keyframes tp-wipedown {
+  0%,
+  100% {
+    clip-path: inset(0 0 100% 0);
+  }
+  38%,
+  58% {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+.tp-card:hover .tp-b-wipetl {
+  animation: tp-wipetl var(--tp-dur) ease-in-out infinite;
+}
+
+@keyframes tp-wipetl {
+  0%,
+  100% {
+    clip-path: polygon(0 0, 0 0, 0 100%, 0 100%);
+  }
+  38%,
+  58% {
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+  }
+}
+
+.tp-card:hover .tp-b-wipetr {
+  animation: tp-wipetr var(--tp-dur) ease-in-out infinite;
+}
+
+@keyframes tp-wipetr {
+  0%,
+  100% {
+    clip-path: polygon(100% 0, 100% 0, 100% 100%, 100% 100%);
+  }
+  38%,
+  58% {
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+  }
+}
+
+.tp-card:hover .tp-b-wipebl {
+  animation: tp-wipebl var(--tp-dur) ease-in-out infinite;
+}
+
+@keyframes tp-wipebl {
+  0%,
+  100% {
+    clip-path: polygon(0 100%, 0 100%, 0 100%, 0 100%);
+  }
+  38%,
+  58% {
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+  }
+}
+
+.tp-card:hover .tp-b-wipebr {
+  animation: tp-wipebr var(--tp-dur) ease-in-out infinite;
+}
+
+@keyframes tp-wipebr {
+  0%,
+  100% {
+    clip-path: polygon(100% 100%, 100% 100%, 100% 100%, 100% 100%);
+  }
+  38%,
+  58% {
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+  }
+}
+
+.tp-card:hover .tp-b-slideleft {
+  animation: tp-slideleft var(--tp-dur) ease-in-out infinite;
+}
+
+@keyframes tp-slideleft {
+  0%,
+  100% {
+    transform: translateX(100%);
+  }
+  38%,
+  58% {
+    transform: translateX(0);
+  }
+}
+
+.tp-card:hover .tp-b-slideright {
+  animation: tp-slideright var(--tp-dur) ease-in-out infinite;
+}
+
+@keyframes tp-slideright {
+  0%,
+  100% {
+    transform: translateX(-100%);
+  }
+  38%,
+  58% {
+    transform: translateX(0);
+  }
+}
+
+.tp-card:hover .tp-b-slideup {
+  animation: tp-slideup var(--tp-dur) ease-in-out infinite;
+}
+
+@keyframes tp-slideup {
+  0%,
+  100% {
+    transform: translateY(100%);
+  }
+  38%,
+  58% {
+    transform: translateY(0);
+  }
+}
+
+.tp-card:hover .tp-b-slidedown {
+  animation: tp-slidedown var(--tp-dur) ease-in-out infinite;
+}
+
+@keyframes tp-slidedown {
+  0%,
+  100% {
+    transform: translateY(-100%);
+  }
+  38%,
+  58% {
+    transform: translateY(0);
+  }
+}
+
+.tp-card:hover .tp-b-smoothleft {
+  animation: tp-smoothleft var(--tp-dur) ease-in-out infinite;
+}
+
+@keyframes tp-smoothleft {
+  0%,
+  100% {
+    clip-path: inset(0 100% 0 0);
+    filter: blur(1px);
+  }
+  38%,
+  58% {
+    clip-path: inset(0 0 0 0);
+    filter: blur(0);
+  }
+}
+
+.tp-card:hover .tp-b-smoothright {
+  animation: tp-smoothright var(--tp-dur) ease-in-out infinite;
+}
+
+@keyframes tp-smoothright {
+  0%,
+  100% {
+    clip-path: inset(0 0 0 100%);
+    filter: blur(1px);
+  }
+  38%,
+  58% {
+    clip-path: inset(0 0 0 0);
+    filter: blur(0);
+  }
+}
+
+.tp-card:hover .tp-b-smoothup {
+  animation: tp-smoothup var(--tp-dur) ease-in-out infinite;
+}
+
+@keyframes tp-smoothup {
+  0%,
+  100% {
+    clip-path: inset(100% 0 0 0);
+    filter: blur(1px);
+  }
+  38%,
+  58% {
+    clip-path: inset(0 0 0 0);
+    filter: blur(0);
+  }
+}
+
+.tp-card:hover .tp-b-smoothdown {
+  animation: tp-smoothdown var(--tp-dur) ease-in-out infinite;
+}
+
+@keyframes tp-smoothdown {
+  0%,
+  100% {
+    clip-path: inset(0 0 100% 0);
+    filter: blur(1px);
+  }
+  38%,
+  58% {
+    clip-path: inset(0 0 0 0);
+    filter: blur(0);
+  }
+}
+
+.tp-card:hover .tp-b-circleopen {
+  animation: tp-circleopen var(--tp-dur) ease-in-out infinite;
+}
+
+@keyframes tp-circleopen {
+  0%,
+  100% {
+    clip-path: circle(0% at 50% 50%);
+  }
+  38%,
+  58% {
+    clip-path: circle(75% at 50% 50%);
+  }
+}
+
+.tp-card:hover .tp-b-circleclose {
+  animation: tp-circleclose var(--tp-dur) ease-in-out infinite;
+}
+
+@keyframes tp-circleclose {
+  0%,
+  100% {
+    clip-path: circle(0% at 50% 50%);
+  }
+  38%,
+  58% {
+    clip-path: circle(75% at 50% 50%);
+  }
+}
+
+.tp-card:hover .tp-b-radial {
+  animation: tp-radial var(--tp-dur) ease-in-out infinite;
+}
+
+@keyframes tp-radial {
+  0%,
+  100% {
+    clip-path: circle(0% at 50% 50%);
+  }
+  38%,
+  58% {
+    clip-path: circle(100% at 50% 50%);
+  }
+}
+
+.tp-card:hover .tp-b-vertopen {
+  animation: tp-vertopen var(--tp-dur) ease-in-out infinite;
+}
+
+@keyframes tp-vertopen {
+  0%,
+  100% {
+    clip-path: inset(50% 0 50% 0);
+  }
+  38%,
+  58% {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+.tp-card:hover .tp-b-horzopen {
+  animation: tp-horzopen var(--tp-dur) ease-in-out infinite;
+}
+
+@keyframes tp-horzopen {
+  0%,
+  100% {
+    clip-path: inset(0 50% 0 50%);
+  }
+  38%,
+  58% {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+.tp-card:hover .tp-b-coverleft {
+  animation: tp-coverleft var(--tp-dur) ease-in-out infinite;
+}
+
+@keyframes tp-coverleft {
+  0%,
+  100% {
+    transform: translateX(-100%);
+  }
+  38%,
+  58% {
+    transform: translateX(0);
+  }
+}
+
+.tp-card:hover .tp-b-coverright {
+  animation: tp-coverright var(--tp-dur) ease-in-out infinite;
+}
+
+@keyframes tp-coverright {
+  0%,
+  100% {
+    transform: translateX(100%);
+  }
+  38%,
+  58% {
+    transform: translateX(0);
+  }
+}
+
+/* Reveal: outgoing image (A) is on top and slides away */
+.tp-card:hover .tp-a-revealleft {
+  animation: tp-a-revealleft var(--tp-dur) ease-in-out infinite;
+}
+
+@keyframes tp-a-revealleft {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  38%,
+  58% {
+    transform: translateX(-100%);
+  }
+}
+
+.tp-card:hover .tp-a-revealright {
+  animation: tp-a-revealright var(--tp-dur) ease-in-out infinite;
+}
+
+@keyframes tp-a-revealright {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  38%,
+  58% {
+    transform: translateX(100%);
+  }
+}
+
+.tp-card:hover .tp-b-diagtl {
+  animation: tp-diagtl var(--tp-dur) ease-in-out infinite;
+}
+
+@keyframes tp-diagtl {
+  0%,
+  100% {
+    clip-path: polygon(-10% -10%, -10% -10%, -10% 110%, -10% 110%);
+  }
+  38%,
+  58% {
+    clip-path: polygon(-10% -10%, 110% -10%, 110% 110%, -10% 110%);
+  }
+}
+
+.tp-card:hover .tp-b-diagtr {
+  animation: tp-diagtr var(--tp-dur) ease-in-out infinite;
+}
+
+@keyframes tp-diagtr {
+  0%,
+  100% {
+    clip-path: polygon(110% -10%, 110% -10%, 110% 110%, 110% 110%);
+  }
+  38%,
+  58% {
+    clip-path: polygon(-10% -10%, 110% -10%, 110% 110%, -10% 110%);
+  }
+}
+
+.tp-card:hover .tp-b-diagbl {
+  animation: tp-diagbl var(--tp-dur) ease-in-out infinite;
+}
+
+@keyframes tp-diagbl {
+  0%,
+  100% {
+    clip-path: polygon(-10% 110%, -10% 110%, -10% -10%, -10% -10%);
+  }
+  38%,
+  58% {
+    clip-path: polygon(-10% -10%, 110% -10%, 110% 110%, -10% 110%);
+  }
+}
+
+.tp-card:hover .tp-b-diagbr {
+  animation: tp-diagbr var(--tp-dur) ease-in-out infinite;
+}
+
+@keyframes tp-diagbr {
+  0%,
+  100% {
+    clip-path: polygon(110% 110%, 110% 110%, 110% -10%, 110% -10%);
+  }
+  38%,
+  58% {
+    clip-path: polygon(-10% -10%, 110% -10%, 110% 110%, -10% 110%);
+  }
+}
+
+.tp-card:hover .tp-b-zoomin {
+  animation: tp-zoomin var(--tp-dur) ease-in-out infinite;
+}
+
+@keyframes tp-zoomin {
+  0%,
+  100% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  38%,
+  58% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.tp-card:hover .tp-b-distance {
+  animation: tp-distance var(--tp-dur) ease-in-out infinite;
+}
+
+@keyframes tp-distance {
+  0%,
+  100% {
+    opacity: 0;
+    transform: scale(1.35);
+    filter: blur(4px);
+  }
+  38%,
+  58% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+}

@@ -9,16 +9,18 @@ interface Props {
   scrollX: number
   containerWidth: number
   onSeek: (time: number) => void
+  contentDuration?: number
 }
 
 function formatTime(s: number) {
-  const m = Math.floor(s / 60)
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
   const sec = Math.floor(s % 60)
-  return `${m}:${sec.toString().padStart(2, '0')}`
+  if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`
+  return `${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`
 }
 
 function getTickInterval(pps: number): { major: number; minor: number } {
-  // At low zoom, use wider intervals; at high zoom, narrower
   if (pps >= 60) return { major: 1, minor: 0.25 }
   if (pps >= 30) return { major: 2, minor: 0.5 }
   if (pps >= 15) return { major: 5, minor: 1 }
@@ -27,11 +29,10 @@ function getTickInterval(pps: number): { major: number; minor: number } {
   return { major: 60, minor: 10 }
 }
 
-export default function TimeRuler({ pps, totalWidth, scrollX, containerWidth, onSeek }: Props) {
+export default function TimeRuler({ pps, totalWidth, scrollX, containerWidth, onSeek, contentDuration }: Props) {
   const { major, minor } = getTickInterval(pps)
   const totalDuration = totalWidth / pps
 
-  // Only render ticks in the visible range
   const startTime = Math.max(0, Math.floor((scrollX / pps) / minor) * minor)
   const endTime = Math.min(totalDuration, ((scrollX + containerWidth) / pps) + minor)
 
@@ -46,38 +47,57 @@ export default function TimeRuler({ pps, totalWidth, scrollX, containerWidth, on
     onSeek(Math.max(0, Math.min(totalDuration, time)))
   }, [scrollX, pps, totalDuration, onSeek])
 
+  const barWidth = contentDuration ? contentDuration * pps : 0
+
   return (
     <div
       className="relative flex-shrink-0 cursor-pointer select-none overflow-hidden"
       style={{
         height: RULER_HEIGHT,
-        borderBottom: '1px solid var(--color-border)',
+        background: 'var(--tl-ruler-bg)',
+        borderBottom: '1px solid var(--tl-border)',
       }}
       onClick={handleClick}
     >
       <div
         className="relative"
-        style={{ width: totalWidth, transform: `translateX(${-scrollX}px)` }}
+        style={{ width: totalWidth, transform: `translateX(${-scrollX}px)`, height: '100%' }}
       >
+        {barWidth > 0 && (
+          <div
+            className="absolute"
+            style={{
+              left: 0,
+              top: 0,
+              width: barWidth,
+              height: 3,
+              background: 'var(--tl-ruler-bar)',
+              borderRadius: '0 0 1px 0',
+            }}
+          />
+        )}
+
         {ticks.map((tick, i) => {
           const x = tick.time * pps
           return (
-            <div key={i} className="absolute top-0" style={{ left: x }}>
+            <div key={i} className="absolute" style={{ left: x, bottom: 0 }}>
               <div
                 style={{
                   width: 1,
-                  height: tick.isMajor ? 12 : 6,
-                  background: '#3a3a45',
+                  height: tick.isMajor ? 14 : 7,
+                  background: tick.isMajor ? 'var(--tl-ruler-tick)' : 'var(--tl-ruler-tick-minor)',
                 }}
               />
               {tick.isMajor && (
                 <span
                   className="absolute whitespace-nowrap"
                   style={{
-                    top: 2,
-                    left: 4,
+                    bottom: 15,
+                    left: 3,
                     fontSize: 9,
-                    color: '#6b6b7a',
+                    fontWeight: 500,
+                    fontFamily: 'monospace',
+                    color: 'var(--tl-ruler-label)',
                     lineHeight: '1',
                   }}
                 >

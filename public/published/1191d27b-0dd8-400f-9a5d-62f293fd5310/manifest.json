@@ -1,0 +1,193 @@
+{
+  "id": "1191d27b-0dd8-400f-9a5d-62f293fd5310",
+  "version": 4,
+  "name": "Compound Interest — Interactive Demo",
+  "playerOptions": {
+    "theme": "dark",
+    "showProgressBar": true,
+    "showSceneNav": false,
+    "allowFullscreen": true,
+    "brandColor": "#e84545",
+    "autoplay": true
+  },
+  "sceneGraph": {
+    "nodes": [
+      {
+        "id": "3edb1ad2-5039-434f-a879-37164ba9de7e",
+        "position": {
+          "x": 100,
+          "y": 100
+        }
+      },
+      {
+        "id": "2aaaf6ef-770a-4133-a554-1b8a9ceef026",
+        "position": {
+          "x": 400,
+          "y": 100
+        }
+      },
+      {
+        "id": "e69dc85e-01ee-48f4-9085-56b64dc14be2",
+        "position": {
+          "x": 700,
+          "y": 100
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "4d345ca3-5424-4707-bea6-31036bcedd56",
+        "fromSceneId": "3edb1ad2-5039-434f-a879-37164ba9de7e",
+        "toSceneId": "2aaaf6ef-770a-4133-a554-1b8a9ceef026",
+        "condition": {
+          "type": "auto",
+          "variableName": null,
+          "interactionId": null,
+          "variableValue": null
+        }
+      },
+      {
+        "id": "f7ba114c-356a-470f-acf0-02550d4ef95c",
+        "fromSceneId": "2aaaf6ef-770a-4133-a554-1b8a9ceef026",
+        "toSceneId": "e69dc85e-01ee-48f4-9085-56b64dc14be2",
+        "condition": {
+          "type": "auto",
+          "variableName": null,
+          "interactionId": null,
+          "variableValue": null
+        }
+      }
+    ],
+    "startSceneId": "3edb1ad2-5039-434f-a879-37164ba9de7e"
+  },
+  "scenes": [
+    {
+      "id": "3edb1ad2-5039-434f-a879-37164ba9de7e",
+      "type": "react",
+      "duration": 10,
+      "htmlUrl": "/published/1191d27b-0dd8-400f-9a5d-62f293fd5310/scenes/3edb1ad2-5039-434f-a879-37164ba9de7e.html",
+      "htmlContent": null,
+      "interactions": [],
+      "variables": [],
+      "transition": "none"
+    },
+    {
+      "id": "2aaaf6ef-770a-4133-a554-1b8a9ceef026",
+      "type": "react",
+      "duration": 15,
+      "htmlUrl": "/published/1191d27b-0dd8-400f-9a5d-62f293fd5310/scenes/2aaaf6ef-770a-4133-a554-1b8a9ceef026.html",
+      "htmlContent": null,
+      "interactions": [
+        {
+          "x": 7,
+          "y": 58,
+          "id": "slider-rate",
+          "max": 15,
+          "min": 1,
+          "step": 0.5,
+          "type": "slider",
+          "unit": "%",
+          "label": "Interest Rate",
+          "width": 35,
+          "height": 6,
+          "hidesAt": null,
+          "appearsAt": 1,
+          "showValue": true,
+          "thumbColor": null,
+          "trackColor": null,
+          "defaultValue": 5,
+          "setsVariable": "interestRate",
+          "entranceAnimation": "slide-up"
+        },
+        {
+          "x": 7,
+          "y": 68,
+          "id": "toggle-compare",
+          "type": "toggle",
+          "label": "Show Comparison",
+          "width": 35,
+          "height": 5,
+          "hidesAt": null,
+          "onLabel": "Comparing vs 3%",
+          "offLabel": "Off",
+          "appearsAt": 2,
+          "activeColor": "#10b981",
+          "defaultValue": false,
+          "setsVariable": "showComparison",
+          "entranceAnimation": "fade"
+        }
+      ],
+      "variables": [
+        {
+          "name": "interestRate",
+          "type": "number",
+          "defaultValue": 5
+        },
+        {
+          "name": "showComparison",
+          "type": "boolean",
+          "defaultValue": false
+        }
+      ],
+      "transition": "none"
+    },
+    {
+      "id": "e69dc85e-01ee-48f4-9085-56b64dc14be2",
+      "type": "react",
+      "duration": 12,
+      "htmlUrl": "/published/1191d27b-0dd8-400f-9a5d-62f293fd5310/scenes/e69dc85e-01ee-48f4-9085-56b64dc14be2.html",
+      "htmlContent": null,
+      "interactions": [
+        {
+          "x": 15,
+          "y": 5,
+          "id": "quiz-compound",
+          "type": "quiz",
+          "width": 70,
+          "height": 40,
+          "hidesAt": null,
+          "onWrong": "retry",
+          "options": [
+            {
+              "id": "a",
+              "label": "It exactly doubles"
+            },
+            {
+              "id": "b",
+              "label": "It more than doubles (compounding effect)"
+            },
+            {
+              "id": "c",
+              "label": "It stays roughly the same"
+            },
+            {
+              "id": "d",
+              "label": "It increases by 50%"
+            }
+          ],
+          "question": "If you double your interest rate from 5% to 10%, what happens to total interest paid?",
+          "appearsAt": 3,
+          "onCorrect": "continue",
+          "explanation": "Due to compound interest, doubling the rate MORE than doubles your total interest. At 5% on a $350K mortgage you pay ~$326K in interest, but at 10% you pay ~$756K — that's 2.3x more!",
+          "onWrongSceneId": null,
+          "correctOptionId": "b",
+          "onCorrectSceneId": null,
+          "entranceAnimation": "slide-up"
+        }
+      ],
+      "variables": [
+        {
+          "name": "quizAnswered",
+          "type": "boolean",
+          "defaultValue": false
+        },
+        {
+          "name": "quizScore",
+          "type": "number",
+          "defaultValue": 0
+        }
+      ],
+      "transition": "none"
+    }
+  ]
+}

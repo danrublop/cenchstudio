@@ -1,32 +1,32 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useVideoStore } from '@/lib/store'
-import { FolderOpen, Video, Monitor, Plus, Clock } from 'lucide-react'
-import dynamic from 'next/dynamic'
-
-const Logo3D = dynamic(() => import('./Logo3D'), { ssr: false })
+import { FolderOpen, Video, Monitor, Plus, Clock, Search, X, ChevronRight } from 'lucide-react'
 import RecordingHUD from '@/components/recording/RecordingHUD'
 import type { RecordingSessionManifest } from '@/types/electron'
-
-interface ProjectItem {
-  id: string
-  name: string
-  updatedAt: string
-}
+import { CenchLogo as AgentIcon } from './icons/CenchLogo'
 
 type RecordingPhase = 'idle' | 'recording'
 
-export default function WelcomePage({ onEnterEditor }: { onEnterEditor: () => void }) {
-  const { fetchProjectList, projectList, loadProject, createNewProject, addScene, updateScene, saveSceneHTML } =
+export default function WelcomePage({ onEnterEditor, onOpenSearch }: { onEnterEditor: () => void; onOpenSearch?: () => void }) {
+  const { fetchProjectList, projectList, loadProject, createNewProject, addScene, updateScene, saveSceneHTML, setSettingsTab } =
     useVideoStore()
   const [loading, setLoading] = useState(true)
   const [recordPhase, setRecordPhase] = useState<RecordingPhase>('idle')
-
+  const [showAllProjects, setShowAllProjects] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const searchInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     fetchProjectList().finally(() => setLoading(false))
   }, [fetchProjectList])
+
+  useEffect(() => {
+    if (showAllProjects) {
+      searchInputRef.current?.focus()
+    }
+  }, [showAllProjects])
 
   const handleOpenProject = async (projectId: string) => {
     await loadProject(projectId)
@@ -47,15 +47,13 @@ export default function WelcomePage({ onEnterEditor }: { onEnterEditor: () => vo
     const sceneId = addScene('Recording')
     useVideoStore.getState().setStudioRecordMode(true)
     useVideoStore.getState().setRecordingAttachSceneId(sceneId)
-    console.log('[WelcomePage] Studio record mode set:', useVideoStore.getState().studioRecordMode)
     onEnterEditor()
   }
 
   const handleRecordingFinish = useCallback(
     async (manifest: RecordingSessionManifest) => {
       setRecordPhase('idle')
-            try {
-        // Create project + scene with the recorded video
+      try {
         await createNewProject('Screen Recording')
         const sceneId = addScene('Screen recording')
         updateScene(sceneId, {
@@ -78,7 +76,7 @@ export default function WelcomePage({ onEnterEditor }: { onEnterEditor: () => vo
 
   const handleRecordingCancel = () => {
     setRecordPhase('idle')
-      }
+  }
 
   const formatDate = (dateStr: string) => {
     const d = new Date(dateStr)
@@ -94,75 +92,151 @@ export default function WelcomePage({ onEnterEditor }: { onEnterEditor: () => vo
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
   }
 
+  const filteredProjects = useMemo(() => {
+    return projectList.filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()))
+  }, [projectList, searchQuery])
+
+  const recentProjects = useMemo(() => {
+    return projectList.slice(0, 5)
+  }, [projectList])
+
+  if (recordPhase === 'recording') {
+    return (
+      <RecordingHUD
+        onFinish={handleRecordingFinish}
+        onCancel={handleRecordingCancel}
+      />
+    )
+  }
+
   return (
-    <div className="h-full w-full flex bg-[var(--color-panel)]">
-      {/* Recording HUD overlay */}
-      {recordPhase === 'recording' && (
-        <RecordingHUD
-          onFinish={handleRecordingFinish}
-          onCancel={handleRecordingCancel}
-        />
+    <div className="h-full w-full flex flex-col items-center justify-center bg-[var(--color-bg)] text-[var(--color-text-primary)] relative font-sans">
+      {/* Search Overlay (Command Palette style) */}
+      {showAllProjects && (
+        <>
+          <div className="fixed inset-0 z-[100] bg-black/20" onClick={() => { setShowAllProjects(false); setSearchQuery('') }} />
+          <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[101] w-[min(560px,90vw)] bg-[var(--color-panel)] border border-[var(--color-border)] rounded-xl shadow-2xl overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-100">
+            <div className="flex items-center gap-2 px-4 py-3 border-b border-[var(--color-border)]">
+              <Search size={16} className="text-[var(--color-text-muted)] shrink-0" />
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search projects..."
+                className="flex-1 bg-transparent border-none outline-none text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)]"
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') { setShowAllProjects(false); setSearchQuery('') }
+                  if (e.key === 'Enter' && filteredProjects[0]) handleOpenProject(filteredProjects[0].id)
+                }}
+              />
+            </div>
+            <div className="max-h-[320px] overflow-y-auto py-1 custom-scrollbar">
+              {filteredProjects.length === 0 && (
+                <p className="px-4 py-6 text-center text-sm text-[var(--color-text-muted)]">No projects found</p>
+              )}
+              {filteredProjects.map((p) => (
+                <div
+                  key={p.id}
+                  onClick={() => handleOpenProject(p.id)}
+                  className="flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors hover:bg-white/[0.06] group"
+                >
+                  <FolderOpen size={16} className="text-[var(--color-text-muted)] group-hover:text-[var(--color-text-primary)]" />
+                  <span className="text-sm flex-1">{p.name}</span>
+                  <span className="text-xs text-[var(--color-text-muted)]">{formatDate(p.updatedAt)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
       )}
 
-      {/* Left — Recent Projects */}
-      <div className="w-[280px] shrink-0 border-r border-[var(--color-border)] flex flex-col">
-        <div className="px-4 pt-4 pb-2">
-          <span className="text-[11px] font-medium uppercase tracking-wider" style={{ color: 'var(--color-text-muted, #6b6b7a)' }}>
-            Recent projects
-          </span>
-        </div>
-        <div className="flex-1 overflow-y-auto px-2">
-          {loading ? (
-            <div className="flex items-center gap-2 px-2 py-3" style={{ color: 'var(--color-text-muted, #6b6b7a)' }}>
-              <Clock size={13} className="animate-spin" />
-              <span className="text-xs">Loading...</span>
-            </div>
-          ) : projectList.length === 0 ? (
-            <div className="px-2 py-3 text-xs" style={{ color: 'var(--color-text-muted, #6b6b7a)' }}>
-              No projects yet
-            </div>
-          ) : (
-            projectList.map((p) => (
-              <div
-                key={p.id}
-                onClick={() => handleOpenProject(p.id)}
-                className="flex items-center justify-between px-2 py-2 rounded-md cursor-pointer transition-colors"
-                style={{ color: 'var(--color-text-primary, #f0ece0)' }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--color-surface, #1e1e1e)')}
-                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-              >
-                <span className="text-[13px] truncate mr-3">{p.name}</span>
-                <span className="text-[11px] flex-shrink-0" style={{ color: 'var(--color-text-muted, #6b6b7a)' }}>
-                  {formatDate(p.updatedAt)}
-                </span>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-
-      {/* Right — Main area with 3D logo center, actions bottom-right */}
-      <div className="flex-1 flex flex-col relative">
-        <div className="flex-1 flex items-center justify-center">
-          <div className="w-[320px] h-[320px]">
-            <Logo3D />
+      <div className="w-full max-w-[420px] flex flex-col items-start px-4">
+        {/* Header */}
+        <div className="flex flex-col gap-0 mb-6 select-none">
+          <div className="flex items-center gap-0">
+            <AgentIcon size={46} className="text-[var(--color-text-primary)]" />
+            <h1 
+              className="text-[24px] font-semibold tracking-tight text-[var(--color-text-primary)] leading-none uppercase ml-[-4px]"
+              style={{ fontFamily: "'Saira Stencil', sans-serif" }}
+            >
+              Cench
+            </h1>
+          </div>
+          <div className="pl-[42px] flex items-center gap-1 text-[9px] uppercase font-bold tracking-wider text-[var(--color-text-muted)] mt-[-3px]">
+            <span className="opacity-80">Pro</span>
+            <span className="w-1 h-1 rounded-full bg-[var(--color-border)]" />
+            <button 
+              onClick={() => setSettingsTab('general')}
+              className="hover:text-[var(--color-text-primary)] transition-colors"
+            >
+              Settings
+            </button>
           </div>
         </div>
-        <div className="flex items-end justify-end gap-2 p-5">
-          <ActionCard icon={<Plus size={18} />} label="New project" onClick={handleNewProject} />
-          <ActionCard
-            icon={<FolderOpen size={18} />}
-            label="Open project"
-            onClick={() => {
-              if (projectList.length > 0) {
-                handleOpenProject(projectList[0].id)
-              } else {
-                handleNewProject()
-              }
-            }}
+
+        {/* Action Cards (Scaled down) */}
+        <div className="grid grid-cols-3 gap-3 w-full mb-6">
+          <ActionCard 
+            icon={<FolderOpen size={18} />} 
+            label="Open project" 
+            onClick={onOpenSearch ?? (() => {})} 
           />
-          <ActionCard icon={<Video size={18} />} label="Quick Record" onClick={handleRecordClick} />
-          <ActionCard icon={<Monitor size={18} />} label="Studio Record" onClick={handleStudioRecord} />
+          <ActionCard 
+            icon={<Video size={18} />} 
+            label="Record" 
+            onClick={handleRecordClick} 
+          />
+          <ActionCard 
+            icon={<Monitor size={18} />} 
+            label="Studio" 
+            onClick={handleStudioRecord} 
+          />
+        </div>
+
+        {/* Recent Projects (Screenshot match ultra-refined) */}
+        <div className="w-full">
+          <div className="flex items-center justify-between mb-0.5 px-0.5">
+            <span className="text-[12px] text-[var(--color-text-muted)] font-medium font-sans">
+              Recent projects
+            </span>
+            <span 
+              onClick={onOpenSearch}
+              className="text-[11px] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] cursor-pointer transition-colors font-sans opacity-70"
+            >
+              View all ({projectList.length})
+            </span>
+          </div>
+
+          <div className="flex flex-col gap-0.5">
+            {loading ? (
+              <div className="py-6 text-left text-[var(--color-text-muted)]">
+                <span className="text-[9px] font-mono">Syncing...</span>
+              </div>
+            ) : projectList.length === 0 ? (
+              <div 
+                onClick={handleNewProject}
+                className="py-3 flex flex-col items-start gap-1 hover:bg-white/[0.01] cursor-pointer group transition-all"
+              >
+                <span className="text-[11px] font-semibold text-[var(--color-text-muted)] group-hover:text-[var(--color-text-primary)]">Initialize repository</span>
+              </div>
+            ) : (
+              recentProjects.map((p) => (
+                <div
+                  key={p.id}
+                  onClick={() => handleOpenProject(p.id)}
+                  className="flex items-center justify-between py-0.5 px-0.5 group cursor-pointer"
+                >
+                  <span className="text-[12px] font-semibold text-[var(--color-text-primary)] group-hover:text-[var(--color-accent)] transition-colors opacity-80 group-hover:opacity-100">
+                    {p.name}
+                  </span>
+                  <span className="text-[11px] text-[var(--color-text-muted)] group-hover:text-[var(--color-text-primary)] transition-colors font-sans opacity-40">
+                    ~
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -181,19 +255,12 @@ function ActionCard({
   return (
     <div
       onClick={onClick}
-      className="flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-colors"
-      style={{
-        color: 'var(--color-text-primary, #f0ece0)',
-      }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.background = 'var(--color-surface-hover, #252525)'
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.background = 'transparent'
-      }}
+      className="bg-[var(--color-card)] hover:bg-[var(--color-card-hover)] p-2.5 px-3 pt-3 pb-2 rounded-md cursor-pointer transition-colors group flex flex-col items-start gap-1 w-full border border-[var(--color-border)] shadow-sm"
     >
-      <span style={{ color: 'var(--color-text-muted, #6b6b7a)' }}>{icon}</span>
-      <span className="text-[13px] font-medium">{label}</span>
+      <div className="text-[var(--color-text-primary)] opacity-80 group-hover:opacity-100 transition-opacity">
+        {icon}
+      </div>
+      <span className="text-[11px] font-semibold tracking-tight text-[var(--color-text-muted)] group-hover:text-[var(--color-text-primary)] transition-colors">{label}</span>
     </div>
   )
 }

@@ -2,8 +2,9 @@
 
 import dynamic from 'next/dynamic'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Play, Pause, RotateCcw, Layers, SquareDashedMousePointer, AlignStartVertical, SlidersHorizontal } from 'lucide-react'
+import { Play, Pause, Layers, SquareDashedMousePointer, AlignStartVertical, SlidersHorizontal, Minus, Plus, Maximize, SkipBack, SkipForward } from 'lucide-react'
 import { useVideoStore } from '@/lib/store'
+import { resolveProjectDimensions } from '@/lib/dimensions'
 import Timeline from './timeline'
 import StudioRecordPreview from './recording/StudioRecordPreview'
 import RecordingControlPanel from './recording/RecordingControlPanel'
@@ -59,13 +60,14 @@ export default function PreviewPlayer() {
     compositorPreview,
   } = useVideoStore()
   const outputMode = project.outputMode
+  const projectDims = resolveProjectDimensions(project.mp4Settings?.aspectRatio, project.mp4Settings?.resolution)
+  const previewAspect = `${projectDims.width}/${projectDims.height}`
 
   const selectedScene = scenes.find((s) => s.id === selectedSceneId)
   const viewportRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLDivElement>(null)
   const iframeMapRef = useRef<Record<string, HTMLIFrameElement | null>>({})
   const playerMapRef = useRef<Record<string, ScenePlayer>>({})
-  const lastWheelTs = useRef(0)
   const dragOrigin = useRef({ x: 0, y: 0, px: 0, py: 0 })
   const animFrameRef = useRef<number>()
   const scenesRef = useRef(scenes)
@@ -95,11 +97,14 @@ export default function PreviewPlayer() {
     }
   }, [studioRecordMode, timelineHeight])
   const [zoom, setZoom] = useState(1)
-  useEffect(() => {
-    setPreviewZoom(zoom)
-  }, [zoom, setPreviewZoom])
+  const zoomRef = useRef(1)
+  const panXRef = useRef(0)
+  const panYRef = useRef(0)
+  useEffect(() => { zoomRef.current = zoom; setPreviewZoom(zoom) }, [zoom, setPreviewZoom])
   const [panX, setPanX] = useState(0)
   const [panY, setPanY] = useState(0)
+  useEffect(() => { panXRef.current = panX }, [panX])
+  useEffect(() => { panYRef.current = panY }, [panY])
   const [isDragging, setIsDragging] = useState(false)
   const isFullscreen = isPreviewFullscreen
   const setIsFullscreen = setPreviewFullscreen
@@ -129,6 +134,7 @@ export default function PreviewPlayer() {
   useEffect(() => {
     scenes
       .filter((s) => {
+        if (s.sceneType === 'react') return !!s.reactCode
         if (s.sceneType === 'canvas2d') return !!s.canvasCode
         if (s.sceneType === 'motion' || s.sceneType === 'd3' || s.sceneType === 'three' || s.sceneType === 'physics') {
           return !!s.sceneCode || !!s.canvasBackgroundCode?.trim()
@@ -267,6 +273,23 @@ export default function PreviewPlayer() {
   }, [])
   const zoomIn = () => setZoom((z) => clampZoom(z + ZOOM_BTN_STEP))
   const zoomOut = () => setZoom((z) => clampZoom(z - ZOOM_BTN_STEP))
+  const fitToViewport = useCallback(() => {
+    const vp = viewportRef.current
+    if (!vp) return
+    const { clientWidth: vw, clientHeight: vh } = vp
+    const padding = 32
+    const availW = vw - padding * 2
+    const availH = vh - padding * 2
+    // preview matches project aspect ratio
+    const previewW = isFullscreen ? Math.min(1280, window.innerWidth * 0.88) : Math.min(780, window.innerWidth * 0.62)
+    const previewH = previewW * (projectDims.height / projectDims.width)
+    const scaleW = availW / previewW
+    const scaleH = availH / previewH
+    const fitZoom = clampZoom(Math.min(scaleW, scaleH))
+    setZoom(fitZoom)
+    setPanX(0)
+    setPanY(0)
+  }, [isFullscreen]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Per-scene animation control (via ScenePlayer postMessage) ─────────────
   const getDoc = (sceneId: string) => iframeMapRef.current[sceneId]?.contentDocument ?? null
@@ -424,6 +447,26 @@ export default function PreviewPlayer() {
         }
       },
       [goToSceneAndPlay, resumeAndTick],
+    ),
+    onSliderChange: useCallback(
+      (el: any, value: number) => {
+        const sceneId = selectedIdRef.current
+        if (!sceneId) return
+        useVideoStore.getState().setRuntimeVariable(sceneId, el.setsVariable, value)
+        const player = playerMapRef.current[sceneId]
+        player?.setVariable(el.setsVariable, value)
+      },
+      [],
+    ),
+    onToggleChange: useCallback(
+      (el: any, value: boolean) => {
+        const sceneId = selectedIdRef.current
+        if (!sceneId) return
+        useVideoStore.getState().setRuntimeVariable(sceneId, el.setsVariable, value)
+        const player = playerMapRef.current[sceneId]
+        player?.setVariable(el.setsVariable, value)
+      },
+      [],
     ),
     onResume: useCallback(() => {
       resumeAndTick()
@@ -672,6 +715,15 @@ export default function PreviewPlayer() {
             setIsPlaying(false)
           }
         }
+
+        // In-scene interactivity events (from CenchReact hooks)
+        player.onVariableChanged = (name, value) => {
+          useVideoStore.getState().setRuntimeVariable(sceneId, name, value)
+        }
+        player.onElementClicked = (_elementId, _data) => {
+          // Element clicks from scene code — can be used for scene graph navigation
+          // Currently tracked for analytics; extend as needed
+        }
       }
 
       // Always start paused; resume only if this is the active scene while playing
@@ -790,7 +842,7 @@ export default function PreviewPlayer() {
       const d = timelineDrag.current
       if (!d) return
       e.preventDefault()
-      setTimelineHeight(Math.max(0, Math.min(380, d.startH + (d.startY - e.clientY))))
+      setTimelineHeight(Math.max(0, Math.min(Math.round(window.innerHeight * 0.75), d.startH + (d.startY - e.clientY))))
     }
     const onUp = () => {
       if (!timelineDrag.current) return
@@ -807,17 +859,37 @@ export default function PreviewPlayer() {
     }
   }, [])
 
-  // ── Non-passive wheel for zoom ────────────────────────────────────────────
+  // ── Non-passive wheel for zoom-to-cursor ──────────────────────────────────
   useEffect(() => {
     const el = viewportRef.current
     if (!el) return
     const onWheel = (e: WheelEvent) => {
       e.preventDefault()
       e.stopPropagation()
-      const now = Date.now()
-      if (now - lastWheelTs.current < 30) return
-      lastWheelTs.current = now
-      setZoom((z) => clampZoom(z + Math.max(-0.6, Math.min(0.6, -e.deltaY * 0.025))))
+
+      const rect = el.getBoundingClientRect()
+      const vpCenterX = rect.width / 2
+      const vpCenterY = rect.height / 2
+      // Mouse position in viewport space
+      const mouseX = e.clientX - rect.left
+      const mouseY = e.clientY - rect.top
+
+      const oldZoom = zoomRef.current
+      const delta = Math.max(-0.6, Math.min(0.6, -e.deltaY * 0.025))
+      const newZoom = clampZoom(oldZoom + delta)
+      const ratio = newZoom / oldZoom
+
+      // Offset from content center (viewport center + pan) to cursor
+      const dx = mouseX - vpCenterX - panXRef.current
+      const dy = mouseY - vpCenterY - panYRef.current
+
+      // Adjust pan so the point under the cursor stays fixed
+      const newPanX = panXRef.current + dx * (1 - ratio)
+      const newPanY = panYRef.current + dy * (1 - ratio)
+
+      setZoom(newZoom)
+      setPanX(newPanX)
+      setPanY(newPanY)
     }
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)
@@ -939,6 +1011,7 @@ export default function PreviewPlayer() {
   const globalTime = sceneStartOffset + currentTime
   const scrubPct = totalDuration > 0 ? ((visualScrubTime ?? globalTime) / totalDuration) * 100 : 0
   const hasAnyScene = scenes.some((s) => {
+    if (s.sceneType === 'react') return !!s.reactCode
     if (s.sceneType === 'lottie') return !!s.lottieSource
     if (s.sceneType === 'canvas2d') return !!s.canvasCode
     if (s.sceneType === 'motion' || s.sceneType === 'd3' || s.sceneType === 'three' || s.sceneType === 'physics') {
@@ -958,6 +1031,7 @@ export default function PreviewPlayer() {
 
   const getSceneSrc = (scene: Scene): string | null => {
     const byType: Record<string, boolean> = {
+      react: !!scene.reactCode,
       svg: !!scene.svgContent,
       canvas2d: !!scene.canvasCode,
       motion: !!scene.sceneHTML || !!scene.sceneCode || !!scene.canvasBackgroundCode?.trim(),
@@ -972,6 +1046,14 @@ export default function PreviewPlayer() {
     const st = scene.sceneType ?? 'svg'
     let hasRenderable = byType[st] ?? false
     if (st === 'svg') hasRenderable = hasRenderable || !!scene.canvasBackgroundCode?.trim()
+    if (!hasRenderable) {
+      // Persist middleware can clobber in-memory code fields after DB load while the HTML
+      // file on disk is valid. If the scene has a sceneType set (meaning it was generated
+      // at some point) and there's no recorded write error, assume the HTML file exists.
+      if (scene.sceneType && scene.sceneType !== 'svg' && !sceneWriteErrors[scene.id]) {
+        hasRenderable = true
+      }
+    }
     if (!hasRenderable) {
       console.log(
         `[Preview] No content for ${scene.id.slice(0, 8)}… type=${scene.sceneType} svg=${!!scene.svgContent} canvas=${!!scene.canvasCode} code=${!!scene.sceneCode} lottie=${!!scene.lottieSource} html=${!!scene.sceneHTML} world=${!!scene.worldConfig}`,
@@ -996,7 +1078,13 @@ export default function PreviewPlayer() {
       <div
         ref={canvasRef}
         className={`preview-frame relative ${outputMode === 'interactive' ? 'overflow-visible' : 'overflow-hidden'}`}
-        style={{ aspectRatio: '16/9', width: isFullscreen ? 'min(1280px, 88vw)' : 'min(780px, 62vw)' }}
+        style={{
+          aspectRatio: previewAspect,
+          ...(projectDims.width >= projectDims.height
+            ? { width: isFullscreen ? 'min(1280px, 88vw)' : 'min(780px, 62vw)' }
+            : { height: isFullscreen ? 'min(85vh, 900px)' : 'min(70vh, 700px)', maxWidth: isFullscreen ? '88vw' : '62vw' }
+          ),
+        }}
       >
         {/* Compositor preview (Pixi canvas) — continuous timeline rendering */}
         {compositorPreview && (
@@ -1195,10 +1283,14 @@ export default function PreviewPlayer() {
           !isThisGenerating && (
             <div
               className="absolute inset-0 flex flex-col items-center justify-center gap-2"
-              style={{ background: selectedScene?.bgColor ?? 'var(--color-input-bg)' }}
+              style={{ background: selectedScene ? (selectedScene.bgColor ?? 'var(--color-input-bg)') : '#000' }}
             >
-              <p className="text-[#6b6b7a] text-sm">{selectedScene ? 'No content yet' : 'Select a scene'}</p>
-              {selectedScene && <p className="text-[#3a3a45] text-sm">Write a prompt and click Generate</p>}
+              {selectedScene && (
+                <>
+                  <p className="text-[#6b6b7a] text-sm">No content yet</p>
+                  <p className="text-[#3a3a45] text-sm">Write a prompt and click Generate</p>
+                </>
+              )}
             </div>
           )}
 
@@ -1244,8 +1336,11 @@ export default function PreviewPlayer() {
   const viewport = (
     <div
       ref={viewportRef}
-      className={`w-full h-full flex items-center justify-center select-none ${outputMode === 'interactive' ? 'overflow-visible' : 'overflow-hidden'}`}
-      style={{ cursor: isDragging ? 'grabbing' : zoom > 1 ? 'grab' : 'default' }}
+      className="w-full h-full flex items-center justify-center select-none overflow-hidden"
+      style={{
+        cursor: isDragging ? 'grabbing' : zoom > 1 ? 'grab' : 'default',
+        background: 'var(--color-input-bg)',
+      }}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
@@ -1255,26 +1350,41 @@ export default function PreviewPlayer() {
     </div>
   )
 
-  // ── Playback bar ──────────────────────────────────────────────────────────
-  const playbackBar = scenes.length > 0 && (
-    <div className="w-full flex-shrink-0 border-t border-[var(--color-border)] px-0 py-1.5 bg-[var(--color-panel)]">
-      <div className="flex items-center gap-3 px-2">
-        <span
-          onClick={isPlaying ? pause : play}
-          className="w-7 h-7 flex items-center justify-center cursor-pointer text-[var(--color-text-primary)]"
-        >
-          {isPlaying ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}
-        </span>
-        <span
-          onClick={restart}
-          className="w-7 h-7 flex items-center justify-center cursor-pointer text-[var(--color-text-muted)]"
-        >
-          <RotateCcw size={16} />
-        </span>
+  // ── Transport bar (Premiere-style) ─────────────────────────────────────────
+  const transportBar = (
+    <div className="w-full flex-shrink-0 px-0 py-1.5" style={{ background: 'var(--tl-bg)', borderTop: '1px solid var(--tl-border)' }}>
+      <div className="flex items-center gap-2 px-2">
+        <div className="flex items-center gap-0.5">
+          <span
+            onClick={() => stepFrame(-1)}
+            className="flex h-6 w-6 items-center justify-center cursor-pointer transition-colors"
+            style={{ color: 'var(--tl-toolbar-text)' }}
+            data-tooltip="Step back"
+          >
+            <SkipBack size={12} fill="currentColor" />
+          </span>
+          <span
+            onClick={isPlaying ? pause : play}
+            className="flex h-7 w-7 items-center justify-center cursor-pointer transition-colors"
+            style={{ color: 'var(--color-text-primary)' }}
+          >
+            {isPlaying ? <Pause size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" />}
+          </span>
+          <span
+            onClick={() => stepFrame(1)}
+            className="flex h-6 w-6 items-center justify-center cursor-pointer transition-colors"
+            style={{ color: 'var(--tl-toolbar-text)' }}
+            data-tooltip="Step forward"
+          >
+            <SkipForward size={12} fill="currentColor" />
+          </span>
+        </div>
+
+        {/* Scrub bar */}
         <div
           ref={scrubBarRef}
           className="flex-1 h-1.5 rounded-full cursor-pointer relative"
-          style={{ backgroundColor: 'var(--color-border)' }}
+          style={{ background: 'var(--tl-border)' }}
           onMouseDown={(e) => {
             isScrubbing.current = true
             document.body.style.userSelect = 'none'
@@ -1284,45 +1394,96 @@ export default function PreviewPlayer() {
             e.preventDefault()
           }}
         >
-          <div className="absolute inset-y-0 left-0 bg-[#e84545] rounded-full" style={{ width: `${scrubPct}%` }} />
+          {/* Progress fill */}
+          <div
+            className="absolute inset-y-0 left-0 rounded-full pointer-events-none"
+            style={{ background: 'var(--tl-playhead)', width: `${scrubPct}%` }}
+          />
+          {/* Playhead */}
+          <div
+            className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow-md pointer-events-none"
+            style={{ left: `calc(${scrubPct}% - 6px)` }}
+          />
         </div>
-        <div className="px-2 py-0.5 flex items-center justify-center bg-[var(--color-panel)] rounded border border-[var(--color-border)] shadow-sm text-[10.5px] font-bold text-[var(--color-text-primary)] tabular-nums whitespace-nowrap">
+
+        {/* Timecode */}
+        <div className="px-1.5 py-0.5 flex items-center justify-center text-[10px] font-mono tabular-nums whitespace-nowrap" style={{ color: 'var(--color-text-muted)' }}>
           {formatTime(visualScrubTime ?? globalTime)} / {formatTime(totalDuration)}
         </div>
-        <div className="ml-1">
-          <button
-            type="button"
-            onClick={() => setTimelineView((v) => (v === 'track' ? 'graph' : 'track'))}
-            data-tooltip={timelineView === 'track' ? 'Switch to node graph' : 'Switch to track timeline'}
-            data-tooltip-pos={isFullscreen ? 'top-left' : 'top'}
-            className="no-style electron-titlebar-icon w-6 h-6 rounded-md flex items-center justify-center transition-colors"
-          >
-            {timelineView === 'track' ? (
-              <AlignStartVertical size={12} strokeWidth={2.5} />
-            ) : (
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                aria-hidden
-              >
-                <circle cx="6" cy="6" r="3" />
-                <circle cx="18" cy="18" r="3" />
-                <line x1="8.5" y1="8.5" x2="15.5" y2="15.5" />
-              </svg>
-            )}
-          </button>
-        </div>
+
+        {/* Divider */}
+        <div className="w-px h-4" style={{ background: 'var(--tl-border)' }} />
+
+        {/* Zoom controls */}
+        <span
+          onClick={zoomOut}
+          className="w-5 h-5 flex items-center justify-center cursor-pointer transition-colors"
+          style={{ color: 'var(--tl-toolbar-text)' }}
+          data-tooltip="Zoom out"
+        >
+          <Minus size={12} />
+        </span>
+        <span
+          className="text-[10px] font-mono tabular-nums w-8 text-center select-none cursor-pointer transition-colors"
+          style={{ color: 'var(--color-text-muted)' }}
+          onClick={resetView}
+          data-tooltip="Reset zoom"
+        >
+          {Math.round(zoom * 100)}%
+        </span>
+        <span
+          onClick={zoomIn}
+          className="w-5 h-5 flex items-center justify-center cursor-pointer transition-colors"
+          style={{ color: 'var(--tl-toolbar-text)' }}
+          data-tooltip="Zoom in"
+        >
+          <Plus size={12} />
+        </span>
+        <span
+          onClick={fitToViewport}
+          className="w-6 h-6 flex items-center justify-center cursor-pointer transition-colors rounded"
+          style={{ color: 'var(--tl-toolbar-text)' }}
+          data-tooltip="Fit to viewport"
+        >
+          <Maximize size={12} />
+        </span>
+
+        {/* Divider */}
+        <div className="w-px h-4" style={{ background: 'var(--tl-border)' }} />
+
+        {/* Timeline view toggle */}
+        <span
+          onClick={() => setTimelineView((v) => (v === 'track' ? 'graph' : 'track'))}
+          data-tooltip={timelineView === 'track' ? 'Switch to node graph' : 'Switch to track timeline'}
+          data-tooltip-pos={isFullscreen ? 'top-left' : 'top'}
+          className="w-6 h-6 flex items-center justify-center cursor-pointer transition-colors rounded"
+          style={{ color: 'var(--tl-toolbar-text)' }}
+        >
+          {timelineView === 'track' ? (
+            <AlignStartVertical size={12} strokeWidth={2.5} />
+          ) : (
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              aria-hidden
+            >
+              <circle cx="6" cy="6" r="3" />
+              <circle cx="18" cy="18" r="3" />
+              <line x1="8.5" y1="8.5" x2="15.5" y2="15.5" />
+            </svg>
+          )}
+        </span>
       </div>
     </div>
   )
 
   const timelineResizeHandle = (
     <div
-      className="h-1.5 flex-shrink-0 hover:bg-[var(--color-border)] cursor-row-resize z-50"
+      className="h-2.5 flex-shrink-0 hover:bg-[var(--color-border)] cursor-row-resize z-[100] relative"
       onMouseDown={(e) => {
         e.preventDefault()
         timelineDrag.current = { startY: e.clientY, startH: timelineHeight }
@@ -1356,18 +1517,9 @@ export default function PreviewPlayer() {
             <StudioRecordPreview />
           </div>
         ) : (
-          <>
-            <div className={`absolute inset-0 ${outputMode === 'interactive' ? 'overflow-visible' : 'overflow-hidden'}`}>
-              {viewport}
-            </div>
-            {selectedScene && (
-              <div className="absolute bottom-2 left-0 right-0 text-center pointer-events-none">
-                <span className="text-[var(--color-text-muted)] text-[12px] font-medium">
-                  {selectedScene.name || selectedScene.prompt.slice(0, 50) || 'Untitled Scene'}
-                </span>
-              </div>
-            )}
-          </>
+          <div className={`absolute inset-0 ${outputMode === 'interactive' ? 'overflow-visible' : 'overflow-hidden'}`}>
+            {viewport}
+          </div>
         )}
       </div>
       {timelineResizeHandle}
@@ -1375,7 +1527,7 @@ export default function PreviewPlayer() {
       {studioRecordMode && timelineHeight > 0 && (
         <div
           className="flex items-center gap-0 flex-shrink-0"
-          style={{ background: 'var(--color-panel)', borderTop: '1px solid var(--color-border)' }}
+          style={{ background: 'var(--color-timeline-bg, var(--color-panel))', borderTop: '1px solid var(--color-border)' }}
         >
           <span
             onClick={() => setBottomTab('controls')}
@@ -1401,14 +1553,14 @@ export default function PreviewPlayer() {
           </span>
         </div>
       )}
-      {!studioRecordMode && playbackBar}
+      {!studioRecordMode && transportBar}
       {timelineHeight > 0 && (
         studioRecordMode && bottomTab === 'controls' ? (
           <div style={{ height: timelineHeight }} className="border-t border-[var(--color-border)]">
             <RecordingControlPanel />
           </div>
         ) : timelineView === 'graph' ? (
-          <div style={{ height: timelineHeight }} className="border-t border-[var(--color-border)]">
+          <div style={{ height: timelineHeight }} className="border-t border-[var(--color-border)] overflow-hidden flex-shrink-0">
             <SceneGraphEditor />
           </div>
         ) : (

@@ -24,7 +24,7 @@ export type TTSProvider =
   | 'openai-tts'
   | 'gemini-tts'
 
-export type SFXProvider = 'freesound' | 'pixabay' | 'elevenlabs-sfx'
+export type SFXProvider = 'freesound' | 'pixabay' | 'elevenlabs-sfx' | 'local' | 'zzfx'
 export type MusicProvider = 'pixabay-music' | 'freesound-music'
 
 export interface TTSTrack {
@@ -45,6 +45,8 @@ export interface SFXTrack {
   triggerAt: number
   volume: number
   duration: number | null
+  /** License note or URL from provider (e.g. Pixabay License, Freesound CC URL) — for compliance */
+  license?: string | null
 }
 
 export interface MusicTrack {

@@ -668,6 +668,38 @@ export const PLAYBACK_CONTROLLER = `
         }
         break;
 
+      // ── Variable & interaction bridge (Phase 1b) ──────────
+      case 'set_variable':
+        if (cmd.name) {
+          if (!window.__CENCH_VARIABLES) window.__CENCH_VARIABLES = {};
+          window.__CENCH_VARIABLES[cmd.name] = cmd.value;
+          // Dispatch custom event so React hooks (useVariable) can react
+          try {
+            window.dispatchEvent(new CustomEvent('cench:variable-changed', {
+              detail: { name: cmd.name, value: cmd.value, source: 'parent' }
+            }));
+          } catch(e) {}
+        }
+        break;
+
+      case 'get_variables':
+        postToParent({
+          type: 'variables_state',
+          variables: window.__CENCH_VARIABLES || {},
+        });
+        break;
+
+      case 'fire_trigger':
+        // Parent fires a named trigger into the scene
+        if (cmd.name) {
+          try {
+            window.dispatchEvent(new CustomEvent('cench:trigger', {
+              detail: { name: cmd.name, payload: cmd.payload }
+            }));
+          } catch(e) {}
+        }
+        break;
+
       case 'get_state':
         postToParent({
           type: 'state',
@@ -693,6 +725,14 @@ export const PLAYBACK_CONTROLLER = `
       });
     }, 50);
   });
+
+  // ── Expose postToParent for CenchReact hooks ─────────────
+  // React hooks (useVariable, useInteraction, useTrigger) call this
+  // to send events across the iframe boundary.
+  window.__cenchPostToParent = postToParent;
+
+  // Initialize variable store
+  if (!window.__CENCH_VARIABLES) window.__CENCH_VARIABLES = {};
 
   // ── Legacy compatibility ─────────────────────────────────
   // Old code may call __pause/__resume directly.

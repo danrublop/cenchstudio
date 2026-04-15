@@ -190,10 +190,11 @@ const CARD_PRESETS: Record<string, CardPreset> = {
 export function compilePhysicsSceneFromLayers(
   sceneId: string,
   layer: PhysicsLayer,
+  dims?: { width: number; height: number },
 ): { sceneHTML: string; sceneCode: string } {
   const canvasId = `physics-canvas-${sceneId.slice(0, 8)}`
-  const canvasW = 1920
-  const canvasH = 1080
+  const canvasW = dims?.width ?? 1920
+  const canvasH = dims?.height ?? 1080
   const title = esc(layer.title || '')
   const narration = esc(layer.narration || '')
   const equations = Array.isArray(layer.equations) ? layer.equations.filter(Boolean) : []

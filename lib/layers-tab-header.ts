@@ -8,6 +8,9 @@ export type LayersTabSectionId =
   | 'audio'
   | 'elements'
   | 'text'
+  | 'charts'
+  | 'avatar'
+  | 'three'
   | 'interact'
 
 /** Old tab ids → Scene panel (Content tab removed) */
@@ -24,6 +27,9 @@ export const LAYERS_TAB_META: { id: LayersTabSectionId; label: string }[] = [
   { id: 'transitions', label: 'Transitions' },
   { id: 'audio', label: 'Audio' },
   { id: 'text', label: 'Text' },
+  { id: 'charts', label: 'Charts' },
+  { id: 'avatar', label: 'Avatar' },
+  { id: 'three', label: '3D' },
   { id: 'interact', label: 'Interact' },
 ]
 

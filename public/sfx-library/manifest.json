@@ -1,0 +1,1334 @@
+{
+  "version": 1,
+  "generatedAt": "2026-04-10T01:55:43.315Z",
+  "categories": [
+    {
+      "id": "ui",
+      "label": "UI & clicks",
+      "sounds": [
+        {
+          "id": "zzfx-ui-tick",
+          "name": "Soft tick",
+          "file": "ui/zzfx-ui-tick.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.1,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-ui-click",
+          "name": "Click",
+          "file": "ui/zzfx-ui-click.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.07199546485260772,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-ui-toggle",
+          "name": "Toggle",
+          "file": "ui/zzfx-ui-toggle.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.14498866213151929,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-ui-beep-hi",
+          "name": "Beep high",
+          "file": "ui/zzfx-ui-beep-hi.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.12099773242630385,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-ui-beep-lo",
+          "name": "Beep low",
+          "file": "ui/zzfx-ui-beep-lo.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.1819954648526077,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-ui-chime",
+          "name": "Chime",
+          "file": "ui/zzfx-ui-chime.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.35,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-ui-swipe",
+          "name": "Swipe",
+          "file": "ui/zzfx-ui-swipe.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.28,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-ui-success",
+          "name": "Success",
+          "file": "ui/zzfx-ui-success.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.31,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-ui-deny",
+          "name": "Denied",
+          "file": "ui/zzfx-ui-deny.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.51,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-ui-hover",
+          "name": "Hover",
+          "file": "ui/zzfx-ui-hover.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.08798185941043084,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-ui-tap",
+          "name": "Tap",
+          "file": "ui/zzfx-ui-tap.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.06798185941043083,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-ui-send",
+          "name": "Send / submit",
+          "file": "ui/zzfx-ui-send.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.20798185941043085,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-ui-open",
+          "name": "Panel open",
+          "file": "ui/zzfx-ui-open.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.38,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-ui-close",
+          "name": "Panel close",
+          "file": "ui/zzfx-ui-close.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.3,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-ui-menu",
+          "name": "Menu fold",
+          "file": "ui/zzfx-ui-menu.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.2649886621315193,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-ui-type",
+          "name": "Type key",
+          "file": "ui/zzfx-ui-type.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.04897959183673469,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-ui-bright",
+          "name": "Bright ping",
+          "file": "ui/zzfx-ui-bright.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.17399092970521543,
+          "librarySource": "zzfx"
+        }
+      ]
+    },
+    {
+      "id": "impacts",
+      "label": "Impacts & hits",
+      "sounds": [
+        {
+          "id": "zzfx-impact-punch",
+          "name": "Punch",
+          "file": "impacts/zzfx-impact-punch.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.4,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-impact-thud",
+          "name": "Thud",
+          "file": "impacts/zzfx-impact-thud.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.48,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-impact-slam",
+          "name": "Slam",
+          "file": "impacts/zzfx-impact-slam.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.5749886621315192,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-impact-metal",
+          "name": "Metal hit",
+          "file": "impacts/zzfx-impact-metal.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.24,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-impact-glass",
+          "name": "Glass tap",
+          "file": "impacts/zzfx-impact-glass.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.20099773242630387,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-impact-body",
+          "name": "Body fall",
+          "file": "impacts/zzfx-impact-body.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.58,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-impact-sword",
+          "name": "Sword clang",
+          "file": "impacts/zzfx-impact-sword.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.3019954648526077,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-impact-wood",
+          "name": "Wood knock",
+          "file": "impacts/zzfx-impact-wood.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.38,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-impact-rubber",
+          "name": "Rubber slap",
+          "file": "impacts/zzfx-impact-rubber.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.52,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-impact-gravel",
+          "name": "Gravel hit",
+          "file": "impacts/zzfx-impact-gravel.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.39,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-impact-sand",
+          "name": "Sand thump",
+          "file": "impacts/zzfx-impact-sand.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.5,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-impact-ice",
+          "name": "Ice crack",
+          "file": "impacts/zzfx-impact-ice.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.22598639455782313,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-impact-bubble",
+          "name": "Wet slap",
+          "file": "impacts/zzfx-impact-bubble.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.49,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-impact-ceramic",
+          "name": "Ceramic clink",
+          "file": "impacts/zzfx-impact-ceramic.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.17598639455782314,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-impact-chain",
+          "name": "Chain rattle",
+          "file": "impacts/zzfx-impact-chain.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.32798185941043084,
+          "librarySource": "zzfx"
+        }
+      ]
+    },
+    {
+      "id": "explosions",
+      "label": "Explosions",
+      "sounds": [
+        {
+          "id": "zzfx-ex-small",
+          "name": "Small blast",
+          "file": "explosions/zzfx-ex-small.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.77,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-ex-med",
+          "name": "Medium blast",
+          "file": "explosions/zzfx-ex-med.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 1.03,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-ex-noise",
+          "name": "Noisy burst",
+          "file": "explosions/zzfx-ex-noise.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.77,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-ex-crunch",
+          "name": "Crunch boom",
+          "file": "explosions/zzfx-ex-crunch.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.6149886621315193,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-ex-electric",
+          "name": "Electric pop",
+          "file": "explosions/zzfx-ex-electric.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.28199546485260774,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-ex-underwater",
+          "name": "Muffled boom",
+          "file": "explosions/zzfx-ex-underwater.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 1.14,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-ex-spark",
+          "name": "Spark burst",
+          "file": "explosions/zzfx-ex-spark.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.18099773242630385,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-ex-tail",
+          "name": "Long tail boom",
+          "file": "explosions/zzfx-ex-tail.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 1.39,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-ex-compact",
+          "name": "Compact burst",
+          "file": "explosions/zzfx-ex-compact.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.3079818594104308,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-ex-sizzle",
+          "name": "Sizzle burst",
+          "file": "explosions/zzfx-ex-sizzle.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.53,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-ex-ring",
+          "name": "Shock ring",
+          "file": "explosions/zzfx-ex-ring.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.75,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-ex-flare",
+          "name": "Flare pop",
+          "file": "explosions/zzfx-ex-flare.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.25299319727891156,
+          "librarySource": "zzfx"
+        }
+      ]
+    },
+    {
+      "id": "pickups",
+      "label": "Pickups & rewards",
+      "sounds": [
+        {
+          "id": "zzfx-coin",
+          "name": "Coin",
+          "file": "pickups/zzfx-coin.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.2,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-powerup",
+          "name": "Power-up",
+          "file": "pickups/zzfx-powerup.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.3,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-heart",
+          "name": "Heart / life",
+          "file": "pickups/zzfx-heart.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.26,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-star",
+          "name": "Star sparkle",
+          "file": "pickups/zzfx-star.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.23498866213151928,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-level-up",
+          "name": "Level up",
+          "file": "pickups/zzfx-level-up.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.46,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-gem",
+          "name": "Gem",
+          "file": "pickups/zzfx-gem.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.23299319727891157,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-key",
+          "name": "Key / unlock",
+          "file": "pickups/zzfx-key.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.24798185941043083,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-multi",
+          "name": "Combo ping",
+          "file": "pickups/zzfx-multi.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.17399092970521543,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-treasure",
+          "name": "Treasure chest",
+          "file": "pickups/zzfx-treasure.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.52,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-orb",
+          "name": "Orb collect",
+          "file": "pickups/zzfx-orb.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.2559863945578231,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-ring-collect",
+          "name": "Ring collect",
+          "file": "pickups/zzfx-ring-collect.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.1989795918367347,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-bonus",
+          "name": "Bonus wave",
+          "file": "pickups/zzfx-bonus.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.45,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-streak",
+          "name": "Streak tick",
+          "file": "pickups/zzfx-streak.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.11199546485260771,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-magic-flourish",
+          "name": "Magic flourish",
+          "file": "pickups/zzfx-magic-flourish.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.6,
+          "librarySource": "zzfx"
+        }
+      ]
+    },
+    {
+      "id": "alarms",
+      "label": "Alarms & alerts",
+      "sounds": [
+        {
+          "id": "zzfx-alarm-fast",
+          "name": "Fast beep",
+          "file": "alarms/zzfx-alarm-fast.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.10498866213151928,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-alarm-slow",
+          "name": "Slow alarm",
+          "file": "alarms/zzfx-alarm-slow.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.52,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-buzzer",
+          "name": "Buzzer",
+          "file": "alarms/zzfx-buzzer.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.61,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-wrong",
+          "name": "Wrong / error",
+          "file": "alarms/zzfx-wrong.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.45,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-alarm-urgent",
+          "name": "Urgent pulse",
+          "file": "alarms/zzfx-alarm-urgent.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.13399092970521542,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-chime-soft",
+          "name": "Soft chime",
+          "file": "alarms/zzfx-chime-soft.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.47,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-attention",
+          "name": "Attention ding",
+          "file": "alarms/zzfx-attention.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.28,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-countdown",
+          "name": "Countdown tick",
+          "file": "alarms/zzfx-countdown.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.12798185941043083,
+          "librarySource": "zzfx"
+        }
+      ]
+    },
+    {
+      "id": "sci-fi",
+      "label": "Sci‑fi",
+      "sounds": [
+        {
+          "id": "zzfx-laser",
+          "name": "Laser shot",
+          "file": "sci-fi/zzfx-laser.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.18099773242630385,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-laser-big",
+          "name": "Heavy laser",
+          "file": "sci-fi/zzfx-laser-big.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.44,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-warp",
+          "name": "Warp",
+          "file": "sci-fi/zzfx-warp.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.85,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-scanner",
+          "name": "Scanner",
+          "file": "sci-fi/zzfx-scanner.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.2919954648526077,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-alien",
+          "name": "Alien ping",
+          "file": "sci-fi/zzfx-alien.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.54,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-teleport",
+          "name": "Teleport",
+          "file": "sci-fi/zzfx-teleport.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.86,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-shield",
+          "name": "Shield hum",
+          "file": "sci-fi/zzfx-shield.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.93,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-charge",
+          "name": "Charge up",
+          "file": "sci-fi/zzfx-charge.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 1.22,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-hologram",
+          "name": "Hologram flicker",
+          "file": "sci-fi/zzfx-hologram.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.14199546485260772,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-drone-pass",
+          "name": "Fly-by drone",
+          "file": "sci-fi/zzfx-drone-pass.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.86,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-servo",
+          "name": "Servo motor",
+          "file": "sci-fi/zzfx-servo.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.69,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-plasma",
+          "name": "Plasma hiss",
+          "file": "sci-fi/zzfx-plasma.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.59,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-cpu-beep",
+          "name": "CPU beep",
+          "file": "sci-fi/zzfx-cpu-beep.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.09698412698412698,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-datagram",
+          "name": "Data blip",
+          "file": "sci-fi/zzfx-datagram.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.08299319727891157,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-airlock",
+          "name": "Airlock seal",
+          "file": "sci-fi/zzfx-airlock.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.78,
+          "librarySource": "zzfx"
+        }
+      ]
+    },
+    {
+      "id": "cartoon",
+      "label": "Cartoon",
+      "sounds": [
+        {
+          "id": "zzfx-boing",
+          "name": "Boing",
+          "file": "cartoon/zzfx-boing.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.62,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-pop",
+          "name": "Pop",
+          "file": "cartoon/zzfx-pop.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.15498866213151927,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-slide",
+          "name": "Slide whistle",
+          "file": "cartoon/zzfx-slide.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.73,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-squish",
+          "name": "Squish",
+          "file": "cartoon/zzfx-squish.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.59,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-bonk",
+          "name": "Bonk",
+          "file": "cartoon/zzfx-bonk.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.32798185941043084,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-stretch",
+          "name": "Stretch",
+          "file": "cartoon/zzfx-stretch.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.85,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-whee",
+          "name": "Whee up",
+          "file": "cartoon/zzfx-whee.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.72,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-zip",
+          "name": "Zip",
+          "file": "cartoon/zzfx-zip.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.25,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-crunch-soft",
+          "name": "Soft crunch",
+          "file": "cartoon/zzfx-crunch-soft.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.52,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-spring",
+          "name": "Spring",
+          "file": "cartoon/zzfx-spring.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.49498866213151926,
+          "librarySource": "zzfx"
+        }
+      ]
+    },
+    {
+      "id": "percussion",
+      "label": "Drums & rhythm",
+      "sounds": [
+        {
+          "id": "zzfx-drum",
+          "name": "Drum hit",
+          "file": "percussion/zzfx-drum.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.16,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-kick",
+          "name": "Kick",
+          "file": "percussion/zzfx-kick.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.2749886621315193,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-snare",
+          "name": "Snare-ish",
+          "file": "percussion/zzfx-snare.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.17199546485260772,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-hat",
+          "name": "Hi-hat",
+          "file": "percussion/zzfx-hat.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.06099773242630385,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-tom",
+          "name": "Tom",
+          "file": "percussion/zzfx-tom.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.38798185941043084,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-clap",
+          "name": "Clap",
+          "file": "percussion/zzfx-clap.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.20199546485260772,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-rim",
+          "name": "Rim shot",
+          "file": "percussion/zzfx-rim.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.13598639455782313,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-ride",
+          "name": "Ride bell",
+          "file": "percussion/zzfx-ride.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.2629931972789116,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-shaker",
+          "name": "Shaker",
+          "file": "percussion/zzfx-shaker.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.35,
+          "librarySource": "zzfx"
+        }
+      ]
+    },
+    {
+      "id": "transitions",
+      "label": "Transitions",
+      "sounds": [
+        {
+          "id": "zzfx-whoosh",
+          "name": "Whoosh",
+          "file": "transitions/zzfx-whoosh.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.78,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-sweep-up",
+          "name": "Sweep up",
+          "file": "transitions/zzfx-sweep-up.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.75,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-riser",
+          "name": "Riser",
+          "file": "transitions/zzfx-riser.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 1.2,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-downer",
+          "name": "Downer",
+          "file": "transitions/zzfx-downer.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.85,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-tape-stop",
+          "name": "Tape stop",
+          "file": "transitions/zzfx-tape-stop.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.62,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-reverse-suck",
+          "name": "Reverse suck",
+          "file": "transitions/zzfx-reverse-suck.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.8,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-glitch-in",
+          "name": "Glitch in",
+          "file": "transitions/zzfx-glitch-in.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.29,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-glitch-out",
+          "name": "Glitch out",
+          "file": "transitions/zzfx-glitch-out.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.37,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-soft-in",
+          "name": "Soft fade in",
+          "file": "transitions/zzfx-soft-in.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.9,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-hard-cut",
+          "name": "Hard cut",
+          "file": "transitions/zzfx-hard-cut.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.10099773242630386,
+          "librarySource": "zzfx"
+        }
+      ]
+    },
+    {
+      "id": "sfxr",
+      "label": "Retro game",
+      "sounds": [
+        {
+          "id": "zzfx-sfxr-jump",
+          "name": "Jump",
+          "file": "sfxr/zzfx-sfxr-jump.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.22,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-sfxr-shoot",
+          "name": "Shoot / pew",
+          "file": "sfxr/zzfx-sfxr-shoot.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.12099773242630385,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-sfxr-hurt",
+          "name": "Hurt",
+          "file": "sfxr/zzfx-sfxr-hurt.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.34,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-sfxr-bling",
+          "name": "Pickup bling",
+          "file": "sfxr/zzfx-sfxr-bling.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.16498866213151928,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-sfxr-tiny-pop",
+          "name": "Tiny pop",
+          "file": "sfxr/zzfx-sfxr-tiny-pop.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.11199546485260771,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-sfxr-stab",
+          "name": "Synth stab",
+          "file": "sfxr/zzfx-sfxr-stab.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.43,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-sfxr-noise",
+          "name": "Noise burst",
+          "file": "sfxr/zzfx-sfxr-noise.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.46,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-sfxr-tone",
+          "name": "Simple tone",
+          "file": "sfxr/zzfx-sfxr-tone.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.5,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-sfxr-wobble",
+          "name": "Wobble",
+          "file": "sfxr/zzfx-sfxr-wobble.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.58,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-sfxr-slide",
+          "name": "Pitch slide",
+          "file": "sfxr/zzfx-sfxr-slide.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.75,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-sfxr-zap",
+          "name": "Zap",
+          "file": "sfxr/zzfx-sfxr-zap.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.13099773242630386,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-sfxr-thump",
+          "name": "Land thump",
+          "file": "sfxr/zzfx-sfxr-thump.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.33798185941043085,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-sfxr-8bit-run",
+          "name": "8-bit run",
+          "file": "sfxr/zzfx-sfxr-8bit-run.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.07698412698412699,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-sfxr-game-start",
+          "name": "Game start",
+          "file": "sfxr/zzfx-sfxr-game-start.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.62,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-sfxr-powerdown",
+          "name": "Power down",
+          "file": "sfxr/zzfx-sfxr-powerdown.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.79,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-sfxr-laser-charge",
+          "name": "Laser charge",
+          "file": "sfxr/zzfx-sfxr-laser-charge.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 1.03,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-sfxr-mutate",
+          "name": "Mutate",
+          "file": "sfxr/zzfx-sfxr-mutate.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.56,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-sfxr-lift",
+          "name": "Lift / spring up",
+          "file": "sfxr/zzfx-sfxr-lift.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.5,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-sfxr-coin-slot",
+          "name": "Coin slot",
+          "file": "sfxr/zzfx-sfxr-coin-slot.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.22598639455782313,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-sfxr-enemy-die",
+          "name": "Enemy poof",
+          "file": "sfxr/zzfx-sfxr-enemy-die.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.4649886621315193,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-sfxr-bubble",
+          "name": "Bubble pop",
+          "file": "sfxr/zzfx-sfxr-bubble.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.17399092970521543,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-sfxr-motor",
+          "name": "Motor loop-ish",
+          "file": "sfxr/zzfx-sfxr-motor.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.86,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-sfxr-blip-up",
+          "name": "Blip up",
+          "file": "sfxr/zzfx-sfxr-blip-up.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.28,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-sfxr-blip-down",
+          "name": "Blip down",
+          "file": "sfxr/zzfx-sfxr-blip-down.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.28,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-sfxr-double-jump",
+          "name": "Double jump",
+          "file": "sfxr/zzfx-sfxr-double-jump.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.19498866213151927,
+          "librarySource": "zzfx"
+        }
+      ]
+    },
+    {
+      "id": "ambient",
+      "label": "Ambient & drones",
+      "sounds": [
+        {
+          "id": "zzfx-amb-wind",
+          "name": "Soft wind",
+          "file": "ambient/zzfx-amb-wind.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 1.65,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-amb-pad",
+          "name": "Warm pad",
+          "file": "ambient/zzfx-amb-pad.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 1.65,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-amb-space",
+          "name": "Space drone",
+          "file": "ambient/zzfx-amb-space.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 2.1,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-amb-rumble",
+          "name": "Low rumble",
+          "file": "ambient/zzfx-amb-rumble.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 1.28,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-amb-crystal",
+          "name": "Crystal bed",
+          "file": "ambient/zzfx-amb-crystal.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 1.2,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-amb-pulse",
+          "name": "Slow pulse",
+          "file": "ambient/zzfx-amb-pulse.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 1.5,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-amb-horror",
+          "name": "Tense drone",
+          "file": "ambient/zzfx-amb-horror.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 1.62,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-amb-rain",
+          "name": "Rain texture",
+          "file": "ambient/zzfx-amb-rain.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.7,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-amb-dark",
+          "name": "Dark hum",
+          "file": "ambient/zzfx-amb-dark.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 1.85,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-amb-choir",
+          "name": "Airy pad",
+          "file": "ambient/zzfx-amb-choir.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 1.57,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-amb-glass",
+          "name": "Glass tone bed",
+          "file": "ambient/zzfx-amb-glass.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 1.35,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-amb-machine",
+          "name": "Machine room",
+          "file": "ambient/zzfx-amb-machine.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 1.45,
+          "librarySource": "zzfx"
+        }
+      ]
+    },
+    {
+      "id": "misc",
+      "label": "Classic ZzFX demos",
+      "sounds": [
+        {
+          "id": "zzfx-game-over",
+          "name": "Game over",
+          "file": "misc/zzfx-game-over.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.94,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-piano",
+          "name": "Piano pluck",
+          "file": "misc/zzfx-piano.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.21020408163265306,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-blip",
+          "name": "Blip",
+          "file": "misc/zzfx-blip.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.1219954648526077,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-notify",
+          "name": "Notification",
+          "file": "misc/zzfx-notify.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.27,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-sparkle-short",
+          "name": "Sparkle",
+          "file": "misc/zzfx-sparkle-short.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.16798185941043084,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-digital-glitch",
+          "name": "Digital glitch",
+          "file": "misc/zzfx-digital-glitch.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.24798185941043083,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-confirm-deep",
+          "name": "Confirm deep",
+          "file": "misc/zzfx-confirm-deep.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.54,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-cancel-soft",
+          "name": "Cancel soft",
+          "file": "misc/zzfx-cancel-soft.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.57,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-timer-done",
+          "name": "Timer done",
+          "file": "misc/zzfx-timer-done.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.39,
+          "librarySource": "zzfx"
+        },
+        {
+          "id": "zzfx-typing",
+          "name": "Typing burst",
+          "file": "misc/zzfx-typing.wav",
+          "license": "MIT (ZzFX)",
+          "duration": 0.06199546485260771,
+          "librarySource": "zzfx"
+        }
+      ]
+    }
+  ]
+}

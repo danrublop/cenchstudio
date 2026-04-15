@@ -179,7 +179,7 @@ export function createDefaultProject(scenes: Scene[] = []): Project {
     outputMode: 'mp4',
     createdAt: now,
     updatedAt: now,
-    mp4Settings: { resolution: '1080p', fps: 30, format: 'mp4' },
+    mp4Settings: { resolution: '1080p', fps: 30, format: 'mp4', aspectRatio: '16:9' as const },
     interactiveSettings: {
       playerTheme: 'dark',
       showProgressBar: true,
@@ -204,6 +204,7 @@ export function createDefaultProject(scenes: Scene[] = []): Project {
     audioProviderEnabled: { ...DEFAULT_AUDIO_PROVIDER_ENABLED },
     mediaGenEnabled: { ...DEFAULT_MEDIA_PROVIDER_ENABLED },
     watermark: null,
+    brandKit: null,
     pausedAgentRun: null,
   }
 }
@@ -258,6 +259,7 @@ export function createDefaultScene(prompt = ''): Scene {
     messages: [],
     styleOverride: {},
     cameraMotion: null,
+    elementOverrides: {},
     worldConfig: null,
     layerHiddenIds: [],
     layerPanelOrder: undefined,

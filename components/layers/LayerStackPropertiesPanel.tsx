@@ -11,6 +11,7 @@ import {
   LayoutTemplate,
   Sparkles,
   Type,
+  User,
   Video,
 } from 'lucide-react'
 import { useVideoStore } from '@/lib/store'
@@ -213,7 +214,7 @@ export default function LayerStackPropertiesPanel({ scene }: Props) {
             <div className="space-y-1">
               <SubLink
                 icon={Layers}
-                label="Setup tab — physics, charts, SVG & layers"
+                label="Setup tab — physics, SVG & layers (charts → Charts tab)"
                 onClick={() => openLayersSection('scene')}
               />
               <SubLink icon={Film} label="Setup tab — name, style & grid" onClick={() => openLayersSection('scene')} />
@@ -253,12 +254,19 @@ export default function LayerStackPropertiesPanel({ scene }: Props) {
 
       {kind === 'ai' && id ? (
         (scene.aiLayers ?? []).find((l) => l.id === id)?.type === 'avatar' ? (
-          <AvatarLayerPropertiesForm
-            scene={scene}
-            layerId={id}
-            onCommit={commit}
-            openLayersSection={openLayersSection}
-          />
+          <div className="space-y-3">
+            <SubLink
+              icon={User}
+              label="Avatar tab — open full view"
+              onClick={() => openLayersSection('avatar', { avatarLayerId: id })}
+            />
+            <AvatarLayerPropertiesForm
+              scene={scene}
+              layerId={id}
+              onCommit={commit}
+              openLayersSection={openLayersSection}
+            />
+          </div>
         ) : (
           <AILayerQuickProps scene={scene} layerId={id} onCommit={commit} openLayersSection={openLayersSection} />
         )
@@ -286,7 +294,7 @@ export default function LayerStackPropertiesPanel({ scene }: Props) {
 
       {kind === 'physics' && id && (
         <section className="space-y-2">
-          <SubLink icon={Layers} label="Setup tab — physics layers & card" onClick={() => openLayersSection('scene')} />
+          <SubLink icon={Layers} label="3D tab — physics layers & card" onClick={() => openLayersSection('three')} />
         </section>
       )}
 
@@ -296,8 +304,8 @@ export default function LayerStackPropertiesPanel({ scene }: Props) {
           <div className="space-y-1">
             <SubLink
               icon={BarChart3}
-              label="Setup tab — all charts & add/remove"
-              onClick={() => openLayersSection('scene')}
+              label="Charts tab — all charts & add/remove"
+              onClick={() => openLayersSection('charts')}
             />
             {(() => {
               const layer = deriveChartLayersFromScene(scene).find((c) => c.id === id)
@@ -361,7 +369,10 @@ function AILayerQuickProps({
   scene: Scene
   layerId: string
   onCommit: () => void
-  openLayersSection: (id: import('@/lib/layers-tab-header').LayersTabSectionId) => void
+  openLayersSection: (
+    id: import('@/lib/layers-tab-header').LayersTabSectionId,
+    opts?: { avatarLayerId?: string },
+  ) => void
 }) {
   const { updateAILayer } = useVideoStore()
   const layer = (scene.aiLayers ?? []).find((l) => l.id === layerId)

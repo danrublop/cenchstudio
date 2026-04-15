@@ -28,25 +28,30 @@ export const LIST_AVATARS_TOOL: ToolDefinition = {
   input_schema: {},
 }
 
-export const GENERATE_AVATAR_TOOL: ToolDefinition = {
-  name: 'generate_avatar',
-  description: `Generate a talking head avatar video using HeyGen.
+export function makeGenerateAvatarTool(W = 1920, H = 1080): ToolDefinition {
+  return {
+    name: 'generate_avatar',
+    description: `Generate a talking head avatar video using HeyGen.
 The avatar will speak the provided script.
 Background is automatically removed for transparent overlay.
 MUST call request_permission('heygen', cost, reason) first.
 Generation takes 1-5 minutes — inform the user.`,
-  input_schema: {
-    sceneId: 'string',
-    script: 'string — what the avatar will say',
-    avatarId: 'string — HeyGen avatar ID (call list_avatars first if unsure)',
-    voiceId: 'string — HeyGen voice ID',
-    x: 'number — center x position 0-1920',
-    y: 'number — center y position 0-1080',
-    width: 'number — avatar width in px (default 400)',
-    removeBackground: 'boolean — default true',
-    label: 'string — layer name',
-  },
+    input_schema: {
+      sceneId: 'string',
+      script: 'string — what the avatar will say',
+      avatarId: 'string — HeyGen avatar ID (call list_avatars first if unsure)',
+      voiceId: 'string — HeyGen voice ID',
+      x: `number — center x position 0-${W}`,
+      y: `number — center y position 0-${H}`,
+      width: 'number — avatar width in px (default 400)',
+      removeBackground: 'boolean — default true',
+      label: 'string — layer name',
+    },
+  }
 }
+
+/** @deprecated Use makeGenerateAvatarTool(W, H) for dynamic dimensions */
+export const GENERATE_AVATAR_TOOL: ToolDefinition = makeGenerateAvatarTool()
 
 export const GENERATE_VEO3_TOOL: ToolDefinition = {
   name: 'generate_veo3_video',
@@ -174,18 +179,23 @@ MUST call request_permission('elevenLabs', cost, reason) first.`,
   },
 }
 
-// All media generation tools
-export const MEDIA_TOOLS: ToolDefinition[] = [
-  PERMISSION_TOOL,
-  LIST_AVATARS_TOOL,
-  GENERATE_AVATAR_TOOL,
-  GENERATE_AVATAR_NARRATION_TOOL,
-  GENERATE_AVATAR_SCENE_TOOL,
-  GENERATE_VEO3_TOOL,
-  GENERATE_IMAGE_TOOL,
-  GENERATE_STICKER_TOOL,
-  ELEVENLABS_TTS_TOOL,
-]
+/** Build media tools with project-specific dimensions (defaults to 1920x1080). */
+export function makeMediaTools(W = 1920, H = 1080): ToolDefinition[] {
+  return [
+    PERMISSION_TOOL,
+    LIST_AVATARS_TOOL,
+    makeGenerateAvatarTool(W, H),
+    GENERATE_AVATAR_NARRATION_TOOL,
+    GENERATE_AVATAR_SCENE_TOOL,
+    GENERATE_VEO3_TOOL,
+    GENERATE_IMAGE_TOOL,
+    GENERATE_STICKER_TOOL,
+    ELEVENLABS_TTS_TOOL,
+  ]
+}
+
+// All media generation tools (default 1920x1080 dimensions)
+export const MEDIA_TOOLS: ToolDefinition[] = makeMediaTools()
 
 // Tool filter presets
 export interface ToolPreset {

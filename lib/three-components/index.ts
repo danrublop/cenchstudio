@@ -179,6 +179,87 @@ function buildLightingNeon(scene, camera, palette, rand, DURATION) {
 `,
 }
 
+const lightingCinematic: ThreeComponent = {
+  id: 'lighting-cinematic',
+  name: 'Cinematic Soft Box',
+  category: 'lighting',
+  description: 'RectAreaLight key + warm fill + cool rim. Soft box look for product shots and cinematic scenes.',
+  tags: ['cinematic', 'softbox', 'area-light', 'product', 'professional', 'studio'],
+  buildCode: `
+function buildLightingCinematic(scene, camera, palette, rand, DURATION) {
+  // RectAreaLight needs uniform library — import inline
+  const script = document.createElement('script');
+  script.type = 'module';
+  script.textContent = \`
+    import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
+    RectAreaLightUniformsLib.init();
+  \`;
+  document.head.appendChild(script);
+
+  // Key — large soft area light from above-left
+  const key = new THREE.RectAreaLight(0xfff8f0, 5, 6, 3);
+  key.position.set(-4, 6, 4);
+  key.lookAt(0, 0, 0);
+
+  // Fill — warm, opposite side
+  const fill = new THREE.DirectionalLight(0xffe8d0, 0.5);
+  fill.position.set(5, 3, 2);
+
+  // Rim — cool backlight for edge separation
+  const rim = new THREE.DirectionalLight(0xd0e0ff, 0.8);
+  rim.position.set(0, 4, -8);
+
+  // Shadow caster (RectAreaLight doesn't cast shadow maps)
+  const shadowLight = new THREE.DirectionalLight(0xffffff, 0.3);
+  shadowLight.position.set(-4, 8, 4);
+  shadowLight.castShadow = true;
+  shadowLight.shadow.mapSize.set(2048, 2048);
+  shadowLight.shadow.bias = -0.001;
+
+  const ambient = new THREE.AmbientLight(0xffffff, 0.15);
+
+  scene.add(key, fill, rim, shadowLight, ambient);
+
+  return { update(t) {} };
+}
+`,
+}
+
+const lightingSunset: ThreeComponent = {
+  id: 'lighting-sunset',
+  name: 'Sunset Warm',
+  category: 'lighting',
+  description: 'Warm directional with long shadows and orange/purple tints. Golden hour aesthetic.',
+  tags: ['sunset', 'warm', 'golden-hour', 'orange', 'purple', 'long-shadows'],
+  buildCode: `
+function buildLightingSunset(scene, camera, palette, rand, DURATION) {
+  const ambient = new THREE.AmbientLight(0x1a1025, 0.2);
+
+  // Low-angle warm key (sunset direction)
+  const key = new THREE.DirectionalLight(0xff9040, 1.6);
+  key.position.set(-8, 2, 3);
+  key.castShadow = true;
+  key.shadow.mapSize.set(2048, 2048);
+  key.shadow.camera.left = -15;
+  key.shadow.camera.right = 15;
+  key.shadow.camera.top = 15;
+  key.shadow.camera.bottom = -15;
+  key.shadow.bias = -0.001;
+
+  // Purple sky fill from above
+  const skyFill = new THREE.HemisphereLight(0x6040a0, 0xff8060, 0.4);
+
+  // Warm rim from behind
+  const rim = new THREE.DirectionalLight(0xff6030, 0.5);
+  rim.position.set(3, 1, -8);
+
+  scene.add(ambient, key, skyFill, rim);
+
+  return { update(t) {} };
+}
+`,
+}
+
 // ── Camera Components ─────────────────────────────────────────────────────────
 
 const cameraOrbitSlow: ThreeComponent = {
@@ -259,6 +340,84 @@ function buildCameraIsometric(scene, camera, palette, rand, DURATION) {
   camera.lookAt(0, 0, 0);
 
   return { update(t) {} };
+}
+`,
+}
+
+const cameraDollyIn: ThreeComponent = {
+  id: 'camera-dolly-in',
+  name: 'Dolly In',
+  category: 'camera',
+  description: 'Camera starts far and moves in close to the subject. Creates focus and intimacy.',
+  tags: ['dolly', 'push-in', 'zoom', 'close-up', 'approach'],
+  buildCode: `
+function buildCameraDollyIn(scene, camera, palette, rand, DURATION) {
+  const startZ = 18;
+  const endZ = 5;
+  const startY = 5;
+  const endY = 3;
+
+  return {
+    update(t) {
+      const progress = Math.min(t / (DURATION * 0.8), 1);
+      const ease = 1 - Math.pow(1 - progress, 3);
+      camera.position.z = startZ + (endZ - startZ) * ease;
+      camera.position.y = startY + (endY - startY) * ease;
+      camera.lookAt(0, 0, 0);
+    }
+  };
+}
+`,
+}
+
+const cameraCraneUp: ThreeComponent = {
+  id: 'camera-crane-up',
+  name: 'Crane Up',
+  category: 'camera',
+  description: 'Camera rises vertically while looking at the origin. Reveals scene from low to high angle.',
+  tags: ['crane', 'rise', 'vertical', 'reveal', 'ascend'],
+  buildCode: `
+function buildCameraCraneUp(scene, camera, palette, rand, DURATION) {
+  const startY = 1;
+  const endY = 12;
+  const radius = camera.position.length() > 0.1 ? Math.sqrt(camera.position.x ** 2 + camera.position.z ** 2) : 10;
+
+  return {
+    update(t) {
+      const progress = Math.min(t / (DURATION * 0.85), 1);
+      const ease = progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+      camera.position.y = startY + (endY - startY) * ease;
+      camera.lookAt(0, 0, 0);
+    }
+  };
+}
+`,
+}
+
+const cameraPath: ThreeComponent = {
+  id: 'camera-path',
+  name: 'Smooth Path',
+  category: 'camera',
+  description: 'Camera follows a smooth CatmullRomCurve3 path through the scene. Cinematic flythrough.',
+  tags: ['path', 'flythrough', 'cinematic', 'curve', 'spline', 'smooth'],
+  buildCode: `
+function buildCameraPath(scene, camera, palette, rand, DURATION) {
+  const curve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(-8, 3, 8),
+    new THREE.Vector3(-2, 5, 4),
+    new THREE.Vector3(4, 4, 2),
+    new THREE.Vector3(8, 3, -4),
+    new THREE.Vector3(4, 2, -8),
+  ]);
+
+  return {
+    update(t) {
+      const progress = Math.min(t / DURATION, 0.98);
+      const ease = progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+      camera.position.copy(curve.getPointAt(ease));
+      camera.lookAt(0, 0, 0);
+    }
+  };
 }
 `,
 }
@@ -644,6 +803,279 @@ function buildObjectBuildingBlocks(scene, camera, palette, rand, DURATION) {
 `,
 }
 
+const objectSvgExtrude: ThreeComponent = {
+  id: 'object-svg-extrude',
+  name: 'SVG Extrude',
+  category: 'object',
+  description: 'Extrudes an SVG file into 3D geometry with PBR materials. Set window.SVG_EXTRUDE_URL before building.',
+  tags: ['svg', 'extrude', 'logo', 'brand', '3d', 'text', 'icon', 'vector'],
+  buildCode: `
+function buildObjectSvgExtrude(scene, camera, palette, rand, DURATION) {
+  const svgUrl = window.SVG_EXTRUDE_URL;
+  if (!svgUrl) { console.warn('No SVG_EXTRUDE_URL set'); return { update() {} }; }
+
+  const pivot = new THREE.Group();
+  scene.add(pivot);
+  let loaded = false;
+
+  import('three/addons/loaders/SVGLoader.js').then(({ SVGLoader }) => {
+    fetch(svgUrl).then(r => r.text()).then(text => {
+      const inner = new THREE.Group();
+      const data = new SVGLoader().parse(text);
+      let i = 0;
+      for (const path of data.paths) {
+        const shapes = SVGLoader.createShapes(path);
+        for (const shape of shapes) {
+          const geo = new THREE.ExtrudeGeometry(shape, {
+            depth: 20, bevelEnabled: true,
+            bevelThickness: 3, bevelSize: 2,
+            bevelSegments: 8, curveSegments: 24,
+          });
+          const mat = new THREE.MeshStandardMaterial({
+            color: palette[i % palette.length],
+            metalness: 0.6, roughness: 0.25,
+          });
+          const mesh = new THREE.Mesh(geo, mat);
+          mesh.castShadow = true;
+          inner.add(mesh);
+          i++;
+        }
+      }
+      const box = new THREE.Box3().setFromObject(inner);
+      const center = box.getCenter(new THREE.Vector3());
+      const size = box.getSize(new THREE.Vector3());
+      inner.position.set(-center.x, -center.y, -center.z);
+      const maxDim = Math.max(size.x, size.y, size.z);
+      const s = 4 / maxDim;
+      pivot.scale.set(s, -s, s);
+      pivot.add(inner);
+      loaded = true;
+    });
+  });
+
+  return {
+    update(t) {
+      if (!loaded) return;
+      pivot.rotation.y = t * 0.3;
+    }
+  };
+}
+`,
+}
+
+const objectTrophyPedestal: ThreeComponent = {
+  id: 'object-trophy-pedestal',
+  name: 'Trophy Pedestal',
+  category: 'object',
+  description: 'A pedestal with a spotlight for showcasing other objects. Product display stand.',
+  tags: ['pedestal', 'display', 'showcase', 'stand', 'product', 'trophy', 'spotlight'],
+  buildCode: `
+function buildObjectTrophyPedestal(scene, camera, palette, rand, DURATION) {
+  // Base cylinder
+  const baseMat = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(palette[0]),
+    roughness: 0.2,
+    metalness: 0.8,
+  });
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(2, 2.2, 0.3, 48), baseMat);
+  base.position.y = -2.5;
+  base.receiveShadow = true;
+  base.castShadow = true;
+  scene.add(base);
+
+  // Column
+  const colMat = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(palette[1 % palette.length]),
+    roughness: 0.15,
+    metalness: 0.9,
+  });
+  const column = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 1.0, 2.0, 36), colMat);
+  column.position.y = -1.35;
+  column.castShadow = true;
+  scene.add(column);
+
+  // Top platform
+  const topMat = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(palette[0]),
+    roughness: 0.1,
+    metalness: 0.9,
+  });
+  const top = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.2, 0.2, 48), topMat);
+  top.position.y = -0.25;
+  top.receiveShadow = true;
+  top.castShadow = true;
+  scene.add(top);
+
+  // Spotlight from above
+  const spot = new THREE.SpotLight(0xffffff, 3, 20, Math.PI / 8, 0.6, 1.5);
+  spot.position.set(0, 8, 0);
+  spot.castShadow = true;
+  spot.shadow.mapSize.set(1024, 1024);
+  spot.target.position.set(0, -0.25, 0);
+  scene.add(spot, spot.target);
+
+  return {
+    update(t) {
+      spot.intensity = 3 + Math.sin(t * 1.5) * 0.3;
+    }
+  };
+}
+`,
+}
+
+const objectFloatingCards: ThreeComponent = {
+  id: 'object-floating-cards',
+  name: 'Floating Cards',
+  category: 'object',
+  description: 'Multiple cards floating and slowly rotating in space. Info displays or feature showcases.',
+  tags: ['cards', 'float', 'info', 'panels', 'display', 'features', 'ui'],
+  buildCode: `
+function buildObjectFloatingCards(scene, camera, palette, rand, DURATION) {
+  const cards = [];
+  const count = 5;
+
+  for (let i = 0; i < count; i++) {
+    const geo = new THREE.BoxGeometry(2, 1.2, 0.05);
+    const mat = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(palette[i % palette.length]),
+      roughness: 0.3,
+      metalness: 0.1,
+    });
+    const card = new THREE.Mesh(geo, mat);
+    card.castShadow = true;
+
+    const angle = (i / count) * Math.PI * 2;
+    const radius = 3.5;
+    card.position.set(
+      Math.cos(angle) * radius,
+      (rand() - 0.5) * 2,
+      Math.sin(angle) * radius
+    );
+    card.lookAt(0, card.position.y, 0);
+
+    scene.add(card);
+    cards.push({ mesh: card, angle, baseY: card.position.y, phase: rand() * Math.PI * 2 });
+  }
+
+  return {
+    update(t) {
+      cards.forEach(({ mesh, angle, baseY, phase }) => {
+        const a = angle + t * 0.2;
+        mesh.position.x = Math.cos(a) * 3.5;
+        mesh.position.z = Math.sin(a) * 3.5;
+        mesh.position.y = baseY + Math.sin(t * 0.8 + phase) * 0.3;
+        mesh.lookAt(0, mesh.position.y, 0);
+      });
+    }
+  };
+}
+`,
+}
+
+const objectHelixParticles: ThreeComponent = {
+  id: 'object-helix-particles',
+  name: 'Helix Particles',
+  category: 'object',
+  description: 'Particles arranged in a rotating double-helix pattern. DNA-like or data stream aesthetic.',
+  tags: ['helix', 'particles', 'dna', 'spiral', 'data', 'stream'],
+  buildCode: `
+function buildObjectHelixParticles(scene, camera, palette, rand, DURATION) {
+  const count = 120;
+  const positions = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
+  const c0 = new THREE.Color(palette[0]);
+  const c1 = new THREE.Color(palette[1 % palette.length]);
+
+  for (let i = 0; i < count; i++) {
+    const t = (i / count) * Math.PI * 6;
+    const strand = i % 2;
+    const r = 1.5;
+    const x = Math.cos(t + strand * Math.PI) * r;
+    const z = Math.sin(t + strand * Math.PI) * r;
+    const y = (i / count) * 8 - 4;
+    positions[i * 3] = x;
+    positions[i * 3 + 1] = y;
+    positions[i * 3 + 2] = z;
+    const c = strand === 0 ? c0 : c1;
+    colors[i * 3] = c.r;
+    colors[i * 3 + 1] = c.g;
+    colors[i * 3 + 2] = c.b;
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+  const mat = new THREE.PointsMaterial({ size: 0.15, vertexColors: true, sizeAttenuation: true });
+  const points = new THREE.Points(geo, mat);
+  scene.add(points);
+
+  return {
+    update(t) {
+      points.rotation.y = t * 0.3;
+      const pos = geo.attributes.position;
+      for (let i = 0; i < count; i++) {
+        const base = (i / count) * Math.PI * 6;
+        const strand = i % 2;
+        pos.setX(i, Math.cos(base + strand * Math.PI + t * 0.5) * 1.5);
+        pos.setZ(i, Math.sin(base + strand * Math.PI + t * 0.5) * 1.5);
+      }
+      pos.needsUpdate = true;
+    }
+  };
+}
+`,
+}
+
+const objectMorphingSphere: ThreeComponent = {
+  id: 'object-morphing-sphere',
+  name: 'Morphing Sphere',
+  category: 'object',
+  description: 'A sphere with animated vertex displacement creating organic morphing shapes.',
+  tags: ['morph', 'sphere', 'displacement', 'organic', 'blob', 'animate', 'abstract'],
+  buildCode: `
+function buildObjectMorphingSphere(scene, camera, palette, rand, DURATION) {
+  const geo = new THREE.SphereGeometry(1.8, 64, 64);
+  const mat = new THREE.MeshPhysicalMaterial({
+    color: new THREE.Color(palette[0]),
+    roughness: 0.2,
+    metalness: 0.6,
+    clearcoat: 0.8,
+    clearcoatRoughness: 0.1,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.castShadow = true;
+  scene.add(mesh);
+
+  // Store original positions
+  const origPos = new Float32Array(geo.attributes.position.array);
+
+  return {
+    update(t) {
+      const pos = geo.attributes.position;
+      for (let i = 0; i < pos.count; i++) {
+        const ox = origPos[i * 3];
+        const oy = origPos[i * 3 + 1];
+        const oz = origPos[i * 3 + 2];
+        const len = Math.sqrt(ox * ox + oy * oy + oz * oz);
+        const nx = ox / len, ny = oy / len, nz = oz / len;
+
+        // Multi-frequency noise displacement
+        const d = 0.15 * Math.sin(nx * 4 + t * 1.5)
+                + 0.1 * Math.sin(ny * 6 + t * 2.3)
+                + 0.08 * Math.sin(nz * 8 + t * 1.8);
+
+        pos.setXYZ(i, ox + nx * d, oy + ny * d, oz + nz * d);
+      }
+      pos.needsUpdate = true;
+      geo.computeVertexNormals();
+      mesh.rotation.y = t * 0.2;
+    }
+  };
+}
+`,
+}
+
 // ── Environment Components ────────────────────────────────────────────────────
 
 const envGridFloor: ThreeComponent = {
@@ -778,6 +1210,240 @@ function buildEnvGradientBg(scene, camera, palette, rand, DURATION) {
 `,
 }
 
+const envStudioBackdrop: ThreeComponent = {
+  id: 'env-studio-backdrop',
+  name: 'Studio Backdrop',
+  category: 'environment',
+  description: 'Curved cyclorama studio backdrop with floor. Clean product photography look.',
+  tags: ['studio', 'backdrop', 'cyclorama', 'product', 'clean', 'photography'],
+  buildCode: `
+function buildEnvStudioBackdrop(scene, camera, palette, rand, DURATION) {
+  // Create curved backdrop using LatheGeometry (half revolution)
+  const points = [];
+  const radius = 15;
+  const height = 12;
+  // Floor curve up to back wall
+  for (let i = 0; i <= 20; i++) {
+    const t = i / 20;
+    const angle = t * Math.PI * 0.5;
+    points.push(new THREE.Vector2(
+      radius * Math.cos(angle),
+      -3 + (height + 3) * Math.sin(angle)
+    ));
+  }
+
+  const geo = new THREE.LatheGeometry(points, 64, -Math.PI * 0.6, Math.PI * 1.2);
+  const mat = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(palette[palette.length - 1] || '#f0f0f0'),
+    roughness: 0.9,
+    metalness: 0,
+    side: THREE.BackSide,
+  });
+  const backdrop = new THREE.Mesh(geo, mat);
+  backdrop.receiveShadow = true;
+  scene.add(backdrop);
+
+  // Floor plane
+  const floorGeo = new THREE.PlaneGeometry(30, 30);
+  const floorMat = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(palette[palette.length - 1] || '#f0f0f0'),
+    roughness: 0.8,
+    metalness: 0,
+  });
+  const floor = new THREE.Mesh(floorGeo, floorMat);
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.y = -3;
+  floor.receiveShadow = true;
+  scene.add(floor);
+
+  return { update(t) {} };
+}
+`,
+}
+
+const envFogAtmosphere: ThreeComponent = {
+  id: 'env-fog-atmosphere',
+  name: 'Fog Atmosphere',
+  category: 'environment',
+  description: 'Adds exponential fog for depth and atmosphere. Objects fade into background.',
+  tags: ['fog', 'atmosphere', 'depth', 'haze', 'fade', 'mood'],
+  buildCode: `
+function buildEnvFogAtmosphere(scene, camera, palette, rand, DURATION) {
+  const fogColor = new THREE.Color(palette[palette.length - 1] || '#1a1a2e');
+  scene.fog = new THREE.FogExp2(fogColor, 0.04);
+  scene.background = fogColor;
+
+  return { update(t) {} };
+}
+`,
+}
+
+const envHdriRoom: ThreeComponent = {
+  id: 'env-hdri-room',
+  name: 'HDRI Room',
+  category: 'environment',
+  description: 'RoomEnvironment from Three.js addons. Realistic indoor reflections without external HDRI files.',
+  tags: ['hdri', 'room', 'environment-map', 'reflections', 'indoor', 'pbr'],
+  buildCode: `
+function buildEnvHdriRoom(scene, camera, palette, rand, DURATION) {
+  // Use the built-in RoomEnvironment for realistic PBR reflections
+  // This creates a procedural room with neutral lighting
+  const pmrem = new THREE.PMREMGenerator(scene.__renderer || camera.__renderer);
+
+  // Fallback to setupEnvironment approach
+  const envScene = new THREE.Scene();
+  const roomGeo = new THREE.BoxGeometry(20, 10, 20);
+  const roomMat = new THREE.MeshBasicMaterial({
+    color: 0xf0f0f0,
+    side: THREE.BackSide,
+  });
+  envScene.add(new THREE.Mesh(roomGeo, roomMat));
+
+  // Light panels
+  const panelGeo = new THREE.PlaneGeometry(6, 4);
+  const panelMat = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+  const topPanel = new THREE.Mesh(panelGeo, panelMat);
+  topPanel.position.set(0, 4.9, 0);
+  topPanel.rotation.x = Math.PI / 2;
+  envScene.add(topPanel);
+
+  const sidePanel = new THREE.Mesh(new THREE.PlaneGeometry(3, 3), panelMat);
+  sidePanel.position.set(-9.9, 2, 0);
+  sidePanel.rotation.y = Math.PI / 2;
+  envScene.add(sidePanel);
+
+  try {
+    const envMap = pmrem.fromScene(envScene, 0.04).texture;
+    scene.environment = envMap;
+    pmrem.dispose();
+  } catch(e) {
+    console.warn('envHdriRoom: PMREMGenerator failed', e);
+  }
+
+  return { update(t) {} };
+}
+`,
+}
+
+// ── Text Components ──────────────────────────────────────────────────────────
+
+const objectTextTitle: ThreeComponent = {
+  id: 'object-text-title',
+  name: 'Title Text 3D',
+  category: 'object',
+  description: 'Large 3D title text with subtitle using troika-three-text. Outline, letter spacing, gentle float.',
+  tags: ['text', 'title', 'troika', '3d-text', 'headline', 'typography'],
+  buildCode: `
+function buildObjectTextTitle(scene, camera, palette, rand, DURATION) {
+  // Dynamic import since troika is an external module
+  let mainText = null, subText = null;
+  import('troika-three-text').then(function(mod) {
+    const Text = mod.Text;
+    mainText = new Text();
+    mainText.text = 'TITLE';
+    mainText.fontSize = 2.0;
+    mainText.anchorX = 'center';
+    mainText.anchorY = 'middle';
+    mainText.position.set(0, 1.2, 0);
+    mainText.color = palette[1 % palette.length];
+    mainText.outlineWidth = 0.03;
+    mainText.outlineColor = '#000000';
+    mainText.letterSpacing = 0.06;
+    mainText.sync();
+    scene.add(mainText);
+
+    subText = new Text();
+    subText.text = 'SUBTITLE';
+    subText.fontSize = 0.8;
+    subText.anchorX = 'center';
+    subText.anchorY = 'middle';
+    subText.position.set(0, -0.8, 0);
+    subText.color = palette[3 % palette.length];
+    subText.outlineWidth = 0.015;
+    subText.outlineColor = '#000000';
+    subText.letterSpacing = 0.12;
+    subText.sync();
+    scene.add(subText);
+  }).catch(function(e) { console.warn('troika-three-text not available:', e); });
+
+  return {
+    update(t) {
+      if (mainText) {
+        mainText.position.y = 1.2 + Math.sin(t * 0.4) * 0.15;
+        mainText.rotation.y = Math.sin(t * 0.15) * 0.1;
+      }
+      if (subText) {
+        subText.position.y = -0.8 + Math.sin(t * 0.4 + 0.5) * 0.1;
+        subText.rotation.y = Math.sin(t * 0.15 + 0.3) * -0.08;
+      }
+    }
+  };
+}
+`,
+}
+
+// ── Utility Components ───────────────────────────────────────────────────────
+
+const objectWireframeBox: ThreeComponent = {
+  id: 'object-wireframe-box',
+  name: 'Wireframe Box',
+  category: 'object',
+  description: 'Transparent box with glowing edge lines. Tech/AI/architecture aesthetic.',
+  tags: ['wireframe', 'edges', 'tech', 'ai', 'architecture', 'box', 'glow', 'line'],
+  buildCode: `
+function buildObjectWireframeBox(scene, camera, palette, rand, DURATION) {
+  const group = new THREE.Group();
+
+  const boxGeo = new THREE.BoxGeometry(2, 2, 2);
+  const boxMat = new THREE.MeshPhysicalMaterial({
+    color: new THREE.Color(palette[0]),
+    transparent: true,
+    opacity: 0.08,
+    roughness: 0.1,
+    metalness: 0.5,
+    transmission: 0.6,
+  });
+  const box = new THREE.Mesh(boxGeo, boxMat);
+  group.add(box);
+
+  const edgesGeo = new THREE.EdgesGeometry(boxGeo);
+  const edgesMat = new THREE.LineBasicMaterial({
+    color: new THREE.Color(palette[1 % palette.length]),
+    linewidth: 2,
+  });
+  const edges = new THREE.LineSegments(edgesGeo, edgesMat);
+  group.add(edges);
+
+  // Corner spheres for visual emphasis
+  const cornerPositions = [
+    [-1,-1,-1],[-1,-1,1],[-1,1,-1],[-1,1,1],
+    [1,-1,-1],[1,-1,1],[1,1,-1],[1,1,1]
+  ];
+  const dotGeo = new THREE.SphereGeometry(0.06, 8, 8);
+  const dotMat = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(palette[1 % palette.length]),
+    emissive: new THREE.Color(palette[1 % palette.length]),
+    emissiveIntensity: 0.8,
+  });
+  cornerPositions.forEach(function(p) {
+    const dot = new THREE.Mesh(dotGeo, dotMat);
+    dot.position.set(p[0], p[1], p[2]);
+    group.add(dot);
+  });
+
+  group.castShadow = true;
+  scene.add(group);
+
+  return {
+    update(t) {
+      group.rotation.y = t * 0.3;
+      group.rotation.x = Math.sin(t * 0.2) * 0.15;
+    }
+  };
+}
+`,
+}
+
 // ── Component Registry ────────────────────────────────────────────────────────
 
 /** All available pre-built Three.js components, organized by category. */
@@ -787,11 +1453,16 @@ export const THREE_COMPONENTS: ThreeComponent[] = [
   lightingDramatic,
   lightingSoftOverhead,
   lightingNeon,
+  lightingCinematic,
+  lightingSunset,
   // Camera
   cameraOrbitSlow,
   cameraPullback,
   cameraTopDown,
   cameraIsometric,
+  cameraDollyIn,
+  cameraCraneUp,
+  cameraPath,
   // Objects
   objectFloatingSphere,
   objectDnaHelix,
@@ -799,10 +1470,20 @@ export const THREE_COMPONENTS: ThreeComponent[] = [
   objectAtom,
   objectGearPair,
   objectBuildingBlocks,
+  objectSvgExtrude,
+  objectTrophyPedestal,
+  objectFloatingCards,
+  objectHelixParticles,
+  objectMorphingSphere,
+  objectTextTitle,
+  objectWireframeBox,
   // Environment
   envGridFloor,
   envParticlesBg,
   envGradientBg,
+  envStudioBackdrop,
+  envFogAtmosphere,
+  envHdriRoom,
 ]
 
 /** Look up a component by id. Returns undefined if not found. */
@@ -834,6 +1515,8 @@ export interface AssembleThreeSceneConfig {
   duration: number
   /** The DOM element id that the renderer should append into */
   layerId: string
+  /** Enable cinematic post-processing (bloom + output pass). Default: false */
+  postProcessing?: boolean | { bloom?: number; dof?: boolean; focusDistance?: number }
 }
 
 /**
@@ -845,13 +1528,13 @@ export interface AssembleThreeSceneConfig {
  * 1. Injects all selected component buildCode functions
  * 2. Creates the renderer and scene using r183 boilerplate
  * 3. Calls each build function and collects their update handles
- * 4. Runs a unified rAF loop calling every update(t)
+ * 4. Runs a GSAP timeline onUpdate loop calling every update(t)
  *
  * @param config - Component selection and scene configuration
  * @returns Complete JS string for the scene template
  */
 export function assembleThreeScene(config: AssembleThreeSceneConfig): string {
-  const { lighting, camera, objects, environment, customCode, palette, duration, layerId } = config
+  const { lighting, camera, objects, environment, customCode, palette, duration, layerId, postProcessing } = config
 
   const componentIds = [lighting, camera, ...(environment ? [environment] : []), ...objects]
 
@@ -877,8 +1560,28 @@ export function assembleThreeScene(config: AssembleThreeSceneConfig): string {
   const handles = ['_lighting', '_camera', ...(environment ? ['_env'] : []), ...objects.map((_, i) => `_obj${i}`)]
   const updateCalls = handles.map((h) => `  if (${h} && ${h}.update) ${h}.update(t);`).join('\n')
 
+  const ppEnabled = !!postProcessing
+  const ppConfig = typeof postProcessing === 'object' ? postProcessing : {}
+  const bloomStrength = ppConfig.bloom ?? 0.35
+  const ppImports = ppEnabled
+    ? `import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';`
+    : ''
+  const ppSetup = ppEnabled
+    ? `
+// ── Post-Processing ──────────────────────────────────────────────────────────
+const _composer = new EffectComposer(renderer);
+_composer.addPass(new RenderPass(scene, camera));
+_composer.addPass(new UnrealBloomPass(new THREE.Vector2(WIDTH, HEIGHT), ${bloomStrength}, 0.4, 0.85));
+_composer.addPass(new OutputPass());`
+    : ''
+  const renderCall = ppEnabled ? '_composer.render();' : 'renderer.render(scene, camera);'
+
   return `
 import * as THREE from 'three';
+${ppImports}
 const { WIDTH, HEIGHT, DURATION, mulberry32, setupEnvironment } = window;
 
 ${functionBodies}
@@ -910,26 +1613,26 @@ ${callEnvironment}
 ${callObjects}
 
 ${customCode ? `// ── Custom Code ──────────────────────────────────────────────────────────────\n${customCode}` : ''}
+${ppSetup}
 
-// ── Animation Loop ────────────────────────────────────────────────────────────
+// ── Animation Loop (GSAP timeline — seekable, pausable, exportable) ──────────
 
-const _startTime = performance.now();
-
-function _animate() {
-  const t = (performance.now() - _startTime) / 1000;
-  if (t > DURATION) {
-    renderer.render(scene, camera);
-    return;
-  }
+const _state = { progress: 0 };
+window.__tl.to(_state, {
+  progress: 1,
+  duration: DURATION,
+  ease: 'none',
+  onUpdate: function() {
+    const t = _state.progress * DURATION;
 
 ${updateCalls}
 
-  renderer.render(scene, camera);
-  window.__animFrame = requestAnimationFrame(_animate);
-}
+    ${renderCall}
+  }
+}, 0);
 
-window.__resume = () => { window.__animFrame = requestAnimationFrame(_animate); };
-window.__animFrame = requestAnimationFrame(_animate);
+// Initial render so scene is visible while paused
+${renderCall}
 `.trim()
 }
 

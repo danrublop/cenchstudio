@@ -19,6 +19,15 @@ dist
 # Generated files
 public/scenes/*.html
 public/uploads/*
+# Bundled SFX binaries (manifest.json stays tracked; run npm run sfx-library:fetch to fill)
+public/sfx-library/**/*.mp3
+public/sfx-library/**/*.wav
+!public/sfx-library/**/zzfx-*.wav
+!public/sfx-library/**/soloud-*.wav
+!public/sfx-library/**/react-sounds-*.*
+public/sfx-library/**/*.ogg
+public/sfx-library/**/*.m4a
+!public/sfx-library/manifest.json
 public/avatars/*.vrm
 public/avatars/*.glb
 !public/uploads/.gitkeep

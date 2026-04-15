@@ -7,8 +7,9 @@ import { compileD3SceneFromLayers } from './charts/compile'
 import { deriveChartLayersFromScene } from './charts/extract'
 import { compilePhysicsSceneFromLayers } from './physics/compile'
 import type { D3ChartLayer, InteractionElement, PhysicsLayer, Scene, SvgObject } from './types'
+import type { SceneElement } from './types/elements'
 
-export type TextSlotKind = 'overlay' | 'svg_text' | 'interaction' | 'physics' | 'chart'
+export type TextSlotKind = 'overlay' | 'svg_text' | 'interaction' | 'physics' | 'chart' | 'dom_text'
 
 /** Slot key shape: `chart:{layerId}:title` */
 export function parseChartTitleSlotKey(key: string): { layerId: string } | null {
@@ -260,7 +261,11 @@ function pushPhysicsSlots(layers: PhysicsLayer[] | undefined, out: TextSlot[]) {
   }
 }
 
-export type CollectTextSlotsOptions = { includeSvg?: boolean }
+export type CollectTextSlotsOptions = {
+  includeSvg?: boolean
+  /** Inspector elements from the iframe — used to surface React DOM text */
+  inspectorElements?: Record<string, SceneElement>
+}
 
 /** Collect every editable text slot for the scene. Set `includeSvg: false` during SSR / before hydration. */
 export function collectTextSlots(scene: Scene, opts?: CollectTextSlotsOptions): TextSlot[] {
@@ -319,10 +324,31 @@ export function collectTextSlots(scene: Scene, opts?: CollectTextSlotsOptions): 
   pushInteractionSlots(scene, out)
   pushPhysicsSlots(scene.physicsLayers, out)
 
+  // React DOM text elements from the inspector
+  if (opts?.inspectorElements) {
+    for (const el of Object.values(opts.inspectorElements)) {
+      if (el.type !== 'dom-text') continue
+      const text = (el as any).text as string | undefined
+      if (!text?.trim()) continue
+      out.push({
+        key: `dom:${el.id}`,
+        kind: 'dom_text',
+        label: el.label || 'React text',
+        preview: text.trim().slice(0, 72),
+        badge: 'React',
+      })
+    }
+  }
+
   return out
 }
 
-export function getTextSlotValue(scene: Scene, key: string): string {
+export function getTextSlotValue(scene: Scene, key: string, inspectorElements?: Record<string, SceneElement>): string {
+  if (key.startsWith('dom:')) {
+    const elId = key.slice('dom:'.length)
+    const el = inspectorElements?.[elId]
+    return el ? ((el as any).text as string) ?? '' : ''
+  }
   if (key.startsWith('overlay:')) {
     const id = key.slice('overlay:'.length)
     return scene.textOverlays?.find((t) => t.id === id)?.content ?? ''
@@ -404,7 +430,18 @@ export function applyTextSlotValue(
   scene: Scene,
   key: string,
   value: string,
-): { patch: Partial<Scene>; saveHtml: boolean } {
+): { patch: Partial<Scene>; saveHtml: boolean; domElementId?: string } {
+  // DOM text edits go through elementOverrides — caller must also patch iframe
+  if (key.startsWith('dom:')) {
+    const elId = key.slice('dom:'.length)
+    const prev = scene.elementOverrides ?? {}
+    const prevEl = prev[elId] ?? {}
+    return {
+      patch: { elementOverrides: { ...prev, [elId]: { ...prevEl, text: value } } },
+      saveHtml: true,
+      domElementId: elId,
+    }
+  }
   if (key.startsWith('overlay:')) {
     const id = key.slice('overlay:'.length)
     const next = (scene.textOverlays ?? []).map((t) => (t.id === id ? { ...t, content: value } : t))

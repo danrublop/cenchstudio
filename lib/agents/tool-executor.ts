@@ -19,6 +19,7 @@ import type { ToolResult, StateSnapshot } from './types'
 import type { AgentLogger } from './logger'
 import { toolRegistry } from './tool-registry'
 import { generateSceneHTML } from '../sceneTemplate'
+import { resolveProjectDimensions } from '../dimensions'
 import { resolveStyle } from '../styles/presets'
 import { API_COST_ESTIMATES, API_DISPLAY_NAMES, checkPermission } from '../permissions'
 import { generateCode } from '../generation/generate'
@@ -42,6 +43,7 @@ import { createPlanningExportToolHandler, PLANNING_EXPORT_TOOL_NAMES } from './t
 import { createThreeWorldToolHandler, THREE_WORLD_TOOL_NAMES } from './tool-handlers/three-world-tools'
 import { createPhysicsToolHandler, PHYSICS_TOOL_NAMES } from './tool-handlers/physics-tools'
 import { createSkillToolHandler, SKILL_TOOL_NAMES } from './tool-handlers/skill-tools'
+import { createBrandToolHandler, BRAND_TOOL_NAMES } from './tool-handlers/brand-tools'
 
 // ── Tool Error Rate Tracking ─────────────────────────────────────────────────
 
@@ -174,6 +176,8 @@ export interface WorldStateMutable {
   zdogStudioLibrary?: import('@/lib/types/zdog-studio').ZdogStudioAsset[]
   /** NLE timeline with clips on tracks */
   timeline?: import('../types').Timeline | null
+  /** MP4/export settings including aspect ratio */
+  mp4Settings?: import('../types').MP4Settings
   // Recording state (agent-controlled)
   recordingState?: import('@/types/electron').RecordingStoreState
   recordingConfig?: import('@/types/electron').RecordingConfig
@@ -183,6 +187,10 @@ export interface WorldStateMutable {
   recordingError?: string | null
   recordingElapsed?: number
   recordingAttachSceneId?: string | null
+  /** Project assets (media library) for brand kit and SVG extrusion */
+  projectAssets?: import('../types/media').ProjectAsset[]
+  /** Brand kit data for branding tools */
+  brandKit?: import('../types/media').BrandKit | null
 }
 
 // ── Tool Hook Pipeline ───────────────────────────────────────────────────────
@@ -599,6 +607,12 @@ function ensureAllHandlersRegistered(): void {
     threeWorldHandler(toolName, args, world as WorldStateMutable, logger),
   )
 
+  // ── Brand Kit tools ──
+  const brandHandler = createBrandToolHandler()
+  toolRegistry.registerMany([...BRAND_TOOL_NAMES], (toolName, args, world, logger) =>
+    brandHandler(toolName, args, world as WorldStateMutable, logger),
+  )
+
   // ── Physics tools ──
   const physicsHandler = createPhysicsToolHandler({ regenerateHTML })
   toolRegistry.registerMany([...PHYSICS_TOOL_NAMES], (toolName, args, world, logger) =>
@@ -701,7 +715,7 @@ function ensureAllHandlersRegistered(): void {
       `Scene "${scene.name}" (${scene.id.slice(0, 8)}…)`,
       `Type: ${scene.sceneType ?? 'svg'} | Duration: ${scene.duration}s | BG: ${scene.bgColor}`,
       `Capture time: ${t}s`,
-      `Dimensions: 1920×1080`,
+      (() => { const d = resolveProjectDimensions(world.mp4Settings?.aspectRatio, world.mp4Settings?.resolution); return `Dimensions: ${d.width}×${d.height}` })(),
       '',
       `Layers (${layers.length}):`,
       ...layers.map((l) => `  • ${l}`),
@@ -1379,7 +1393,7 @@ async function regenerateHTML(
   }
   try {
     const start = Date.now()
-    const html = generateSceneHTML(scene, world.globalStyle)
+    const html = generateSceneHTML(scene, world.globalStyle, undefined, undefined, resolveProjectDimensions(world.mp4Settings?.aspectRatio, world.mp4Settings?.resolution))
     updateScene(world, sceneId, { sceneHTML: html })
     // Write to disk immediately so preview iframes can load the latest content
     const scenesDir = path.join(process.cwd(), 'public', 'scenes')

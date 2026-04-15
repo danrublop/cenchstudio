@@ -70,6 +70,7 @@ export function getModelProvider(
   modelId: ModelId,
   modelConfigs?: import('./model-config').ModelConfig[],
 ): 'anthropic' | 'openai' | 'google' | 'local' {
+  if (!modelId) return 'anthropic' // fallback for undefined/null
   // Check model configs first for local models
   if (modelConfigs) {
     const config = modelConfigs.find((m) => m.id === modelId || m.modelId === modelId)
@@ -139,7 +140,9 @@ export function messageContentToText(content: MessageContent): string {
 // ── Message Types ─────────────────────────────────────────────────────────────
 
 /** A segment of a message — either a text chunk or a tool call reference, in chronological order */
-export type MessageSegment = { type: 'text'; text: string } | { type: 'tool'; toolCallId: string }
+export type MessageSegment =
+  | { type: 'text'; text: string }
+  | { type: 'tool'; toolCallId: string }
 
 export interface ChatMessage {
   id: string
@@ -161,19 +164,9 @@ export interface ChatMessage {
   generationLogId?: string
   /** User feedback rating: 1 = thumbs down, 5 = thumbs up */
   userRating?: number
-  /** True when LLM routing failed and heuristic was used as fallback */
-  routingFallback?: boolean
-  /** How the agent was selected: llm, heuristic, override, or fallback */
-  routeMethod?: string
   timestamp: number
   /** Permission requests that need user approval (from tool results with permissionNeeded) */
   pendingPermissions?: PendingPermission[]
-  /** True when a checkpoint was saved (cost/tool/iteration limit hit) */
-  hasCheckpoint?: boolean
-  /** Why the checkpoint was saved */
-  checkpointReason?: 'cost_cap' | 'tool_limit' | 'iteration_limit'
-  /** Number of scenes built before checkpoint */
-  checkpointScenesBuilt?: number
 }
 
 export interface PendingPermission {
@@ -266,8 +259,9 @@ export type SSEEventType =
   | 'sub_agent_start' // orchestrator starting a sub-agent for a scene
   | 'sub_agent_complete' // sub-agent finished building a scene
   | 'run_progress' // live progress update (tool count, cost, iteration)
-  | 'checkpoint_saved' // checkpoint saved (cost/tool/iteration limit hit)
   | 'error' // error occurred
+  | 'warning' // non-fatal warning (e.g. checkpoint load failure)
+  | 'heartbeat' // keepalive ping during long operations
   | 'done' // stream complete
 
 export interface SSEEvent {
@@ -275,8 +269,7 @@ export interface SSEEvent {
   /** For 'run_start' events — correlation ID for the entire run */
   runId?: string
   /** For 'agent_routed' events — routing decision metadata */
-  routeMethod?: 'override' | 'heuristic' | 'llm' | 'fallback'
-  isFallback?: boolean
+  routeMethod?: 'override' | 'default' | 'heuristic' | 'llm' | 'fallback'
   focusedSceneType?: string
   toolCount?: number
   /** For 'token' and 'thinking_token' events */
@@ -297,8 +290,10 @@ export interface SSEEvent {
   sceneId?: string
   /** For 'state_change' events */
   changes?: StateChange[]
-  /** For 'error' events */
+  /** For 'error' and 'warning' events */
   error?: string
+  /** For 'warning' events — human-readable description */
+  message?: string
   /** For 'done' events */
   agentType?: AgentType
   modelId?: ModelId
@@ -324,9 +319,6 @@ export interface SSEEvent {
     iteration: number
     iterationMax: number
   }
-  /** For 'checkpoint_saved' events */
-  reason?: string
-  scenesBuilt?: number
   /** For 'sub_agent_start' / 'sub_agent_complete' events */
   subAgentId?: string
   subAgentSceneIndex?: number
@@ -381,6 +373,8 @@ export interface ContextOpts {
   audioProviderEnabled?: Record<string, boolean>
   mediaGenEnabled?: Record<string, boolean>
   projectAssets?: import('../types').ProjectAsset[]
+  mp4Settings?: import('../types').MP4Settings
+  brandKit?: import('../types/media').BrandKit | null
 }
 
 export interface WorldState {
@@ -610,7 +604,7 @@ export interface RunCheckpoint {
   /** When the checkpoint was created */
   createdAt: string
   /** Why the run was interrupted */
-  reason: 'disconnect' | 'timeout' | 'error' | 'cost_cap' | 'tool_limit' | 'iteration_limit'
+  reason: 'disconnect' | 'timeout' | 'error'
 }
 
 // ── Snapshot / Undo ───────────────────────────────────────────────────────────

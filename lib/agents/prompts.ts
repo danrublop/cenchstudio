@@ -341,6 +341,7 @@ When audio tools are available:
 - Keep narration complementary — describe what's shown, don't just read on-screen text
 - For non-educational content (abstract art, music videos), skip narration unless requested
 - **IMPORTANT: Narrate ALL scenes, not just the first one. Every scene in the video needs its own narration call.**
+- After narration is generated, if the narration duration exceeds the scene duration, call set_scene_duration to extend the scene to ceil(narration_duration + 1) seconds so the audio isn't cut off
 
 **Background Music** — When Music providers are listed in Audio Providers:
 - Add background music to the first scene using add_background_music with a mood-appropriate query (e.g. "upbeat corporate", "calm piano", "dramatic orchestral")
@@ -396,6 +397,30 @@ Avatar stands on one side, content panels appear beside them. Requires narration
 - avatar_scene: the avatar IS the scene. Tutorials, explainers, talking-head videos
 - PIP (generate_avatar_narration): avatar supplements visual content. Data viz, animations with narrator
 - Never use avatar_scene for data-heavy scenes, abstract concepts, or scenes < 5 seconds
+
+### Avatar in React scenes
+Avatars are composited as HTML overlays (aiLayers), NOT as React bridge components.
+PIP avatars float on top of the scene — do NOT redesign the scene layout to accommodate them.
+The scene content should use the full viewport as normal. The avatar is a small circle overlay
+in one corner — it is acceptable for it to partially overlap content.
+
+NEVER add extra padding, margins, maxWidth restrictions, or reserved columns in the scene code
+to "make room" for a PIP avatar. That defeats the purpose of an overlay and breaks the layout.
+Only avatar_scene (fullscreen presenter) uses a split layout with a dedicated avatar column.
+
+Avatar timing is TTS-driven (audio duration), independent of React's useCurrentFrame().
+Design scene animations to complement the avatar speech duration (match scene.duration).
+A React scene can freely combine ThreeJSLayer, Canvas2DLayer, D3Layer etc. alongside a PIP avatar.
+
+### TalkingHead models (free provider)
+Available 3D models (selected via project avatar config, not per-tool-call):
+- brunette: friendly female presenter (default for "friendly" character)
+- mpfb: professional male presenter (default for "professional" character)
+- brunette_t: compact/lightweight brunette variant (CDN)
+- avaturn: Avaturn community sample (CDN)
+- avatarsdk: AvatarSDK community sample (CDN)
+
+Local models (brunette, mpfb) require GLB files in public/avatars/. CDN variants always work.
 
 ## Mandatory 4-Phase Workflow
 
@@ -565,18 +590,21 @@ export const DIRECTOR_TEMPLATE_PROMPTS: Record<string, string> = {
 // ── Scene-type-specific guidance blocks ──────────────────────────────────────
 // Used by buildSceneMakerPrompt() to assemble focused prompts per scene type.
 
-const SCENE_TYPE_GUIDANCE_SVG = `### SVG Scenes
-- Use viewBox="0 0 1920 1080" always
+function sceneTypeGuidanceSvg(W = 1920, H = 1080) {
+  return `### SVG Scenes
+- Use viewBox="0 0 ${W} ${H}" always
 - Animate with CSS animations or SMIL, not JS character-by-character text
 - Use the global palette colors from world state
 - Apply stroke-width from global style
 - Use seeded randomness: const rand = mulberry32(SEED);`
+}
 
-const SCENE_TYPE_GUIDANCE_CANVAS2D = `### Canvas2D Scenes
+function sceneTypeGuidanceCanvas2d(W = 1920, H = 1080) {
+  return `### Canvas2D Scenes
 - For **standard animated backgrounds** (starfield, particles, waves, rain/snow, fire haze, EQ bars, etc.), call \`apply_canvas_motion_template\` with a built-in \`templateId\` — deterministic, scrub-friendly, **no LLM cost**. On **motion / d3 / svg** scenes, set \`asBackground: true\` to keep foreground content and only add the full-frame canvas behind it; omit it (or use false) to replace the whole scene with Canvas2D. Use \`add_layer\` with canvas2d only when you need custom art the templates do not cover.
-- Canvas is always 1920x1080
+- Canvas is always ${W}x${H}
 - Use requestAnimationFrame for animation loops
-- Clear with ctx.clearRect(0, 0, 1920, 1080) each frame
+- Clear with ctx.clearRect(0, 0, ${W}, ${H}) each frame
 - Access elapsed time via the getT() pattern in the skeleton
 - NEVER use Math.random() — use mulberry32(seed) seeded PRNG (available as a global)
 - The canvas renderer is auto-injected — all drawing functions below are globals
@@ -642,6 +670,7 @@ async function runScene() {
 }
 runScene();
 \`\`\``
+}
 
 const SCENE_TYPE_GUIDANCE_D3 = `### D3 Scenes — PREFER generate_chart + structured edits
 For standard charts (bar, line, pie, donut, scatter, area, gauge, number, stacked/grouped bar), use \`generate_chart\` (append) and \`update_chart\` / \`remove_chart\` / \`reorder_charts\` to edit. These tools maintain \`chartLayers\` and recompile CenchCharts — same data the user can edit manually in Layers. No raw D3 code unless necessary.
@@ -673,11 +702,13 @@ const SCENE_TYPE_GUIDANCE_THREE = `### Three.js Scenes
 - Add hero content (models, meshes, story motion) on top of the environment; do not delete group \`__cenchEnvRoot\`.
 - Prefer \`MeshStandardMaterial\` / \`MeshPhysicalMaterial\`; use \`setupEnvironment(scene, renderer)\` for PBR reflections when the scene is studio-like and you are not using a conflicting full-sky env.`
 
-const SCENE_TYPE_GUIDANCE_MOTION = `### Motion Scenes
+function sceneTypeGuidanceMotion(W = 1920, H = 1080) {
+  return `### Motion Scenes
 - All animation timing MUST go through window.__tl (GSAP master timeline)
 - Use progress-based animation: GSAP tweens a proxy 0→1, onUpdate drives all element changes
 - NEVER use standalone anime() timelines, setTimeout, or requestAnimationFrame
-- Use flexbox/grid for layout — NEVER position:absolute with pixel values (causes overflow)
+- Canvas is fixed ${W}×${H}px with overflow: hidden — all content must fit within bounds
+- Use flexbox/grid for layout — NEVER position:absolute with pixel values that exceed ${W}×${H}
 - Use clamp(), vw/vh, percentages for responsive sizing
 - CSS @keyframes for entrance animations so content shows before play is pressed
 - Do NOT redeclare template globals (DURATION, WIDTH, HEIGHT, PALETTE, etc.)
@@ -721,10 +752,12 @@ PRE-MADE LOTTIE ILLUSTRATIONS:
   // Then: CenchMotion.lottieSync('#lottie-wrap', { src: url, tl, delay: 0.3 })
 
 For custom animations not covered by CenchMotion, write GSAP directly — all plugins are available.`
+}
 
-const SCENE_TYPE_GUIDANCE_LOTTIE = `### Lottie Scenes
+function sceneTypeGuidanceLottie(W = 1920, H = 1080) {
+  return `### Lottie Scenes
 - Generates Lottie JSON (not SVG) — rendered by lottie-web (bodymovin 5.12.2)
-- Canvas: w=1920, h=1080, fr=30
+- Canvas: w=${W}, h=${H}, fr=30
 - CRITICAL: Every animated keyframe (except the last) MUST have bezier easing handles:
   "i": {"x":[0.42],"y":[0]}, "o": {"x":[0.58],"y":[1]}  (1D properties)
   "i": {"x":[0.42,0.42,0.42],"y":[0,0,0]}, "o": {"x":[0.58,0.58,0.58],"y":[1,1,1]}  (3D: position/scale/anchor)
@@ -732,6 +765,7 @@ const SCENE_TYPE_GUIDANCE_LOTTIE = `### Lottie Scenes
 - Shape types: el (ellipse), rc (rect), sr (star), sh (bezier path), fl (fill), st (stroke), gr (group)
 - Timeline integration is automatic (built into template)
 - For pre-made Lottie animations, use search_lottie tool + CenchMotion.lottieSync() instead of generating raw Lottie JSON`
+}
 
 const SCENE_TYPE_GUIDANCE_PHYSICS = `### Physics Scenes
 Use generate_physics_scene when the content involves a physics concept with a simulation.
@@ -757,19 +791,41 @@ Use \`create_world_scene\` instead of \`add_layer\`:
 - Minimum 4-second duration — 3D worlds need time to establish
 Environments: meadow (outdoor), studio_room (indoor), void_space (dark/abstract).`
 
-/** Map of scene type → focused guidance block */
-export const SCENE_TYPE_GUIDANCE: Record<string, string> = {
-  svg: SCENE_TYPE_GUIDANCE_SVG,
-  canvas2d: SCENE_TYPE_GUIDANCE_CANVAS2D,
-  d3: SCENE_TYPE_GUIDANCE_D3,
-  three: SCENE_TYPE_GUIDANCE_THREE,
-  motion: SCENE_TYPE_GUIDANCE_MOTION,
-  lottie: SCENE_TYPE_GUIDANCE_LOTTIE,
-  physics: SCENE_TYPE_GUIDANCE_PHYSICS,
-  '3d_world': SCENE_TYPE_GUIDANCE_3D_WORLD,
-  avatar_scene: SCENE_TYPE_GUIDANCE_MOTION, // avatar scenes use motion-like layouts
-  zdog: SCENE_TYPE_GUIDANCE_SVG, // zdog uses similar patterns to SVG
+function sceneTypeGuidanceReact(W = 1920, H = 1080) {
+  return `### React Scenes (Default Renderer)
+- The canvas is a fixed ${W}×${H}px box with overflow: hidden — any content outside is clipped and invisible
+- Use \`<AbsoluteFill>\` for full-frame layers (fills the ${W}×${H} root). Do not exceed these bounds
+- All positioning must stay within 0–${W} (x) and 0–${H} (y). Keep important content within 100px inset from edges
+- If content is too tall (long lists, many items), reduce items, use smaller fonts, multi-column layouts, or split across scenes
+- Animation is a pure function of frame via \`useCurrentFrame()\` — no useState for animation state
+- Use \`interpolate()\` and \`spring()\` for animation, \`<Sequence>\` for temporal composition
+- Bridge components: \`<Canvas2DLayer>\`, \`<ThreeJSLayer>\`, \`<D3Layer>\`, \`<SVGLayer>\`, \`<LottieLayer>\`
+- Do NOT mount manually — just \`export default Scene;\` (bootstrapper handles mounting)
+- Do NOT use requestAnimationFrame, setTimeout, setInterval, or Math.random()
+- Every scene must have CenchCamera motion (kenBurns is the safe default)`
 }
+
+/** Build the map of scene type → focused guidance block for given dimensions */
+export function getSceneTypeGuidance(dims?: { width: number; height: number }): Record<string, string> {
+  const W = dims?.width ?? 1920
+  const H = dims?.height ?? 1080
+  return {
+    react: sceneTypeGuidanceReact(W, H),
+    svg: sceneTypeGuidanceSvg(W, H),
+    canvas2d: sceneTypeGuidanceCanvas2d(W, H),
+    d3: SCENE_TYPE_GUIDANCE_D3,
+    three: SCENE_TYPE_GUIDANCE_THREE,
+    motion: sceneTypeGuidanceMotion(W, H),
+    lottie: sceneTypeGuidanceLottie(W, H),
+    physics: SCENE_TYPE_GUIDANCE_PHYSICS,
+    '3d_world': SCENE_TYPE_GUIDANCE_3D_WORLD,
+    avatar_scene: sceneTypeGuidanceMotion(W, H), // avatar scenes use motion-like layouts
+    zdog: sceneTypeGuidanceSvg(W, H), // zdog uses similar patterns to SVG
+  }
+}
+
+/** Default map at 1920x1080 for backward compatibility */
+export const SCENE_TYPE_GUIDANCE: Record<string, string> = getSceneTypeGuidance()
 
 // ── Master Builder common rules ──────────────────────────────────────────────
 
@@ -822,6 +878,7 @@ When audio tools are available:
 - Keep narration complementary — describe what's shown, don't just read on-screen text
 - For non-educational content (abstract art, music videos), skip narration unless requested
 - **IMPORTANT: Narrate ALL scenes, not just the first one. Every scene in the video needs its own narration call.**
+- After narration is generated, if the narration duration exceeds the scene duration, call set_scene_duration to extend the scene to ceil(narration_duration + 1) seconds so the audio isn't cut off
 
 **Background Music** — When Music providers are listed in Audio Providers:
 - Add background music to the first scene using add_background_music with a mood-appropriate query
@@ -891,14 +948,15 @@ const rand = mulberry32(12345); // fixed seed
  *
  * When sceneType is omitted (user-initiated SceneMaker), all types are included.
  */
-export function buildSceneMakerPrompt(sceneType?: string): string {
+export function buildSceneMakerPrompt(sceneType?: string, dims?: { width: number; height: number }): string {
+  const guidance = dims ? getSceneTypeGuidance(dims) : SCENE_TYPE_GUIDANCE
   const parts = [SCENE_MAKER_COMMON]
 
-  if (sceneType && SCENE_TYPE_GUIDANCE[sceneType]) {
+  if (sceneType && guidance[sceneType]) {
     // Focused mode: only include guidance for the target scene type
     // (used by sub-agents or when type is already known)
     parts.push(`\n## Layer Generation Rules (${sceneType})\n`)
-    parts.push(SCENE_TYPE_GUIDANCE[sceneType])
+    parts.push(guidance[sceneType])
   } else {
     // Generalist mode: include type selection guide
     // Scene type guidance is now primarily in the skill library.
@@ -1067,11 +1125,12 @@ export function getAgentPrompt(
   style?: ResolvedStyle,
   focusedSceneType?: string,
   directorTemplate?: string,
+  dims?: { width: number; height: number },
 ): string {
   // For scene-maker with a known scene type, build a focused prompt
   let base: string
   if (agentType === 'scene-maker' && focusedSceneType) {
-    base = buildSceneMakerPrompt(focusedSceneType)
+    base = buildSceneMakerPrompt(focusedSceneType, dims)
   } else if (agentType === 'director' && directorTemplate && DIRECTOR_TEMPLATE_PROMPTS[directorTemplate]) {
     base = DIRECTOR_TEMPLATE_PROMPTS[directorTemplate]
   } else {

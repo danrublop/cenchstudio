@@ -23,6 +23,10 @@ export class ScenePlayer {
   onEnded?: () => void
   onPaused?: (currentTime: number) => void
   onSeeked?: (currentTime: number) => void
+  /** In-scene interaction events (from CenchReact hooks) */
+  onVariableChanged?: (name: string, value: unknown) => void
+  onElementClicked?: (elementId: string, data?: Record<string, unknown>) => void
+  onInteractionEvent?: (name: string, payload?: unknown) => void
 
   constructor(iframe: HTMLIFrameElement, sceneId: string) {
     this.iframe = iframe
@@ -79,6 +83,17 @@ export class ScenePlayer {
         this.duration = data.duration ?? this.duration
         this.status = data.status ?? this.status
         break
+
+      // In-scene interaction events (from CenchReact hooks)
+      case 'variable_changed':
+        this.onVariableChanged?.(data.name, data.value)
+        break
+      case 'element_clicked':
+        this.onElementClicked?.(data.elementId, data.data)
+        break
+      case 'interaction_event':
+        this.onInteractionEvent?.(data.name, data.payload)
+        break
     }
   }
 
@@ -100,6 +115,16 @@ export class ScenePlayer {
 
   getState() {
     this.send({ type: 'get_state' })
+  }
+
+  /** Push a variable value into the scene iframe */
+  setVariable(name: string, value: unknown) {
+    this.send({ type: 'set_variable', name, value })
+  }
+
+  /** Fire a named trigger into the scene */
+  fireTrigger(name: string, payload?: unknown) {
+    this.send({ type: 'fire_trigger', name, payload })
   }
 
   destroy() {

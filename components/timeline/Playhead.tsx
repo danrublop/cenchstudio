@@ -34,18 +34,17 @@ export default function Playhead({
       className="absolute top-0 bottom-0 z-30 pointer-events-none"
       style={{ left: x, width: 0 }}
     >
-      {/* Drag handle — triangle */}
+      {/* Drag handle — Premiere-style filled tab */}
       <div
         className="pointer-events-auto cursor-col-resize"
         style={{
           position: 'absolute',
           top: 0,
-          left: -5,
-          width: 0,
-          height: 0,
-          borderLeft: '5px solid transparent',
-          borderRight: '5px solid transparent',
-          borderTop: '8px solid #e84545',
+          left: -7,
+          width: 14,
+          height: 10,
+          background: 'var(--tl-playhead)',
+          borderRadius: '0 0 3px 3px',
         }}
         onPointerDown={onPointerDown}
       />
@@ -59,7 +58,7 @@ export default function Playhead({
             transform: 'translateX(-50%)',
             fontSize: 9,
             fontFamily: 'monospace',
-            background: '#e84545',
+            background: 'var(--tl-playhead)',
             color: '#fff',
             padding: '1px 4px',
             borderRadius: 3,
@@ -75,9 +74,9 @@ export default function Playhead({
         style={{
           top: 0,
           bottom: 0,
-          left: -1,
-          width: 2,
-          background: '#e84545',
+          left: -0.5,
+          width: 1,
+          background: 'var(--tl-playhead)',
           pointerEvents: 'none',
         }}
       />

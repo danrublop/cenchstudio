@@ -16,6 +16,7 @@ export const TYPE_BADGE_COLORS: Record<SceneType, string> = {
   physics: '#06b6d4',
   avatar_scene: '#ec4899',
   '3d_world': '#8b5cf6',
+  react: '#06d6a0',
 }
 
 interface Props {
@@ -54,7 +55,7 @@ export default function SceneTrack({ pps, scrollX, containerWidth, trackHeight, 
         const isSelected = scene.id === selectedSceneId
         const type = scene.sceneType ?? 'svg'
         const showThumbnail = width > 60 && !!scene.thumbnail
-        const bg = index % 2 === 0 ? 'var(--color-bg)' : '#1e1e28'
+        const bg = index % 2 === 0 ? 'var(--tl-track-bg)' : 'var(--tl-track-alt)'
 
         return (
           <div
@@ -64,8 +65,8 @@ export default function SceneTrack({ pps, scrollX, containerWidth, trackHeight, 
               left,
               width,
               background: bg,
-              borderRight: '1px solid #0d0d0f',
-              border: isSelected ? '2px solid #e84545' : undefined,
+              borderRight: '1px solid var(--tl-border)',
+              border: isSelected ? '2px solid var(--tl-playhead)' : undefined,
               boxSizing: 'border-box',
             }}
             onClick={() => selectScene(scene.id)}
@@ -84,7 +85,7 @@ export default function SceneTrack({ pps, scrollX, containerWidth, trackHeight, 
             {/* Scene number */}
             <span
               className="absolute z-10"
-              style={{ top: 2, left: 3, fontSize: 9, fontWeight: 700, color: 'var(--color-text-primary)' }}
+              style={{ top: 2, left: 3, fontSize: 9, fontWeight: 700, color: 'var(--color-text-muted)' }}
             >
               {index + 1}
             </span>

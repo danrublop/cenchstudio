@@ -77,6 +77,7 @@ export function createAudioToolHandler(deps: {
           (() => {
             // In local mode, only use free TTS providers
             if (world.localMode) {
+              if (process.platform === 'darwin' && isProviderEnabled('native-tts')) return 'native-tts'
               if (isProviderEnabled('openai-edge-tts')) return 'openai-edge-tts'
               if (isProviderEnabled('native-tts')) return 'native-tts'
               if (isProviderEnabled('web-speech')) return 'web-speech'

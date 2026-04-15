@@ -90,6 +90,16 @@ export function createInspectorActions(set: Set, get: Get) {
           }
         }
 
+        // React scenes: persist overrides (non-destructive — doesn't modify reactCode)
+        if (sceneType === 'react' && element.type.startsWith('dom-')) {
+          const prev = scene.elementOverrides ?? {}
+          const prevEl = prev[elementId] ?? {}
+          updates.elementOverrides = {
+            ...prev,
+            [elementId]: { ...prevEl, [property]: value as string | number },
+          }
+        }
+
         if (Object.keys(updates).length > 0) {
           scenes = state.scenes.map((s) => (s.id === sceneId ? { ...s, ...updates } : s))
         }

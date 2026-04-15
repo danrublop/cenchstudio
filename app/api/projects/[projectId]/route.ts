@@ -65,6 +65,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pr
       mediaGenEnabled,
       thumbnailUrl,
       watermark,
+      brandKit,
       storyboardProposed,
       storyboardEdited,
       storyboardApplied,
@@ -109,6 +110,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pr
     if (mediaGenEnabled !== undefined) updateData.mediaGenEnabled = mediaGenEnabled
     if (thumbnailUrl !== undefined) updateData.thumbnailUrl = thumbnailUrl
     if (watermark !== undefined) updateData.watermark = watermark
+    if (brandKit !== undefined) updateData.brandKit = brandKit
     if (storyboardProposed !== undefined) updateData.storyboardProposed = storyboardProposed
     if (storyboardEdited !== undefined) updateData.storyboardEdited = storyboardEdited
     if (storyboardApplied !== undefined) updateData.storyboardApplied = storyboardApplied

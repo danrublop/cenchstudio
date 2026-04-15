@@ -7,7 +7,7 @@ import { useVideoStore } from '@/lib/store'
 import { ALL_TRANSITION_IDS } from '@/lib/transitions'
 import { AUDIO_PROVIDERS } from '@/lib/audio/provider-registry'
 
-const SCENE_TYPES = ['svg', 'canvas2d', 'd3', 'three', 'motion', 'lottie', 'zdog'] as const
+const SCENE_TYPES = ['react', 'svg', 'canvas2d', 'd3', 'three', 'motion', 'lottie', 'zdog'] as const
 
 function emptyScene(): StoryboardScene {
   const id =

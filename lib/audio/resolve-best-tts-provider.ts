@@ -10,8 +10,9 @@ export function getBestTTSProvider(settings?: AudioSettings | null, localMode?: 
   }
   // In local mode, only use free/local TTS providers
   if (localMode) {
+    if (process.platform === 'darwin') return 'native-tts'
     if (process.env.EDGE_TTS_URL || settings?.edgeTTSUrl) return 'openai-edge-tts'
-    if (process.platform === 'darwin' || process.platform === 'win32') return 'native-tts'
+    if (process.platform === 'win32') return 'native-tts'
     return 'web-speech'
   }
   if (process.env.ELEVENLABS_API_KEY) return 'elevenlabs'

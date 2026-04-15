@@ -6,7 +6,7 @@
 
 ## SVG structure
 
-Output the raw `<svg viewBox="0 0 1920 1080">...</svg>` element. No wrapping HTML — the template handles that.
+Output the raw `<svg viewBox="0 0 ${WIDTH} ${HEIGHT}">...</svg>` element (use the WIDTH/HEIGHT globals; defaults to 1920×1080 for 16:9). No wrapping HTML — the template handles that.
 
 Always use this layer order inside the SVG:
 

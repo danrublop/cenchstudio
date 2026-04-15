@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid'
 import type { APIName } from '@/lib/types'
 import type { WorldStateMutable } from '@/lib/agents/tool-executor'
 import { ok, err, findScene, type ToolResult } from './_shared'
+import { resolveProjectDimensions } from '@/lib/dimensions'
 
 export const AVATAR_TOOL_NAMES = [
   'list_avatars',
@@ -38,6 +39,7 @@ export function createAvatarToolHandler(deps: {
     world: WorldStateMutable,
   ): Promise<ToolResult> {
     switch (toolName) {
+      // DEPRECATED: Legacy HeyGen-only tool. No ClaudeToolDefinition exists, so unreachable from LLM.
       case 'list_avatars': {
         const mediaErr = deps.checkMediaEnabled(world, 'heygen', 'HeyGen Avatars')
         if (mediaErr) return mediaErr
@@ -61,6 +63,7 @@ export function createAvatarToolHandler(deps: {
         }
       }
 
+      // DEPRECATED: Legacy HeyGen-only tool. No ClaudeToolDefinition exists, so unreachable from LLM.
       case 'generate_avatar': {
         const mediaErr = deps.checkMediaEnabled(world, 'heygen', 'HeyGen Avatars')
         if (mediaErr) return mediaErr
@@ -192,6 +195,7 @@ export function createAvatarToolHandler(deps: {
           const cost = avatarVideo.costUsd ?? 0
           const avatarPlacement = (placement as string) || 'pip_bottom_right'
           const isTalkingHead = videoUrl?.startsWith('talkinghead://')
+          const dims = resolveProjectDimensions(world.mp4Settings?.aspectRatio, world.mp4Settings?.resolution)
           const layerId = uuidv4()
           const avatarLayer = {
             id: layerId,
@@ -200,10 +204,10 @@ export function createAvatarToolHandler(deps: {
             voiceId: '',
             script: narrationText,
             removeBackground: false,
-            x: avatarPlacement === 'fullscreen' ? 960 : avatarPlacement.includes('right') ? 1640 : 280,
-            y: avatarPlacement === 'fullscreen' ? 540 : avatarPlacement.includes('top') ? 280 : 800,
-            width: avatarPlacement === 'fullscreen' ? 1920 : 280,
-            height: avatarPlacement === 'fullscreen' ? 1080 : 280,
+            x: avatarPlacement === 'fullscreen' ? Math.round(dims.width / 2) : avatarPlacement.includes('right') ? 1640 : 280,
+            y: avatarPlacement === 'fullscreen' ? Math.round(dims.height / 2) : avatarPlacement.includes('top') ? 280 : 800,
+            width: avatarPlacement === 'fullscreen' ? dims.width : 280,
+            height: avatarPlacement === 'fullscreen' ? dims.height : 280,
             opacity: 1,
             zIndex: 100,
             videoUrl: isTalkingHead ? null : videoUrl,
@@ -280,6 +284,7 @@ export function createAvatarToolHandler(deps: {
           const videoUrl = avatarVideo.videoUrl
           const provider = avatarVideo.provider
           const isTalkingHead = videoUrl?.startsWith('talkinghead://')
+          const sceneDims = resolveProjectDimensions(world.mp4Settings?.aspectRatio, world.mp4Settings?.resolution)
           const layerId = uuidv4()
           const avatarLayer = {
             id: layerId,
@@ -290,8 +295,8 @@ export function createAvatarToolHandler(deps: {
             removeBackground: false,
             x: 0,
             y: 0,
-            width: 1920,
-            height: 1080,
+            width: sceneDims.width,
+            height: sceneDims.height,
             opacity: 1,
             zIndex: 100,
             videoUrl: isTalkingHead ? null : videoUrl,

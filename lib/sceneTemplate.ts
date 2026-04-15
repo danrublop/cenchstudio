@@ -12,6 +12,7 @@ import type {
   CameraMove,
   AudioSettings,
 } from './types'
+import { type ProjectDimensions, DEFAULT_DIMENSIONS } from './dimensions'
 import { getBestTTSProvider } from './audio/resolve-best-tts-provider'
 import { THREE_ENVIRONMENT_RUNTIME_SCRIPT, THREE_SCATTER_RUNTIME_SCRIPT } from './three-environments/inlined-runtimes'
 import { CANVAS_RENDERER_CODE } from './canvas-renderer/inlined'
@@ -29,7 +30,9 @@ import {
   resolveTalkingHeadModelIdFromLayer,
 } from './avatars/talkinghead-models'
 
-const CANVAS_BG_CANVAS_TAG = `<canvas id="c" width="1920" height="1080" style="display:block;position:absolute;left:0;top:0;width:100%;height:100%;z-index:0;margin:0;padding:0;border:0;pointer-events:none;"></canvas>`
+function canvasBgTag(W = 1920, H = 1080): string {
+  return `<canvas id="c" width="${W}" height="${H}" style="display:block;position:absolute;left:0;top:0;width:100%;height:100%;z-index:0;margin:0;padding:0;border:0;pointer-events:none;"></canvas>`
+}
 
 function sceneUsesCanvasBackground(scene: Scene): boolean {
   return (
@@ -186,19 +189,19 @@ function getAvatarPlacementCSS(
 ): { container: string; media: string } {
   if (placement === 'fullscreen') {
     return {
-      container: 'position:fixed;inset:0;',
+      container: 'position:absolute;inset:0;',
       media: 'width:100%;height:100%;object-fit:cover;',
     }
   }
   if (placement === 'fullscreen_left') {
     return {
-      container: 'position:fixed;left:0;bottom:0;width:40%;height:100%;',
+      container: 'position:absolute;left:0;bottom:0;width:40%;height:100%;',
       media: 'width:100%;height:100%;object-fit:cover;',
     }
   }
   if (placement === 'fullscreen_right') {
     return {
-      container: 'position:fixed;right:0;bottom:0;width:40%;height:100%;',
+      container: 'position:absolute;right:0;bottom:0;width:40%;height:100%;',
       media: 'width:100%;height:100%;object-fit:cover;',
     }
   }
@@ -216,7 +219,7 @@ function getAvatarPlacementCSS(
     : 'overflow:visible;border:none;box-shadow:none;background:transparent;'
 
   return {
-    container: `position:fixed;${pos}width:${size}px;height:${size}px;border-radius:${radius};${containerChrome}`,
+    container: `position:absolute;${pos}width:${size}px;height:${size}px;border-radius:${radius};${containerChrome}`,
     media: 'width:100%;height:100%;object-fit:cover;',
   }
 }
@@ -828,7 +831,9 @@ function generateStickerLayerHTML(layer: StickerLayer): string {
 </div>`
 }
 
-function generateCanvasHTML(scene: Scene, style: ResolvedStyle, audioSettings?: AudioSettings | null): string {
+function generateCanvasHTML(scene: Scene, style: ResolvedStyle, audioSettings?: AudioSettings | null, dims?: ProjectDimensions): string {
+  const W = dims?.width ?? 1920
+  const H = dims?.height ?? 1080
   const { canvasCode = '' } = scene
   const useTexture = style.textureStyle !== 'none'
   const useRoughJs = style.roughnessLevel > 0
@@ -844,15 +849,15 @@ function generateCanvasHTML(scene: Scene, style: ResolvedStyle, audioSettings?: 
   ${buildFontLink(style.font)}
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 1920px; height: 1080px; overflow: hidden; background: ${style.bgColor};
+    html, body { width: ${W}px; height: ${H}px; overflow: hidden; background: ${style.bgColor};
       transform-origin: top left;
       ${buildBgStyleCSS(style)}
     }
     #scene-camera {
       position: absolute;
       inset: 0;
-      width: 1920px;
-      height: 1080px;
+      width: ${W}px;
+      height: ${H}px;
       overflow: hidden;
       transform-origin: center center;
       will-change: transform, filter;
@@ -862,8 +867,8 @@ function generateCanvasHTML(scene: Scene, style: ResolvedStyle, audioSettings?: 
       position: absolute;
       left: 0;
       top: 0;
-      width: 1920px;
-      height: 1080px;
+      width: ${W}px;
+      height: ${H}px;
       margin: 0;
       padding: 0;
       border: 0;
@@ -872,7 +877,7 @@ function generateCanvasHTML(scene: Scene, style: ResolvedStyle, audioSettings?: 
   ${useRoughJs ? `<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>` : ''}
   <script>
     function fitToViewport() {
-      var s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+      var s = Math.min(window.innerWidth / ${W}, window.innerHeight / ${H});
       document.body.style.transform = 'scale(' + s + ')';
     }
     window.addEventListener('resize', fitToViewport);
@@ -881,8 +886,8 @@ function generateCanvasHTML(scene: Scene, style: ResolvedStyle, audioSettings?: 
 </head>
 <body>
   <div id="scene-camera">
-  <canvas id="c" width="1920" height="1080"></canvas>
-  <canvas id="texture-canvas" width="1920" height="1080"
+  <canvas id="c" width="${W}" height="${H}"></canvas>
+  <canvas id="texture-canvas" width="${W}" height="${H}"
     style="display:${useTexture ? 'block' : 'none'}; position:absolute; inset:0; pointer-events:none;
            mix-blend-mode:${style.textureBlendMode}; opacity:${style.textureIntensity};"></canvas>
   ${audioHTML}
@@ -894,8 +899,8 @@ function generateCanvasHTML(scene: Scene, style: ResolvedStyle, audioSettings?: 
     var DURATION     = ${scene.duration};
     var ROUGHNESS    = ${style.roughnessLevel};
     var FONT         = '${style.font}';
-    var WIDTH        = 1920;
-    var HEIGHT       = 1080;
+    var WIDTH        = ${W};
+    var HEIGHT       = ${H};
     var TOOL         = '${style.defaultTool}';
     var STROKE_COLOR = '${style.strokeColor}';
 
@@ -948,7 +953,7 @@ ${canvasCode}
       ${
         style.textureStyle === 'grain'
           ? `
-        const imageData = ctx.createImageData(1920, 1080);
+        const imageData = ctx.createImageData(${W}, ${H});
         for (let i = 0; i < imageData.data.length; i += 4) {
           const noise = rand() * 255;
           imageData.data[i]   = noise;
@@ -964,8 +969,8 @@ ${canvasCode}
       ${
         style.textureStyle === 'paper'
           ? `
-        for (let x = 0; x < 1920; x += 1.5) {
-          for (let y = 0; y < 1080; y += 1.5) {
+        for (let x = 0; x < ${W}; x += 1.5) {
+          for (let y = 0; y < ${H}; y += 1.5) {
             const v = rand();
             ctx.fillStyle = \`rgba(0,0,0,\${v})\`;
             ctx.fillRect(x, y, 1.5, 1.5);
@@ -978,12 +983,12 @@ ${canvasCode}
       ${
         style.textureStyle === 'chalk'
           ? `
-        for (let y = 0; y < 1080; y += 2) {
+        for (let y = 0; y < ${H}; y += 2) {
           ctx.beginPath();
           ctx.strokeStyle = \`rgba(255,255,255,\${rand() * 0.3})\`;
           ctx.lineWidth = 1 + rand() * 2;
           ctx.moveTo(0, y + rand() * 2);
-          for (let x = 0; x < 1920; x += 20) {
+          for (let x = 0; x < ${W}; x += 20) {
             ctx.lineTo(x, y + (rand() - 0.5) * 4);
           }
           ctx.stroke();
@@ -995,12 +1000,12 @@ ${canvasCode}
       ${
         style.textureStyle === 'lines'
           ? `
-        for (let y = 0; y < 1080; y += 28) {
+        for (let y = 0; y < ${H}; y += 28) {
           ctx.beginPath();
           ctx.strokeStyle = \`rgba(0,0,0,0.06)\`;
           ctx.lineWidth = 0.5;
           ctx.moveTo(0, y);
-          ctx.lineTo(1920, y);
+          ctx.lineTo(${W}, y);
           ctx.stroke();
         }
       `
@@ -1015,7 +1020,9 @@ ${canvasCode}
 </html>`
 }
 
-function generateMotionHTML(scene: Scene, style: ResolvedStyle, audioSettings?: AudioSettings | null): string {
+function generateMotionHTML(scene: Scene, style: ResolvedStyle, audioSettings?: AudioSettings | null, dims?: ProjectDimensions): string {
+  const W = dims?.width ?? 1920
+  const H = dims?.height ?? 1080
   const { sceneCode = '', sceneHTML = '', sceneStyles = '' } = scene
 
   const audioHTML = generateAudioHTML(scene.audioLayer)
@@ -1030,7 +1037,7 @@ function generateMotionHTML(scene: Scene, style: ResolvedStyle, audioSettings?: 
     * { margin: 0; padding: 0; box-sizing: border-box; }
     ${
       fixedStage
-        ? `html, body { width: 1920px; height: 1080px; overflow: hidden; background: ${style.bgColor};
+        ? `html, body { width: ${W}px; height: ${H}px; overflow: hidden; background: ${style.bgColor};
       transform-origin: top left;
       ${buildBgStyleCSS(style)}
     }
@@ -1038,8 +1045,8 @@ function generateMotionHTML(scene: Scene, style: ResolvedStyle, audioSettings?: 
       position: absolute;
       left: 0;
       top: 0;
-      width: 1920px;
-      height: 1080px;
+      width: ${W}px;
+      height: ${H}px;
       overflow: hidden;
       transform-origin: center center;
       will-change: transform, filter;
@@ -1060,7 +1067,7 @@ function generateMotionHTML(scene: Scene, style: ResolvedStyle, audioSettings?: 
     fixedStage
       ? `<script>
     function fitToViewport() {
-      var s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+      var s = Math.min(window.innerWidth / ${W}, window.innerHeight / ${H});
       document.body.style.transform = 'scale(' + s + ')';
     }
     window.addEventListener('resize', fitToViewport);
@@ -1071,7 +1078,7 @@ function generateMotionHTML(scene: Scene, style: ResolvedStyle, audioSettings?: 
 </head>
 <body>
   <div id="scene-camera"${fixedStage ? '' : ' style="position:absolute;inset:0;transform-origin:center center;will-change:transform,filter;"'}>
-  ${sceneUsesCanvasBackground(scene) ? `${CANVAS_BG_CANVAS_TAG}<div id="motion-foreground" style="position:absolute;inset:0;z-index:1;width:100%;height:100%;overflow:hidden;">` : ''}
+  ${sceneUsesCanvasBackground(scene) ? `${canvasBgTag(W, H)}<div id="motion-foreground" style="position:absolute;inset:0;z-index:1;width:100%;height:100%;overflow:hidden;">` : ''}
   ${sceneHTML}
   ${sceneUsesCanvasBackground(scene) ? `</div>` : ''}
   ${audioHTML}
@@ -1085,8 +1092,8 @@ function generateMotionHTML(scene: Scene, style: ResolvedStyle, audioSettings?: 
     var ROUGHNESS    = ${style.roughnessLevel};
     var FONT         = '${style.font}';
     var STROKE_COLOR = '${style.strokeColor}';
-    var WIDTH        = 1920;
-    var HEIGHT       = 1080;
+    var WIDTH        = ${W};
+    var HEIGHT       = ${H};
 
     // Audio volume is handled by the playback controller
   </script>
@@ -1110,10 +1117,12 @@ function generateMotionHTML(scene: Scene, style: ResolvedStyle, audioSettings?: 
 </html>`
 }
 
-function generateD3HTML(scene: Scene, style: ResolvedStyle, audioSettings?: AudioSettings | null): string {
+function generateD3HTML(scene: Scene, style: ResolvedStyle, audioSettings?: AudioSettings | null, dims?: ProjectDimensions): string {
   const { sceneCode = '', sceneStyles = '', d3Data = null } = scene
   const needsPlotly = chartLayersUsePlotly(scene.chartLayers)
   const needsRecharts = chartLayersUseRecharts(scene.chartLayers)
+  const W = dims?.width ?? 1920
+  const H = dims?.height ?? 1080
 
   const audioHTML = generateAudioHTML(scene.audioLayer)
 
@@ -1137,7 +1146,7 @@ function generateD3HTML(scene: Scene, style: ResolvedStyle, audioSettings?: Audi
   ${buildFontLink(style.font)}
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 1920px; height: 1080px; overflow: hidden; background: ${style.bgColor};
+    html, body { width: ${W}px; height: ${H}px; overflow: hidden; background: ${style.bgColor};
       transform-origin: top left;
       ${buildBgStyleCSS(style)}
     }
@@ -1145,8 +1154,8 @@ function generateD3HTML(scene: Scene, style: ResolvedStyle, audioSettings?: Audi
       position: absolute;
       left: 0;
       top: 0;
-      width: 1920px;
-      height: 1080px;
+      width: ${W}px;
+      height: ${H}px;
       overflow: hidden;
       transform-origin: center center;
       will-change: transform, filter;
@@ -1163,7 +1172,7 @@ function generateD3HTML(scene: Scene, style: ResolvedStyle, audioSettings?: Audi
   </style>
   <script>
     function fitToViewport() {
-      var s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+      var s = Math.min(window.innerWidth / ${W}, window.innerHeight / ${H});
       document.body.style.transform = 'scale(' + s + ')';
     }
     window.addEventListener('resize', fitToViewport);
@@ -1172,7 +1181,7 @@ function generateD3HTML(scene: Scene, style: ResolvedStyle, audioSettings?: Audi
 </head>
 <body>
   <div id="scene-camera">
-  ${sceneUsesCanvasBackground(scene) ? CANVAS_BG_CANVAS_TAG : ''}
+  ${sceneUsesCanvasBackground(scene) ? canvasBgTag(W, H) : ''}
   <div id="chart"></div>
   ${audioHTML}
   ${generateAILayersHTML(scene.aiLayers, audioSettings)}
@@ -1184,7 +1193,7 @@ function generateD3HTML(scene: Scene, style: ResolvedStyle, audioSettings?: Audi
   <script>
     var SCENE_ID     = '${escapeJsString(scene.id)}';
     var DATA = ${JSON.stringify(d3Data)};
-    var WIDTH = 1920, HEIGHT = 1080;
+    var WIDTH = ${W}, HEIGHT = ${H};
     var PALETTE      = ${JSON.stringify(style.palette)};
     var DURATION     = ${scene.duration};
     var FONT         = '${style.font}';
@@ -1227,11 +1236,13 @@ function generateD3HTML(scene: Scene, style: ResolvedStyle, audioSettings?: Audi
 </html>`
 }
 
-function generateThreeHTML(scene: Scene, style?: ResolvedStyle, audioSettings?: AudioSettings | null): string {
+function generateThreeHTML(scene: Scene, style?: ResolvedStyle, audioSettings?: AudioSettings | null, dims?: ProjectDimensions): string {
   const { sceneCode = '' } = scene
   const effectiveBgColor = style?.bgColor ?? scene.bgColor ?? '#fffef9'
   const palette = JSON.stringify(style?.palette ?? ['#1a1a2e', '#e84545', '#16a34a', '#2563eb'])
   const duration = scene.duration ?? 8
+  const W = dims?.width ?? 1920
+  const H = dims?.height ?? 1080
 
   const audioHTML = generateAudioHTML(scene.audioLayer)
 
@@ -1244,21 +1255,24 @@ function generateThreeHTML(scene: Scene, style?: ResolvedStyle, audioSettings?: 
     "imports": {
       "three": "https://unpkg.com/three@0.183.0/build/three.module.js",
       "three/addons/": "https://unpkg.com/three@0.183.0/examples/jsm/",
-      "@pmndrs/vanilla": "https://esm.sh/@pmndrs/vanilla@1.25.0?external=three"
+      "three/examples/jsm/": "https://unpkg.com/three@0.183.0/examples/jsm/",
+      "@pmndrs/vanilla": "https://esm.sh/@pmndrs/vanilla@1.25.0?external=three",
+      "troika-three-text": "/vendor/troika-three-text.esm.js",
+      "three-bvh-csg": "/vendor/three-bvh-csg.esm.js"
     }
   }
   </script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 1920px; height: 1080px; overflow: hidden; background: ${effectiveBgColor};
+    html, body { width: ${W}px; height: ${H}px; overflow: hidden; background: ${effectiveBgColor};
       transform-origin: top left;
     }
     canvas { display: block; }
   </style>
   <script>
-    // Scale 1920x1080 body to fit the actual viewport
+    // Scale ${W}x${H} body to fit the actual viewport
     function fitToViewport() {
-      var s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+      var s = Math.min(window.innerWidth / ${W}, window.innerHeight / ${H});
       document.body.style.transform = 'scale(' + s + ')';
     }
     window.addEventListener('resize', fitToViewport);
@@ -1266,7 +1280,7 @@ function generateThreeHTML(scene: Scene, style?: ResolvedStyle, audioSettings?: 
 
     // Force preserveDrawingBuffer so export can read WebGL canvas via drawImage.
     // Without this, the buffer is cleared after compositing and reads return blank.
-    // Applied unconditionally — perf cost is negligible at 1920x1080.
+    // Applied unconditionally — perf cost is negligible at ${W}x${H}.
     (function() {
       var origGetContext = HTMLCanvasElement.prototype.getContext;
       HTMLCanvasElement.prototype.getContext = function(type, attrs) {
@@ -1278,8 +1292,8 @@ function generateThreeHTML(scene: Scene, style?: ResolvedStyle, audioSettings?: 
     })();
 
     // Globals accessible from module scope via window.*
-    window.WIDTH = 1920;
-    window.HEIGHT = 1080;
+    window.WIDTH = ${W};
+    window.HEIGHT = ${H};
     window.PALETTE = ${palette};
     window.DURATION = ${duration};
     window.SCENE_ID = '${escapeJsString(scene.id)}';
@@ -1290,6 +1304,10 @@ function generateThreeHTML(scene: Scene, style?: ResolvedStyle, audioSettings?: 
       glass:   function(c) { var T = window.THREE; return new T.MeshPhysicalMaterial({ color: new T.Color(c), transparent: true, opacity: 0.3, roughness: 0, transmission: 0.9 }); },
       matte:   function(c) { var T = window.THREE; return new T.MeshStandardMaterial({ color: new T.Color(c), roughness: 1, metalness: 0 }); },
       glow:    function(c) { var T = window.THREE; return new T.MeshStandardMaterial({ color: new T.Color(c), emissive: new T.Color(c), emissiveIntensity: 0.8 }); },
+      clearcoat: function(c) { var T = window.THREE; return new T.MeshPhysicalMaterial({ color: new T.Color(c), clearcoat: 1.0, clearcoatRoughness: 0.1, roughness: 0.3, metalness: 0.5 }); },
+      iridescent: function(c) { var T = window.THREE; return new T.MeshPhysicalMaterial({ color: new T.Color(c), iridescence: 1.0, iridescenceIOR: 1.5, roughness: 0.2, metalness: 0.8 }); },
+      velvet: function(c) { var T = window.THREE; return new T.MeshPhysicalMaterial({ color: new T.Color(c), sheen: 1.0, sheenRoughness: 0.8, sheenColor: new T.Color(c), roughness: 0.9 }); },
+      lowpoly: function(c) { var T = window.THREE; return new T.MeshStandardMaterial({ color: new T.Color(c), roughness: 0.7, metalness: 0, flatShading: true }); },
     };
 
     window.mulberry32 = function(seed) {
@@ -1313,6 +1331,10 @@ function generateThreeHTML(scene: Scene, style?: ResolvedStyle, audioSettings?: 
   <!-- Template setup: import THREE, define globals + setupEnvironment on window -->
   <script type="module">
     import * as THREE from 'three';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+    import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
     window.THREE = THREE;
 
     // Procedural studio environment map — makes all PBR materials look professional.
@@ -1372,6 +1394,156 @@ function generateThreeHTML(scene: Scene, style?: ResolvedStyle, audioSettings?: 
       }
     };
 
+    // Safe post-processing wrapper — SYNCHRONOUS, no .then() needed.
+    // Scene code calls: const pp = createPostProcessing(renderer, scene, camera, { bloom: 0.3 })
+    // Then in animation loop: pp.render() instead of renderer.render(scene, camera)
+    window.createPostProcessing = function(renderer, scene, camera, opts) {
+      opts = opts || {};
+      try {
+        var composer = new EffectComposer(renderer);
+        composer.addPass(new RenderPass(scene, camera));
+        if (opts.bloom !== false) {
+          var strength = typeof opts.bloom === 'number' ? opts.bloom : 0.3;
+          composer.addPass(new UnrealBloomPass(
+            new THREE.Vector2(window.WIDTH, window.HEIGHT), strength, 0.4, 0.85
+          ));
+        }
+        composer.addPass(new OutputPass());
+        return { render: function() { composer.render(); }, composer: composer };
+      } catch(e) {
+        console.warn('createPostProcessing failed, using direct render:', e);
+        return { render: function() { renderer.render(scene, camera); } };
+      }
+    };
+
+    // Studio scene presets — one-call setup for common 3D scene configurations.
+    // Scene code calls: const studio = createStudioScene('corporate')
+    // Returns { scene, camera, renderer, floor, render }
+    window.createStudioScene = function(style) {
+      style = style || 'corporate';
+      var T = THREE;
+      var W = window.WIDTH, H = window.HEIGHT;
+      var P = window.PALETTE;
+
+      var renderer = new T.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+      renderer.setSize(W, H);
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = T.PCFSoftShadowMap;
+      renderer.toneMapping = T.ACESFilmicToneMapping;
+      renderer.outputColorSpace = T.SRGBColorSpace;
+      document.body.appendChild(renderer.domElement);
+
+      var scene = new T.Scene();
+      var camera = new T.PerspectiveCamera(50, W / H, 0.1, 1000);
+      window.__threeCamera = camera;
+
+      var configs = {
+        corporate: { bg: '#e8e4de', camPos: [0, 3, 12], camLookAt: [0, 0, 0], exposure: 0.95, floorColor: '#ffffff', floorY: -2.5 },
+        cinematic: { bg: '#060510', camPos: [0, 2, 14], camLookAt: [0, 0, 0], exposure: 1.1, floorColor: '#0c0a14', floorY: -3 },
+        playful:   { bg: '#e8e4de', camPos: [10, 8, 10], camLookAt: [0, 0, 0], exposure: 0.95, floorColor: '#ffffff', floorY: -2 },
+        tech:      { bg: '#040408', camPos: [0, 4, 14], camLookAt: [0, 0, 0], exposure: 1.2, floorColor: '#080810', floorY: -3 },
+        showcase:  { bg: '#0e0c16', camPos: [0, 2, 14], camLookAt: [0, 0, 0], exposure: 1.0, floorColor: '#18141e', floorY: -3 },
+      };
+      var c = configs[style] || configs.corporate;
+
+      renderer.setClearColor(c.bg);
+      renderer.toneMappingExposure = c.exposure;
+      camera.position.set(c.camPos[0], c.camPos[1], c.camPos[2]);
+      camera.lookAt(c.camLookAt[0], c.camLookAt[1], c.camLookAt[2]);
+
+      // Lighting per style (tuned for natural, non-washed-out look)
+      if (style === 'corporate' || style === 'showcase') {
+        scene.add(new T.AmbientLight(0xffffff, 0.25));
+        var key = new T.DirectionalLight(0xfff6e0, 1.0); key.position.set(-5, 8, 5); key.castShadow = true; key.shadow.mapSize.set(2048, 2048); key.shadow.bias = -0.001;
+        key.shadow.camera.left = -12; key.shadow.camera.right = 12; key.shadow.camera.top = 12; key.shadow.camera.bottom = -12;
+        var fillL = new T.DirectionalLight(0xd0e8ff, 0.35); fillL.position.set(6, 2, 4);
+        var rimL = new T.DirectionalLight(0xffe0d0, 0.5); rimL.position.set(0, 4, -9);
+        scene.add(key, fillL, rimL);
+      } else if (style === 'cinematic') {
+        scene.add(new T.AmbientLight(0x111122, 0.08));
+        var spot = new T.SpotLight(0xffffff, 3.5, 40, Math.PI/6, 0.5, 1.5); spot.position.set(-5, 12, 5); spot.castShadow = true; spot.shadow.mapSize.set(2048, 2048);
+        spot.target.position.set(0, 0, 0); scene.add(spot.target);
+        var rimL2 = new T.DirectionalLight(0xff6040, 0.35); rimL2.position.set(5, 0, -8);
+        scene.add(spot, rimL2);
+      } else if (style === 'playful') {
+        scene.add(new T.AmbientLight(0xffffff, 0.4));
+        var topL = new T.DirectionalLight(0xffffff, 0.7); topL.position.set(0, 10, 0); topL.castShadow = true; topL.shadow.mapSize.set(2048, 2048);
+        topL.shadow.camera.left = -10; topL.shadow.camera.right = 10; topL.shadow.camera.top = 10; topL.shadow.camera.bottom = -10;
+        var frontL = new T.DirectionalLight(0xf0f4ff, 0.25); frontL.position.set(0, 2, 8);
+        var sideL = new T.DirectionalLight(0xfff8f0, 0.15); sideL.position.set(6, 3, 2);
+        scene.add(topL, frontL, sideL);
+      } else if (style === 'tech') {
+        scene.add(new T.AmbientLight(0x050510, 0.08));
+        P.slice(0, 4).forEach(function(col, i) {
+          var l = new T.PointLight(new T.Color(col), 2.5, 20, 2);
+          l.position.set([-4,4,0,-3][i], [3,2,-2,-1][i], [2,-2,4,-3][i]);
+          scene.add(l);
+        });
+      }
+
+      // ── Infinite Studio ─────────────────────────────────────────────────────
+      // Sky gradient sphere (BackSide) + floor plane. No fog needed.
+      // The sphere covers every angle seamlessly — like THREE.Sky but for studios.
+      var fY = c.floorY;
+      var studioConfigs = {
+        corporate: { floor: '#f0ede8', gradStops: [['#888888',0],['#a8a8a8',0.35],['#d0cdc8',0.6],['#e8e5e0',0.8],['#f0ede8',1]] },
+        playful:   { floor: '#ebe8e2', gradStops: [['#807a75',0],['#a09890',0.35],['#c8c2ba',0.6],['#dcd8d0',0.8],['#ebe8e2',1]] },
+        cinematic: { floor: '#0e0c14', gradStops: [['#020204',0],['#060510',0.4],['#0a0810',0.7],['#0e0c14',1]] },
+        showcase:  { floor: '#18141e', gradStops: [['#06050a',0],['#0c0a14',0.4],['#12101a',0.7],['#18141e',1]] },
+        tech:      { floor: '#080810', gradStops: [['#020204',0],['#050508',0.4],['#080810',1]] },
+        sky:       { floor: '#c8d8c0', gradStops: null },
+      };
+      var sc = studioConfigs[style] || studioConfigs.corporate;
+      var floorCol = new T.Color(sc.floor);
+
+      if (style === 'sky') {
+        // Real THREE.Sky atmospheric scattering — outdoor look
+        import('three/addons/objects/Sky.js').then(function(mod) {
+          var skySun = new mod.Sky();
+          skySun.scale.setScalar(450000);
+          scene.add(skySun);
+          var skyUniforms = skySun.material.uniforms;
+          skyUniforms['turbidity'].value = 10;
+          skyUniforms['rayleigh'].value = 2;
+          skyUniforms['mieCoefficient'].value = 0.005;
+          skyUniforms['mieDirectionalG'].value = 0.8;
+          skyUniforms['sunPosition'].value.set(400000, 400000, 400000);
+        }).catch(function() {});
+      } else {
+        // Studio gradient via CanvasTexture — mathematically perfect, zero banding
+        var gradCanvas = document.createElement('canvas');
+        gradCanvas.width = 2;
+        gradCanvas.height = 512;
+        var gCtx = gradCanvas.getContext('2d');
+        var grad = gCtx.createLinearGradient(0, 0, 0, 512);
+        sc.gradStops.forEach(function(s) { grad.addColorStop(s[1], s[0]); });
+        gCtx.fillStyle = grad;
+        gCtx.fillRect(0, 0, 2, 512);
+        var bgTex = new T.CanvasTexture(gradCanvas);
+        bgTex.mapping = T.EquirectangularReflectionMapping;
+        scene.background = bgTex;
+      }
+
+      // Floor plane
+      var floorGeo = new T.PlaneGeometry(200, 200);
+      var floorMat = new T.MeshStandardMaterial({ color: floorCol, roughness: 1.0, metalness: 0, envMapIntensity: 0.3 });
+      var floor = new T.Mesh(floorGeo, floorMat);
+      floor.rotation.x = -Math.PI / 2;
+      floor.position.y = fY;
+      floor.receiveShadow = true;
+      scene.add(floor);
+
+      // Environment for PBR reflections (skip for tech — void aesthetic)
+      if (style !== 'tech') {
+        window.setupEnvironment(scene, renderer);
+      }
+
+      return {
+        scene: scene, camera: camera, renderer: renderer, floor: floor,
+        render: function() { renderer.render(scene, camera); }
+      };
+    };
+
     ${THREE_ENVIRONMENT_RUNTIME_SCRIPT}
     ${THREE_SCATTER_RUNTIME_SCRIPT}
   </script>
@@ -1384,11 +1556,13 @@ function generateThreeHTML(scene: Scene, style?: ResolvedStyle, audioSettings?: 
 </html>`
 }
 
-function generateZdogHTML(scene: Scene, style: ResolvedStyle, audioSettings?: AudioSettings | null): string {
+function generateZdogHTML(scene: Scene, style: ResolvedStyle, audioSettings?: AudioSettings | null, dims?: ProjectDimensions): string {
   const { sceneCode = '' } = scene
   const bgColor = scene.bgColor || style.bgColor || '#fffef9'
   const palette = JSON.stringify(style.palette)
   const duration = scene.duration ?? 8
+  const W = dims?.width ?? 1920
+  const H = dims?.height ?? 1080
 
   const audioHTML = generateAudioHTML(scene.audioLayer)
 
@@ -1398,14 +1572,14 @@ function generateZdogHTML(scene: Scene, style: ResolvedStyle, audioSettings?: Au
   <meta charset="UTF-8">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 1920px; height: 1080px; overflow: hidden; background: ${bgColor};
+    html, body { width: ${W}px; height: ${H}px; overflow: hidden; background: ${bgColor};
       transform-origin: top left;
     }
     canvas { display: block; }
   </style>
   <script>
     function fitToViewport() {
-      var s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+      var s = Math.min(window.innerWidth / ${W}, window.innerHeight / ${H});
       document.body.style.transform = 'scale(' + s + ')';
     }
     window.addEventListener('resize', fitToViewport);
@@ -1414,14 +1588,14 @@ function generateZdogHTML(scene: Scene, style: ResolvedStyle, audioSettings?: Au
 </head>
 <body>
   <div id="scene-camera" style="position:absolute;inset:0;transform-origin:center center;will-change:transform,filter;">
-  <canvas id="zdog-canvas" width="1920" height="1080"></canvas>
+  <canvas id="zdog-canvas" width="${W}" height="${H}"></canvas>
   ${audioHTML}
   ${generateAILayersHTML(scene.aiLayers, audioSettings)}
   </div><!-- /scene-camera -->
 
   <script src="https://unpkg.com/zdog@1/dist/zdog.dist.min.js"></script>
   <script>
-    var WIDTH = 1920, HEIGHT = 1080;
+    var WIDTH = ${W}, HEIGHT = ${H};
     var PALETTE = ${palette};
     var DURATION = ${duration};
     var FONT = '${style.font}';
@@ -1451,7 +1625,9 @@ ${sceneCode}
 </html>`
 }
 
-function generateLottieHTML(scene: Scene, audioSettings?: AudioSettings | null): string {
+function generateLottieHTML(scene: Scene, audioSettings?: AudioSettings | null, dims?: ProjectDimensions): string {
+  const W = dims?.width ?? 1920
+  const H = dims?.height ?? 1080
   const { bgColor = '#fffef9', lottieSource = '', svgContent = '' } = scene
 
   const audioHTML = generateAudioHTML(scene.audioLayer)
@@ -1541,7 +1717,9 @@ function buildBgStyleCSS(style: ResolvedStyle): string {
   }
 }
 
-function generatePhysicsHTML(scene: Scene, style: ResolvedStyle, audioSettings?: AudioSettings | null): string {
+function generatePhysicsHTML(scene: Scene, style: ResolvedStyle, audioSettings?: AudioSettings | null, dims?: ProjectDimensions): string {
+  const W = dims?.width ?? 1920
+  const H = dims?.height ?? 1080
   const { sceneCode = '', sceneStyles = '', sceneHTML = '' } = scene
   const audioHTML = generateAudioHTML(scene.audioLayer)
 
@@ -1560,7 +1738,7 @@ function generatePhysicsHTML(scene: Scene, style: ResolvedStyle, audioSettings?:
   <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 1920px; height: 1080px; overflow: hidden; background: ${style.bgColor};
+    html, body { width: ${W}px; height: ${H}px; overflow: hidden; background: ${style.bgColor};
       transform-origin: top left;
       font-family: 'Inter', sans-serif;
       ${buildBgStyleCSS(style)}
@@ -1570,7 +1748,7 @@ function generatePhysicsHTML(scene: Scene, style: ResolvedStyle, audioSettings?:
     .physics-layout-split {
       --sim-panel: 60%;
       --text-panel: 40%;
-      display: flex; width: 1920px; height: 1080px;
+      display: flex; width: ${W}px; height: ${H}px;
     }
     .physics-layout-split .sim-panel {
       flex: 0 0 var(--sim-panel); height: 100%; position: relative;
@@ -1587,7 +1765,7 @@ function generatePhysicsHTML(scene: Scene, style: ResolvedStyle, audioSettings?:
 
     /* Overlay layout: centered simulation + floating explanation card */
     .physics-layout-overlay {
-      width: 1920px; height: 1080px; position: relative;
+      width: ${W}px; height: ${H}px; position: relative;
     }
     .physics-layout-overlay .sim-stage {
       position: absolute; inset: 0;
@@ -1655,7 +1833,7 @@ function generatePhysicsHTML(scene: Scene, style: ResolvedStyle, audioSettings?:
 
     /* Fullscreen layout: sim fills canvas */
     .physics-layout-fullscreen {
-      width: 1920px; height: 1080px; position: relative;
+      width: ${W}px; height: ${H}px; position: relative;
     }
     .physics-layout-fullscreen canvas { display: block; width: 100%; height: 100%; }
     .physics-layout-fullscreen .caption-overlay {
@@ -1690,7 +1868,7 @@ function generatePhysicsHTML(scene: Scene, style: ResolvedStyle, audioSettings?:
 
     /* Equation focus layout: big equation center, sim as background */
     .physics-layout-equation {
-      width: 1920px; height: 1080px; position: relative;
+      width: ${W}px; height: ${H}px; position: relative;
     }
     .physics-layout-equation canvas {
       position: absolute; inset: 0; opacity: 0.25; filter: blur(2px);
@@ -1766,7 +1944,7 @@ function generatePhysicsHTML(scene: Scene, style: ResolvedStyle, audioSettings?:
 </head>
 <body>
   <div id="scene-camera" style="position:absolute;inset:0;transform-origin:center center;will-change:transform,filter;">
-  ${sceneUsesCanvasBackground(scene) ? CANVAS_BG_CANVAS_TAG : ''}
+  ${sceneUsesCanvasBackground(scene) ? canvasBgTag(W, H) : ''}
   ${sceneHTML}
   ${audioHTML}
   ${generateAILayersHTML(scene.aiLayers, audioSettings)}
@@ -1774,7 +1952,7 @@ function generatePhysicsHTML(scene: Scene, style: ResolvedStyle, audioSettings?:
 
   <script>
     function fitToViewport() {
-      var s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+      var s = Math.min(window.innerWidth / ${W}, window.innerHeight / ${H});
       document.body.style.transform = 'scale(' + s + ')';
     }
 
@@ -1878,8 +2056,8 @@ function generatePhysicsHTML(scene: Scene, style: ResolvedStyle, audioSettings?:
     var ROUGHNESS    = ${style.roughnessLevel};
     var FONT         = '${style.font}';
     var STROKE_COLOR = '${style.strokeColor}';
-    var WIDTH        = 1920;
-    var HEIGHT       = 1080;
+    var WIDTH        = ${W};
+    var HEIGHT       = ${H};
 
     function mulberry32(seed) {
       return function() {
@@ -1944,7 +2122,9 @@ function worldTemplateFilename(environment: string): string {
   return map[environment] ?? `${environment.replace(/_/g, '-')}.html`
 }
 
-function generateWorldHTML(scene: Scene, style: ResolvedStyle, audioSettings?: AudioSettings | null): string {
+function generateWorldHTML(scene: Scene, style: ResolvedStyle, audioSettings?: AudioSettings | null, dims?: ProjectDimensions): string {
+  const W = dims?.width ?? 1920
+  const H = dims?.height ?? 1080
   const wc = scene.worldConfig
   if (!wc) return '<!-- No worldConfig -->'
 
@@ -1990,14 +2170,14 @@ function generateWorldHTML(scene: Scene, style: ResolvedStyle, audioSettings?: A
   <meta charset="UTF-8">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 1920px; height: 1080px; overflow: hidden; background: #000;
+    html, body { width: ${W}px; height: ${H}px; overflow: hidden; background: #000;
       transform-origin: top left;
     }
-    iframe { border: none; width: 1920px; height: 1080px; display: block; }
+    iframe { border: none; width: ${W}px; height: ${H}px; display: block; }
   </style>
   <script>
     function fitToViewport() {
-      var s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+      var s = Math.min(window.innerWidth / ${W}, window.innerHeight / ${H});
       document.body.style.transform = 'scale(' + s + ')';
     }
     window.addEventListener('resize', fitToViewport);
@@ -2023,7 +2203,7 @@ function generateWorldHTML(scene: Scene, style: ResolvedStyle, audioSettings?: A
       var blob = new Blob([html], { type: 'text/html' });
       var frame = document.createElement('iframe');
       frame.src = URL.createObjectURL(blob);
-      frame.style.cssText = 'border:none;width:1920px;height:1080px;';
+      frame.style.cssText = 'border:none;width:${W}px;height:${H}px;';
       document.body.appendChild(frame);
 
       // Bridge WVC globals from iframe to parent
@@ -2041,7 +2221,9 @@ function generateWorldHTML(scene: Scene, style: ResolvedStyle, audioSettings?: A
 
 // ── Avatar Scene (full-scene presenter mode) ───────────────────────────────
 
-function generateAvatarSceneHTML(scene: Scene, style: ResolvedStyle, audioSettings?: AudioSettings | null): string {
+function generateAvatarSceneHTML(scene: Scene, style: ResolvedStyle, audioSettings?: AudioSettings | null, dims?: ProjectDimensions): string {
+  const W = dims?.width ?? 1920
+  const H = dims?.height ?? 1080
   const audioHTML = generateAudioHTML(scene.audioLayer)
   const panelFontStack = sceneFontCssStack(style.font)
 
@@ -2114,7 +2296,7 @@ function generateAvatarSceneHTML(scene: Scene, style: ResolvedStyle, audioSettin
   ${buildFontLink(style.font)}
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 1920px; height: 1080px; overflow: hidden; background: ${backdrop}; }
+    html, body { width: ${W}px; height: ${H}px; overflow: hidden; background: ${backdrop}; }
     .content-panel {
       background: rgba(255,255,255,0.05);
       backdrop-filter: blur(8px);
@@ -2131,7 +2313,7 @@ function generateAvatarSceneHTML(scene: Scene, style: ResolvedStyle, audioSettin
   </style>
   <script>
     function fitToViewport() {
-      var s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+      var s = Math.min(window.innerWidth / ${W}, window.innerHeight / ${H});
       document.body.style.transform = 'scale(' + s + ')';
       document.body.style.transformOrigin = 'top left';
     }
@@ -2159,8 +2341,8 @@ function generateAvatarSceneHTML(scene: Scene, style: ResolvedStyle, audioSettin
     var SCENE_ID = '${escapeJsString(scene.id)}';
     var PALETTE = ${JSON.stringify(style.palette)};
     var DURATION = ${scene.duration};
-    var WIDTH = 1920;
-    var HEIGHT = 1080;
+    var WIDTH = ${W};
+    var HEIGHT = ${H};
     var FONT = '${resolveSceneFontFamily(style.font).replace(/'/g, "\\'")}';
   </script>
 
@@ -2483,7 +2665,9 @@ function generateAvatarSceneHTML(scene: Scene, style: ResolvedStyle, audioSettin
 </html>`
 }
 
-function generateReactHTML(scene: Scene, style: ResolvedStyle, audioSettings?: AudioSettings | null): string {
+function generateReactHTML(scene: Scene, style: ResolvedStyle, audioSettings?: AudioSettings | null, dims?: ProjectDimensions): string {
+  const W = dims?.width ?? 1920
+  const H = dims?.height ?? 1080
   // React scenes store JSX in reactCode; fall back to sceneCode for compat
   const reactCode = scene.reactCode || scene.sceneCode || ''
   const sceneStyles = scene.sceneStyles || ''
@@ -2498,20 +2682,32 @@ function generateReactHTML(scene: Scene, style: ResolvedStyle, audioSettings?: A
   ${buildFontLink(style.font)}
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 100%; height: 100vh; overflow: hidden; background: ${style.bgColor};
+    html, body { width: ${W}px; height: ${H}px; overflow: hidden; background: ${style.bgColor};
+      transform-origin: top left;
       ${buildBgStyleCSS(style)}
     }
     #scene-camera {
       position: absolute; inset: 0;
+      width: ${W}px; height: ${H}px;
       transform-origin: center center;
       will-change: transform, filter;
     }
     #react-root {
       position: absolute; inset: 0;
-      width: 100%; height: 100%;
+      width: ${W}px; height: ${H}px;
+      overflow: hidden;
     }
     ${sanitizeCssBlock(sceneStyles)}
   </style>
+  <script>
+    function fitToViewport() {
+      var s = Math.min(window.innerWidth / ${W}, window.innerHeight / ${H});
+      document.body.style.transform = 'scale(' + s + ')';
+      document.body.style.transformOrigin = 'top left';
+    }
+    window.addEventListener('resize', fitToViewport);
+    document.addEventListener('DOMContentLoaded', fitToViewport);
+  <\/script>
   <!-- React 18 UMD -->
   <script crossorigin src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js"><\/script>
   <script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js"><\/script>
@@ -2532,8 +2728,14 @@ function generateReactHTML(scene: Scene, style: ResolvedStyle, audioSettings?: A
     var ROUGHNESS    = ${style.roughnessLevel};
     var FONT         = '${style.font}';
     var STROKE_COLOR = '${style.strokeColor}';
-    var WIDTH        = 1920;
-    var HEIGHT       = 1080;
+    var WIDTH        = ${W};
+    var HEIGHT       = ${H};
+    // Scene variables (reactive via useVariable hook)
+    window.__CENCH_VARIABLES = ${JSON.stringify(
+      Object.fromEntries(
+        (scene.variables ?? []).map(v => [v.name, v.defaultValue ?? (v.type === 'number' ? 0 : v.type === 'boolean' ? false : '')])
+      )
+    )};
   <\/script>
 
   <!-- playback-controller-slot -->
@@ -2570,16 +2772,19 @@ ${reactCode.replace(/<\/script/gi, '<\\/script')}
       console.error('CenchReact: JSX transpilation failed', e);
       var errDiv = document.getElementById('react-root');
       if (errDiv) errDiv.textContent = 'JSX Error: ' + e.message;
+      try {
+        window.parent.postMessage({ source: 'cench-scene', type: 'cench-jsx-error', sceneId: SCENE_ID, message: e.message }, '*');
+      } catch(ignore) {}
       return;
     }
 
     // Inject transpiled code as a script element (same pattern as other scene types
     // which embed AI-generated JS directly in inline script tags)
     var scriptEl = document.createElement('script');
-    scriptEl.textContent = '(function(useCurrentFrame,useVideoConfig,interpolate,spring,Sequence,AbsoluteFill,Easing,Canvas2DLayer,ThreeJSLayer,D3Layer,SVGLayer,LottieLayer){var module={exports:{}};var exports=module.exports;'
+    scriptEl.textContent = '(function(useCurrentFrame,useVideoConfig,interpolate,spring,Sequence,AbsoluteFill,Easing,Canvas2DLayer,ThreeJSLayer,D3Layer,SVGLayer,LottieLayer,useVariable,useInteraction,useTrigger){var module={exports:{}};var exports=module.exports;'
       + js
       + ';window.__CenchSceneExports=module.exports;'
-      + '})(CenchReact.useCurrentFrame,CenchReact.useVideoConfig,CenchReact.interpolate,CenchReact.spring,CenchReact.Sequence,CenchReact.AbsoluteFill,CenchReact.Easing,CenchReact.Canvas2DLayer,CenchReact.ThreeJSLayer,CenchReact.D3Layer,CenchReact.SVGLayer,CenchReact.LottieLayer);';
+      + '})(CenchReact.useCurrentFrame,CenchReact.useVideoConfig,CenchReact.interpolate,CenchReact.spring,CenchReact.Sequence,CenchReact.AbsoluteFill,CenchReact.Easing,CenchReact.Canvas2DLayer,CenchReact.ThreeJSLayer,CenchReact.D3Layer,CenchReact.SVGLayer,CenchReact.LottieLayer,CenchReact.useVariable,CenchReact.useInteraction,CenchReact.useTrigger);';
     document.body.appendChild(scriptEl);
 
     // Resolve the exported component
@@ -2629,6 +2834,25 @@ ${reactCode.replace(/<\/script/gi, '<\\/script')}
         }, React.createElement(SceneComponent))
       )
     );
+
+    // Apply element overrides (non-destructive visual tweaks from the inspector)
+    var __overrides = ${JSON.stringify(scene.elementOverrides ?? {})};
+    if (Object.keys(__overrides).length > 0) {
+      requestAnimationFrame(function() {
+        setTimeout(function() {
+          Object.keys(__overrides).forEach(function(id) {
+            var el = document.getElementById(id);
+            if (!el) return;
+            var props = __overrides[id];
+            Object.keys(props).forEach(function(prop) {
+              var val = props[prop];
+              if (prop === 'text') el.textContent = String(val);
+              else el.style[prop] = (typeof val === 'number') ? (val + 'px') : String(val);
+            });
+          });
+        }, 50);
+      });
+    }
   })();
   <\/script>
 </body>
@@ -2639,7 +2863,9 @@ export function generateSceneHTML(
   globalStyle?: GlobalStyle,
   watermark?: (WatermarkConfig & { publicUrl: string }) | null,
   audioSettings?: AudioSettings | null,
+  dims?: ProjectDimensions,
 ): string {
+  const { width: W, height: H } = dims ?? DEFAULT_DIMENSIONS
   // Use scene-level style override if present, otherwise fall back to global
   const hasOverride = scene.styleOverride != null && Object.keys(scene.styleOverride).length > 0
   const style =
@@ -2652,18 +2878,19 @@ export function generateSceneHTML(
     style.bgColor = scene.bgColor
   }
 
+  const _dims = { width: W, height: H }
   let html: string
-  if (scene.sceneType === 'canvas2d') html = generateCanvasHTML(scene, style, audioSettings)
-  else if (scene.sceneType === 'motion') html = generateMotionHTML(scene, style, audioSettings)
-  else if (scene.sceneType === 'd3') html = generateD3HTML(scene, style, audioSettings)
-  else if (scene.sceneType === 'three') html = generateThreeHTML(scene, style, audioSettings)
-  else if (scene.sceneType === 'lottie') html = generateLottieHTML(scene, audioSettings)
-  else if (scene.sceneType === 'zdog') html = generateZdogHTML(scene, style, audioSettings)
-  else if (scene.sceneType === 'physics') html = generatePhysicsHTML(scene, style, audioSettings)
-  else if (scene.sceneType === '3d_world') html = generateWorldHTML(scene, style, audioSettings)
-  else if (scene.sceneType === 'avatar_scene') html = generateAvatarSceneHTML(scene, style, audioSettings)
-  else if (scene.sceneType === 'react') html = generateReactHTML(scene, style, audioSettings)
-  else html = generateSVGHTML(scene, style, audioSettings)
+  if (scene.sceneType === 'canvas2d') html = generateCanvasHTML(scene, style, audioSettings, _dims)
+  else if (scene.sceneType === 'motion') html = generateMotionHTML(scene, style, audioSettings, _dims)
+  else if (scene.sceneType === 'd3') html = generateD3HTML(scene, style, audioSettings, _dims)
+  else if (scene.sceneType === 'three') html = generateThreeHTML(scene, style, audioSettings, _dims)
+  else if (scene.sceneType === 'lottie') html = generateLottieHTML(scene, audioSettings, _dims)
+  else if (scene.sceneType === 'zdog') html = generateZdogHTML(scene, style, audioSettings, _dims)
+  else if (scene.sceneType === 'physics') html = generatePhysicsHTML(scene, style, audioSettings, _dims)
+  else if (scene.sceneType === '3d_world') html = generateWorldHTML(scene, style, audioSettings, _dims)
+  else if (scene.sceneType === 'avatar_scene') html = generateAvatarSceneHTML(scene, style, audioSettings, _dims)
+  else if (scene.sceneType === 'react') html = generateReactHTML(scene, style, audioSettings, _dims)
+  else html = generateSVGHTML(scene, style, audioSettings, _dims)
 
   // Inject <base> + GSAP + playback controller into <head>
   // <base> ensures relative asset URLs (/uploads/..., /generated/...) resolve
@@ -2743,7 +2970,9 @@ function getWatermarkPositionCSS(position: WatermarkConfig['position']): string 
   }
 }
 
-function generateSVGHTML(scene: Scene, style: ResolvedStyle, audioSettings?: AudioSettings | null): string {
+function generateSVGHTML(scene: Scene, style: ResolvedStyle, audioSettings?: AudioSettings | null, dims?: ProjectDimensions): string {
+  const W = dims?.width ?? 1920
+  const H = dims?.height ?? 1080
   const { svgContent = '', videoLayer, textOverlays = [], svgObjects = [], primaryObjectId = null } = scene
 
   // New scenes: primary SVG is already in svgObjects, no need for #svg-layer
@@ -2783,7 +3012,7 @@ function generateSVGHTML(scene: Scene, style: ResolvedStyle, audioSettings?: Aud
   ${style.roughnessLevel > 0.2 ? '<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>' : ''}
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; animation-play-state: paused; }
-    body { width: 1920px; height: 1080px; overflow: hidden; background: ${style.bgColor};
+    body { width: ${W}px; height: ${H}px; overflow: hidden; background: ${style.bgColor};
       ${buildBgStyleCSS(style)}
     }
 
@@ -2861,7 +3090,7 @@ function generateSVGHTML(scene: Scene, style: ResolvedStyle, audioSettings?: Aud
 
   <div id="scene-camera" style="position:absolute;inset:0;transform-origin:center center;will-change:transform,filter;">
 
-  ${sceneUsesCanvasBackground(scene) ? CANVAS_BG_CANVAS_TAG : ''}
+  ${sceneUsesCanvasBackground(scene) ? canvasBgTag(W, H) : ''}
 
   <div id="video-layer">
     ${videoLayer?.enabled && videoSrc ? `<video src="${videoSrc}" muted playsinline></video>` : ''}
@@ -2887,8 +3116,8 @@ function generateSVGHTML(scene: Scene, style: ResolvedStyle, audioSettings?: Aud
     var ROUGHNESS    = ${style.roughnessLevel};
     var FONT         = '${style.font}';
     var STROKE_COLOR = '${style.strokeColor}';
-    var WIDTH        = 1920;
-    var HEIGHT       = 1080;
+    var WIDTH        = ${W};
+    var HEIGHT       = ${H};
 
     document.addEventListener('DOMContentLoaded', () => {
       // Auto-calculate stroke-dasharray lengths (legacy CSS animation scenes)

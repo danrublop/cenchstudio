@@ -20,7 +20,8 @@ import type {
 import { getAgentPrompt } from './prompts'
 import { getModelProvider } from './types'
 import { resolveStyle, getPreset, type StylePresetId } from '../styles/presets'
-import { ALL_TOOLS, AGENT_TOOLS } from './tools'
+import { ALL_TOOLS, AGENT_TOOLS, patchToolDimensions } from './tools'
+import { resolveProjectDimensions } from '../dimensions'
 import { AUDIO_PROVIDERS } from '../audio/provider-registry'
 import { MEDIA_PROVIDERS } from '../media/provider-registry'
 import { DEFAULT_MODELS, type ModelConfig } from './model-config'
@@ -392,8 +393,10 @@ function filterToolsForAgent(
   activeTools: string[],
   audioProviderEnabled?: Record<string, boolean>,
   mediaGenEnabled?: Record<string, boolean>,
+  mp4Settings?: import('../types').MP4Settings,
 ): ClaudeToolDefinition[] {
-  const agentTools = AGENT_TOOLS[agentType] ?? ALL_TOOLS
+  const dims = resolveProjectDimensions(mp4Settings?.aspectRatio, mp4Settings?.resolution)
+  const agentTools = patchToolDimensions(AGENT_TOOLS[agentType] ?? ALL_TOOLS, dims.width, dims.height)
 
   // If no filter active, return all agent tools
   if (!activeTools || activeTools.length === 0) return agentTools
@@ -470,7 +473,7 @@ function filterToolsForAgent(
 
     // Video/avatar tools — gated on provider availability
     if (tool.name === 'set_video_layer') return activeTools.includes('video') && hasVideo
-    if (['generate_avatar', 'list_avatars', 'generate_avatar_narration'].includes(tool.name))
+    if (['generate_avatar_narration', 'generate_avatar_scene'].includes(tool.name))
       return activeTools.includes('avatars') && hasAvatar
 
     if (['add_interaction', 'add_multiple_interactions', 'edit_interaction', 'connect_scenes'].includes(tool.name))
@@ -537,7 +540,8 @@ export function buildAgentContext(
   const presetId = globalStyle?.presetId ?? null
   const resolvedStyle = resolveStyle(presetId, globalStyle)
   const preset = getPreset(presetId)
-  const basePrompt = getAgentPrompt(agentType, resolvedStyle, focusedSceneType, directorTemplate)
+  const projectDims = resolveProjectDimensions(opts.mp4Settings?.aspectRatio, opts.mp4Settings?.resolution)
+  const basePrompt = getAgentPrompt(agentType, resolvedStyle, focusedSceneType, directorTemplate, projectDims)
 
   // Build cascade guidance from preset
   const cascadeParts: string[] = []
@@ -604,6 +608,29 @@ Style auto-detects from preset if set to "auto" (default). Override when needed:
 - terminal: coding tutorials, decision trees (pairs with retro_terminal)
 - minimal: documentation, subtle guidance (pairs with clean, minimal_zen, threeblueonebrown)
 
+### In-Scene Interactivity (React scenes only)
+React scenes can be natively interactive using these hooks in scene code:
+- \`useVariable(name, defaultValue)\` — reactive state synced with parent (counters, scores, toggles)
+- \`useInteraction(elementId)\` — click/hover handlers with visual feedback
+- \`useTrigger(name)\` — fire named events to parent player
+
+Use IN-SCENE interactivity when:
+- Elements need hover effects (chart bars, 3D objects, cards)
+- The scene itself should react to user input (slider changes chart data, toggle shows/hides layers)
+- You want tight visual integration between content and interaction
+
+Use OVERLAY interactions (add_interaction) when:
+- You need standardized UI (quiz panels, choice buttons, forms, gates)
+- The interaction should be consistent across scene types
+- You want the agent to place/style it without modifying scene code
+
+Combine both: a React scene with hoverable chart bars (useInteraction) + an overlay quiz (add_interaction).
+
+### New overlay types:
+- SLIDER — Numeric input bound to a variable. Perfect for "adjust parameter X and watch the chart change".
+  Always pair with a useVariable in the scene code so the scene reactively updates.
+- TOGGLE — Boolean on/off bound to a variable. "Show annotations", "Enable comparison mode".
+
 ### Density rules:
 - Max 1 quiz per scene, max 5 hotspots, max 1 gate, tooltips unlimited
 - Title/intro scenes auto-advance; content scenes pause for interaction
@@ -668,6 +695,34 @@ When the user references their logo, brand assets, or uploaded content, use thes
 Use the use_asset_in_scene tool to formally reference an asset, or embed the URL directly in generated code.`)
   }
 
+  // Inject brand kit context
+  if (opts.brandKit) {
+    const bk = opts.brandKit
+    const parts: string[] = []
+    if (bk.brandName) parts.push(`**Brand:** ${bk.brandName}`)
+    if (bk.palette.length > 0) parts.push(`**Brand Palette:** ${bk.palette.join(', ')}`)
+    if (bk.fontPrimary) parts.push(`**Primary Font:** ${bk.fontPrimary}`)
+    if (bk.fontSecondary) parts.push(`**Secondary Font:** ${bk.fontSecondary}`)
+    if (bk.logoAssetIds.length > 0) {
+      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
+      const logos = bk.logoAssetIds
+        .map((id) => opts.projectAssets?.find((a) => a.id === id))
+        .filter(Boolean)
+        .map((a) => `- "${a!.name}" — ${baseUrl}${a!.publicUrl}`)
+      if (logos.length > 0) parts.push(`**Logos:**\n${logos.join('\n')}`)
+    }
+    if (bk.guidelines) parts.push(`**Brand Guidelines:** ${bk.guidelines}`)
+
+    if (parts.length > 0) {
+      cascadeParts.push(`## Brand Kit
+This project has a configured brand identity. Use these brand colors, fonts, and logos in generated scenes to maintain brand consistency.
+
+${parts.join('\n')}
+
+When generating scenes, prefer the brand palette over default palette. Include the brand logo where appropriate. Use the brand fonts for headings and body text. Call get_brand_kit for the full structured data, or use apply_brand_kit to push brand colors/fonts to the global style. To extrude a logo into 3D, use extrude_svg_to_3d with the logo's asset ID.`)
+    }
+  }
+
   // Inject storyboard context when available (set by plan_scenes tool)
   if (storyboard && storyboard.scenes.length > 0) {
     const sbLines = storyboard.scenes.map((s, i) => {
@@ -724,7 +779,7 @@ ${worldStateSerialized}
 \`\`\``
   const systemPrompt = `${staticPrompt}${dynamicPrompt}`
 
-  const tools = filterToolsForAgent(agentType, opts.activeTools, opts.audioProviderEnabled, opts.mediaGenEnabled)
+  const tools = filterToolsForAgent(agentType, opts.activeTools, opts.audioProviderEnabled, opts.mediaGenEnabled, opts.mp4Settings)
   const modelId = resolveModel(agentType, modelTier ?? 'auto', modelOverride, enabledModelIds)
   // Router never uses thinking; non-Anthropic models don't support thinking param
   const provider = getModelProvider(modelId)

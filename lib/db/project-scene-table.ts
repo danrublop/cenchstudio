@@ -1,5 +1,7 @@
 import { and, eq, inArray, ne, notInArray, sql } from 'drizzle-orm'
 import { randomUUID } from 'crypto'
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 import { db } from './index'
 import { projects, sceneEdges, sceneNodes, scenes } from './schema'
 import { normalizeTransition } from '@/lib/transitions'
@@ -35,6 +37,7 @@ function buildFallbackSceneFromRow(row: any): Scene {
     canvasCode: '',
     canvasBackgroundCode: '',
     sceneCode: '',
+    reactCode: '',
     sceneHTML: '',
     sceneStyles: '',
     lottieSource: '',
@@ -89,11 +92,15 @@ export async function writeProjectScenesToTablesTx(
   // Safety invariant: never allow scene id collisions across projects to be
   // silently rewritten. We fail fast so callers can regenerate IDs instead.
   const incomingSceneIds = projectScenes.map((s) => s.id)
-  if (incomingSceneIds.length > 0) {
+  // Filter to valid UUIDs only — legacy scenes may have slug-style IDs that
+  // would cause a Postgres "invalid input syntax for type uuid" error.
+  const uuidSceneIds = incomingSceneIds.filter((id) => UUID_RE.test(id))
+
+  if (uuidSceneIds.length > 0) {
     const crossProjectRows = await tx
       .select({ id: scenes.id })
       .from(scenes)
-      .where(and(ne(scenes.projectId, projectId), inArray(scenes.id, incomingSceneIds)))
+      .where(and(ne(scenes.projectId, projectId), inArray(scenes.id, uuidSceneIds)))
       .limit(1)
     if (crossProjectRows.length > 0) {
       throw new Error(`scene id collision across projects for id ${crossProjectRows[0].id}`)
@@ -105,17 +112,18 @@ export async function writeProjectScenesToTablesTx(
     .set({ sceneGraphStartSceneId: sceneGraph?.startSceneId ?? null, updatedAt: new Date() })
     .where(eq(projects.id, projectId))
 
-  if (incomingSceneIds.length > 0) {
-    await tx.delete(scenes).where(and(eq(scenes.projectId, projectId), notInArray(scenes.id, incomingSceneIds)))
+  if (uuidSceneIds.length > 0) {
+    await tx.delete(scenes).where(and(eq(scenes.projectId, projectId), notInArray(scenes.id, uuidSceneIds)))
   } else {
     await tx.delete(scenes).where(eq(scenes.projectId, projectId))
   }
 
-  if (projectScenes.length > 0) {
+  const uuidScenes = projectScenes.filter((s) => UUID_RE.test(s.id))
+  if (uuidScenes.length > 0) {
     await tx
       .insert(scenes)
       .values(
-        projectScenes.map((s, idx) => ({
+        uuidScenes.map((s, idx) => ({
           id: s.id,
           projectId,
           name: s.name ?? '',

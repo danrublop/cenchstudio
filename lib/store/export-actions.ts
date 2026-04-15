@@ -2,6 +2,7 @@
 
 import type { ExportSettings, ExportProgress } from '../types'
 import { generateSceneHTML } from '../sceneTemplate'
+import { resolveProjectDimensions } from '../dimensions'
 import type { Set, Get } from './types'
 
 export function createExportActions(set: Set, get: Get) {
@@ -62,12 +63,7 @@ export function createExportActions(set: Set, get: Get) {
 
           const { exportSolidSceneMp4 } = await import('../export2/pixi-mp4')
           const { resolution, fps } = settings
-          const dims =
-            resolution === '4k'
-              ? { width: 3840, height: 2160 }
-              : resolution === '720p'
-                ? { width: 1280, height: 720 }
-                : { width: 1920, height: 1080 }
+          const dims = resolveProjectDimensions(get().project.mp4Settings?.aspectRatio, resolution)
 
           const partPaths: string[] = []
           for (let idx = 0; idx < scenes.length; idx++) {
@@ -86,7 +82,7 @@ export function createExportActions(set: Set, get: Get) {
                 if (fullData.scene) fullScene = { ...scene, ...fullData.scene }
               }
             } catch {}
-            const freshHTML = generateSceneHTML(fullScene, get().globalStyle, undefined, get().audioSettings)
+            const freshHTML = generateSceneHTML(fullScene, get().globalStyle, undefined, get().audioSettings, resolveProjectDimensions(get().project.mp4Settings?.aspectRatio, get().project.mp4Settings?.resolution))
 
             const bytes = await exportSolidSceneMp4({
               sceneId: fullScene.id,

@@ -39,14 +39,22 @@ export interface SFXResult {
   duration: number | null
   provider: SFXProvider
   previewUrl?: string
+  /** Raw license URL or name from provider (Freesound); Pixabay uses a fixed license string */
   license?: string
+}
+
+export interface SFXSearchOptions {
+  /** 1-based page (Pixabay / Freesound) */
+  page?: number
+  /** For Freesound: only return CC0 / CC BY (commercial-friendly); drops NC and other licenses */
+  commercialOnly?: boolean
 }
 
 export interface SFXProviderInterface {
   id: SFXProvider
   name: string
   requiresKey: string | null
-  search(query: string, limit?: number): Promise<SFXResult[]>
+  search(query: string, limit?: number, options?: SFXSearchOptions): Promise<SFXResult[]>
   generate?(prompt: string, duration?: number): Promise<SFXResult>
 }
 

@@ -173,6 +173,7 @@ export const projects = pgTable(
       resolution: '1080p',
       fps: 30,
       format: 'mp4',
+      aspectRatio: '16:9',
     }),
     interactiveSettings: jsonb('interactive_settings').$type<InteractiveSettings>().default({
       playerTheme: 'dark',
@@ -210,6 +211,16 @@ export const projects = pgTable(
         sizePercent: number
       } | null>()
       .default(null),
+    brandKit: jsonb('brand_kit')
+      .$type<{
+        brandName: string | null
+        logoAssetIds: string[]
+        palette: string[]
+        fontPrimary: string | null
+        fontSecondary: string | null
+        guidelines: string | null
+      } | null>()
+      .default(null),
     version: integer('version').default(1).notNull(),
     thumbnailUrl: text('thumbnail_url'),
     isArchived: boolean('is_archived').default(false),
@@ -244,6 +255,7 @@ export const projectAssets = pgTable(
     name: text('name').notNull(),
     tags: text('tags').array().notNull().default([]),
     thumbnailUrl: text('thumbnail_url'),
+    extractedColors: text('extracted_colors').array().notNull().default([]),
     createdAt: timestamp('created_at').defaultNow().notNull(),
   },
   (t) => ({

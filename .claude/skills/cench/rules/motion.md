@@ -24,7 +24,7 @@ Output three pieces that get assembled into the HTML template:
 
 ## Template globals (injected before your code — do NOT redeclare)
 
-`SCENE_ID`, `PALETTE`, `DURATION`, `ROUGHNESS`, `FONT`, `STROKE_COLOR`, `WIDTH` (1920), `HEIGHT` (1080)
+`SCENE_ID`, `PALETTE`, `DURATION`, `ROUGHNESS`, `FONT`, `STROKE_COLOR`, `WIDTH` (default 1920), `HEIGHT` (default 1080) — dimensions change based on the project's aspect ratio
 
 ---
 
@@ -32,7 +32,7 @@ Output three pieces that get assembled into the HTML template:
 
 - Use responsive layout: **flexbox or CSS grid** — NOT absolute pixel positioning
 - Use `clamp()`, `vw`/`vh`, and percentages for sizing so content fits any viewport
-- Body is `100% × 100vh` with `overflow: hidden` — content MUST fit without overflow
+- Body is fixed at `WIDTH × HEIGHT` (defaults to 1920×1080 for 16:9) with `overflow: hidden` — content MUST fit within these bounds
 - Elements should start visible by default. Use CSS `@keyframes` for entrance animations
   that work without JavaScript (like SVG scenes do)
 - You CAN set `opacity: 0` on elements if you animate them via CSS `animation: ... forwards`
