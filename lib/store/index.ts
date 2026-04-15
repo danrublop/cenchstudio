@@ -41,6 +41,8 @@ export const useVideoStore = create<VideoStore>()(
       globalStyle: DEFAULT_GLOBAL_STYLE,
       _dbLoadComplete: false,
       _setDbLoadComplete: (v: boolean) => set({ _dbLoadComplete: v }),
+      _isDirty: false,
+      _lastDbLoadTimestamp: 0,
 
       // Auth
       currentUser: null,
@@ -265,7 +267,7 @@ export const useVideoStore = create<VideoStore>()(
           } else if (!merged.uiFontFamily) {
             merged.uiFontFamily = 'Inter'
           }
-          return { globalStyle: merged }
+          return { globalStyle: merged, _isDirty: true }
         })
       },
 
@@ -411,21 +413,18 @@ export const useVideoStore = create<VideoStore>()(
         const base = { ...current, ...p }
         const pcs = p?.scenes
         const ccs = (current as any)?.scenes
+
+        // If DB loaded recently, never let localStorage overwrite it
+        const dbLoadedRecently = ((current as any)?._lastDbLoadTimestamp ?? 0) > Date.now() - 5000
+
         if (Array.isArray(pcs) && Array.isArray(ccs)) {
-          const persistedEmpty = !pcs.some(sceneHasRenderableContent)
-          const currentRich = ccs.some(sceneHasRenderableContent)
-          // Always prefer current (in-memory) scenes when they have renderable content
-          // but persisted (localStorage) scenes have been stripped of code fields.
-          // This prevents partialize's stripped scenes from overwriting rich scenes
-          // loaded by loadProject() from Postgres.
-          if (currentRich && persistedEmpty) {
+          if (dbLoadedRecently || (ccs.some(sceneHasRenderableContent) && !pcs.some(sceneHasRenderableContent))) {
             base.scenes = ccs
-          } else if (currentRich) {
-            // Even if persisted has some content, if current scenes are from a
-            // different project (loaded via loadProject), prefer current.
+          } else {
+            // Check project match — if current scenes are from a different project, prefer current
             const sameProject = pcs.length > 0 && ccs.length > 0 &&
               ccs.every((s: any) => pcs.some((ps: any) => ps.id === s.id))
-            if (!sameProject) {
+            if (!sameProject && ccs.some(sceneHasRenderableContent)) {
               base.scenes = ccs
             }
           }
