@@ -12,7 +12,7 @@ Reference document mapping the full agent/chat system into logical sections.
 | 2   | **Core Engine**        | `lib/agents/runner.ts`, `router.ts`, `tool-executor.ts`, `context-builder.ts`, `orchestrator.ts` | 5,226        |
 | 3   | **Config & Prompts**   | `lib/agents/types.ts`, `model-config.ts`, `agent-config.ts`, `prompts.ts`                        | 2,762        |
 | 4   | **Tool System**        | `lib/agents/tools.ts`, `tool-registry.ts`, 18 handler modules                                    | 3,037+       |
-| 5   | **UI Components**      | `components/AgentChat.tsx`, `ChatPanel.tsx`, `AgentControlPanel.tsx`, `components/chat/*`        | 2,338+       |
+| 5   | **UI Components**      | `components/AgentChat.tsx`, `AgentControlPanel.tsx`, `components/chat/*`                         | 2,338+       |
 | 6   | **State Management**   | `lib/store/agent-actions.ts`                                                                     | 509          |
 | 7   | **Database**           | `lib/db/queries/conversations.ts`                                                                | 100+         |
 | 8   | **Supporting Systems** | logger, memory-extractor, analytics, session, hooks, commands                                    | 1,281        |
@@ -92,7 +92,6 @@ Reference document mapping the full agent/chat system into logical sections.
 | File                               | Lines  | Purpose                                                                                                                                                              |
 | ---------------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `components/AgentChat.tsx`         | ~1000+ | Main chat UI — message input, SSE stream parsing, tool inspection, thinking blocks, permission dialogs, image attachments, speech recognition, agent/model selectors |
-| `components/ChatPanel.tsx`         | ~500+  | Chat sidebar — conversation history, message display, pinning/renaming/deletion, feedback                                                                            |
 | `components/AgentControlPanel.tsx` | ~400+  | Config panel — agent type, model tier, thinking mode, scene context, tool presets, provider settings                                                                 |
 
 ### Sub-components (`components/chat/`)
@@ -142,7 +141,7 @@ Reference document mapping the full agent/chat system into logical sections.
 ## Data Flow
 
 ```
-User message → ChatPanel / AgentChat
+User message → AgentChat
   → POST /api/agent (SSE stream)
     → runAgent()
       → router.ts → pick agent type

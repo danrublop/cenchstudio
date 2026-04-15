@@ -127,7 +127,6 @@ AI-powered animated explainer video creator. Next.js + Electron desktop app with
 |------|---------|
 | `Editor.tsx` | Main editor — orchestrates all panels, preview, timeline |
 | `AgentChat.tsx` | AI conversation panel with SSE streaming, tool calls, permissions |
-| `ChatPanel.tsx` | Chat UI — message input, conversation tabs, SSE event processing |
 | `PreviewPlayer.tsx` | Scene preview/playback with iframe rendering |
 | `GenerationConfirmCard.tsx` | Rich confirmation card for media generation (provider, cost, config) |
 | `StoryboardReviewCard.tsx` | Storyboard review/edit before agent builds |

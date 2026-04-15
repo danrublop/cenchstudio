@@ -17,7 +17,6 @@ The router classifies intent using Haiku (cheapest/fastest), then the appropriat
 - `lib/agents/router.ts` — Intent classification using Haiku
 - `lib/agents/runner.ts` — Main execution loop with SSE streaming
 - `app/api/agent/route.ts` — Next.js SSE streaming endpoint
-- `components/ChatPanel.tsx` — Chat UI with streaming display and tool call collapse
 - `components/AgentControlPanel.tsx` — Agent selector, model picker, tool filters
 - `lib/agent-tools.ts` — Existing tool presets and filter chips (unchanged)
 
@@ -61,7 +60,7 @@ Added to `VideoStore`: `chatMessages`, `isChatOpen`, `isAgentRunning`, `agentTyp
 Actions: `setChatOpen`, `addChatMessage`, `updateChatMessage`, `clearChat`, `syncScenesFromAgent`, etc.
 
 ## Editor Layout Change
-`components/Editor.tsx` now has a 4-panel layout: Left (SceneList) | Center (Preview) | Right (SceneEditor) | Chat (ChatPanel)
+`components/Editor.tsx` now has a 4-panel layout: Left (SceneList) | Center (Preview) | Right (SceneEditor) | Chat (AgentChat)
 Chat panel is toggled via "AI" button in header. Width is draggable (280–560px, default 380px).
 
 **Why:** Keeping chat in a resizable panel preserves existing editor layout while giving AI a dedicated workspace.
