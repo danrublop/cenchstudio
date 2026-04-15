@@ -4,12 +4,37 @@ import { useState } from 'react'
 import { ChevronDown, ChevronRight, CheckCircle2, XCircle } from 'lucide-react'
 import type { ToolCallRecord } from '@/lib/agents/types'
 
+const TOOL_DISPLAY_NAMES: Record<string, string> = {
+  add_canvas_layer: 'Creating canvas animation',
+  add_svg_layer: 'Creating SVG graphic',
+  add_three_layer: 'Creating 3D scene',
+  add_d3_layer: 'Creating data visualization',
+  add_lottie_layer: 'Adding Lottie animation',
+  add_zdog_layer: 'Creating Zdog illustration',
+  regenerate_layer: 'Regenerating layer',
+  edit_layer: 'Editing layer',
+  delete_layer: 'Deleting layer',
+  rename_scene: 'Renaming scene',
+  add_scene: 'Adding scene',
+  delete_scene: 'Deleting scene',
+  reorder_scenes: 'Reordering scenes',
+  update_global_style: 'Updating global style',
+  add_interaction: 'Adding interaction',
+  remove_interaction: 'Removing interaction',
+  generate_image: 'Generating image',
+  generate_audio: 'Generating audio',
+  generate_video: 'Generating video clip',
+  search_web: 'Searching the web',
+  read_url: 'Reading URL',
+}
+
 export interface ToolCallItemProps {
   call: ToolCallRecord
 }
 
 export function ToolCallItem({ call }: ToolCallItemProps) {
   const [open, setOpen] = useState(false)
+  const displayName = TOOL_DISPLAY_NAMES[call.toolName] ?? call.toolName
   const isSuccess = call.output?.success
   const isError = call.output && !call.output.success
 
@@ -19,7 +44,7 @@ export function ToolCallItem({ call }: ToolCallItemProps) {
         onClick={() => setOpen((o) => !o)}
         className="w-full flex items-center gap-2 px-2.5 py-2 text-left hover:bg-[var(--color-border)]/20 transition-colors cursor-pointer select-none"
       >
-        <span className="font-mono text-[var(--color-text-primary)] flex-1 truncate">{call.toolName}</span>
+        <span className="font-mono text-[var(--color-text-primary)] flex-1 truncate">{displayName}</span>
         {isSuccess && (
           <span className="flex items-center gap-1 text-emerald-400">
             <CheckCircle2 size={11} />

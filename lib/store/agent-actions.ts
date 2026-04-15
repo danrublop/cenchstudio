@@ -79,7 +79,8 @@ export function createAgentActions(set: Set, get: Get) {
       const validIds = new Set(get().conversations.map((c) => c.id))
       if (!validIds.has(conversationId)) return
       const requestId = ++switchConversationCounter
-      set({ activeConversationId: conversationId, chatMessages: [] })
+      // Only update the active ID — don't clear messages yet to avoid flash
+      set({ activeConversationId: conversationId })
       try {
         const res = await fetch(`/api/conversations/${conversationId}/messages`)
         if (!res.ok) return
@@ -94,7 +95,7 @@ export function createAgentActions(set: Set, get: Get) {
           return {
             id: m.id,
             role: m.role as 'user' | 'assistant',
-            content: isOrphaned ? (m.content || 'Generation interrupted.') : m.content,
+            content: isOrphaned ? m.content || 'Generation interrupted.' : m.content,
             agentType: m.agentType ?? undefined,
             modelId: m.modelUsed ?? undefined,
             thinking: m.thinkingContent ?? undefined,
@@ -133,6 +134,10 @@ export function createAgentActions(set: Set, get: Get) {
         }
       } catch (err) {
         console.error('[Conversations] Failed to load messages:', err)
+        // On error, clear messages so stale ones from the previous conversation aren't shown
+        if (get().activeConversationId === conversationId) {
+          set({ chatMessages: [] })
+        }
       }
     },
 
@@ -418,8 +423,7 @@ export function createAgentActions(set: Set, get: Get) {
         // Preserve per-scene messages and content — server-side scenes don't carry local chat history.
         // The agent request strips content for non-focused scenes (replaced with "[N chars]" placeholders).
         // When the agent returns, those placeholders must NOT overwrite the real content in the store.
-        const isPlaceholderContent = (val: string | undefined | null): boolean =>
-          !!val && /^\[\d+ chars\]$/.test(val)
+        const isPlaceholderContent = (val: string | undefined | null): boolean => !!val && /^\[\d+ chars\]$/.test(val)
 
         const mergedScenes = finalScenes.map((newScene) => {
           const existing = state.scenes.find((s) => s.id === newScene.id)
@@ -433,14 +437,20 @@ export function createAgentActions(set: Set, get: Get) {
             isPlaceholderContent(newScene.lottieSource)
 
           if (hasPlaceholder) {
-            console.log(`[Store] Restoring real content for scene ${newScene.id.slice(0, 8)}… (had placeholder strings)`)
+            console.log(
+              `[Store] Restoring real content for scene ${newScene.id.slice(0, 8)}… (had placeholder strings)`,
+            )
             return normalizeScene({
               ...newScene,
               svgContent: isPlaceholderContent(newScene.svgContent) ? existing.svgContent : newScene.svgContent,
               canvasCode: isPlaceholderContent(newScene.canvasCode) ? existing.canvasCode : newScene.canvasCode,
               sceneCode: isPlaceholderContent(newScene.sceneCode) ? existing.sceneCode : newScene.sceneCode,
-              sceneHTML: isPlaceholderContent(newScene.sceneCode) || isPlaceholderContent(newScene.svgContent) || isPlaceholderContent(newScene.canvasCode)
-                ? existing.sceneHTML : newScene.sceneHTML,
+              sceneHTML:
+                isPlaceholderContent(newScene.sceneCode) ||
+                isPlaceholderContent(newScene.svgContent) ||
+                isPlaceholderContent(newScene.canvasCode)
+                  ? existing.sceneHTML
+                  : newScene.sceneHTML,
               lottieSource: isPlaceholderContent(newScene.lottieSource) ? existing.lottieSource : newScene.lottieSource,
               messages: existing.messages,
             } as Scene)
@@ -450,7 +460,9 @@ export function createAgentActions(set: Set, get: Get) {
           const agentHasContent = sceneHasRenderableContent(newScene)
           const storeHasContent = sceneHasRenderableContent(existing)
           if (storeHasContent && !agentHasContent) {
-            console.log(`[Store] Preserving existing content for scene ${newScene.id.slice(0, 8)}… (agent returned empty)`)
+            console.log(
+              `[Store] Preserving existing content for scene ${newScene.id.slice(0, 8)}… (agent returned empty)`,
+            )
             return normalizeScene({
               ...newScene,
               svgContent: existing.svgContent,
@@ -495,27 +507,26 @@ export function createAgentActions(set: Set, get: Get) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ id: scene.id, html: scene.sceneHTML }),
-          })
-            .then(async (r) => {
-              if (!r.ok) {
-                console.error(`[Store] POST /api/scene failed for ${scene.id}: ${r.status}`)
-                // Retry once after a short delay with timeout (helps with 409 conflicts)
-                await new Promise((resolve) => setTimeout(resolve, 100))
-                const retryController = new AbortController()
-                const retryTimeout = setTimeout(() => retryController.abort(), 15000)
-                try {
-                  const r2 = await fetch('/api/scene', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ id: scene.id, html: scene.sceneHTML }),
-                    signal: retryController.signal,
-                  })
-                  if (!r2.ok) throw new Error(`Save failed for scene ${scene.id} (${r2.status})`)
-                } finally {
-                  clearTimeout(retryTimeout)
-                }
+          }).then(async (r) => {
+            if (!r.ok) {
+              console.error(`[Store] POST /api/scene failed for ${scene.id}: ${r.status}`)
+              // Retry once after a short delay with timeout (helps with 409 conflicts)
+              await new Promise((resolve) => setTimeout(resolve, 100))
+              const retryController = new AbortController()
+              const retryTimeout = setTimeout(() => retryController.abort(), 15000)
+              try {
+                const r2 = await fetch('/api/scene', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ id: scene.id, html: scene.sceneHTML }),
+                  signal: retryController.signal,
+                })
+                if (!r2.ok) throw new Error(`Save failed for scene ${scene.id} (${r2.status})`)
+              } finally {
+                clearTimeout(retryTimeout)
               }
-            })
+            }
+          })
           writeEntries.push({ sceneId: scene.id, promise: p as Promise<void> })
         } else {
           console.warn(`[Store] Scene ${scene.id.slice(0, 8)}… has empty sceneHTML, skipping file write`)
