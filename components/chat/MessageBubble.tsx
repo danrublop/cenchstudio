@@ -85,9 +85,7 @@ export function MessageBubble({ msg, isStreaming, activeToolName, onRate, onPerm
 
   return (
     <div className="flex justify-center mb-3">
-      <div
-        className="relative w-full max-w-[92%]"
-      >
+      <div className="relative w-full max-w-[92%]">
         {/* Agent badge bar */}
         <div className="flex items-center gap-2 px-3 py-1.5">
           <span className="text-[12px] font-semibold" style={{ color: borderColor }}>
@@ -98,8 +96,22 @@ export function MessageBubble({ msg, isStreaming, activeToolName, onRate, onPerm
               {resolveAgentModelDisplayName(msg.modelId, modelConfigs)}
             </span>
           )}
+          {msg.routeMethod && msg.routeMethod !== 'override' && (
+            <span className="text-[10px] text-[var(--color-text-muted)]/50 px-1 py-0.5">
+              {msg.routeMethod === 'llm' ? 'auto' : msg.routeMethod === 'heuristic' ? 'rule' : '\u26A0 fallback'}
+            </span>
+          )}
           {isStreaming && <Loader2 size={10} className="ml-auto animate-spin text-[var(--color-text-muted)]" />}
         </div>
+
+        {/* Routing fallback warning */}
+        {msg.routingFallback && (
+          <div className="px-3 pb-1">
+            <span className="text-[11px] text-amber-400/70">
+              {'\u26A0'} Router unavailable — used heuristic agent selection
+            </span>
+          </div>
+        )}
 
         {/* Thinking block */}
         {(msg.thinking || msg.isThinkingStreaming) && (

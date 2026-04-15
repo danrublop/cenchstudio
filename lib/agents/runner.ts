@@ -465,6 +465,7 @@ export async function runAgent(opts: RunnerOptions): Promise<{
   const pid = opts.projectId ?? 'unknown'
   const runStartTime = Date.now()
   let agentType: AgentType = agentOverride ?? 'scene-maker'
+  let resolvedRouteMethod: 'override' | 'heuristic' | 'llm' | 'fallback' = agentOverride ? 'override' : 'heuristic'
   let modelId: ModelId = 'claude-sonnet-4-6'
   let fullText = ''
   const allToolCalls: ToolCallRecord[] = []
@@ -499,7 +500,7 @@ export async function runAgent(opts: RunnerOptions): Promise<{
       // Local models: skip LLM routing, use heuristic only (avoids calling Anthropic API)
       logger.log('route', 'Local mode — using heuristic routing (no LLM router)')
       try {
-        agentType = await routeMessage(
+        const routeResult = await routeMessage(
           messageText,
           scenes,
           globalStyle,
@@ -509,15 +510,18 @@ export async function runAgent(opts: RunnerOptions): Promise<{
           logger,
           [], // empty enabledModelIds forces heuristic fallback
         )
+        agentType = routeResult.agent
+        resolvedRouteMethod = routeResult.method
         const routeMs = logger.endPhase('route')
         logger.log('route', `Heuristic routed to ${agentType}`, { durationMs: routeMs })
       } catch {
         logger.endPhase('route')
         agentType = 'scene-maker'
+        resolvedRouteMethod = 'fallback'
       }
     } else {
       try {
-        agentType = await routeMessage(
+        const routeResult = await routeMessage(
           messageText,
           scenes,
           globalStyle,
@@ -527,6 +531,8 @@ export async function runAgent(opts: RunnerOptions): Promise<{
           logger,
           opts.enabledModelIds,
         )
+        agentType = routeResult.agent
+        resolvedRouteMethod = routeResult.method
         const routeMs = logger.endPhase('route')
         logger.log('route', `Routed to ${agentType}`, { durationMs: routeMs })
       } catch (err) {
@@ -534,6 +540,7 @@ export async function runAgent(opts: RunnerOptions): Promise<{
         logger.error('route', `Router failed: ${(err as Error).message}`, { stack: (err as Error).stack })
         emit({ type: 'error', error: `Router error: ${(err as Error).message}` })
         agentType = 'scene-maker' // fallback
+        resolvedRouteMethod = 'fallback'
       }
     }
 
@@ -593,7 +600,8 @@ export async function runAgent(opts: RunnerOptions): Promise<{
       type: 'agent_routed',
       agentType: agentType as import('./types').AgentType,
       modelId: modelId as import('./types').ModelId,
-      routeMethod: agentOverride ? 'override' : 'heuristic',
+      routeMethod: resolvedRouteMethod,
+      isFallback: resolvedRouteMethod === 'fallback',
       focusedSceneType: opts.focusedSceneType,
       toolCount: ctx.tools.length,
     })
@@ -739,7 +747,10 @@ export async function runAgent(opts: RunnerOptions): Promise<{
     const provider = getModelProvider(modelId, opts.modelConfigs)
     if (provider === 'local') {
       const localConfig = opts.modelConfigs?.find((m) => m.id === modelId || m.modelId === modelId)
-      logger.log('run', `Local mode: provider=${provider} model=${modelId} endpoint=${localConfig?.endpoint ?? 'http://localhost:11434'} localModelName=${localConfig?.localModelName ?? modelId}`)
+      logger.log(
+        'run',
+        `Local mode: provider=${provider} model=${modelId} endpoint=${localConfig?.endpoint ?? 'http://localhost:11434'} localModelName=${localConfig?.localModelName ?? modelId}`,
+      )
     } else {
       logger.log('run', `Provider: ${provider} model=${modelId}`)
     }
@@ -874,7 +885,13 @@ export async function runAgent(opts: RunnerOptions): Promise<{
       totalApiCalls++
 
       // Cost guardrail: abort if accumulated LLM cost exceeds the per-run cap
-      const runningCost = calculateCost(modelId, totalInputTokens, totalOutputTokens, totalCacheCreationTokens, totalCacheReadTokens)
+      const runningCost = calculateCost(
+        modelId,
+        totalInputTokens,
+        totalOutputTokens,
+        totalCacheCreationTokens,
+        totalCacheReadTokens,
+      )
       if (runningCost > rc.maxRunCostUsd) {
         logger.warn('cost', `Run cost $${runningCost.toFixed(3)} exceeds cap $${rc.maxRunCostUsd} — stopping`, {
           iteration,
@@ -905,7 +922,13 @@ export async function runAgent(opts: RunnerOptions): Promise<{
         runProgress: {
           toolCallsUsed: allToolCalls.length,
           toolCallsMax: rc.maxToolCalls,
-          costUsd: calculateCost(modelId, totalInputTokens, totalOutputTokens, totalCacheCreationTokens, totalCacheReadTokens),
+          costUsd: calculateCost(
+            modelId,
+            totalInputTokens,
+            totalOutputTokens,
+            totalCacheCreationTokens,
+            totalCacheReadTokens,
+          ),
           costMax: rc.maxRunCostUsd,
           iteration,
           iterationMax: effectiveMaxIterations,
@@ -1143,7 +1166,10 @@ export async function runAgent(opts: RunnerOptions): Promise<{
 
             // Compact messages to prevent unbounded growth during long builds
             const before = messages.length
-            const compacted = compactInFlightMessages(messages, { maxTokens: rc.compactionMaxTokens, preserveRecent: rc.compactionPreserveRecent })
+            const compacted = compactInFlightMessages(messages, {
+              maxTokens: rc.compactionMaxTokens,
+              preserveRecent: rc.compactionPreserveRecent,
+            })
             if (compacted.length < before) {
               messages.length = 0
               messages.push(...compacted)
@@ -1170,7 +1196,13 @@ export async function runAgent(opts: RunnerOptions): Promise<{
             emit,
             logger,
             toolBudgetRemaining: rc.maxToolCalls - allToolCalls.length,
-            parentCostUsd: calculateCost(modelId, totalInputTokens, totalOutputTokens, totalCacheCreationTokens, totalCacheReadTokens),
+            parentCostUsd: calculateCost(
+              modelId,
+              totalInputTokens,
+              totalOutputTokens,
+              totalCacheCreationTokens,
+              totalCacheReadTokens,
+            ),
             maxRunCostUsd: rc.maxRunCostUsd,
           })
           for (const sr of subResults) {
@@ -1267,7 +1299,8 @@ export async function runAgent(opts: RunnerOptions): Promise<{
         }
 
         // Local models may not support tools — skip tool parameter if supportsTools is false
-        const localConfig = provider === 'local' ? opts.modelConfigs?.find((m) => m.id === modelId || m.modelId === modelId) : null
+        const localConfig =
+          provider === 'local' ? opts.modelConfigs?.find((m) => m.id === modelId || m.modelId === modelId) : null
         const supportsTools = localConfig ? localConfig.supportsTools !== false : true
 
         let stream: any
@@ -1284,9 +1317,10 @@ export async function runAgent(opts: RunnerOptions): Promise<{
         } catch (connectErr) {
           const errMsg = (connectErr as Error).message ?? 'Unknown error'
           logger.error('iteration', `Failed to connect to ${provider === 'local' ? 'Ollama' : 'OpenAI'}: ${errMsg}`)
-          const userMsg = provider === 'local'
-            ? `Failed to connect to Ollama at ${(oaiClient as any)?.baseURL ?? 'localhost:11434'}. Make sure Ollama is running (\`ollama serve\`) and the model is pulled.`
-            : `Failed to connect to OpenAI: ${errMsg}`
+          const userMsg =
+            provider === 'local'
+              ? `Failed to connect to Ollama at ${(oaiClient as any)?.baseURL ?? 'localhost:11434'}. Make sure Ollama is running (\`ollama serve\`) and the model is pulled.`
+              : `Failed to connect to OpenAI: ${errMsg}`
           fullText += `\n\n${userMsg}`
           emit({ type: 'token', token: `\n\n${userMsg}` })
           break
@@ -1336,9 +1370,13 @@ export async function runAgent(opts: RunnerOptions): Promise<{
         const toolUseBlocks = Object.values(toolCallAccum)
 
         // Execute tools
-        logger.log('iteration', `${provider === 'local' ? 'Local' : 'OpenAI'}: ${toolUseBlocks.length} tool calls to execute`, {
-          toolCallCount: toolUseBlocks.length,
-        })
+        logger.log(
+          'iteration',
+          `${provider === 'local' ? 'Local' : 'OpenAI'}: ${toolUseBlocks.length} tool calls to execute`,
+          {
+            toolCallCount: toolUseBlocks.length,
+          },
+        )
         const toolResultMsgs: OpenAI.ChatCompletionToolMessageParam[] = []
         let stopBecausePermission = false
         let stopBecauseInvalidToolArgs = false
@@ -1483,7 +1521,10 @@ export async function runAgent(opts: RunnerOptions): Promise<{
 
             // Compact messages to prevent unbounded growth during long builds
             const before = messages.length
-            const compacted = compactInFlightMessages(messages, { maxTokens: rc.compactionMaxTokens, preserveRecent: rc.compactionPreserveRecent })
+            const compacted = compactInFlightMessages(messages, {
+              maxTokens: rc.compactionMaxTokens,
+              preserveRecent: rc.compactionPreserveRecent,
+            })
             if (compacted.length < before) {
               messages.length = 0
               messages.push(...compacted)
@@ -1501,7 +1542,10 @@ export async function runAgent(opts: RunnerOptions): Promise<{
           allToolCalls.some((tc) => tc.toolName === 'set_global_style' || tc.toolName === 'set_all_transitions') &&
           !allToolCalls.some((tc) => tc.toolName === 'add_layer')
         ) {
-          logger.log('orchestrator', `Handing off to orchestrator (${provider}): ${world.storyboard.scenes.length} scenes`)
+          logger.log(
+            'orchestrator',
+            `Handing off to orchestrator (${provider}): ${world.storyboard.scenes.length} scenes`,
+          )
           const { runOrchestrated } = await import('./orchestrator')
           const subResults = await runOrchestrated({
             storyboard: world.storyboard,
@@ -1510,7 +1554,13 @@ export async function runAgent(opts: RunnerOptions): Promise<{
             emit,
             logger,
             toolBudgetRemaining: rc.maxToolCalls - allToolCalls.length,
-            parentCostUsd: calculateCost(modelId, totalInputTokens, totalOutputTokens, totalCacheCreationTokens, totalCacheReadTokens),
+            parentCostUsd: calculateCost(
+              modelId,
+              totalInputTokens,
+              totalOutputTokens,
+              totalCacheCreationTokens,
+              totalCacheReadTokens,
+            ),
             maxRunCostUsd: rc.maxRunCostUsd,
           })
           for (const sr of subResults) {
@@ -1588,8 +1638,19 @@ export async function runAgent(opts: RunnerOptions): Promise<{
                 await fs.mkdir(scenesDir, { recursive: true })
                 await fs.writeFile(path.join(scenesDir, `${focusedScene.id}.html`), html, 'utf-8')
 
-                emit({ type: 'preview_update', sceneId: focusedScene.id, changes: [{ type: 'scene_updated', sceneId: focusedScene.id, description: 'Generated scene code (local)' }] })
-                emit({ type: 'state_change', changes: [{ type: 'scene_updated', sceneId: focusedScene.id, description: 'Generated scene code (local)' }] })
+                emit({
+                  type: 'preview_update',
+                  sceneId: focusedScene.id,
+                  changes: [
+                    { type: 'scene_updated', sceneId: focusedScene.id, description: 'Generated scene code (local)' },
+                  ],
+                })
+                emit({
+                  type: 'state_change',
+                  changes: [
+                    { type: 'scene_updated', sceneId: focusedScene.id, description: 'Generated scene code (local)' },
+                  ],
+                })
 
                 const doneMsg = `_Scene generated successfully._`
                 fullText += doneMsg
@@ -1770,7 +1831,11 @@ export async function runAgent(opts: RunnerOptions): Promise<{
           console.error('[Agent] finalMessage() failed:', err)
           // Abort the stream to release the underlying HTTP connection
           // instead of leaving it in a partially-consumed state.
-          try { stream.abort() } catch { /* best-effort cleanup */ }
+          try {
+            stream.abort()
+          } catch {
+            /* best-effort cleanup */
+          }
           finalMsg = {
             id: '',
             type: 'message',
@@ -2002,11 +2067,21 @@ export async function runAgent(opts: RunnerOptions): Promise<{
 
         // Post-tool cost check: catch single-tool overspend that the pre-iteration
         // check at the top of the loop can't see (it only fires before the next iteration).
-        const postToolCost = calculateCost(modelId, totalInputTokens, totalOutputTokens, totalCacheCreationTokens, totalCacheReadTokens)
+        const postToolCost = calculateCost(
+          modelId,
+          totalInputTokens,
+          totalOutputTokens,
+          totalCacheCreationTokens,
+          totalCacheReadTokens,
+        )
         if (postToolCost > rc.maxRunCostUsd) {
-          logger.warn('cost', `Post-tool cost $${postToolCost.toFixed(3)} exceeds cap — stopping after this iteration`, {
-            iteration,
-          })
+          logger.warn(
+            'cost',
+            `Post-tool cost $${postToolCost.toFixed(3)} exceeds cap — stopping after this iteration`,
+            {
+              iteration,
+            },
+          )
           const costMsg = `\n\n⚠ Cost limit reached ($${postToolCost.toFixed(2)} / $${rc.maxRunCostUsd.toFixed(2)} cap). Stopping to prevent overspend.`
           fullText += costMsg
           emit({ type: 'token', token: costMsg })
@@ -2054,7 +2129,10 @@ export async function runAgent(opts: RunnerOptions): Promise<{
 
             // Compact messages to prevent unbounded growth during long builds
             const before = messages.length
-            const compacted = compactInFlightMessages(messages, { maxTokens: rc.compactionMaxTokens, preserveRecent: rc.compactionPreserveRecent })
+            const compacted = compactInFlightMessages(messages, {
+              maxTokens: rc.compactionMaxTokens,
+              preserveRecent: rc.compactionPreserveRecent,
+            })
             if (compacted.length < before) {
               messages.length = 0
               messages.push(...compacted)
@@ -2086,7 +2164,13 @@ export async function runAgent(opts: RunnerOptions): Promise<{
             emit,
             logger,
             toolBudgetRemaining: rc.maxToolCalls - allToolCalls.length,
-            parentCostUsd: calculateCost(modelId, totalInputTokens, totalOutputTokens, totalCacheCreationTokens, totalCacheReadTokens),
+            parentCostUsd: calculateCost(
+              modelId,
+              totalInputTokens,
+              totalOutputTokens,
+              totalCacheCreationTokens,
+              totalCacheReadTokens,
+            ),
             maxRunCostUsd: rc.maxRunCostUsd,
           })
 
@@ -2273,7 +2357,15 @@ export async function runAgent(opts: RunnerOptions): Promise<{
           remainingSceneIndexes: storyboard.scenes
             .map((_, i) => i)
             .filter((i) => !opts.scenes.some((s) => s.name.toLowerCase() === storyboard.scenes[i].name.toLowerCase())),
-          progress: { scenesCreated: opts.scenes.map((s) => s.id), toolCallsTotal: allToolCalls.length, iterationsUsed: 0, phase: 'unknown', storyboardScenesPlanned: storyboard.scenes.length, errors: [], scenesWithNarration: [] },
+          progress: {
+            scenesCreated: opts.scenes.map((s) => s.id),
+            toolCallsTotal: allToolCalls.length,
+            iterationsUsed: 0,
+            phase: 'unknown',
+            storyboardScenesPlanned: storyboard.scenes.length,
+            errors: [],
+            scenesWithNarration: [],
+          },
           worldSnapshot: {
             scenes: JSON.parse(JSON.stringify(opts.scenes)),
             globalStyle: JSON.parse(JSON.stringify(opts.globalStyle)),

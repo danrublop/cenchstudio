@@ -139,9 +139,7 @@ export function messageContentToText(content: MessageContent): string {
 // ── Message Types ─────────────────────────────────────────────────────────────
 
 /** A segment of a message — either a text chunk or a tool call reference, in chronological order */
-export type MessageSegment =
-  | { type: 'text'; text: string }
-  | { type: 'tool'; toolCallId: string }
+export type MessageSegment = { type: 'text'; text: string } | { type: 'tool'; toolCallId: string }
 
 export interface ChatMessage {
   id: string
@@ -163,6 +161,10 @@ export interface ChatMessage {
   generationLogId?: string
   /** User feedback rating: 1 = thumbs down, 5 = thumbs up */
   userRating?: number
+  /** True when LLM routing failed and heuristic was used as fallback */
+  routingFallback?: boolean
+  /** How the agent was selected: llm, heuristic, override, or fallback */
+  routeMethod?: string
   timestamp: number
   /** Permission requests that need user approval (from tool results with permissionNeeded) */
   pendingPermissions?: PendingPermission[]
@@ -267,6 +269,7 @@ export interface SSEEvent {
   runId?: string
   /** For 'agent_routed' events — routing decision metadata */
   routeMethod?: 'override' | 'heuristic' | 'llm' | 'fallback'
+  isFallback?: boolean
   focusedSceneType?: string
   toolCount?: number
   /** For 'token' and 'thinking_token' events */
