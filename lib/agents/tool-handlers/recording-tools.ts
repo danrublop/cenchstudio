@@ -1,8 +1,6 @@
 import type { AgentLogger } from '../logger'
 import { ok, okGlobal, err, type ToolResult } from './_shared'
 
-const ELECTRON_API_PORT = 3002
-
 export const RECORDING_TOOL_NAMES = [
   'start_recording',
   'stop_recording',
@@ -22,19 +20,20 @@ export function createRecordingToolHandler() {
   ): Promise<ToolResult> {
     switch (toolName) {
       case 'start_recording': {
-        const { sourceId, sceneId, micEnabled, systemAudioEnabled, webcamEnabled, fps, resolution } =
-          args as {
-            sourceId?: string
-            sceneId?: string
-            micEnabled?: boolean
-            systemAudioEnabled?: boolean
-            webcamEnabled?: boolean
-            fps?: number
-            resolution?: string
-          }
+        const { sourceId, sceneId, micEnabled, systemAudioEnabled, webcamEnabled, fps, resolution } = args as {
+          sourceId?: string
+          sceneId?: string
+          micEnabled?: boolean
+          systemAudioEnabled?: boolean
+          webcamEnabled?: boolean
+          fps?: number
+          resolution?: string
+        }
 
         if (world.recordingState && world.recordingState !== 'idle') {
-          return err(`Recording already in progress (state: ${world.recordingState}). Use stop_recording or cancel_recording first.`)
+          return err(
+            `Recording already in progress (state: ${world.recordingState}). Use stop_recording or cancel_recording first.`,
+          )
         }
 
         // Set config on world state — the client bridge will pick this up via SSE
@@ -121,7 +120,7 @@ export function createRecordingToolHandler() {
       case 'list_recording_sources': {
         return okGlobal(
           'Source selection uses the native OS screen picker (getDisplayMedia). ' +
-          'Call start_recording and the user will be prompted to select a screen or window.',
+            'Call start_recording and the user will be prompted to select a screen or window.',
         )
       }
 

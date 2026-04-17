@@ -169,6 +169,18 @@
       {
         "from": "render-server/audio-mixer.js",
         "to": "render-server/audio-mixer.js"
+      },
+      {
+        "from": "render-server/node_modules",
+        "to": "render-server/node_modules",
+        "filter": [
+          "fluent-ffmpeg/**",
+          "ffmpeg-static/**",
+          "uuid/**",
+          "async/**",
+          "isarray/**",
+          "lodash/**"
+        ]
       }
     ],
     "mac": {
@@ -185,7 +197,12 @@
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",
-      "entitlementsInherit": "build/entitlements.mac.plist"
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extendInfo": {
+        "NSCameraUsageDescription": "Cench Studio uses the camera so you can record avatar walkthroughs and narration clips directly inside the editor.",
+        "NSMicrophoneUsageDescription": "Cench Studio uses the microphone so you can record narration and voiceover for scenes.",
+        "NSScreenCaptureUsageDescription": "Cench Studio captures the screen when you use the screen-recording source in a scene."
+      }
     },
     "win": {
       "target": [

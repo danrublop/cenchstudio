@@ -1,5 +1,11 @@
 'use client'
 
+// UNMOUNTED as of the Week 1 True Desktop migration. This component and the
+// `components/build/**` + `lib/build/**` tree are dead-but-dormant: nothing in
+// the UI imports BuildPanel, and the `/api/build` endpoint it streams from was
+// deleted (it was a stub with zero callers). Resurrect by re-importing into a
+// layers panel and re-introducing `/api/build` as an IPC route during or after
+// the route migration in Week 2+. See SHIP_READINESS.md for context.
 import { useRef, useEffect } from 'react'
 import { WifiOff, Hammer } from 'lucide-react'
 import { useBuildStream } from '@/lib/build/useBuildStream'

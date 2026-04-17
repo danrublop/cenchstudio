@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -82,6 +115,21 @@ async function registerCenchProtocol() {
                     }
                     catch { }
                 }
+            }
+            // Re-check after realpath so a symlink planted inside the
+            // user-writable scenes directory cannot escape the mount root
+            // (e.g., `cench://scenes/evil` → `/etc/passwd`). The privileged
+            // `secure: true` scheme means a renderer fetch on that URL would
+            // otherwise read an arbitrary file through the Chromium net stack.
+            try {
+                const realPath = await promises_1.default.realpath(filePath);
+                if (!realPath.startsWith(baseDir + path_1.default.sep) && realPath !== baseDir) {
+                    return new Response('Forbidden (symlink escape)', { status: 403 });
+                }
+                filePath = realPath;
+            }
+            catch {
+                // File may not exist yet (falls through to net.fetch which returns 404).
             }
             return electron_1.net.fetch((0, url_1.pathToFileURL)(filePath).toString());
         }
@@ -255,6 +303,12 @@ function createWindow() {
 }
 electron_1.app.whenReady().then(async () => {
     electron_1.ipcMain.handle('cench:gitStatus', async () => {
+        // Dev-only: `process.cwd()` in a packaged app is the launch directory
+        // (usually `/`), so `git` would silently return an irrelevant status.
+        // The git indicator is a dev affordance; hide it entirely in production.
+        if (electron_1.app.isPackaged) {
+            return { ok: false, branch: null, dirty: false };
+        }
         const cwd = process.cwd();
         try {
             const { stdout: branchOut } = await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
@@ -351,11 +405,19 @@ electron_1.app.whenReady().then(async () => {
         }
         const transitions = args.transitions ?? [];
         try {
-            // Reuse existing transition-aware stitcher implementation.
-            // Use require() since Electron main process is CommonJS.
-            const stitcherPath = path_1.default.join(process.cwd(), 'render-server', 'stitcher.js');
-            // eslint-disable-next-line @typescript-eslint/no-var-requires
-            const mod = require(stitcherPath);
+            // Resolve the stitcher across dev + packaged layouts. In dev the file
+            // lives at <repo>/render-server/stitcher.js. In the packaged app,
+            // electron-builder copies it to <Resources>/render-server/stitcher.js
+            // via `extraResources`. `process.cwd()` is unreliable in the packaged
+            // app (it's the launch dir, often `/`), so branch on `app.isPackaged`.
+            //
+            // stitcher.js is an ES module (render-server/package.json has
+            // `"type": "module"`), so require() throws ERR_REQUIRE_ESM. Use
+            // dynamic `import(pathToFileURL(...))` instead.
+            const stitcherPath = electron_1.app.isPackaged
+                ? path_1.default.join(process.resourcesPath, 'render-server', 'stitcher.js')
+                : path_1.default.join(process.cwd(), 'render-server', 'stitcher.js');
+            const mod = (await Promise.resolve(`${(0, url_1.pathToFileURL)(stitcherPath).href}`).then(s => __importStar(require(s))));
             const stitchScenes = mod?.stitchScenes;
             if (typeof stitchScenes !== 'function') {
                 throw new Error('stitchScenes() not found in render-server/stitcher.js');
