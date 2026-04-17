@@ -74,12 +74,14 @@ export function sceneHasRenderableContent(s: Scene): boolean {
 export function normalizeScene(scene: Scene): Scene {
   const derivedChartLayers = deriveChartLayersFromScene(scene)
   const derivedPhysicsLayers = derivePhysicsLayersFromScene(scene)
+  // Strip transient build flags — these are runtime-only for incremental timeline updates
+  const { _building, _buildPhase, ...cleanScene } = scene as any
   return {
-    ...scene,
-    canvasBackgroundCode: scene.canvasBackgroundCode ?? '',
+    ...cleanScene,
+    canvasBackgroundCode: cleanScene.canvasBackgroundCode ?? '',
     chartLayers: derivedChartLayers,
     physicsLayers: derivedPhysicsLayers,
-    transition: normalizeTransition(scene.transition),
+    transition: normalizeTransition(cleanScene.transition),
   }
 }
 
@@ -164,6 +166,7 @@ export const DEFAULT_GLOBAL_STYLE: GlobalStyle = {
   paletteOverride: null,
   bgColorOverride: null,
   fontOverride: null,
+  bodyFontOverride: null,
   strokeColorOverride: null,
   theme: typeof window !== 'undefined' ? getPersistedTheme() : 'dark',
   uiTypography: 'app',

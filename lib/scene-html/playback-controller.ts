@@ -324,6 +324,13 @@ export const PLAYBACK_CONTROLLER = `
         if (playing) {
           ttsAudio.play().catch(function(err) {
             console.warn('[cench-playback] TTS play() failed (sandbox/autoplay?):', err);
+            try {
+              window.parent.postMessage({
+                type: 'cench:audio-error',
+                error: (err && err.message) || 'Audio playback failed',
+                track: 'tts'
+              }, '*');
+            } catch(pe) {}
           });
         } else {
           ttsAudio.pause();
@@ -711,6 +718,34 @@ export const PLAYBACK_CONTROLLER = `
             ? 'ended'
             : 'paused',
         });
+        break;
+
+      case 'set-bg':
+        if (cmd.color) {
+          console.log('[Scene] set-bg received:', cmd.color);
+          document.body.style.backgroundColor = cmd.color;
+          // Walk down from #react-root to find the first element with an explicit
+          // background (the AbsoluteFill wrapper that covers the scene)
+          var rRoot = document.getElementById('react-root');
+          if (rRoot) {
+            var walker = rRoot;
+            for (var d = 0; d < 6; d++) {
+              var child = walker.firstElementChild;
+              if (!child) break;
+              var cs = window.getComputedStyle(child);
+              var bg = cs.backgroundColor || cs.background;
+              // If this element has a non-transparent background, override it
+              if (bg && bg !== 'transparent' && bg !== 'rgba(0, 0, 0, 0)') {
+                child.style.background = cmd.color;
+                break;
+              }
+              walker = child;
+            }
+          }
+          // Also update #scene-camera background for non-React scenes
+          var cam = document.getElementById('scene-camera');
+          if (cam) cam.style.backgroundColor = cmd.color;
+        }
         break;
     }
   });

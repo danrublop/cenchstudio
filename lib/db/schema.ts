@@ -29,6 +29,7 @@ import type {
   InteractiveSettings,
   AssetPlacement,
   AudioSettings,
+  BrandKit,
 } from '../types'
 import type { Storyboard } from '../agents/types'
 
@@ -134,12 +135,37 @@ export const userMemory = pgTable(
   }),
 )
 
+// ── Workspaces ────────────────────────────────────────
+export const workspaces = pgTable(
+  'workspaces',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    description: text('description'),
+    color: text('color'),
+    icon: text('icon'),
+    brandKit: jsonb('brand_kit').$type<BrandKit | null>().default(null),
+    globalStyle: jsonb('global_style').$type<GlobalStyle | null>().default(null),
+    settings: jsonb('settings').$type<Record<string, unknown>>().default({}),
+    isDefault: boolean('is_default').default(false),
+    isArchived: boolean('is_archived').default(false),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (t) => ({
+    userIdx: index('workspaces_user_idx').on(t.userId),
+    defaultIdx: index('workspaces_default_idx').on(t.userId, t.isDefault),
+  }),
+)
+
 // ── Projects ───────────────────────────────────────────
 export const projects = pgTable(
   'projects',
   {
     id: uuid('id').primaryKey().defaultRandom(),
     userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
+    workspaceId: uuid('workspace_id').references(() => workspaces.id, { onDelete: 'set null' }),
     name: text('name').notNull(),
     description: text('description'),
     sceneGraphStartSceneId: uuid('scene_graph_start_scene_id'),
@@ -150,6 +176,7 @@ export const projects = pgTable(
       paletteOverride: null,
       bgColorOverride: null,
       fontOverride: null,
+      bodyFontOverride: null,
       strokeColorOverride: null,
     }),
     // Planner / storyboard review durability (Cursor-like plan review)
@@ -198,6 +225,8 @@ export const projects = pgTable(
       geminiTTSModel: 'gemini-2.5-flash-preview-tts',
       geminiVoice: null,
       edgeTTSUrl: null,
+      pocketTTSUrl: null,
+      voxcpmUrl: null,
       globalMusicDucking: true,
       globalMusicDuckLevel: 0.2,
     }),
@@ -232,6 +261,7 @@ export const projects = pgTable(
     userIdx: index('projects_user_idx').on(t.userId),
     archivedIdx: index('projects_archived_idx').on(t.userId, t.isArchived),
     updatedIdx: index('projects_updated_idx').on(t.userId, t.updatedAt),
+    workspaceIdx: index('projects_workspace_idx').on(t.workspaceId),
   }),
 )
 
@@ -256,11 +286,23 @@ export const projectAssets = pgTable(
     tags: text('tags').array().notNull().default([]),
     thumbnailUrl: text('thumbnail_url'),
     extractedColors: text('extracted_colors').array().notNull().default([]),
+    // Generation provenance — nullable; only populated for AI-generated assets.
+    // Why: enables query_media_library / reuse_asset / regenerate_asset and powers
+    // the Gallery "generated" filter with prompt + cost tooltips.
+    source: text('source').default('upload').notNull(), // 'upload' | 'generated'
+    prompt: text('prompt'),
+    provider: text('provider'),
+    model: text('model'),
+    costCents: integer('cost_cents'),
+    parentAssetId: uuid('parent_asset_id'),
+    referenceAssetIds: jsonb('reference_asset_ids').$type<string[]>(),
+    enhanceTags: jsonb('enhance_tags').$type<string[]>(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
   },
   (t) => ({
     projectIdx: index('project_assets_project_idx').on(t.projectId),
     typeIdx: index('project_assets_type_idx').on(t.projectId, t.type),
+    sourceIdx: index('project_assets_source_idx').on(t.projectId, t.source),
   }),
 )
 
@@ -815,8 +857,14 @@ export const userMemoryRelations = relations(userMemory, ({ one }) => ({
   user: one(users, { fields: [userMemory.userId], references: [users.id] }),
 }))
 
+export const workspacesRelations = relations(workspaces, ({ one, many }) => ({
+  user: one(users, { fields: [workspaces.userId], references: [users.id] }),
+  projects: many(projects),
+}))
+
 export const projectsRelations = relations(projects, ({ one, many }) => ({
   user: one(users, { fields: [projects.userId], references: [users.id] }),
+  workspace: one(workspaces, { fields: [projects.workspaceId], references: [workspaces.id] }),
   scenes: many(scenes),
   sceneEdges: many(sceneEdges),
   sceneNodes: many(sceneNodes),
@@ -986,6 +1034,7 @@ export const githubLinksRelations = relations(githubLinks, ({ one }) => ({
 export const usersRelations = relations(users, ({ many }) => ({
   accounts: many(accounts),
   sessions: many(sessions),
+  workspaces: many(workspaces),
   projects: many(projects),
   userMemory: many(userMemory),
 }))

@@ -24,35 +24,35 @@ export const FONT_CATALOG: CatalogFont[] = [
     fallback: 'system-ui, sans-serif',
   },
   {
-    id: 'inter',
-    family: 'Inter',
+    id: 'figtree',
+    family: 'Figtree',
     category: 'sans-serif',
     weights: [300, 400, 500, 600, 700],
-    googleFontsId: 'Inter',
+    googleFontsId: 'Figtree',
     fallback: 'system-ui, sans-serif',
   },
   {
-    id: 'outfit',
-    family: 'Outfit',
+    id: 'sora',
+    family: 'Sora',
     category: 'sans-serif',
     weights: [300, 400, 500, 600, 700],
-    googleFontsId: 'Outfit',
+    googleFontsId: 'Sora',
     fallback: 'system-ui, sans-serif',
   },
   {
-    id: 'plus-jakarta-sans',
-    family: 'Plus Jakarta Sans',
+    id: 'manrope',
+    family: 'Manrope',
     category: 'sans-serif',
     weights: [400, 500, 600, 700],
-    googleFontsId: 'Plus+Jakarta+Sans',
+    googleFontsId: 'Manrope',
     fallback: 'system-ui, sans-serif',
   },
   {
-    id: 'space-grotesk',
-    family: 'Space Grotesk',
+    id: 'bricolage-grotesque',
+    family: 'Bricolage Grotesque',
     category: 'sans-serif',
     weights: [400, 500, 600, 700],
-    googleFontsId: 'Space+Grotesk',
+    googleFontsId: 'Bricolage+Grotesque',
     fallback: 'system-ui, sans-serif',
   },
   {
@@ -82,19 +82,19 @@ export const FONT_CATALOG: CatalogFont[] = [
 
   // ── Serif ───────────────────────────────────────────────────
   {
-    id: 'playfair-display',
-    family: 'Playfair Display',
+    id: 'bitter',
+    family: 'Bitter',
     category: 'serif',
     weights: [400, 500, 600, 700],
-    googleFontsId: 'Playfair+Display',
+    googleFontsId: 'Bitter',
     fallback: 'Georgia, serif',
   },
   {
-    id: 'lora',
-    family: 'Lora',
+    id: 'vollkorn',
+    family: 'Vollkorn',
     category: 'serif',
     weights: [400, 500, 600, 700],
-    googleFontsId: 'Lora',
+    googleFontsId: 'Vollkorn',
     fallback: 'Georgia, serif',
   },
   {
@@ -235,10 +235,154 @@ export const FONT_CATALOG: CatalogFont[] = [
   },
 ]
 
+// ── Legacy fonts (removed from agent selection but still renderable for existing scenes) ──
+
+export const LEGACY_FONTS: CatalogFont[] = [
+  {
+    id: 'inter',
+    family: 'Inter',
+    category: 'sans-serif',
+    weights: [300, 400, 500, 600, 700],
+    googleFontsId: 'Inter',
+    fallback: 'system-ui, sans-serif',
+  },
+  {
+    id: 'outfit',
+    family: 'Outfit',
+    category: 'sans-serif',
+    weights: [300, 400, 500, 600, 700],
+    googleFontsId: 'Outfit',
+    fallback: 'system-ui, sans-serif',
+  },
+  {
+    id: 'plus-jakarta-sans',
+    family: 'Plus Jakarta Sans',
+    category: 'sans-serif',
+    weights: [400, 500, 600, 700],
+    googleFontsId: 'Plus+Jakarta+Sans',
+    fallback: 'system-ui, sans-serif',
+  },
+  {
+    id: 'space-grotesk',
+    family: 'Space Grotesk',
+    category: 'sans-serif',
+    weights: [400, 500, 600, 700],
+    googleFontsId: 'Space+Grotesk',
+    fallback: 'system-ui, sans-serif',
+  },
+  {
+    id: 'playfair-display',
+    family: 'Playfair Display',
+    category: 'serif',
+    weights: [400, 500, 600, 700],
+    googleFontsId: 'Playfair+Display',
+    fallback: 'Georgia, serif',
+  },
+  {
+    id: 'lora',
+    family: 'Lora',
+    category: 'serif',
+    weights: [400, 500, 600, 700],
+    googleFontsId: 'Lora',
+    fallback: 'Georgia, serif',
+  },
+]
+
+// ── Font Pairings ───────────────────────────────────────────────────────────
+
+export interface FontPairing {
+  id: string
+  name: string
+  heading: string // family name for headings/display
+  body: string // family name for body text
+  mood: string[] // for agent selection guidance
+}
+
+export const FONT_PAIRINGS: FontPairing[] = [
+  {
+    id: 'impact-friendly',
+    name: 'Impact + Friendly',
+    heading: 'Bebas Neue',
+    body: 'Nunito',
+    mood: ['bold', 'approachable', 'educational'],
+  },
+  {
+    id: 'editorial-clean',
+    name: 'Editorial + Clean',
+    heading: 'Merriweather',
+    body: 'Work Sans',
+    mood: ['editorial', 'professional', 'documentary'],
+  },
+  {
+    id: 'geometric-warmth',
+    name: 'Geometric + Warmth',
+    heading: 'Sora',
+    body: 'Bitter',
+    mood: ['modern', 'warm', 'trustworthy'],
+  },
+  {
+    id: 'handmade-modern',
+    name: 'Handmade + Modern',
+    heading: 'Caveat',
+    body: 'Figtree',
+    mood: ['casual', 'creative', 'whiteboard'],
+  },
+  {
+    id: 'bold-precise',
+    name: 'Bold + Precise',
+    heading: 'Righteous',
+    body: 'Manrope',
+    mood: ['energetic', 'technical', 'startup'],
+  },
+  {
+    id: 'display-grotesk',
+    name: 'Display + Grotesk',
+    heading: 'Fredoka',
+    body: 'Bricolage Grotesque',
+    mood: ['playful', 'distinctive', 'kids'],
+  },
+  {
+    id: 'classic-sans',
+    name: 'Classic + Sans',
+    heading: 'Vollkorn',
+    body: 'Sora',
+    mood: ['scholarly', 'elegant', 'data'],
+  },
+  {
+    id: 'marker-clean',
+    name: 'Marker + Clean',
+    heading: 'Permanent Marker',
+    body: 'Work Sans',
+    mood: ['raw', 'informal', 'sketch'],
+  },
+  {
+    id: 'mono-serif',
+    name: 'Mono + Serif',
+    heading: 'JetBrains Mono',
+    body: 'Source Serif 4',
+    mood: ['technical', 'code', 'developer'],
+  },
+  {
+    id: 'grotesk-text',
+    name: 'Grotesk + Text',
+    heading: 'Bricolage Grotesque',
+    body: 'Nunito',
+    mood: ['quirky', 'friendly', 'explainer'],
+  },
+]
+
+export const FONT_PAIRING_IDS: string[] = FONT_PAIRINGS.map((p) => p.id)
+
+export function getFontPairing(id: string): FontPairing | undefined {
+  return FONT_PAIRINGS.find((p) => p.id === id)
+}
+
 // ── Derived lookups ──────────────────────────────────────────────────────────
 
-const _byId = new Map(FONT_CATALOG.map((f) => [f.id, f]))
-const _byFamily = new Map(FONT_CATALOG.map((f) => [f.family, f]))
+// Include legacy fonts in rendering lookups so existing scenes still work
+const _allFonts = [...FONT_CATALOG, ...LEGACY_FONTS]
+const _byId = new Map(_allFonts.map((f) => [f.id, f]))
+const _byFamily = new Map(_allFonts.map((f) => [f.family, f]))
 
 /** All font family names (for agent tool enums) */
 export const FONT_FAMILIES: string[] = FONT_CATALOG.map((f) => f.family)
@@ -269,7 +413,7 @@ function buildWeightSpec(font: CatalogFont): string {
 
 /** Resolve catalog **family** name from a UI value that may be either `family` or `id` (e.g. `Inter` vs `inter`). */
 export function resolveSceneFontFamily(familyOrId: string | null | undefined): string {
-  if (!familyOrId?.trim()) return 'Inter'
+  if (!familyOrId?.trim()) return 'Nunito'
   const font = _byFamily.get(familyOrId) ?? _byId.get(familyOrId)
   return font?.family ?? familyOrId
 }
@@ -277,7 +421,7 @@ export function resolveSceneFontFamily(familyOrId: string | null | undefined): s
 /** CSS font stack: quoted primary + catalog fallback or system UI. */
 export function sceneFontCssStack(familyOrId: string | null | undefined): string {
   const font = _byFamily.get(familyOrId ?? '') ?? _byId.get(familyOrId ?? '')
-  const primary = font?.family ?? (familyOrId?.trim() || 'Inter')
+  const primary = font?.family ?? (familyOrId?.trim() || 'Nunito')
   const tail = font?.fallback ? `, ${font.fallback}` : ', system-ui, sans-serif'
   return `'${primary.replace(/'/g, "\\'")}'${tail}`
 }

@@ -5,6 +5,7 @@ import { persist } from 'zustand/middleware'
 import { DEFAULT_AUDIO_SETTINGS } from '../types'
 import { DEFAULT_AUDIO_PROVIDER_ENABLED } from '../audio/provider-registry'
 import { DEFAULT_MEDIA_PROVIDER_ENABLED } from '../media/provider-registry'
+import { DEFAULT_RESEARCH_PROVIDER_ENABLED } from '../research/provider-registry'
 import { DEFAULT_GRID_CONFIG } from '../grid'
 import type { ModelTier, ThinkingMode } from '../agents/types'
 import { DEFAULT_MODELS, DEFAULT_PROVIDER_CONFIGS } from '../agents/model-config'
@@ -12,10 +13,17 @@ import { DEFAULT_AGENTS } from '../agents/agent-config'
 import { createDefaultAPIPermissions } from '../permissions'
 import type { LayersTabSectionId } from '../layers-tab-header'
 
-import type { VideoStore } from './types'
-import { createDefaultProject, createDefaultScene, DEFAULT_GLOBAL_STYLE, sceneHasRenderableContent, setPersistedTheme } from './helpers'
+import type { VideoStore, CenterTabId } from './types'
+import type { LayersStripTabId } from '../layers-strip-dock'
+import {
+  createDefaultProject,
+  createDefaultScene,
+  DEFAULT_GLOBAL_STYLE,
+  sceneHasRenderableContent,
+  setPersistedTheme,
+} from './helpers'
 
-import { createUndoActions } from './undo-actions'
+import { createUndoActions, restoreUndoStacks } from './undo-actions'
 import { createSceneActions } from './scene-actions'
 import { createGenerationActions } from './generation-actions'
 import { createProjectActions } from './project-actions'
@@ -24,9 +32,10 @@ import { createTimelineActions } from './timeline-actions'
 import { createAudioActions } from './audio-actions'
 import { createExportActions } from './export-actions'
 import { createInspectorActions } from './inspector-actions'
+import { createWorkspaceActions } from './workspace-actions'
 import { createDevActions } from './dev-actions'
 
-export type { VideoStore } from './types'
+export type { VideoStore, CenterTabId } from './types'
 export type { UndoableState, Set, Get } from './types'
 
 export const useVideoStore = create<VideoStore>()(
@@ -48,9 +57,14 @@ export const useVideoStore = create<VideoStore>()(
       currentUser: null,
       setCurrentUser: (user) => set({ currentUser: user }),
 
-      // Undo/Redo
-      _undoStack: [],
-      _redoStack: [],
+      // Undo/Redo (restored from sessionStorage if available)
+      _undoStack: typeof sessionStorage !== 'undefined' ? restoreUndoStacks().undoStack : [],
+      _redoStack: typeof sessionStorage !== 'undefined' ? restoreUndoStacks().redoStack : [],
+
+      // Agent abort + multi-tab
+      _abortNonce: 0,
+      abortAgentRun: () => set({ _abortNonce: get()._abortNonce + 1 }),
+      isAgentRunningRemote: false,
 
       ...createUndoActions(set, get),
 
@@ -78,11 +92,12 @@ export const useVideoStore = create<VideoStore>()(
       recordingError: null,
       recordingElapsed: 0,
       recordingAttachSceneId: null,
-      setRecordingCommand: (cmd) => set((s) => ({
-        recordingCommand: cmd,
-        // Only increment nonce for real commands, not for null (consuming)
-        recordingCommandNonce: cmd ? s.recordingCommandNonce + 1 : s.recordingCommandNonce,
-      })),
+      setRecordingCommand: (cmd) =>
+        set((s) => ({
+          recordingCommand: cmd,
+          // Only increment nonce for real commands, not for null (consuming)
+          recordingCommandNonce: cmd ? s.recordingCommandNonce + 1 : s.recordingCommandNonce,
+        })),
       setRecordingConfig: (config) => set((s) => ({ recordingConfig: { ...s.recordingConfig, ...config } })),
       setRecordingState: (state) => set({ recordingState: state }),
       setRecordingResult: (result) => set({ recordingResult: result }),
@@ -91,6 +106,8 @@ export const useVideoStore = create<VideoStore>()(
       setRecordingAttachSceneId: (sceneId) => set({ recordingAttachSceneId: sceneId }),
       timelineHeight: 200,
       graphExpandedScenes: [] as string[],
+      timelineView: 'track' as 'track' | 'graph',
+      timelineTransport: { globalTime: 0, totalDuration: 30, isPlaying: false },
       isPreviewFullscreen: false,
       compositorPreview: false,
       setCompositorPreview: (active) => set({ compositorPreview: active }),
@@ -123,6 +140,10 @@ export const useVideoStore = create<VideoStore>()(
       audioProviderEnabled: { ...DEFAULT_AUDIO_PROVIDER_ENABLED },
       mediaGenEnabled: { ...DEFAULT_MEDIA_PROVIDER_ENABLED },
 
+      // Research — master switch defaults OFF so agent doesn't browse without user opt-in.
+      researchEnabled: false,
+      researchProviderEnabled: { ...DEFAULT_RESEARCH_PROVIDER_ENABLED },
+
       // Conversation initial state
       conversations: [],
       activeConversationId: null,
@@ -147,20 +168,52 @@ export const useVideoStore = create<VideoStore>()(
       modelTier: 'auto' as ModelTier,
       thinkingMode: 'adaptive' as ThinkingMode,
       localMode: false,
+      mockMode: false,
       localModelId: null,
       sceneContext: 'auto',
       activeTools: ['react', 'svg', 'canvas2d', 'd3', 'three', 'lottie', 'zdog', 'assets', 'audio', 'video'],
       chatInputValue: '',
       settingsTab: null,
       setSettingsTab: (tab) => set({ settingsTab: tab }),
+      centerOpenTabs: ['preview'] as CenterTabId[],
+      centerTab: 'preview' as CenterTabId | null,
+      setCenterTab: (tab) => {
+        if (tab === null) {
+          set({ centerTab: null, centerOpenTabs: [] })
+          return
+        }
+        set((s) => ({
+          centerOpenTabs: s.centerOpenTabs.includes(tab) ? s.centerOpenTabs : [...s.centerOpenTabs, tab],
+          centerTab: tab,
+        }))
+      },
+      closeCenterTab: (tab) =>
+        set((s) => {
+          const prevOpen = s.centerOpenTabs
+          const open = prevOpen.filter((t) => t !== tab)
+          if (open.length === 0) {
+            return { centerOpenTabs: [], centerTab: null }
+          }
+          let nextActive: CenterTabId | null = s.centerTab
+          if (s.centerTab === tab) {
+            const idx = prevOpen.indexOf(tab)
+            const neighbor = prevOpen[idx - 1] ?? prevOpen[idx + 1]
+            nextActive = neighbor && open.includes(neighbor) ? neighbor : (open[open.length - 1] ?? open[0] ?? null)
+          }
+          if (nextActive == null || !open.includes(nextActive)) {
+            nextActive = open[open.length - 1] ?? open[0] ?? null
+          }
+          return { centerOpenTabs: open, centerTab: nextActive }
+        }),
+      layersStripDragTabId: null as LayersStripTabId | null,
+      setLayersStripDragTabId: (id) => set({ layersStripDragTabId: id }),
       rightPanelTab: 'prompt' as const,
       setRightPanelTab: (tab: 'prompt' | 'layers' | 'media' | null) => set({ rightPanelTab: tab }),
       textEditorSlotKey: null as string | null,
       setTextEditorSlotKey: (key) => set({ textEditorSlotKey: key }),
       layersTabSectionPending: null as LayersTabSectionId | null,
       layersTabAvatarLayerIdPending: null as string | null,
-      clearLayersTabSectionPending: () =>
-        set({ layersTabSectionPending: null, layersTabAvatarLayerIdPending: null }),
+      clearLayersTabSectionPending: () => set({ layersTabSectionPending: null, layersTabAvatarLayerIdPending: null }),
       openTextTabForSlot: (slotKey) =>
         set({
           rightPanelTab: 'layers',
@@ -173,8 +226,7 @@ export const useVideoStore = create<VideoStore>()(
         set({
           rightPanelTab: 'layers',
           layersTabSectionPending: section,
-          layersTabAvatarLayerIdPending:
-            section === 'avatar' ? opts?.avatarLayerId ?? null : null,
+          layersTabAvatarLayerIdPending: section === 'avatar' ? (opts?.avatarLayerId ?? null) : null,
         }),
 
       layerStackPropertiesKey: null as string | null,
@@ -226,7 +278,17 @@ export const useVideoStore = create<VideoStore>()(
       brandKit: null,
       updateBrandKit: async (updates) => {
         const { project, brandKit: current } = get()
-        const merged = { ...(current ?? { brandName: null, logoAssetIds: [], palette: [], fontPrimary: null, fontSecondary: null, guidelines: null }), ...updates }
+        const merged = {
+          ...(current ?? {
+            brandName: null,
+            logoAssetIds: [],
+            palette: [],
+            fontPrimary: null,
+            fontSecondary: null,
+            guidelines: null,
+          }),
+          ...updates,
+        }
         set({ brandKit: merged })
         set((s) => ({ project: { ...s.project, brandKit: merged } }))
         try {
@@ -267,6 +329,12 @@ export const useVideoStore = create<VideoStore>()(
 
       ...createInspectorActions(set, get),
 
+      // Workspace management
+      workspaces: [],
+      activeWorkspaceId: null,
+      isLoadingWorkspaces: false,
+      ...createWorkspaceActions(set, get),
+
       // Project management
       projectList: [],
       isLoadingProjects: false,
@@ -279,11 +347,17 @@ export const useVideoStore = create<VideoStore>()(
       agentConfigs: DEFAULT_AGENTS,
 
       setTimelineHeight: (height: number) => set({ timelineHeight: height }),
-      toggleGraphSceneExpanded: (sceneId: string) => set((state) => ({
-        graphExpandedScenes: state.graphExpandedScenes.includes(sceneId)
-          ? state.graphExpandedScenes.filter((id) => id !== sceneId)
-          : [...state.graphExpandedScenes, sceneId],
-      })),
+      toggleGraphSceneExpanded: (sceneId: string) =>
+        set((state) => ({
+          graphExpandedScenes: state.graphExpandedScenes.includes(sceneId)
+            ? state.graphExpandedScenes.filter((id) => id !== sceneId)
+            : [...state.graphExpandedScenes, sceneId],
+        })),
+      setTimelineView: (view: 'track' | 'graph') => set({ timelineView: view }),
+      setTimelineTransport: (transport) =>
+        set((state) => ({
+          timelineTransport: { ...state.timelineTransport, ...transport },
+        })),
       setPreviewFullscreen: (full: boolean) => set({ isPreviewFullscreen: full }),
       setTimelineZoom: (zoom: number) => set({ timelineZoom: zoom }),
       setTimelineScrollX: (x: number) => set({ timelineScrollX: x }),
@@ -467,12 +541,26 @@ export const useVideoStore = create<VideoStore>()(
             base.scenes = ccs
           } else {
             // Check project match — if current scenes are from a different project, prefer current
-            const sameProject = pcs.length > 0 && ccs.length > 0 &&
-              ccs.every((s: any) => pcs.some((ps: any) => ps.id === s.id))
+            const sameProject =
+              pcs.length > 0 && ccs.length > 0 && ccs.every((s: any) => pcs.some((ps: any) => ps.id === s.id))
             if (!sameProject && ccs.some(sceneHasRenderableContent)) {
               base.scenes = ccs
             }
           }
+        }
+        // Never let persisted localStorage timeline overwrite a freshly synced one
+        if (dbLoadedRecently && (current as any)?.project?.timeline) {
+          base.project = { ...base.project, timeline: (current as any).project.timeline }
+        }
+        // Never let persist rehydration clobber loaded chat messages.
+        // chatMessages is not in partialize so p won't have it, but the spread
+        // { ...current, ...p } can still lose it if p has undefined fields.
+        const cur = current as any
+        if (cur?.chatMessages?.length > 0) {
+          base.chatMessages = cur.chatMessages
+          base.activeConversationId = cur.activeConversationId
+          base.conversations = cur.conversations
+          base._persistedMessageIds = cur._persistedMessageIds
         }
         return base
       },
@@ -492,7 +580,7 @@ export const useVideoStore = create<VideoStore>()(
         })),
         selectedSceneId: state.selectedSceneId,
         globalStyle: state.globalStyle,
-        project: state.project,
+        project: { ...state.project, timeline: undefined },
         publishedUrl: state.publishedUrl,
         showPublishPanel: state.showPublishPanel,
         modelConfigs: state.modelConfigs,
@@ -500,6 +588,8 @@ export const useVideoStore = create<VideoStore>()(
         agentConfigs: state.agentConfigs,
         audioProviderEnabled: state.audioProviderEnabled,
         mediaGenEnabled: state.mediaGenEnabled,
+        researchEnabled: state.researchEnabled,
+        researchProviderEnabled: state.researchProviderEnabled,
         favoriteFonts: state.favoriteFonts,
       }),
     },

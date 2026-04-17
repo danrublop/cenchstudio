@@ -71,7 +71,7 @@ Output three pieces that get assembled into the HTML template:
 }
 .card {
   flex: 1;
-  font-size: clamp(14px, 2vw, 28px);
+  font-size: clamp(24px, 2vw, 36px);
 }
 ```
 

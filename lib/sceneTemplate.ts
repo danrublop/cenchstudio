@@ -18,7 +18,7 @@ import { THREE_ENVIRONMENT_RUNTIME_SCRIPT, THREE_SCATTER_RUNTIME_SCRIPT } from '
 import { CANVAS_RENDERER_CODE } from './canvas-renderer/inlined'
 import { resolveStyle, type ResolvedStyle } from './styles/presets'
 import { resolveSceneStyle } from './styles/scene-presets'
-import { buildFontLink, resolveSceneFontFamily, sceneFontCssStack } from './fonts/catalog'
+import { buildFontLink, buildMultiFontLink, resolveSceneFontFamily, sceneFontCssStack } from './fonts/catalog'
 import { GSAP_HEAD } from './scene-html/gsap-head'
 import { PLAYBACK_CONTROLLER } from './scene-html/playback-controller'
 import { ELEMENT_REGISTRY } from './scene-html/element-registry'
@@ -29,6 +29,14 @@ import {
   resolveTalkingHeadModelId,
   resolveTalkingHeadModelIdFromLayer,
 } from './avatars/talkinghead-models'
+
+/** Build a Google Fonts link tag that loads both heading and body fonts (if different). */
+function buildSceneFontLinks(style: ResolvedStyle): string {
+  const unique = [...new Set([style.font, style.bodyFont].filter(Boolean) as string[])]
+  if (unique.length === 0) return ''
+  if (unique.length === 1) return buildFontLink(unique[0])
+  return buildMultiFontLink(unique)
+}
 
 function canvasBgTag(W = 1920, H = 1080): string {
   return `<canvas id="c" width="${W}" height="${H}" style="display:block;position:absolute;left:0;top:0;width:100%;height:100%;z-index:0;margin:0;padding:0;border:0;pointer-events:none;"></canvas>`
@@ -831,7 +839,12 @@ function generateStickerLayerHTML(layer: StickerLayer): string {
 </div>`
 }
 
-function generateCanvasHTML(scene: Scene, style: ResolvedStyle, audioSettings?: AudioSettings | null, dims?: ProjectDimensions): string {
+function generateCanvasHTML(
+  scene: Scene,
+  style: ResolvedStyle,
+  audioSettings?: AudioSettings | null,
+  dims?: ProjectDimensions,
+): string {
   const W = dims?.width ?? 1920
   const H = dims?.height ?? 1080
   const { canvasCode = '' } = scene
@@ -846,10 +859,11 @@ function generateCanvasHTML(scene: Scene, style: ResolvedStyle, audioSettings?: 
 <head>
   <meta charset="UTF-8">
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-  ${buildFontLink(style.font)}
+  ${buildSceneFontLinks(style)}
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { width: ${W}px; height: ${H}px; overflow: hidden; background: ${style.bgColor};
+      --bg-color: ${style.bgColor};
       transform-origin: top left;
       ${buildBgStyleCSS(style)}
     }
@@ -899,6 +913,7 @@ function generateCanvasHTML(scene: Scene, style: ResolvedStyle, audioSettings?: 
     var DURATION     = ${scene.duration};
     var ROUGHNESS    = ${style.roughnessLevel};
     var FONT         = '${style.font}';
+    var BODY_FONT    = '${style.bodyFont || style.font}';
     var WIDTH        = ${W};
     var HEIGHT       = ${H};
     var TOOL         = '${style.defaultTool}';
@@ -1020,7 +1035,12 @@ ${canvasCode}
 </html>`
 }
 
-function generateMotionHTML(scene: Scene, style: ResolvedStyle, audioSettings?: AudioSettings | null, dims?: ProjectDimensions): string {
+function generateMotionHTML(
+  scene: Scene,
+  style: ResolvedStyle,
+  audioSettings?: AudioSettings | null,
+  dims?: ProjectDimensions,
+): string {
   const W = dims?.width ?? 1920
   const H = dims?.height ?? 1080
   const { sceneCode = '', sceneHTML = '', sceneStyles = '' } = scene
@@ -1032,12 +1052,13 @@ function generateMotionHTML(scene: Scene, style: ResolvedStyle, audioSettings?: 
 <html>
 <head>
   <meta charset="UTF-8">
-  ${buildFontLink(style.font)}
+  ${buildSceneFontLinks(style)}
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     ${
       fixedStage
         ? `html, body { width: ${W}px; height: ${H}px; overflow: hidden; background: ${style.bgColor};
+      --bg-color: ${style.bgColor};
       transform-origin: top left;
       ${buildBgStyleCSS(style)}
     }
@@ -1052,6 +1073,7 @@ function generateMotionHTML(scene: Scene, style: ResolvedStyle, audioSettings?: 
       will-change: transform, filter;
     }`
         : `html, body { width: 100%; height: 100vh; overflow: hidden; background: ${style.bgColor};
+      --bg-color: ${style.bgColor};
       ${buildBgStyleCSS(style)}
     }
     #scene-camera {
@@ -1091,7 +1113,9 @@ function generateMotionHTML(scene: Scene, style: ResolvedStyle, audioSettings?: 
     var DURATION     = ${scene.duration};
     var ROUGHNESS    = ${style.roughnessLevel};
     var FONT         = '${style.font}';
+    var BODY_FONT    = '${style.bodyFont || style.font}';
     var STROKE_COLOR = '${style.strokeColor}';
+    var BG_COLOR     = '${style.bgColor}';
     var WIDTH        = ${W};
     var HEIGHT       = ${H};
 
@@ -1117,7 +1141,12 @@ function generateMotionHTML(scene: Scene, style: ResolvedStyle, audioSettings?: 
 </html>`
 }
 
-function generateD3HTML(scene: Scene, style: ResolvedStyle, audioSettings?: AudioSettings | null, dims?: ProjectDimensions): string {
+function generateD3HTML(
+  scene: Scene,
+  style: ResolvedStyle,
+  audioSettings?: AudioSettings | null,
+  dims?: ProjectDimensions,
+): string {
   const { sceneCode = '', sceneStyles = '', d3Data = null } = scene
   const needsPlotly = chartLayersUsePlotly(scene.chartLayers)
   const needsRecharts = chartLayersUseRecharts(scene.chartLayers)
@@ -1143,10 +1172,11 @@ function generateD3HTML(scene: Scene, style: ResolvedStyle, audioSettings?: Audi
 </script>`
       : ''
   }
-  ${buildFontLink(style.font)}
+  ${buildSceneFontLinks(style)}
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { width: ${W}px; height: ${H}px; overflow: hidden; background: ${style.bgColor};
+      --bg-color: ${style.bgColor};
       transform-origin: top left;
       ${buildBgStyleCSS(style)}
     }
@@ -1197,6 +1227,7 @@ function generateD3HTML(scene: Scene, style: ResolvedStyle, audioSettings?: Audi
     var PALETTE      = ${JSON.stringify(style.palette)};
     var DURATION     = ${scene.duration};
     var FONT         = '${style.font}';
+    var BODY_FONT    = '${style.bodyFont || style.font}';
     var STROKE_COLOR = '${style.strokeColor}';
     var AXIS_COLOR   = '${style.axisColor}';
     var GRID_COLOR   = '${style.gridColor}';
@@ -1236,7 +1267,12 @@ function generateD3HTML(scene: Scene, style: ResolvedStyle, audioSettings?: Audi
 </html>`
 }
 
-function generateThreeHTML(scene: Scene, style?: ResolvedStyle, audioSettings?: AudioSettings | null, dims?: ProjectDimensions): string {
+function generateThreeHTML(
+  scene: Scene,
+  style?: ResolvedStyle,
+  audioSettings?: AudioSettings | null,
+  dims?: ProjectDimensions,
+): string {
   const { sceneCode = '' } = scene
   const effectiveBgColor = style?.bgColor ?? scene.bgColor ?? '#fffef9'
   const palette = JSON.stringify(style?.palette ?? ['#1a1a2e', '#e84545', '#16a34a', '#2563eb'])
@@ -1429,7 +1465,7 @@ function generateThreeHTML(scene: Scene, style?: ResolvedStyle, audioSettings?: 
       renderer.setSize(W, H);
       renderer.shadowMap.enabled = true;
       renderer.shadowMap.type = T.PCFSoftShadowMap;
-      renderer.toneMapping = T.ACESFilmicToneMapping;
+      renderer.toneMapping = T.LinearToneMapping;
       renderer.outputColorSpace = T.SRGBColorSpace;
       document.body.appendChild(renderer.domElement);
 
@@ -1438,105 +1474,90 @@ function generateThreeHTML(scene: Scene, style?: ResolvedStyle, audioSettings?: 
       window.__threeCamera = camera;
 
       var configs = {
-        corporate: { bg: '#e8e4de', camPos: [0, 3, 12], camLookAt: [0, 0, 0], exposure: 0.95, floorColor: '#ffffff', floorY: -2.5 },
-        cinematic: { bg: '#060510', camPos: [0, 2, 14], camLookAt: [0, 0, 0], exposure: 1.1, floorColor: '#0c0a14', floorY: -3 },
-        playful:   { bg: '#e8e4de', camPos: [10, 8, 10], camLookAt: [0, 0, 0], exposure: 0.95, floorColor: '#ffffff', floorY: -2 },
-        tech:      { bg: '#040408', camPos: [0, 4, 14], camLookAt: [0, 0, 0], exposure: 1.2, floorColor: '#080810', floorY: -3 },
-        showcase:  { bg: '#0e0c16', camPos: [0, 2, 14], camLookAt: [0, 0, 0], exposure: 1.0, floorColor: '#18141e', floorY: -3 },
+        corporate: { camPos: [0, 3, 12], camLookAt: [0, 0, 0], exposure: 1.0, floorY: -2.5, skyTop: '#999999', skyBot: '#ffffff', floorCol: '#ffffff', gridCol: '#d0cdc8', offset: 50, exponent: 0.6 },
+        playful:   { camPos: [10, 8, 10], camLookAt: [0, 0, 0], exposure: 1.0, floorY: -2,   skyTop: '#908880', skyBot: '#ffffff', floorCol: '#ffffff', gridCol: '#c8c4be', offset: 50, exponent: 0.6 },
+        cinematic: { camPos: [0, 2, 14],  camLookAt: [0, 0, 0], exposure: 1.0, floorY: -3,   skyTop: '#020204', skyBot: '#0e0c14', floorCol: '#0e0c14', gridCol: '#1a1828', offset: 30, exponent: 0.5 },
+        showcase:  { camPos: [0, 2, 14],  camLookAt: [0, 0, 0], exposure: 1.0, floorY: -3,   skyTop: '#06050a', skyBot: '#18141e', floorCol: '#18141e', gridCol: '#221e2a', offset: 30, exponent: 0.5 },
+        tech:      { camPos: [0, 4, 14],  camLookAt: [0, 0, 0], exposure: 1.0, floorY: -3,   skyTop: '#020204', skyBot: '#080810', floorCol: '#080810', gridCol: '#1a1a28', offset: 30, exponent: 0.5 },
+        sky:       { camPos: [0, 3, 12],  camLookAt: [0, 0, 0], exposure: 0.5, floorY: -2.5, skyTop: null, skyBot: null, floorCol: '#c8d8c0', gridCol: '#a0b098', offset: 0, exponent: 0 },
       };
       var c = configs[style] || configs.corporate;
 
-      renderer.setClearColor(c.bg);
       renderer.toneMappingExposure = c.exposure;
       camera.position.set(c.camPos[0], c.camPos[1], c.camPos[2]);
       camera.lookAt(c.camLookAt[0], c.camLookAt[1], c.camLookAt[2]);
 
-      // Lighting per style (tuned for natural, non-washed-out look)
-      if (style === 'corporate' || style === 'showcase') {
-        scene.add(new T.AmbientLight(0xffffff, 0.25));
-        var key = new T.DirectionalLight(0xfff6e0, 1.0); key.position.set(-5, 8, 5); key.castShadow = true; key.shadow.mapSize.set(2048, 2048); key.shadow.bias = -0.001;
-        key.shadow.camera.left = -12; key.shadow.camera.right = 12; key.shadow.camera.top = 12; key.shadow.camera.bottom = -12;
-        var fillL = new T.DirectionalLight(0xd0e8ff, 0.35); fillL.position.set(6, 2, 4);
-        var rimL = new T.DirectionalLight(0xffe0d0, 0.5); rimL.position.set(0, 4, -9);
-        scene.add(key, fillL, rimL);
-      } else if (style === 'cinematic') {
-        scene.add(new T.AmbientLight(0x111122, 0.08));
-        var spot = new T.SpotLight(0xffffff, 3.5, 40, Math.PI/6, 0.5, 1.5); spot.position.set(-5, 12, 5); spot.castShadow = true; spot.shadow.mapSize.set(2048, 2048);
-        spot.target.position.set(0, 0, 0); scene.add(spot.target);
-        var rimL2 = new T.DirectionalLight(0xff6040, 0.35); rimL2.position.set(5, 0, -8);
-        scene.add(spot, rimL2);
-      } else if (style === 'playful') {
-        scene.add(new T.AmbientLight(0xffffff, 0.4));
-        var topL = new T.DirectionalLight(0xffffff, 0.7); topL.position.set(0, 10, 0); topL.castShadow = true; topL.shadow.mapSize.set(2048, 2048);
-        topL.shadow.camera.left = -10; topL.shadow.camera.right = 10; topL.shadow.camera.top = 10; topL.shadow.camera.bottom = -10;
-        var frontL = new T.DirectionalLight(0xf0f4ff, 0.25); frontL.position.set(0, 2, 8);
-        var sideL = new T.DirectionalLight(0xfff8f0, 0.15); sideL.position.set(6, 3, 2);
-        scene.add(topL, frontL, sideL);
-      } else if (style === 'tech') {
-        scene.add(new T.AmbientLight(0x050510, 0.08));
-        P.slice(0, 4).forEach(function(col, i) {
-          var l = new T.PointLight(new T.Color(col), 2.5, 20, 2);
-          l.position.set([-4,4,0,-3][i], [3,2,-2,-1][i], [2,-2,4,-3][i]);
-          scene.add(l);
-        });
-      }
+      // ── Lighting (3-point studio for all styles) ──
+      var isLight = (style === 'corporate' || style === 'playful');
+      scene.add(new T.AmbientLight(isLight ? 0xffffff : 0x111122, isLight ? 0.3 : 0.08));
+      var keyL = new T.DirectionalLight(isLight ? 0xfff6e0 : 0xffffff, isLight ? 1.0 : 0.8);
+      keyL.position.set(-5, 8, 5);
+      keyL.castShadow = true;
+      keyL.shadow.mapSize.set(2048, 2048);
+      keyL.shadow.camera.left = -15; keyL.shadow.camera.right = 15;
+      keyL.shadow.camera.top = 15; keyL.shadow.camera.bottom = -15;
+      keyL.shadow.bias = -0.001;
+      scene.add(keyL);
+      var fillL = new T.DirectionalLight(isLight ? 0xd0e8ff : 0x4444aa, isLight ? 0.35 : 0.2);
+      fillL.position.set(6, 2, 4);
+      scene.add(fillL);
+      var rimL = new T.DirectionalLight(isLight ? 0xffe0d0 : 0xff6040, isLight ? 0.5 : 0.35);
+      rimL.position.set(0, 4, -9);
+      scene.add(rimL);
 
-      // ── Infinite Studio ─────────────────────────────────────────────────────
-      // Sky gradient sphere (BackSide) + floor plane. No fog needed.
-      // The sphere covers every angle seamlessly — like THREE.Sky but for studios.
+      // ── Sky Background ──
       var fY = c.floorY;
-      var studioConfigs = {
-        corporate: { floor: '#f0ede8', gradStops: [['#888888',0],['#a8a8a8',0.35],['#d0cdc8',0.6],['#e8e5e0',0.8],['#f0ede8',1]] },
-        playful:   { floor: '#ebe8e2', gradStops: [['#807a75',0],['#a09890',0.35],['#c8c2ba',0.6],['#dcd8d0',0.8],['#ebe8e2',1]] },
-        cinematic: { floor: '#0e0c14', gradStops: [['#020204',0],['#060510',0.4],['#0a0810',0.7],['#0e0c14',1]] },
-        showcase:  { floor: '#18141e', gradStops: [['#06050a',0],['#0c0a14',0.4],['#12101a',0.7],['#18141e',1]] },
-        tech:      { floor: '#080810', gradStops: [['#020204',0],['#050508',0.4],['#080810',1]] },
-        sky:       { floor: '#c8d8c0', gradStops: null },
-      };
-      var sc = studioConfigs[style] || studioConfigs.corporate;
-      var floorCol = new T.Color(sc.floor);
-
       if (style === 'sky') {
-        // Real THREE.Sky atmospheric scattering — outdoor look
         import('three/addons/objects/Sky.js').then(function(mod) {
           var skySun = new mod.Sky();
           skySun.scale.setScalar(450000);
           scene.add(skySun);
-          var skyUniforms = skySun.material.uniforms;
-          skyUniforms['turbidity'].value = 10;
-          skyUniforms['rayleigh'].value = 2;
-          skyUniforms['mieCoefficient'].value = 0.005;
-          skyUniforms['mieDirectionalG'].value = 0.8;
-          skyUniforms['sunPosition'].value.set(400000, 400000, 400000);
+          var u = skySun.material.uniforms;
+          u['turbidity'].value = 10;
+          u['rayleigh'].value = 2;
+          u['mieCoefficient'].value = 0.005;
+          u['mieDirectionalG'].value = 0.8;
+          u['sunPosition'].value.set(400000, 400000, 400000);
         }).catch(function() {});
       } else {
-        // Studio gradient via CanvasTexture — mathematically perfect, zero banding
-        var gradCanvas = document.createElement('canvas');
-        gradCanvas.width = 2;
-        gradCanvas.height = 512;
-        var gCtx = gradCanvas.getContext('2d');
-        var grad = gCtx.createLinearGradient(0, 0, 0, 512);
-        sc.gradStops.forEach(function(s) { grad.addColorStop(s[1], s[0]); });
-        gCtx.fillStyle = grad;
-        gCtx.fillRect(0, 0, 2, 512);
-        var bgTex = new T.CanvasTexture(gradCanvas);
-        bgTex.mapping = T.EquirectangularReflectionMapping;
-        scene.background = bgTex;
+        // Sky gradient sphere — 128 vertical segments = smooth, no banding
+        var skyGeo = new T.SphereGeometry(5000, 32, 128);
+        var skyVS = 'varying vec3 vWorldPosition; void main() { vec4 worldPosition = modelMatrix * vec4(position, 1.0); vWorldPosition = worldPosition.xyz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }';
+        var skyFS = 'uniform vec3 topColor; uniform vec3 bottomColor; uniform float offset; uniform float exponent; varying vec3 vWorldPosition; void main() { float h = normalize(vWorldPosition + offset).y; gl_FragColor = vec4(mix(bottomColor, topColor, max(pow(max(h, 0.0), exponent), 0.0)), 1.0); }';
+        var skyMat = new T.ShaderMaterial({
+          uniforms: { topColor: { value: new T.Color(c.skyTop) }, bottomColor: { value: new T.Color(c.skyBot) }, offset: { value: c.offset }, exponent: { value: c.exponent } },
+          vertexShader: skyVS, fragmentShader: skyFS, side: T.BackSide, depthWrite: false
+        });
+        scene.add(new T.Mesh(skyGeo, skyMat));
       }
 
-      // Floor plane
-      var floorGeo = new T.PlaneGeometry(200, 200);
-      var floorMat = new T.MeshStandardMaterial({ color: floorCol, roughness: 1.0, metalness: 0, envMapIntensity: 0.3 });
+      // ── Infinite Grid (inlined from Fyrestar/THREE.InfiniteGridHelper) ──
+      var gridGeo = new T.PlaneGeometry(2, 2, 1, 1);
+      var gridVS = 'varying vec3 worldPosition; uniform float uDistance; void main() { vec3 pos = position.xzy * uDistance; pos.xz += cameraPosition.xz; worldPosition = pos; gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0); }';
+      var gridFS = 'varying vec3 worldPosition; uniform float uSize1; uniform float uSize2; uniform vec3 uColor; uniform float uDistance; float getGrid(float size) { vec2 r = worldPosition.xz / size; vec2 grid = abs(fract(r - 0.5) - 0.5) / fwidth(r); float line = min(grid.x, grid.y); return 1.0 - min(line, 1.0); } void main() { float d = 1.0 - min(distance(cameraPosition.xz, worldPosition.xz) / uDistance, 1.0); float g1 = getGrid(uSize1); float g2 = getGrid(uSize2); gl_FragColor = vec4(uColor.rgb, mix(g2, g1, g1) * pow(d, 3.0)); gl_FragColor.a = mix(0.5 * gl_FragColor.a, gl_FragColor.a, g2); if (gl_FragColor.a <= 0.0) discard; }';
+      var gridMat = new T.ShaderMaterial({
+        side: T.DoubleSide, transparent: true,
+        uniforms: { uSize1: { value: 10 }, uSize2: { value: 100 }, uColor: { value: new T.Color(c.gridCol) }, uDistance: { value: 3000 } },
+        vertexShader: gridVS, fragmentShader: gridFS,
+        extensions: { derivatives: true }
+      });
+      var grid = new T.Mesh(gridGeo, gridMat);
+      grid.frustumCulled = false;
+      grid.position.y = fY;
+      scene.add(grid);
+
+      // ── Floor — infinite with fog blend ──
+      var floorGeo = new T.PlaneGeometry(10000, 10000);
+      var floorMat = new T.MeshStandardMaterial({ color: new T.Color(c.floorCol), roughness: 1.0, metalness: 0, envMapIntensity: 0.2 });
       var floor = new T.Mesh(floorGeo, floorMat);
       floor.rotation.x = -Math.PI / 2;
-      floor.position.y = fY;
+      floor.position.y = fY - 0.01;
       floor.receiveShadow = true;
       scene.add(floor);
+      scene.fog = new T.FogExp2(new T.Color(c.skyBot), 0.003);
 
-      // Environment for PBR reflections (skip for tech — void aesthetic)
-      if (style !== 'tech') {
-        window.setupEnvironment(scene, renderer);
-      }
+      // ── Environment map for PBR reflections ──
+      window.setupEnvironment(scene, renderer);
 
       return {
         scene: scene, camera: camera, renderer: renderer, floor: floor,
@@ -1556,7 +1577,12 @@ function generateThreeHTML(scene: Scene, style?: ResolvedStyle, audioSettings?: 
 </html>`
 }
 
-function generateZdogHTML(scene: Scene, style: ResolvedStyle, audioSettings?: AudioSettings | null, dims?: ProjectDimensions): string {
+function generateZdogHTML(
+  scene: Scene,
+  style: ResolvedStyle,
+  audioSettings?: AudioSettings | null,
+  dims?: ProjectDimensions,
+): string {
   const { sceneCode = '' } = scene
   const bgColor = scene.bgColor || style.bgColor || '#fffef9'
   const palette = JSON.stringify(style.palette)
@@ -1599,6 +1625,7 @@ function generateZdogHTML(scene: Scene, style: ResolvedStyle, audioSettings?: Au
     var PALETTE = ${palette};
     var DURATION = ${duration};
     var FONT = '${style.font}';
+    var BODY_FONT = '${style.bodyFont || style.font}';
     var STROKE_COLOR = '${style.strokeColor}';
 
     // Seeded PRNG — use mulberry32(seed)() instead of Math.random()
@@ -1717,7 +1744,12 @@ function buildBgStyleCSS(style: ResolvedStyle): string {
   }
 }
 
-function generatePhysicsHTML(scene: Scene, style: ResolvedStyle, audioSettings?: AudioSettings | null, dims?: ProjectDimensions): string {
+function generatePhysicsHTML(
+  scene: Scene,
+  style: ResolvedStyle,
+  audioSettings?: AudioSettings | null,
+  dims?: ProjectDimensions,
+): string {
   const W = dims?.width ?? 1920
   const H = dims?.height ?? 1080
   const { sceneCode = '', sceneStyles = '', sceneHTML = '' } = scene
@@ -1727,7 +1759,7 @@ function generatePhysicsHTML(scene: Scene, style: ResolvedStyle, audioSettings?:
 <html>
 <head>
   <meta charset="UTF-8">
-  ${buildFontLink(style.font)}
+  ${buildSceneFontLinks(style)}
   <script>
     window.MathJax = {
       tex: { inlineMath: [['$','$'], ['\\\\(','\\\\)']], displayMath: [['$$','$$'], ['\\\\[','\\\\]']] },
@@ -1739,8 +1771,9 @@ function generatePhysicsHTML(scene: Scene, style: ResolvedStyle, audioSettings?:
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { width: ${W}px; height: ${H}px; overflow: hidden; background: ${style.bgColor};
+      --bg-color: ${style.bgColor};
       transform-origin: top left;
-      font-family: 'Inter', sans-serif;
+      font-family: ${sceneFontCssStack(style.font)};
       ${buildBgStyleCSS(style)}
     }
 
@@ -1923,7 +1956,7 @@ function generatePhysicsHTML(scene: Scene, style: ResolvedStyle, audioSettings?:
     /* Annotation overlays */
     .physics-annotation {
       position: absolute; pointer-events: none; z-index: 10;
-      font-family: 'Inter', sans-serif;
+      font-family: ${sceneFontCssStack(style.font)};
     }
     .physics-annotation.label {
       background: rgba(0,0,0,0.8); color: #fff;
@@ -2055,7 +2088,9 @@ function generatePhysicsHTML(scene: Scene, style: ResolvedStyle, audioSettings?:
     var DURATION     = ${scene.duration};
     var ROUGHNESS    = ${style.roughnessLevel};
     var FONT         = '${style.font}';
+    var BODY_FONT    = '${style.bodyFont || style.font}';
     var STROKE_COLOR = '${style.strokeColor}';
+    var BG_COLOR     = '${style.bgColor}';
     var WIDTH        = ${W};
     var HEIGHT       = ${H};
 
@@ -2122,7 +2157,12 @@ function worldTemplateFilename(environment: string): string {
   return map[environment] ?? `${environment.replace(/_/g, '-')}.html`
 }
 
-function generateWorldHTML(scene: Scene, style: ResolvedStyle, audioSettings?: AudioSettings | null, dims?: ProjectDimensions): string {
+function generateWorldHTML(
+  scene: Scene,
+  style: ResolvedStyle,
+  audioSettings?: AudioSettings | null,
+  dims?: ProjectDimensions,
+): string {
   const W = dims?.width ?? 1920
   const H = dims?.height ?? 1080
   const wc = scene.worldConfig
@@ -2221,7 +2261,12 @@ function generateWorldHTML(scene: Scene, style: ResolvedStyle, audioSettings?: A
 
 // ── Avatar Scene (full-scene presenter mode) ───────────────────────────────
 
-function generateAvatarSceneHTML(scene: Scene, style: ResolvedStyle, audioSettings?: AudioSettings | null, dims?: ProjectDimensions): string {
+function generateAvatarSceneHTML(
+  scene: Scene,
+  style: ResolvedStyle,
+  audioSettings?: AudioSettings | null,
+  dims?: ProjectDimensions,
+): string {
   const W = dims?.width ?? 1920
   const H = dims?.height ?? 1080
   const audioHTML = generateAudioHTML(scene.audioLayer)
@@ -2292,8 +2337,7 @@ function generateAvatarSceneHTML(scene: Scene, style: ResolvedStyle, audioSettin
 <html>
 <head>
   <meta charset="UTF-8">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  ${buildFontLink(style.font)}
+  ${buildSceneFontLinks(style)}
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { width: ${W}px; height: ${H}px; overflow: hidden; background: ${backdrop}; }
@@ -2304,7 +2348,7 @@ function generateAvatarSceneHTML(scene: Scene, style: ResolvedStyle, audioSettin
       padding: 40px;
       border: 1px solid rgba(255,255,255,0.1);
       transform: translateY(20px);
-      font-family: ${panelFontStack}, Inter, system-ui, sans-serif;
+      font-family: ${panelFontStack}, system-ui, sans-serif;
       color: ${style.palette[0] === '#ffffff' || style.palette[0] === '#fff' ? '#1a1a2e' : '#f0f0f0'};
     }
     .content-panel h2 { font-size: 32px; margin-bottom: 16px; }
@@ -2344,6 +2388,7 @@ function generateAvatarSceneHTML(scene: Scene, style: ResolvedStyle, audioSettin
     var WIDTH = ${W};
     var HEIGHT = ${H};
     var FONT = '${resolveSceneFontFamily(style.font).replace(/'/g, "\\'")}';
+    var BODY_FONT = '${resolveSceneFontFamily(style.bodyFont || style.font).replace(/'/g, "\\'")}';
   </script>
 
   <!-- playback-controller-slot -->
@@ -2665,7 +2710,51 @@ function generateAvatarSceneHTML(scene: Scene, style: ResolvedStyle, audioSettin
 </html>`
 }
 
-function generateReactHTML(scene: Scene, style: ResolvedStyle, audioSettings?: AudioSettings | null, dims?: ProjectDimensions): string {
+/**
+ * Normalize a React scene's JSX so the bootstrapper can always find the component.
+ *
+ * The bootstrapper wraps the transpiled code in a CommonJS closure and reads
+ * `module.exports.default` / `module.exports.Scene` after execution. That only
+ * gets populated when the source has an ES export statement. Authors (and
+ * agents) routinely write `function Scene() { ... }` and forget the export,
+ * which silently produces a blank iframe.
+ *
+ * This helper appends `export default Scene;` (or the right export for whatever
+ * top-level component they defined) when no export is present. If no recognizable
+ * component is found, the source is returned unchanged — the bootstrapper's
+ * existing error message will fire.
+ */
+export function normalizeReactSceneExport(src: string): string {
+  if (!src || typeof src !== 'string') return src
+  // Fast path: any existing export statement means the author was explicit.
+  if (
+    /\bexport\s+default\b/.test(src) ||
+    /\bmodule\.exports\s*=/.test(src) ||
+    /\bexports\.[A-Za-z_$][\w$]*\s*=/.test(src) ||
+    /\bexport\s*\{[^}]+\}/.test(src)
+  ) {
+    return src
+  }
+  // Look for a recognizable top-level component declaration. Prefer "Scene";
+  // fall back to other conventional names.
+  const CANDIDATES = ['Scene', 'Main', 'App', 'Root', 'Composition', 'VideoScene']
+  for (const name of CANDIDATES) {
+    const re = new RegExp(
+      `(^|\\n)\\s*(?:async\\s+)?function\\s+${name}\\b|` + `(^|\\n)\\s*(?:const|let|var)\\s+${name}\\s*=`,
+    )
+    if (re.test(src)) {
+      return `${src.replace(/\s+$/, '')}\n\nexport default ${name};\n`
+    }
+  }
+  return src
+}
+
+function generateReactHTML(
+  scene: Scene,
+  style: ResolvedStyle,
+  audioSettings?: AudioSettings | null,
+  dims?: ProjectDimensions,
+): string {
   const W = dims?.width ?? 1920
   const H = dims?.height ?? 1080
   // React scenes store JSX in reactCode; fall back to sceneCode for compat
@@ -2679,10 +2768,11 @@ function generateReactHTML(scene: Scene, style: ResolvedStyle, audioSettings?: A
 <html>
 <head>
   <meta charset="UTF-8">
-  ${buildFontLink(style.font)}
+  ${buildSceneFontLinks(style)}
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { width: ${W}px; height: ${H}px; overflow: hidden; background: ${style.bgColor};
+      --bg-color: ${style.bgColor};
       transform-origin: top left;
       ${buildBgStyleCSS(style)}
     }
@@ -2727,22 +2817,138 @@ function generateReactHTML(scene: Scene, style: ResolvedStyle, audioSettings?: A
     var DURATION     = ${duration};
     var ROUGHNESS    = ${style.roughnessLevel};
     var FONT         = '${style.font}';
+    var BODY_FONT    = '${style.bodyFont || style.font}';
     var STROKE_COLOR = '${style.strokeColor}';
+    var BG_COLOR     = '${style.bgColor}';
     var WIDTH        = ${W};
     var HEIGHT       = ${H};
     // Scene variables (reactive via useVariable hook)
     window.__CENCH_VARIABLES = ${JSON.stringify(
       Object.fromEntries(
-        (scene.variables ?? []).map(v => [v.name, v.defaultValue ?? (v.type === 'number' ? 0 : v.type === 'boolean' ? false : '')])
-      )
+        (scene.variables ?? []).map((v) => [
+          v.name,
+          v.defaultValue ?? (v.type === 'number' ? 0 : v.type === 'boolean' ? false : ''),
+        ]),
+      ),
     )};
   <\/script>
 
   <!-- playback-controller-slot -->
 
   <!-- Three.js r183 UMD (exposes window.THREE) + D3 v7 (available for bridge components) -->
-  <script src="https://cdn.jsdelivr.net/npm/three@0.183.0/build/three.min.js"><\/script>
+  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"><\/script>
+  <script src="/vendor/three-sky.js"><\/script>
   <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"><\/script>
+  <script>
+  // buildStudio(THREE, scene, camera, renderer, style) — sets up studio environment inside ThreeJSLayer
+  // Adds: sky gradient sphere (128 segments), infinite grid, white floor, 3-point lighting, env map
+  // floorMode: 'infinite' (default, extends to horizon with fog), 'circle' (radial fade), 'none'
+  // floorColor: override floor color (hex string), null = use style default
+  window.buildStudio = function(T, scene, camera, renderer, style, opts) {
+    style = style || 'white';
+    opts = opts || {};
+    var floorMode = opts.floorMode || 'infinite';
+    var floorColorOverride = opts.floorColor || null;
+    var configs = {
+      white:     { floorY: -2.5, skyTop: '#999999', skyBot: '#ffffff', floorCol: '#ffffff', gridCol: '#d0cdc8', offset: 50, exponent: 0.6, ambientI: 0.3, keyI: 1.0, useSky: false, noFog: true, useShaderFloor: true },
+      corporate: { floorY: -2.5, skyTop: '#b0b0b0', skyBot: '#ffffff', floorCol: '#ffffff', gridCol: '#d0cdc8', offset: 50, exponent: 0.6, ambientI: 0.4, keyI: 1.0, useSky: false },
+      playful:   { floorY: -2,   skyTop: '#908880', skyBot: '#ffffff', floorCol: '#ffffff', gridCol: '#c8c4be', offset: 50, exponent: 0.6, ambientI: 0.3, keyI: 1.0, useSky: false },
+      cinematic: { floorY: -3,   skyTop: '#020204', skyBot: '#0e0c14', floorCol: '#0e0c14', gridCol: '#1a1828', offset: 30, exponent: 0.5, ambientI: 0.08, keyI: 0.8, useSky: false },
+      showcase:  { floorY: -3,   skyTop: '#06050a', skyBot: '#18141e', floorCol: '#18141e', gridCol: '#221e2a', offset: 30, exponent: 0.5, ambientI: 0.08, keyI: 0.8, useSky: false },
+      tech:      { floorY: -3,   skyTop: '#020204', skyBot: '#080810', floorCol: '#080810', gridCol: '#1a1a28', offset: 30, exponent: 0.5, ambientI: 0.08, keyI: 0.8, useSky: false },
+      sky:       { floorY: -2.5, skyTop: null, skyBot: '#c0d8f0', floorCol: null, gridCol: '#a0b098', offset: 33, exponent: 0.6, ambientI: 0.4, keyI: 1.2, useSky: true },
+    };
+    var c = configs[style] || configs.corporate;
+    var isLight = (style === 'white' || style === 'corporate' || style === 'playful');
+    // Override renderer settings — the bridge creates with alpha:true which makes bg transparent
+    renderer.setClearColor(isLight ? 0xffffff : 0x060510, 1);
+    renderer.toneMapping = 1; // LinearToneMapping = 1
+    renderer.toneMappingExposure = c.useSky ? 0.5 : 1.0;
+    renderer.shadowMap.enabled = true;
+    renderer.outputColorSpace = 'srgb';
+    // Sky background
+    if (c.useSky && T.Sky) {
+      // Real THREE.Sky atmospheric scattering — outdoor look
+      var skySun = new T.Sky();
+      skySun.scale.setScalar(450000);
+      scene.add(skySun);
+      var u = skySun.material.uniforms;
+      u['turbidity'].value = 10;
+      u['rayleigh'].value = 2;
+      u['mieCoefficient'].value = 0.005;
+      u['mieDirectionalG'].value = 0.8;
+      u['sunPosition'].value.set(400000, 400000, 400000);
+      renderer.toneMappingExposure = 0.5;
+    } else if (c.useSky) {
+      // Fallback if Sky not loaded: blue gradient
+      var skyGeo = new T.SphereGeometry(5000, 32, 128);
+      var skyVS = 'varying vec3 vWorldPosition; void main() { vec4 worldPosition = modelMatrix * vec4(position, 1.0); vWorldPosition = worldPosition.xyz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }';
+      var skyFS = 'uniform vec3 topColor; uniform vec3 bottomColor; uniform float offset; uniform float exponent; varying vec3 vWorldPosition; void main() { float h = normalize(vWorldPosition + offset).y; gl_FragColor = vec4(mix(bottomColor, topColor, max(pow(max(h, 0.0), exponent), 0.0)), 1.0); }';
+      scene.add(new T.Mesh(skyGeo, new T.ShaderMaterial({ uniforms: { topColor: {value: new T.Color('#3060a0')}, bottomColor: {value: new T.Color('#b8d4f0')}, offset: {value: 33}, exponent: {value: 0.6} }, vertexShader: skyVS, fragmentShader: skyFS, side: T.BackSide, depthWrite: false })));
+    } else {
+      // Gradient sky sphere (128 vertical segments = smooth, no banding)
+      var skyGeo = new T.SphereGeometry(5000, 32, 128);
+      var skyVS = 'varying vec3 vWorldPosition; void main() { vec4 worldPosition = modelMatrix * vec4(position, 1.0); vWorldPosition = worldPosition.xyz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }';
+      var skyFS = 'uniform vec3 topColor; uniform vec3 bottomColor; uniform float offset; uniform float exponent; varying vec3 vWorldPosition; void main() { float h = normalize(vWorldPosition + offset).y; gl_FragColor = vec4(mix(bottomColor, topColor, max(pow(max(h, 0.0), exponent), 0.0)), 1.0); }';
+      scene.add(new T.Mesh(skyGeo, new T.ShaderMaterial({ uniforms: { topColor: {value: new T.Color(c.skyTop)}, bottomColor: {value: new T.Color(c.skyBot)}, offset: {value: c.offset}, exponent: {value: c.exponent} }, vertexShader: skyVS, fragmentShader: skyFS, side: T.BackSide, depthWrite: false })));
+    }
+    // Infinite grid
+    var gridGeo = new T.PlaneGeometry(2, 2, 1, 1);
+    var gridVS = 'varying vec3 worldPosition; uniform float uDistance; void main() { vec3 pos = position.xzy * uDistance; pos.xz += cameraPosition.xz; worldPosition = pos; gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0); }';
+    var gridFS = 'varying vec3 worldPosition; uniform float uSize1; uniform float uSize2; uniform vec3 uColor; uniform float uDistance; float getGrid(float size) { vec2 r = worldPosition.xz / size; vec2 grid = abs(fract(r - 0.5) - 0.5) / fwidth(r); float line = min(grid.x, grid.y); return 1.0 - min(line, 1.0); } void main() { float d = 1.0 - min(distance(cameraPosition.xz, worldPosition.xz) / uDistance, 1.0); float g1 = getGrid(uSize1); float g2 = getGrid(uSize2); gl_FragColor = vec4(uColor.rgb, mix(g2, g1, g1) * pow(d, 3.0)); gl_FragColor.a = mix(0.5 * gl_FragColor.a, gl_FragColor.a, g2); if (gl_FragColor.a <= 0.0) discard; }';
+    var grid = new T.Mesh(gridGeo, new T.ShaderMaterial({ side: T.DoubleSide, transparent: true, uniforms: { uSize1: {value:10}, uSize2: {value:100}, uColor: {value: new T.Color(c.gridCol)}, uDistance: {value:3000} }, vertexShader: gridVS, fragmentShader: gridFS, extensions: { derivatives: true } }));
+    grid.frustumCulled = false; grid.position.y = c.floorY; scene.add(grid);
+    // Floor — mode: 'infinite' (fog blend), 'circle' (radial fade), 'none'
+    // If floorCol is null (sky style), skip colored floor — just add shadow catcher
+    if (!c.floorCol && !floorColorOverride) { floorMode = 'none'; }
+    // White studio default: use ShaderMaterial circle floor (renders at exact color, unaffected by lighting)
+    if (c.useShaderFloor && floorMode === 'infinite') { floorMode = 'circle'; }
+    var actualFloorCol = floorColorOverride ? new T.Color(floorColorOverride) : (c.floorCol ? new T.Color(c.floorCol) : new T.Color('#ffffff'));
+    if (floorMode === 'circle') {
+      var circRadius = opts.floorRadius || 80;
+      var circGeo = new T.CircleGeometry(circRadius, 128);
+      var circFS = 'uniform vec3 uColor; uniform float uRadius; varying vec3 vWorldPos; void main() { float dist = length(vWorldPos.xz); float fade = 1.0 - smoothstep(uRadius * 0.3, uRadius * 0.95, dist); gl_FragColor = vec4(uColor, fade); }';
+      var circVS = 'varying vec3 vWorldPos; void main() { vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }';
+      var circMat = new T.ShaderMaterial({ uniforms: { uColor: {value: actualFloorCol}, uRadius: {value: circRadius} }, vertexShader: circVS, fragmentShader: circFS, transparent: true, side: T.DoubleSide, depthWrite: false });
+      var circFloor = new T.Mesh(circGeo, circMat);
+      circFloor.rotation.x = -Math.PI / 2; circFloor.position.y = c.floorY - 0.01; scene.add(circFloor);
+      // Shadow catcher
+      var shadowFloor = new T.Mesh(new T.PlaneGeometry(200, 200), new T.ShadowMaterial({ opacity: 0.15 }));
+      shadowFloor.rotation.x = -Math.PI / 2; shadowFloor.position.y = c.floorY - 0.005; shadowFloor.receiveShadow = true; scene.add(shadowFloor);
+    } else if (floorMode !== 'none') {
+      // Infinite floor — large plane + fog to blend with sky at horizon
+      var infFloor = new T.Mesh(new T.PlaneGeometry(10000, 10000), new T.MeshStandardMaterial({ color: actualFloorCol, roughness: 1.0, metalness: 0, envMapIntensity: 0 }));
+      infFloor.rotation.x = -Math.PI / 2; infFloor.position.y = c.floorY - 0.01; infFloor.receiveShadow = true; scene.add(infFloor);
+      if (!c.noFog) scene.fog = new T.FogExp2(new T.Color(c.skyBot), 0.003);
+    }
+    // Always add a shadow catcher
+    if (floorMode === 'none') {
+      var shFloor = new T.Mesh(new T.PlaneGeometry(200, 200), new T.ShadowMaterial({ opacity: 0.15 }));
+      shFloor.rotation.x = -Math.PI / 2; shFloor.position.y = c.floorY - 0.005; shFloor.receiveShadow = true; scene.add(shFloor);
+    }
+    // 3-point lighting
+    scene.add(new T.AmbientLight(isLight ? 0xffffff : 0x111122, c.ambientI));
+    var keyL = new T.DirectionalLight(isLight ? 0xfff6e0 : 0xffffff, c.keyI);
+    keyL.position.set(-5, 8, 5); keyL.castShadow = true; keyL.shadow.mapSize.set(2048, 2048);
+    keyL.shadow.camera.left = -15; keyL.shadow.camera.right = 15; keyL.shadow.camera.top = 15; keyL.shadow.camera.bottom = -15; keyL.shadow.bias = -0.001;
+    scene.add(keyL);
+    scene.add(new T.DirectionalLight(isLight ? 0xd0e8ff : 0x4444aa, isLight ? 0.35 : 0.2).translateX(6).translateY(2).translateZ(4));
+    scene.add(new T.DirectionalLight(isLight ? 0xffe0d0 : 0xff6040, isLight ? 0.5 : 0.35).translateY(4).translateZ(-9));
+    // Env map
+    try {
+      var pmrem = new T.PMREMGenerator(renderer);
+      var envScene = new T.Scene();
+      var envSkyGeo = new T.SphereGeometry(50, 32, 16);
+      var envSkyMat = new T.ShaderMaterial({ side: T.BackSide, uniforms: { topColor: {value: new T.Color(0xddeeff)}, bottomColor: {value: new T.Color(0xfff8f0)} }, vertexShader: 'varying vec3 vWP; void main(){vec4 wp=modelMatrix*vec4(position,1.0);vWP=wp.xyz;gl_Position=projectionMatrix*viewMatrix*wp;}', fragmentShader: 'uniform vec3 topColor;uniform vec3 bottomColor;varying vec3 vWP;void main(){float h=normalize(vWP).y*0.5+0.5;gl_FragColor=vec4(mix(bottomColor,topColor,h),1.0);}' });
+      envScene.add(new T.Mesh(envSkyGeo, envSkyMat));
+      var p = new T.Mesh(new T.PlaneGeometry(8,4), new T.MeshBasicMaterial({color:0xffffff,side:T.DoubleSide}));
+      p.position.set(-6,8,5); p.lookAt(0,0,0); envScene.add(p);
+      scene.environment = pmrem.fromScene(envScene, 0.04).texture;
+      pmrem.dispose();
+    } catch(e) {}
+    return { floorY: c.floorY };
+  };
+  <\/script>
   <!-- CenchReact SDK: Remotion-style hooks + bridge components -->
   <script src="/sdk/cench-react/cench-react-runtime.js"><\/script>
   <script src="/sdk/cench-react/cench-react-bridges.js"><\/script>
@@ -2750,8 +2956,8 @@ function generateReactHTML(scene: Scene, style: ResolvedStyle, audioSettings?: A
   <script src="/sdk/cench-motion.js"><\/script>
   <script src="/sdk/cench-camera.js"><\/script>
 
-  <script id="scene-jsx" type="text/jsx">
-${reactCode.replace(/<\/script/gi, '<\\/script')}
+  <script id="scene-jsx" type="text/cench-jsx">
+${normalizeReactSceneExport(reactCode).replace(/<\/script/gi, '<\\/script')}
   <\/script>
 
   <script>
@@ -2782,6 +2988,7 @@ ${reactCode.replace(/<\/script/gi, '<\\/script')}
     // which embed AI-generated JS directly in inline script tags)
     var scriptEl = document.createElement('script');
     scriptEl.textContent = '(function(useCurrentFrame,useVideoConfig,interpolate,spring,Sequence,AbsoluteFill,Easing,Canvas2DLayer,ThreeJSLayer,D3Layer,SVGLayer,LottieLayer,useVariable,useInteraction,useTrigger){var module={exports:{}};var exports=module.exports;'
+      + 'var require=function(mod){var _r={useCurrentFrame:useCurrentFrame,useVideoConfig:useVideoConfig,interpolate:interpolate,spring:spring,Sequence:Sequence,AbsoluteFill:AbsoluteFill,Easing:Easing};var m={"react":React,"three":typeof THREE!=="undefined"?THREE:{},"d3":typeof d3!=="undefined"?d3:{},"animejs":typeof anime!=="undefined"?anime:{},"anime":typeof anime!=="undefined"?anime:{},"remotion":_r,"@remotion/core":_r};if(m[mod]!==undefined)return m[mod];console.warn("CenchReact: unknown module "+mod);return {};};'
       + js
       + ';window.__CenchSceneExports=module.exports;'
       + '})(CenchReact.useCurrentFrame,CenchReact.useVideoConfig,CenchReact.interpolate,CenchReact.spring,CenchReact.Sequence,CenchReact.AbsoluteFill,CenchReact.Easing,CenchReact.Canvas2DLayer,CenchReact.ThreeJSLayer,CenchReact.D3Layer,CenchReact.SVGLayer,CenchReact.LottieLayer,CenchReact.useVariable,CenchReact.useInteraction,CenchReact.useTrigger);';
@@ -2791,7 +2998,16 @@ ${reactCode.replace(/<\/script/gi, '<\\/script')}
     var exp = window.__CenchSceneExports || {};
     var SceneComponent = exp.default || exp.Scene || (typeof exp === 'function' ? exp : null);
     if (typeof SceneComponent !== 'function') {
-      console.error('CenchReact: No component exported. Use "export default function Scene() {...}"');
+      // Self-diagnose: look at the source to hint what's missing.
+      var hint = 'Add "export default Scene;" at the end of the scene code.';
+      if (/function\\s+(Scene|Main|App|Root)\\b/.test(jsxSrc) && !/export\\s+default/.test(jsxSrc)) {
+        hint = 'Found a component but no "export default" statement. Scene renders blank without it. Add: "export default Scene;" at the end.';
+      } else if (!/function|const|let|var/.test(jsxSrc)) {
+        hint = 'No component declaration found in scene source.';
+      }
+      console.error('CenchReact: No component exported. ' + hint);
+      var root = document.getElementById('react-root');
+      if (root) root.textContent = 'Scene error: ' + hint;
       return;
     }
 
@@ -2970,7 +3186,12 @@ function getWatermarkPositionCSS(position: WatermarkConfig['position']): string 
   }
 }
 
-function generateSVGHTML(scene: Scene, style: ResolvedStyle, audioSettings?: AudioSettings | null, dims?: ProjectDimensions): string {
+function generateSVGHTML(
+  scene: Scene,
+  style: ResolvedStyle,
+  audioSettings?: AudioSettings | null,
+  dims?: ProjectDimensions,
+): string {
   const W = dims?.width ?? 1920
   const H = dims?.height ?? 1080
   const { svgContent = '', videoLayer, textOverlays = [], svgObjects = [], primaryObjectId = null } = scene
@@ -3008,11 +3229,12 @@ function generateSVGHTML(scene: Scene, style: ResolvedStyle, audioSettings?: Aud
 <html>
 <head>
   <meta charset="UTF-8">
-  ${buildFontLink(style.font)}
+  ${buildSceneFontLinks(style)}
   ${style.roughnessLevel > 0.2 ? '<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>' : ''}
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; animation-play-state: paused; }
     body { width: ${W}px; height: ${H}px; overflow: hidden; background: ${style.bgColor};
+      --bg-color: ${style.bgColor};
       ${buildBgStyleCSS(style)}
     }
 
@@ -3115,7 +3337,9 @@ function generateSVGHTML(scene: Scene, style: ResolvedStyle, audioSettings?: Aud
     var DURATION     = ${scene.duration};
     var ROUGHNESS    = ${style.roughnessLevel};
     var FONT         = '${style.font}';
+    var BODY_FONT    = '${style.bodyFont || style.font}';
     var STROKE_COLOR = '${style.strokeColor}';
+    var BG_COLOR     = '${style.bgColor}';
     var WIDTH        = ${W};
     var HEIGHT       = ${H};
 

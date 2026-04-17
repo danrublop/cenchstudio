@@ -44,13 +44,7 @@ function ColorSwatch({
   )
 }
 
-function LogoTile({
-  asset,
-  onRemove,
-}: {
-  asset: ProjectAsset
-  onRemove: () => void
-}) {
+function LogoTile({ asset, onRemove }: { asset: ProjectAsset; onRemove: () => void }) {
   return (
     <div className="relative group w-14 h-14 rounded-lg border border-white/10 overflow-hidden bg-white/5 flex items-center justify-center">
       <img
@@ -167,11 +161,7 @@ export default function BrandKitPanel() {
                   onClick={() => addLogo(a.id)}
                   className="flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-white/5 transition-colors"
                 >
-                  <img
-                    src={a.thumbnailUrl || a.publicUrl}
-                    className="w-6 h-6 object-contain rounded"
-                    alt=""
-                  />
+                  <img src={a.thumbnailUrl || a.publicUrl} className="w-6 h-6 object-contain rounded" alt="" />
                   <span className="text-[11px] text-[var(--color-text-primary)] truncate">{a.name}</span>
                   <span className="text-[9px] text-[var(--color-text-muted)] ml-auto uppercase">{a.type}</span>
                 </div>
@@ -220,7 +210,7 @@ export default function BrandKitPanel() {
           <label className="text-[#6b6b7a] text-[10px] uppercase tracking-wider block mb-1">Primary Font</label>
           <FontPicker
             value={brandKit.fontPrimary}
-            presetFont="Inter"
+            presetFont={null}
             onChange={(f) => updateBrandKit({ fontPrimary: f })}
           />
         </div>
@@ -228,7 +218,7 @@ export default function BrandKitPanel() {
           <label className="text-[#6b6b7a] text-[10px] uppercase tracking-wider block mb-1">Secondary Font</label>
           <FontPicker
             value={brandKit.fontSecondary}
-            presetFont="Inter"
+            presetFont={null}
             onChange={(f) => updateBrandKit({ fontSecondary: f })}
           />
         </div>

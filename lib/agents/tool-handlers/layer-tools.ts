@@ -34,6 +34,8 @@ export const LAYER_TOOL_NAMES = [
   'set_layer_timing',
   'regenerate_layer',
   'patch_layer_code',
+  'write_scene_code',
+  'read_scene_code',
   'migrate_to_react',
 ] as const
 
@@ -599,7 +601,13 @@ export function createLayerToolHandler(deps: {
 
         // Try patching sceneCode/canvasCode/lottieSource
         const codeField =
-          scene.sceneType === 'canvas2d' ? 'canvasCode' : scene.sceneType === 'lottie' ? 'lottieSource' : scene.sceneType === 'react' ? 'reactCode' : 'sceneCode'
+          scene.sceneType === 'canvas2d'
+            ? 'canvasCode'
+            : scene.sceneType === 'lottie'
+              ? 'lottieSource'
+              : scene.sceneType === 'react'
+                ? 'reactCode'
+                : 'sceneCode'
         const code: string = (scene[codeField as keyof Scene] as string) || ''
         if (!code.includes(oldCode)) {
           // Try whitespace-normalized matching as a fallback
@@ -611,15 +619,16 @@ export function createLayerToolHandler(deps: {
             const startHint = oldCode.trim().slice(0, 30)
             return err(
               `oldCode not found as-is in ${codeField}, but a whitespace-normalized match exists. ` +
-              `The code likely has different indentation/newlines. Try copying the exact code starting with "${startHint}…" from the scene.`,
+                `The code likely has different indentation/newlines. Try copying the exact code starting with "${startHint}…" from the scene.`,
             )
           }
           // Show a nearby snippet for context
           const firstLine = oldCode.split('\n')[0].trim().slice(0, 40)
           const codeSnippetIdx = code.toLowerCase().indexOf(firstLine.toLowerCase())
-          const hint = codeSnippetIdx >= 0
-            ? ` Closest match near char ${codeSnippetIdx}: "${code.slice(Math.max(0, codeSnippetIdx - 10), codeSnippetIdx + 50).replace(/\n/g, '\\n')}…"`
-            : ` Code is ${code.length} chars. First 80: "${code.slice(0, 80).replace(/\n/g, '\\n')}…"`
+          const hint =
+            codeSnippetIdx >= 0
+              ? ` Closest match near char ${codeSnippetIdx}: "${code.slice(Math.max(0, codeSnippetIdx - 10), codeSnippetIdx + 50).replace(/\n/g, '\\n')}…"`
+              : ` Code is ${code.length} chars. First 80: "${code.slice(0, 80).replace(/\n/g, '\\n')}…"`
           return err(`oldCode not found in ${codeField}. Make sure it's an exact substring match.${hint}`)
         }
         const matchCount = code.split(oldCode).length - 1
@@ -654,6 +663,177 @@ export function createLayerToolHandler(deps: {
         return ok(sceneId, `Migrated ${scene.sceneType} scene to React wrapper`, {
           previousType: scene.sceneType,
         })
+      }
+
+      // ── read_scene_code ──────────────────────────────────────────────
+      // Returns the full source code for a scene — not truncated like the world state preview.
+
+      case 'read_scene_code': {
+        const { sceneId } = args as { sceneId: string }
+        const scene = findScene(world, sceneId)
+        if (!scene) return err(`Scene ${sceneId} not found`)
+
+        const parts: string[] = []
+        parts.push(`Scene: "${scene.name}" (${scene.id})`)
+        parts.push(`Type: ${scene.sceneType}`)
+        parts.push(`Duration: ${scene.duration}s`)
+
+        // Primary code field
+        const codeField =
+          scene.sceneType === 'react'
+            ? 'reactCode'
+            : scene.sceneType === 'canvas2d'
+              ? 'canvasCode'
+              : scene.sceneType === 'svg'
+                ? 'svgContent'
+                : scene.sceneType === 'lottie'
+                  ? 'lottieSource'
+                  : 'sceneCode'
+        const code = (scene[codeField as keyof Scene] as string) || ''
+        if (code) {
+          parts.push(`\n--- ${codeField} (${code.length} chars) ---`)
+          parts.push(code)
+        }
+
+        if (scene.sceneStyles) {
+          parts.push(`\n--- styles (${scene.sceneStyles.length} chars) ---`)
+          parts.push(scene.sceneStyles)
+        }
+
+        if (scene.canvasBackgroundCode?.trim()) {
+          parts.push(`\n--- canvasBackgroundCode (${scene.canvasBackgroundCode.length} chars) ---`)
+          parts.push(scene.canvasBackgroundCode)
+        }
+
+        // SVG objects with full code
+        if (scene.svgObjects?.length > 0) {
+          parts.push(`\n--- SVG Objects (${scene.svgObjects.length}) ---`)
+          for (const obj of scene.svgObjects) {
+            parts.push(`\n[${obj.id}] "${obj.prompt?.slice(0, 80)}"`)
+            if (obj.svgContent) parts.push(obj.svgContent)
+          }
+        }
+
+        // AI layers with full code
+        if (scene.aiLayers?.length > 0) {
+          parts.push(`\n--- AI Layers (${scene.aiLayers.length}) ---`)
+          for (const layer of scene.aiLayers) {
+            parts.push(`\n[${layer.id}] type:${layer.type} label:"${layer.label}"`)
+            if (layer.code) parts.push(layer.code)
+          }
+        }
+
+        return ok(sceneId, parts.join('\n'))
+      }
+
+      // ── write_scene_code ─────────────────────────────────────────────
+      // Direct code write — skips the LLM generation call that add_layer uses.
+      // Creates a new scene if sceneId is omitted, or replaces code on existing scene.
+
+      case 'write_scene_code': {
+        const {
+          sceneId,
+          sceneCode,
+          styles,
+          name: sceneName,
+          duration,
+          bgColor,
+          sceneType: requestedType,
+        } = args as {
+          sceneId?: string
+          sceneCode: string
+          styles?: string
+          name?: string
+          duration?: number
+          bgColor?: string
+          sceneType?: SceneType
+        }
+        if (!sceneCode?.trim()) return err('sceneCode is required')
+
+        const type: SceneType = requestedType ?? 'react'
+
+        if (sceneId) {
+          // Update existing scene
+          const scene = findScene(world, sceneId)
+          if (!scene) return err(`Scene ${sceneId} not found`)
+
+          const codeField =
+            type === 'react'
+              ? 'reactCode'
+              : type === 'canvas2d'
+                ? 'canvasCode'
+                : type === 'lottie'
+                  ? 'lottieSource'
+                  : type === 'svg'
+                    ? 'svgContent'
+                    : 'sceneCode'
+
+          const updates: Partial<Scene> = {
+            sceneType: type,
+            [codeField]: sceneCode,
+            ...(styles ? { sceneStyles: styles } : {}),
+            ...(sceneName ? { name: sceneName } : {}),
+            ...(duration ? { duration: Math.max(3, Math.min(30, duration)) } : {}),
+            ...(bgColor ? { bgColor } : {}),
+          }
+
+          updateScene(world, sceneId, updates)
+          await regenerateHTML(world, sceneId, logger)
+          return ok(sceneId, `Wrote ${type} code to scene "${scene.name}" (${sceneId})`)
+        }
+
+        // Create new scene with the provided code
+        const newScene: Scene = {
+          id: uuidv4(),
+          name: sceneName || 'Untitled Scene',
+          prompt: '',
+          summary: '',
+          svgContent: type === 'svg' ? sceneCode : '',
+          duration: Math.max(3, Math.min(30, duration || 8)),
+          bgColor: bgColor || '#0a0c10',
+          thumbnail: null,
+          videoLayer: { enabled: false, src: null, opacity: 1, trimStart: 0, trimEnd: null },
+          audioLayer: { enabled: false, src: null, volume: 1, fadeIn: false, fadeOut: false, startOffset: 0 },
+          textOverlays: [],
+          svgObjects: [],
+          primaryObjectId: null,
+          svgBranches: [],
+          activeBranchId: null,
+          transition: 'none',
+          usage: null,
+          sceneType: type,
+          canvasCode: type === 'canvas2d' ? sceneCode : '',
+          canvasBackgroundCode: '',
+          sceneCode: !['react', 'canvas2d', 'svg', 'lottie'].includes(type) ? sceneCode : '',
+          reactCode: type === 'react' ? sceneCode : '',
+          sceneHTML: '',
+          sceneStyles: styles || '',
+          lottieSource: type === 'lottie' ? sceneCode : '',
+          d3Data: null,
+          chartLayers: [],
+          physicsLayers: [],
+          interactions: [],
+          variables: [],
+          aiLayers: [],
+          messages: [],
+          styleOverride: {},
+          cameraMotion: null,
+          worldConfig: null,
+        }
+
+        world.scenes.push(newScene)
+        await regenerateHTML(world, newScene.id, logger)
+        return {
+          success: true,
+          affectedSceneId: newScene.id,
+          changes: [
+            {
+              type: 'scene_created',
+              sceneId: newScene.id,
+              description: `Created scene "${newScene.name}" with ${type} code (${newScene.id})`,
+            },
+          ],
+        }
       }
 
       default:

@@ -57,6 +57,7 @@ export interface StylePreset {
   bgColor: string
   bgStyle: 'plain' | 'paper' | 'grid' | 'dots' | 'chalkboard' | 'kraft'
   font: string
+  bodyFont: string | null
 
   // Renderer preferences (motion = HTML/CSS + GSAP timeline — default for most explainers)
   preferredRenderer: 'canvas2d' | 'svg' | 'motion' | 'auto'
@@ -99,6 +100,7 @@ export const STYLE_PRESETS: Record<StylePresetId, StylePreset> = {
     bgColor: '#fffef9',
     bgStyle: 'paper',
     font: 'Caveat',
+    bodyFont: null,
     preferredRenderer: 'canvas2d',
     roughnessLevel: 1.5,
     defaultTool: 'marker',
@@ -138,6 +140,7 @@ Arrows and labels are the primary annotation tools.`,
     bgColor: '#2d4a3e',
     bgStyle: 'chalkboard',
     font: 'Caveat',
+    bodyFont: null,
     preferredRenderer: 'canvas2d',
     roughnessLevel: 2.5,
     defaultTool: 'chalk',
@@ -178,6 +181,7 @@ Large text, generous spacing. Think classroom lecture.`,
     bgColor: '#1e3a5f',
     bgStyle: 'grid',
     font: 'DM Mono',
+    bodyFont: null,
     preferredRenderer: 'motion',
     roughnessLevel: 0,
     defaultTool: 'pen',
@@ -217,6 +221,7 @@ Content type always wins — data is D3, 3D is Three.js.`,
     bgColor: '#ffffff',
     bgStyle: 'plain',
     font: 'Georgia',
+    bodyFont: null,
     preferredRenderer: 'motion',
     roughnessLevel: 0,
     defaultTool: 'pen',
@@ -255,6 +260,7 @@ Content type always wins — data is D3, 3D is Three.js.`,
     bgColor: '#0f0f13',
     bgStyle: 'plain',
     font: 'DM Mono',
+    bodyFont: null,
     preferredRenderer: 'auto',
     roughnessLevel: 0.3,
     defaultTool: 'pen',
@@ -294,6 +300,7 @@ Content type always wins — data is D3, 3D is Three.js.`,
     bgColor: '#f5f0e0',
     bgStyle: 'paper',
     font: 'Georgia',
+    bodyFont: null,
     preferredRenderer: 'motion',
     roughnessLevel: 0.5,
     defaultTool: 'pen',
@@ -332,6 +339,7 @@ Paper texture is automatic — do not fight it in scene code.`,
     bgColor: '#0a0a0f',
     bgStyle: 'plain',
     font: 'DM Mono',
+    bodyFont: null,
     preferredRenderer: 'canvas2d',
     roughnessLevel: 0.8,
     defaultTool: 'brush',
@@ -374,6 +382,7 @@ WHEN TO OVERRIDE: If the project already has 2+ Canvas2D scenes, use SVG or Moti
     bgColor: '#c4a882',
     bgStyle: 'kraft',
     font: 'Caveat',
+    bodyFont: null,
     preferredRenderer: 'canvas2d',
     roughnessLevel: 2.0,
     defaultTool: 'marker',
@@ -412,7 +421,8 @@ WHEN TO OVERRIDE: If the project already has 2+ Canvas2D scenes, use SVG for the
     description: '3Blue1Brown — mathematical precision on deep navy.',
     bgColor: '#0d1117',
     palette: ['#6495ED', '#9B59B6', '#F39C12', '#AAAAAA'],
-    font: 'Inter',
+    font: 'Sora',
+    bodyFont: null,
     preferredRenderer: 'canvas2d',
     roughnessLevel: 0,
     defaultTool: 'pen',
@@ -434,8 +444,8 @@ WHEN TO OVERRIDE: If the project already has 2+ Canvas2D scenes, use SVG for the
 TYPOGRAPHY
 - Title: 52px / 500 / white / -0.01em tracking
 - Equation: 36px / 400 / white / center-aligned / generous vertical padding
-- Annotation: 18px / 400 / #AAAAAA / left-aligned near the element it describes
-- Label: 14px / 500 / color-matched to element / never more than 4 words
+- Annotation: 24px / 400 / #AAAAAA / left-aligned near the element it describes
+- Label: 24px / 500 / color-matched to element / never more than 4 words
 
 ANIMATION — DRAWING IS THE ANIMATION
 - Elements do not fade in. They draw themselves.
@@ -449,7 +459,7 @@ CHARTS AND GRAPHS
 - Axes draw themselves first, then data appears
 - Grid: subtle, #1E2A3A, both axes at 0.5px
 - Primary data series: blue. Secondary: purple. Key value: gold dot or annotation.
-- Axes: no border box — open frame. Labels in grey (#AAAAAA), 12px.
+- Axes: no border box — open frame. Labels in grey (#AAAAAA), 24px.
 - Prefer showing the mathematical relationship visually over chart labels
 
 SPATIAL RHYTHM
@@ -489,6 +499,7 @@ PROHIBITIONS
     bgColor: '#f5f0e8',
     palette: ['#1a1a1a', '#8B4513', '#1a4a2e', '#8B0000'],
     font: 'Caveat',
+    bodyFont: null,
     preferredRenderer: 'canvas2d',
     roughnessLevel: 2.2,
     defaultTool: 'pen',
@@ -509,9 +520,9 @@ PROHIBITIONS
 TYPOGRAPHY — HANDWRITTEN FEEL IS EVERYTHING
 - Caveat is loaded — use it everywhere
 - Title: 44px / Caveat / #1a1a1a — looks like written on the board
-- Body: 22px / Caveat / #1a1a1a / 1.9 leading (handwriting needs air)
+- Body: 32px / Caveat / #1a1a1a / 1.9 leading (handwriting needs air)
 - Equation: 28px / Caveat / centered on the page — equations are big and clear
-- Annotation: 16px / Caveat / brown — smaller, squeezed in the margin
+- Annotation: 24px / Caveat / brown — smaller, squeezed in the margin
 
 ANIMATION — THINGS ARE BEING WRITTEN IN REAL TIME
 - Diagrams draw with stroke animation: 1.0-1.5s, power1.inOut (human writing pace)
@@ -568,7 +579,8 @@ PROHIBITIONS
     description: 'BBC documentary / premium production — dark, restrained.',
     bgColor: '#080808',
     palette: ['#FFFFFF', '#00D4FF', '#FF6B35', '#333333'],
-    font: 'Inter',
+    font: 'Manrope',
+    bodyFont: null,
     preferredRenderer: 'canvas2d',
     roughnessLevel: 0,
     defaultTool: 'pen',
@@ -591,10 +603,10 @@ Each scene uses either cyan OR orange, never both. The accent is the single thin
 
 TYPOGRAPHY
 - Titles: 56px / 300 weight (LIGHT — cinematic titles are never bold) / white / -0.02em tracking
-- Subhead: 22px / 300 / #AAAAAA / 0 tracking
-- Body: 18px / 400 / #CCCCCC / 1.8 leading
+- Subhead: 28px / 300 / #AAAAAA / 0 tracking
+- Body: 32px / 400 / #CCCCCC / 1.8 leading
 - Data callout: 72px / 200 weight / white / tabular-nums (huge, confident, minimal)
-- Caption: 13px / 400 / #666666 / letter-spacing 0.04em
+- Caption: 24px / 400 / #666666 / letter-spacing 0.04em
 
 ANIMATION — RESTRAINT IS THE AESTHETIC
 - Elements emerge from darkness: fade from opacity 0, scale from 0.98 to 1 (barely perceptible scale)
@@ -652,6 +664,7 @@ PROHIBITIONS
     bgColor: '#f8f7f4',
     palette: ['#2b2b2b', '#555555', '#888888', '#c8c8c8'],
     font: 'Caveat',
+    bodyFont: null,
     preferredRenderer: 'canvas2d',
     roughnessLevel: 2.8,
     defaultTool: 'pen',
@@ -683,7 +696,7 @@ HATCHING AND SHADING
 - Roughness 2.8 means the hatching lines wobble naturally — this is correct
 
 TYPOGRAPHY
-- Caveat at all sizes: 40px title, 22px body, 16px annotation
+- Caveat at all sizes: 40px title, 32px body, 24px annotation
 - All text in dark (#2b2b2b), as if written by hand
 
 ANIMATION — SKETCHING IN REAL TIME
@@ -727,6 +740,7 @@ PROHIBITIONS
     bgColor: '#f2ede4',
     palette: ['#e84855', '#0067A5', '#1a1a1a', '#f2ede4'],
     font: 'Space Mono',
+    bodyFont: null,
     preferredRenderer: 'canvas2d',
     roughnessLevel: 0.5,
     defaultTool: 'marker',
@@ -760,9 +774,9 @@ Instead of opacity, simulate tints with dot patterns:
 TYPOGRAPHY
 - Space Mono everywhere — looks like a typewriter, fitting for print aesthetic
 - Title: 48px / 700 / black (#1a1a1a) — set in black ink
-- Body: 16px / 400 / black
+- Body: 32px / 400 / black
 - Pulled quote or callout: 32px / 700 / red or blue (one ink color, not black)
-- Labels: 12px / 400 / ALL CAPS / 0.08em tracking
+- Labels: 24px / 400 / ALL CAPS / 0.08em tracking
 
 ANIMATION
 - Ink appears: elements stamp in with a very slight scale (1.05 → 1, 0.15s, power2.out)
@@ -810,6 +824,7 @@ PROHIBITIONS
     bgColor: '#0a0800',
     palette: ['#FFB000', '#FF8C00', '#CC7000', '#1a1400'],
     font: 'Space Mono',
+    bodyFont: null,
     preferredRenderer: 'canvas2d',
     roughnessLevel: 0,
     defaultTool: 'pen',
@@ -841,9 +856,9 @@ Horizontal lines at regular intervals are already handled.
 TYPOGRAPHY — MONOSPACE EVERYTHING
 - Space Mono at all sizes — this is non-negotiable
 - Title: 40px / 700 / bright amber — uppercase always
-- Body: 16px / 400 / medium amber
+- Body: 28px / 400 / medium amber
 - Data readout: 56px / 400 / bright amber / tabular-nums — big phosphor numbers
-- Label: 12px / 400 / dim amber / ALL CAPS / 0.1em tracking
+- Label: 24px / 400 / dim amber / ALL CAPS / 0.1em tracking
 - Prompt character (>_ style): use before title text
 
 ANIMATION — TERMINAL BEHAVIOR
@@ -897,6 +912,7 @@ PROHIBITIONS
     bgColor: '#FFFFFF',
     palette: ['#1a1a2e', '#e94560', '#16213e', '#888888'],
     font: 'Georgia',
+    bodyFont: null,
     preferredRenderer: 'canvas2d',
     roughnessLevel: 0,
     defaultTool: 'pen',
@@ -915,18 +931,18 @@ PROHIBITIONS
 - Grey (#888888): axis labels, figure captions, supporting text, grid lines
 
 TYPOGRAPHY — PUBLICATION STANDARD
-- Figure title: 18px / Georgia / 700 / navy — always present, always top-left
-- Axis label: 13px / Inter / 400 / #333333 — sans-serif for chart labels (readability)
-- Axis value: 11px / Inter / 400 / #666666
-- Body text: 16px / Georgia / 400 / #1a1a2e / 1.7 leading
-- Figure caption: 13px / Georgia / italic / #444444 — always below the figure
-- Source/credit: 11px / Inter / 400 / #888888 / bottom-right always
+- Figure title: 28px / Georgia / 700 / navy — always present, always top-left
+- Axis label: 24px / Sora / 400 / #333333 — sans-serif for chart labels (readability)
+- Axis value: 24px / Sora / 400 / #666666
+- Body text: 32px / Georgia / 400 / #1a1a2e / 1.7 leading
+- Figure caption: 24px / Georgia / italic / #444444 — always below the figure
+- Source/credit: 24px / Sora / 400 / #888888 / bottom-right always
 
 FIGURE NUMBERING — MANDATORY
 Every scene that contains a chart or diagram has:
-- "Fig. N" label: 11px / Inter / 500 / #888888 / top-left or bottom-left
-- Caption below: 13px / Georgia / italic — one sentence explaining what is shown
-- Source line: 11px / Inter / #888888 — where this data/concept comes from
+- "Fig. N" label: 24px / Sora / 500 / #888888 / top-left or bottom-left
+- Caption below: 24px / Georgia / italic — one sentence explaining what is shown
+- Source line: 24px / Sora / #888888 — where this data/concept comes from
 
 CHARTS — PUBLICATION QUALITY
 - No chart junk (Tufte principle): remove every element that doesn't carry information
@@ -982,6 +998,7 @@ PROHIBITIONS
     bgColor: '#FAFAFA',
     palette: ['#E74C3C', '#1ABC9C', '#3498DB', '#F39C12'],
     font: 'Nunito',
+    bodyFont: null,
     preferredRenderer: 'canvas2d',
     roughnessLevel: 1.0,
     defaultTool: 'marker',
@@ -1008,9 +1025,9 @@ FRIENDLY COLOR RULES
 TYPOGRAPHY — ROUNDED AND APPROACHABLE
 - Nunito is loaded — use it everywhere (rounded letterforms feel friendly)
 - Title: 48px / 700 / #333333 — confident but not intimidating
-- Body: 20px / 400 / #555555 / 1.8 leading — generous line height
+- Body: 32px / 400 / #555555 / 1.8 leading — generous line height
 - Highlighted word: inline color matching its concept color
-- Callout box: 18px / 600 / white text on concept-color background / 12px border-radius
+- Callout box: 28px / 600 / white text on concept-color background / 12px border-radius
 - Equation: 28px / 600 / #333333 — equations should be big enough to read easily
 
 ANIMATION — PLAYFUL BUT NOT DISTRACTING
@@ -1024,9 +1041,9 @@ CHARTS
 - Bright, clear, labeled
 - Grid: light grey (#F0F0F0) horizontal only
 - Bars: full concept color, 8px border-radius (rounded bars feel friendly)
-- Labels on top of bars, 14px / 600 / matching color
+- Labels on top of bars, 24px / 600 / matching color
 - Axes: thin grey (#AAAAAA), with clear unit labels
-- Always include a chart title above: 16px / 600 / #333333
+- Always include a chart title above: 26px / 600 / #333333
 
 CALLOUT BOXES — USE GENEROUSLY
 - Key term: colored background, white text, 8px radius, 12px 16px padding
@@ -1043,7 +1060,7 @@ SPATIAL RHYTHM
 PROHIBITIONS
 - No dark backgrounds on any element
 - No thin lines — minimum 2px strokes, prefer 3px
-- No tiny text — minimum 14px even for captions
+- No tiny text — minimum 24px even for captions
 - No long paragraphs — max 2 lines of body text per scene
 - No complex charts — if it needs a legend, simplify it`,
     export: { resolution: '1080p', fps: 30, format: 'mp4' },
@@ -1071,7 +1088,8 @@ const NEUTRAL_BASELINE: StylePreset = {
   palette: ['#f0ece0', '#e84545', '#4595e8', '#45e87a'],
   bgColor: '#181818',
   bgStyle: 'plain',
-  font: 'Inter',
+  font: 'Figtree',
+  bodyFont: null,
   preferredRenderer: 'auto',
   roughnessLevel: 0,
   defaultTool: 'pen',
@@ -1112,6 +1130,7 @@ export function resolveStyle(presetId: StylePresetId | null, overrides: Partial<
     palette: effectivePalette,
     bgColor: overrides.bgColorOverride ?? preset.bgColor,
     font: overrides.fontOverride ?? preset.font,
+    bodyFont: overrides.bodyFontOverride ?? preset.bodyFont,
     strokeColor: overrides.strokeColorOverride ?? preset.strokeColorOverride ?? effectivePalette[0],
   }
 }

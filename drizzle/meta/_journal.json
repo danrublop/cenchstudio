@@ -113,6 +113,13 @@
       "when": 1774935600000,
       "tag": "0015_refactor_conversations_messages",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1776000000000,
+      "tag": "0019_add_asset_provenance",
+      "breakpoints": true
     }
   ]
 }

@@ -36,6 +36,7 @@ import {
   Mic,
   Send,
   Square,
+  Globe,
 } from 'lucide-react'
 
 /** Attach / voice / send — align with secondary text; circle uses a light mix on the panel background */
@@ -45,6 +46,7 @@ import { CenchLogo as AgentIcon } from './icons/CenchLogo'
 import { TOOL_FILTER_CHIPS } from '@/lib/agent-tools'
 import { AUDIO_PROVIDERS } from '@/lib/audio/provider-registry'
 import { MEDIA_PROVIDERS } from '@/lib/media/provider-registry'
+import { useConfiguredProviders } from '@/lib/hooks/useConfiguredProviders'
 import { useVideoStore } from '@/lib/store'
 import type { Scene, Message } from '@/lib/types'
 import type {
@@ -70,6 +72,8 @@ import StoryboardReviewCard from './StoryboardReviewCard'
 import { v4 as uuidv4 } from 'uuid'
 import { syncSceneGraphWithScenes } from '@/lib/scene-graph-sync'
 import { resolveAgentModelDisplayName } from '@/lib/agents/model-config'
+import { initTabSync, broadcastAgentStart, broadcastAgentEnd } from '@/lib/store/tab-sync'
+import { ToolCallSummary } from './chat/ToolCallSummary'
 
 type BrowserSpeechRecognition = {
   continuous: boolean
@@ -487,11 +491,13 @@ function MessageActions({
   msg,
   onRate,
   onDetails,
+  onRetry,
   conversationId,
 }: {
   msg: ChatMessage
   onRate: (msgId: string, rating: number) => void
   onDetails: (msg: ChatMessage) => void
+  onRetry?: (msgId: string) => void
   conversationId?: string | null
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
@@ -554,6 +560,20 @@ function MessageActions({
 
   return (
     <div className="flex shrink-0 items-center justify-end gap-2.5 px-1 mt-1.5">
+      {onRetry && (
+        <span
+          onClick={() => onRetry(msg.id)}
+          className="cursor-pointer select-none"
+          data-tooltip="Retry"
+          data-tooltip-size="sm"
+        >
+          <RefreshCw
+            size={12}
+            strokeWidth={1.5}
+            className="text-[var(--color-text-muted)] opacity-50 hover:opacity-100 transition-opacity"
+          />
+        </span>
+      )}
       <span
         onClick={() => onRate(msg.id, rating === 5 ? 0 : 5)}
         className="cursor-pointer select-none"
@@ -667,7 +687,9 @@ function ToolCallItem({ call }: { call: ToolCallRecord }) {
       {open && (
         <div className="px-2.5 pb-2 space-y-1.5 border-t border-[var(--color-border)]">
           <div>
-            <div className="text-[var(--color-text-muted)] text-[10px] mb-0.5 mt-1.5 uppercase tracking-wide">Input</div>
+            <div className="text-[var(--color-text-muted)] text-[10px] mb-0.5 mt-1.5 uppercase tracking-wide">
+              Input
+            </div>
             <pre className="text-[11px] text-[var(--color-text-muted)] whitespace-pre-wrap font-mono overflow-x-auto max-h-28 bg-[var(--color-panel)] rounded p-1.5">
               {JSON.stringify(call.input, null, 2)}
             </pre>
@@ -692,28 +714,14 @@ function ToolCallItem({ call }: { call: ToolCallRecord }) {
   )
 }
 
-// ── Usage Badge ───────────────────────────────────────────────────────────────
+// ── Usage Badge (re-exported from chat module with live progress support) ─────
 
-function UsageBadge({ usage }: { usage: UsageStats }) {
-  const formatCost = (cost: number) => {
-    if (cost < 0.001) return `<$0.001`
-    if (cost < 0.01) return `$${cost.toFixed(4)}`
-    return `$${cost.toFixed(3)}`
-  }
+import { UsageBadge } from './chat/UsageBadge'
 
+function UsageBadgeInline({ usage }: { usage: UsageStats }) {
   return (
-    <div className="flex items-center gap-2 px-1 mt-1.5 text-[11px] text-[var(--color-text-muted)] font-mono opacity-60">
-      <span>{usage.inputTokens.toLocaleString()} in</span>
-      <span className="opacity-40">/</span>
-      <span>{usage.outputTokens.toLocaleString()} out</span>
-      <span className="opacity-40">|</span>
-      <span className="text-[var(--color-accent)]">{formatCost(usage.costUsd)}</span>
-      {usage.totalDurationMs && (
-        <>
-          <span className="opacity-40">|</span>
-          <span>{(usage.totalDurationMs / 1000).toFixed(1)}s</span>
-        </>
-      )}
+    <div className="px-1 mt-1.5 opacity-60">
+      <UsageBadge usage={usage} />
     </div>
   )
 }
@@ -728,7 +736,14 @@ const MODEL_OPTIONS: { id: ModelTier; modelName: string; tierLabel: string }[] =
 
 // ── Agent mode options ──────────────────────────────────────────────────────────
 
-const AGENT_OPTIONS: { id: AgentType | null; label: string; desc: string; icon: any; color: string; directorTemplate?: string }[] = [
+const AGENT_OPTIONS: {
+  id: AgentType | null
+  label: string
+  desc: string
+  icon: any
+  color: string
+  directorTemplate?: string
+}[] = [
   { id: null, label: 'Auto', desc: 'Picks the right agent for you', icon: AgentIcon, color: '#6b7280' },
   {
     id: 'scene-maker',
@@ -737,9 +752,30 @@ const AGENT_OPTIONS: { id: AgentType | null; label: string; desc: string; icon: 
     icon: Zap,
     color: AGENT_COLORS['scene-maker'],
   },
-  { id: 'director', label: 'Explainer', desc: 'Hook → build → climax → resolution', icon: Film, color: '#a855f7', directorTemplate: 'explainer' },
-  { id: 'director', label: 'Onboarding', desc: 'Welcome → features → get started', icon: Film, color: '#10b981', directorTemplate: 'onboarding' },
-  { id: 'director', label: 'Product Demo', desc: 'Problem → solution → features → CTA', icon: Film, color: '#f59e0b', directorTemplate: 'product-demo' },
+  {
+    id: 'director',
+    label: 'Explainer',
+    desc: 'Hook → build → climax → resolution',
+    icon: Film,
+    color: '#a855f7',
+    directorTemplate: 'explainer',
+  },
+  {
+    id: 'director',
+    label: 'Onboarding',
+    desc: 'Welcome → features → get started',
+    icon: Film,
+    color: '#10b981',
+    directorTemplate: 'onboarding',
+  },
+  {
+    id: 'director',
+    label: 'Product Demo',
+    desc: 'Problem → solution → features → CTA',
+    icon: Film,
+    color: '#f59e0b',
+    directorTemplate: 'product-demo',
+  },
   { id: 'editor', label: 'Editor', desc: 'Surgical edits', icon: Scissors, color: AGENT_COLORS['editor'] },
   { id: 'dop', label: 'DoP', desc: 'Global style & transitions', icon: Palette, color: AGENT_COLORS['dop'] },
   // Specialized animation agents
@@ -801,6 +837,9 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
     toggleAudioProvider,
     mediaGenEnabled,
     toggleMediaGen,
+    researchEnabled,
+    setResearchEnabled,
+    researchProviderEnabled,
     sessionPermissions,
     setSessionPermission,
     generationOverrides,
@@ -839,12 +878,15 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
   const [isGenerating, setIsGenerating] = useState(false)
   const [streamingText, setStreamingText] = useState('')
   /** Chronologically ordered segments of text and tool calls for interleaved display */
-  const [streamingSegments, setStreamingSegments] = useState<Array<{ type: 'text'; text: string } | { type: 'tool'; call: ToolCallRecord }>>([])
+  const [streamingSegments, setStreamingSegments] = useState<
+    Array<{ type: 'text'; text: string } | { type: 'tool'; call: ToolCallRecord }>
+  >([])
   /** Tracks the text accumulated before the current batch of tool calls */
   const lastSnapshotTextRef = useRef('')
   const [showHistory, setShowHistory] = useState(false)
   const [showEllipsisMenu, setShowEllipsisMenu] = useState(false)
   const [showConfigModal, setShowConfigModal] = useState(false)
+  const configuredProviders = useConfiguredProviders()
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const [activeToolName, setActiveToolName] = useState<string | null>(null)
@@ -852,7 +894,12 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
   const [isThinkingStreaming, setIsThinkingStreaming] = useState(false)
   const [streamingToolCalls, setStreamingToolCalls] = useState<ToolCallRecord[]>([])
   const [currentIteration, setCurrentIteration] = useState<{ iteration: number; max: number } | null>(null)
-  const [runProgress, setRunProgress] = useState<{ toolCallsUsed: number; toolCallsMax: number; costUsd: number; costMax: number } | null>(null)
+  const [runProgress, setRunProgress] = useState<{
+    toolCallsUsed: number
+    toolCallsMax: number
+    costUsd: number
+    costMax: number
+  } | null>(null)
   const [pendingImages, setPendingImages] = useState<ImageAttachment[]>([])
   const [previewImage, setPreviewImage] = useState<PreviewImage | null>(null)
   const [isDraggingImage, setIsDraggingImage] = useState(false)
@@ -904,6 +951,28 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
     }
   }, [])
 
+  // Phase 1: Subscribe to abort nonce — abort in-flight stream when conversation switches
+  const abortNonce = useVideoStore((s) => s._abortNonce)
+  const abortNonceRef = useRef(abortNonce)
+  useEffect(() => {
+    // Skip the initial render — only react to changes
+    if (abortNonceRef.current !== abortNonce) {
+      abortNonceRef.current = abortNonce
+      if (abortRef.current) {
+        abortRef.current.abort()
+        abortRef.current = null
+      }
+    }
+  }, [abortNonce])
+
+  // Phase 3: Multi-tab sync — prevent concurrent runs across browser tabs
+  const isAgentRunningRemote = useVideoStore((s) => s.isAgentRunningRemote)
+  useEffect(() => {
+    const projectId = useVideoStore.getState().project?.id
+    if (!projectId) return
+    return initTabSync(projectId)
+  }, [useVideoStore((s) => s.project?.id)])
+
   const messages = chatMessages
 
   const handleRate = useCallback(
@@ -935,6 +1004,29 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
       }
     },
     [updateChatMessage],
+  )
+
+  /** Retry: find the user message that preceded this assistant message and re-send */
+  const handleRetry = useCallback(
+    (assistantMsgId: string) => {
+      if (isGenerating) return
+      const msgs = useVideoStore.getState().chatMessages
+      const idx = msgs.findIndex((m) => m.id === assistantMsgId)
+      if (idx < 1) return
+      // Walk backward to find the preceding user message
+      for (let i = idx - 1; i >= 0; i--) {
+        if (msgs[i].role === 'user') {
+          const userText = messageContentToText(msgs[i].content)
+          if (userText) {
+            setInput(userText)
+            // Use a microtask to allow the input to render, then send
+            queueMicrotask(() => handleSend())
+          }
+          break
+        }
+      }
+    },
+    [isGenerating],
   )
 
   const persistPausedAgentRun = useCallback(
@@ -994,7 +1086,11 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
         lines.push(`Input tokens: ${u.inputTokens.toLocaleString()}`)
         lines.push(`Output tokens: ${u.outputTokens.toLocaleString()}`)
         lines.push(`Total tokens: ${(u.inputTokens + u.outputTokens).toLocaleString()}`)
-        lines.push(`Cost: $${u.costUsd.toFixed(4)}`)
+        if (u.provider === 'claude-code' || u.provider === 'codex-cli') {
+          lines.push(`Billing: Claude Code subscription (not per-token)`)
+        } else {
+          lines.push(`Cost: $${u.costUsd.toFixed(4)}`)
+        }
         lines.push(`API calls: ${u.apiCalls}`)
         lines.push(`Duration: ${(u.totalDurationMs / 1000).toFixed(1)}s`)
       }
@@ -1024,6 +1120,8 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
     })
   }, [])
 
+  const [showScrollButton, setShowScrollButton] = useState(false)
+
   /** Detect if user scrolled away from bottom */
   const handleScroll = useCallback(() => {
     const el = scrollContainerRef.current
@@ -1031,6 +1129,7 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
     // Consider "near bottom" if within 80px of the bottom
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
     userScrolledUpRef.current = !nearBottom
+    setShowScrollButton(!nearBottom)
   }, [])
 
   useEffect(() => {
@@ -1061,24 +1160,25 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
       if (!st.activeConversationId || !st.project?.id) return
       const lastAssistant = [...st.chatMessages].reverse().find((m) => m.role === 'assistant')
       if (!lastAssistant) return
-      const textContent = typeof lastAssistant.content === 'string'
-        ? lastAssistant.content
-        : messageContentToText(lastAssistant.content)
+      const textContent =
+        typeof lastAssistant.content === 'string' ? lastAssistant.content : messageContentToText(lastAssistant.content)
       navigator.sendBeacon(
         `/api/conversations/${st.activeConversationId}/messages`,
         new Blob(
-          [JSON.stringify({
-            _method: 'PUT',
-            messageId: lastAssistant.id,
-            projectId: st.project.id,
-            role: 'assistant',
-            content: textContent || 'Interrupted — page closed during generation.',
-            status: 'aborted',
-            agentType: lastAssistant.agentType,
-            modelUsed: lastAssistant.modelId,
-            toolCalls: lastAssistant.toolCalls,
-            contentSegments: lastAssistant.contentSegments,
-          })],
+          [
+            JSON.stringify({
+              _method: 'PUT',
+              messageId: lastAssistant.id,
+              projectId: st.project.id,
+              role: 'assistant',
+              content: textContent || 'Interrupted — page closed during generation.',
+              status: 'aborted',
+              agentType: lastAssistant.agentType,
+              modelUsed: lastAssistant.modelId,
+              toolCalls: lastAssistant.toolCalls,
+              contentSegments: lastAssistant.contentSegments,
+            }),
+          ],
           { type: 'application/json' },
         ),
       )
@@ -1148,12 +1248,25 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
       } = opts
       const isBuildRun = !!initialStoryboard
 
+      // Phase 3: Block if agent is running in another tab
+      if (useVideoStore.getState().isAgentRunningRemote) {
+        updateChatMessage(pendingAssistantMsg.id, { content: 'Agent is already running in another tab.' })
+        return
+      }
+
       setIsGenerating(true)
       setStreamingText('')
       setStreamingThinking('')
       setIsThinkingStreaming(false)
       setStreamingToolCalls([])
       setCurrentIteration(null)
+      setRunProgress(null)
+
+      // Phase 3: Broadcast run start to other tabs
+      const projectId = useVideoStore.getState().project?.id
+      if (projectId) broadcastAgentStart(projectId)
+      // Capture the conversation ID this stream belongs to (for Phase 1 stale check)
+      const streamConversationId = useVideoStore.getState().activeConversationId
 
       // INSERT placeholder in DB immediately — survives page refresh during streaming
       await persistChatMessage(pendingAssistantMsg.id, { status: 'streaming' })
@@ -1176,6 +1289,7 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
       let finalModelId: string | undefined
       let finalUsage: UsageStats | undefined
       let finalGenerationLogId: string | undefined
+      let finalSyncReceived = false
       const toolCalls: ToolCallRecord[] = []
       const segments: import('@/lib/agents/types').MessageSegment[] = []
       const pendingPermissions: import('@/lib/agents/types').PendingPermission[] = []
@@ -1218,9 +1332,8 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
         const apiAgentOverride = forceAgentOverride ?? st.agentOverride ?? undefined
 
         // When local mode is on, override the model to the selected local model
-        const effectiveModelOverride = st.localMode && st.localModelId
-          ? st.localModelId
-          : (st.modelOverride ?? undefined)
+        const effectiveModelOverride =
+          st.localMode && st.localModelId ? st.localModelId : (st.modelOverride ?? undefined)
 
         const fetchBody = JSON.stringify({
           message: messageContent,
@@ -1242,12 +1355,17 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
           selectedSceneId: scene?.id ?? null,
           audioProviderEnabled: st.audioProviderEnabled,
           mediaGenEnabled: st.mediaGenEnabled,
-          enabledModelIds: st.modelConfigs.filter((m) => m.enabled).flatMap((m) => m.id !== m.modelId ? [m.modelId, m.id] : [m.modelId]),
+          researchEnabled: st.researchEnabled,
+          researchProviderEnabled: st.researchProviderEnabled,
+          enabledModelIds: st.modelConfigs
+            .filter((m) => m.enabled)
+            .flatMap((m) => (m.id !== m.modelId ? [m.modelId, m.id] : [m.modelId])),
           apiPermissions: st.project.apiPermissions,
           sessionPermissions: Object.fromEntries(st.sessionPermissions),
           generationOverrides: st.generationOverrides,
           autoChooseDefaults: st.autoChooseDefaults,
           localMode: st.localMode,
+          mockMode: st.mockMode,
           mp4Settings: st.project.mp4Settings,
           planFirstMode: st.planFirstMode && !st.pendingStoryboard,
           ...(st.localMode ? { modelConfigs: st.modelConfigs.filter((m) => m.provider === 'local') } : {}),
@@ -1256,27 +1374,31 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
           ...(extraBody ?? {}),
         })
 
-        let response: Response
-        try {
-          response = await fetch('/api/agent', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: fetchBody,
-            signal: controller.signal,
-          })
-        } catch (fetchErr) {
-          if (fetchErr instanceof DOMException && fetchErr.name === 'AbortError') throw fetchErr
-          await new Promise((r) => setTimeout(r, 1000))
-          response = await fetch('/api/agent', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: fetchBody,
-            signal: controller.signal,
-          })
+        // Phase 2: SSE fetch with exponential backoff retry
+        const SSE_BACKOFF = [1000, 2000, 4000]
+        let response!: Response
+        for (let attempt = 0; attempt <= SSE_BACKOFF.length; attempt++) {
+          try {
+            response = await fetch('/api/agent', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: fetchBody,
+              signal: controller.signal,
+            })
+            break // success
+          } catch (fetchErr) {
+            if (fetchErr instanceof DOMException && fetchErr.name === 'AbortError') throw fetchErr
+            if (attempt >= SSE_BACKOFF.length) throw fetchErr
+            setStreamingText((prev) => prev || 'Reconnecting...')
+            await new Promise((r) => setTimeout(r, SSE_BACKOFF[attempt]))
+          }
         }
 
         if (!response.ok) {
-          throw new Error(`Agent error: ${response.statusText}`)
+          const errorBody = await response.text().catch(() => '')
+          throw new Error(
+            `Agent error: ${response.status} ${response.statusText}${errorBody ? ` — ${errorBody.slice(0, 200)}` : ''}`,
+          )
         }
 
         reader = response.body!.getReader()
@@ -1289,7 +1411,10 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
           const readResult = await Promise.race([
             reader.read(),
             new Promise<never>((_, reject) => {
-              timeoutId = setTimeout(() => reject(new Error('Agent connection timed out — no data received for 90s')), SSE_TIMEOUT_MS)
+              timeoutId = setTimeout(
+                () => reject(new Error('Agent connection timed out — no data received for 90s')),
+                SSE_TIMEOUT_MS,
+              )
             }),
           ])
           clearTimeout(timeoutId)
@@ -1485,20 +1610,40 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
 
               case 'state_change':
                 if (event.generationLogId) finalGenerationLogId = event.generationLogId
-                if (event.updatedScenes && event.updatedGlobalStyle) {
+                if (event.updatedScenes) {
+                  // Final sync — authoritative state replaces everything.
+                  // Set flag to ignore any trailing incremental updates.
+                  // updatedGlobalStyle may be null (e.g. Claude Code provider) — fall back to current.
+                  finalSyncReceived = true
                   const { syncScenesFromAgent, updateSceneGraph } = useVideoStore.getState()
-                  syncScenesFromAgent(event.updatedScenes, event.updatedGlobalStyle)
+                  const effectiveGlobalStyle = event.updatedGlobalStyle ?? useVideoStore.getState().globalStyle
+                  syncScenesFromAgent(event.updatedScenes, effectiveGlobalStyle)
                   const mergedGraph = syncSceneGraphWithScenes(
                     event.updatedScenes,
                     event.updatedSceneGraph ?? useVideoStore.getState().project.sceneGraph,
                   )
                   updateSceneGraph(mergedGraph)
                 }
+                // Incremental scene update — merge a single scene into the store during streaming
+                // so scenes appear in the timeline progressively as the agent creates them.
+                // Skip if final sync already arrived (prevents race condition overwriting clean state).
+                if ((event as any).incrementalScene && !event.updatedScenes && !finalSyncReceived) {
+                  const scene = (event as any).incrementalScene
+                  useVideoStore.setState((state) => {
+                    const idx = state.scenes.findIndex((s) => s.id === scene.id)
+                    const updated =
+                      idx >= 0
+                        ? state.scenes.map((s) => (s.id === scene.id ? { ...scene } : s))
+                        : [...state.scenes, scene]
+                    return { scenes: updated }
+                  })
+                }
                 // Sync recording commands from agent tools
                 if ((event as any).recordingCommand) {
                   const store = useVideoStore.getState()
                   if ((event as any).recordingConfig) store.setRecordingConfig((event as any).recordingConfig)
-                  if ((event as any).recordingAttachSceneId !== undefined) store.setRecordingAttachSceneId((event as any).recordingAttachSceneId)
+                  if ((event as any).recordingAttachSceneId !== undefined)
+                    store.setRecordingAttachSceneId((event as any).recordingAttachSceneId)
                   store.setRecordingCommand((event as any).recordingCommand)
                 }
                 break
@@ -1526,14 +1671,32 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
         }
       } catch (err) {
         // Cancel the stream reader on any error (including timeout) to free the connection
-        try { reader?.cancel() } catch {}
+        try {
+          reader?.cancel()
+        } catch {}
         if ((err as Error).name === 'AbortError') {
           // User-initiated abort — set sentinel text if nothing was accumulated
           if (!accumulatedText && toolCalls.length === 0) {
             accumulatedText = 'Stopped by user.'
           }
         } else {
-          accumulatedText = `Failed: ${(err as Error).message}`
+          const msg = (err as Error).message ?? ''
+          if (msg.includes('timed out')) {
+            accumulatedText = 'Connection timed out. The agent may still be processing — check back or try again.'
+          } else if (msg.includes('409') || msg.includes('already running')) {
+            accumulatedText = 'Agent is already running on this project. Wait for it to finish or stop it.'
+          } else if (msg.includes('401') || msg.includes('authentication') || msg.includes('API key')) {
+            accumulatedText =
+              'Authentication failed. Check your API key in Settings or switch to Claude Code (uses your subscription).'
+          } else if (msg.includes('fetch') || msg.includes('network') || msg.includes('Failed to fetch')) {
+            accumulatedText = 'Network error. Check your connection and try again.'
+          } else if (msg.includes('500') || msg.includes('Internal Server')) {
+            accumulatedText = 'Server error. Try again in a moment.'
+          } else {
+            accumulatedText = `Failed: ${msg}`
+          }
+          // Immediately update chat message so the error is visible even if finally block fails
+          updateChatMessage(pendingAssistantMsg.id, { content: accumulatedText })
         }
       } finally {
         // Cancel any pending debounced persist
@@ -1550,6 +1713,18 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
         setRunProgress(null)
         abortRef.current = null
 
+        // Phase 3: Broadcast run end to other tabs
+        if (projectId) broadcastAgentEnd(projectId)
+
+        // Phase 1: If conversation switched during stream, skip final persist
+        // to avoid polluting the new conversation's state
+        const currentConvId = useVideoStore.getState().activeConversationId
+        if (streamConversationId && currentConvId !== streamConversationId) {
+          // Mark the orphaned message as aborted (best-effort)
+          persistChatMessage(pendingAssistantMsg.id, { status: 'aborted' }).catch(() => {})
+          return
+        }
+
         // Capture any trailing text after the last tool call as a final segment
         if (segments.length > 0) {
           const trailingText = accumulatedText.slice(lastSegmentSnapshotText.length).trim()
@@ -1558,6 +1733,9 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
           }
         }
 
+        console.log(
+          `[AgentChat] Finalizing message: textLen=${accumulatedText.length} tools=${toolCalls.length} segments=${segments.length} thinking=${!!thinkingAccumulated}`,
+        )
         updateChatMessage(pendingAssistantMsg.id, {
           content: accumulatedText || (toolCalls.length > 0 || thinkingAccumulated ? '' : 'Done.'),
           generationLogId: finalGenerationLogId,
@@ -1570,13 +1748,23 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
           ...(thinkingAccumulated ? { thinking: thinkingAccumulated } : {}),
         })
         // Final persist — awaited to ensure it completes before any page navigation
-        await persistChatMessage(pendingAssistantMsg.id, { status: 'complete' })
-        void useVideoStore.getState().refreshProjectFromServer().catch(() => {
-          // Retry once after a delay if the first refresh fails
-          setTimeout(() => {
-            void useVideoStore.getState().refreshProjectFromServer()
-          }, 2500)
-        })
+        // The persistChatMessage function already has retry logic built in
+        try {
+          await persistChatMessage(pendingAssistantMsg.id, { status: 'complete' })
+        } catch {
+          // Last resort retry
+          await new Promise((r) => setTimeout(r, 500))
+          await persistChatMessage(pendingAssistantMsg.id, { status: 'complete' }).catch(() => {})
+        }
+        void useVideoStore
+          .getState()
+          .refreshProjectFromServer()
+          .catch(() => {
+            // Retry once after a delay if the first refresh fails
+            setTimeout(() => {
+              void useVideoStore.getState().refreshProjectFromServer()
+            }, 2500)
+          })
       }
     },
     [scene?.id, updateChatMessage, persistChatMessage, persistPausedAgentRun],
@@ -1913,9 +2101,13 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
   const overrideModel = !localMode && modelOverride ? modelConfigs.find((m) => m.modelId === modelOverride) : null
   const currentModel = localMode
     ? { id: 'local' as any, modelName: localModel?.displayName ?? 'Local', tierLabel: 'Free' }
-    : overrideModel
-      ? { id: 'override' as ModelTier, modelName: overrideModel.displayName, tierLabel: 'Override' }
-      : (MODEL_OPTIONS.find((m) => m.id === modelTier) ?? MODEL_OPTIONS[0])
+    : modelOverride === 'codex-cli'
+      ? { id: 'codex-cli' as ModelTier, modelName: 'Codex CLI', tierLabel: 'Local CLI' }
+      : modelOverride === 'claude-code'
+        ? { id: 'claude-code' as ModelTier, modelName: 'Claude Code', tierLabel: 'Local CLI' }
+        : overrideModel
+          ? { id: 'override' as ModelTier, modelName: overrideModel.displayName, tierLabel: 'Override' }
+          : (MODEL_OPTIONS.find((m) => m.id === modelTier) ?? MODEL_OPTIONS[0])
 
   const currentAgent = AGENT_OPTIONS.find((a) => a.id === agentOverride) ?? AGENT_OPTIONS[0]
   const AgentIcon = currentAgent.icon
@@ -1963,8 +2155,7 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
               style={
                 {
                   maxWidth: 200,
-                  '--tab-bg':
-                    conv.id === activeConversationId ? 'var(--agent-chat-user-surface)' : 'var(--color-bg)',
+                  '--tab-bg': conv.id === activeConversationId ? 'var(--agent-chat-user-surface)' : 'var(--color-bg)',
                 } as React.CSSProperties
               }
             >
@@ -2199,40 +2390,53 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                         mediaIds: ['talkinghead', 'musetalk', 'fabric', 'aurora', 'heygen'],
                       },
                     ]
-                    return presets.map((preset) => {
-                      const allOn =
-                        preset.audioIds.every((id) => audioProviderEnabled[id] ?? true) &&
-                        preset.mediaIds.every((id) => mediaGenEnabled[id] ?? true)
-                      return (
-                        <span
-                          key={preset.label}
-                          onClick={() => {
-                            const target = !allOn
-                            const audioUpdate = { ...audioProviderEnabled }
-                            preset.audioIds.forEach((id) => {
-                              audioUpdate[id] = target
-                            })
-                            const mediaUpdate = { ...mediaGenEnabled }
-                            preset.mediaIds.forEach((id) => {
-                              mediaUpdate[id] = target
-                            })
-                            useVideoStore.setState({ audioProviderEnabled: audioUpdate, mediaGenEnabled: mediaUpdate })
-                          }}
-                          className="flex items-center justify-between py-1.5 cursor-pointer select-none"
-                        >
+                    // Filter preset IDs to only include providers that are actually configured
+                    const configuredAudioIds = configuredProviders.audio
+                    const configuredMediaIds = configuredProviders.media
+                    return presets
+                      .map((preset) => ({
+                        ...preset,
+                        audioIds: preset.audioIds.filter((id) => configuredAudioIds.has(id)),
+                        mediaIds: preset.mediaIds.filter((id) => configuredMediaIds.has(id)),
+                      }))
+                      .filter((preset) => preset.audioIds.length > 0 || preset.mediaIds.length > 0)
+                      .map((preset) => {
+                        const allOn =
+                          preset.audioIds.every((id) => audioProviderEnabled[id] ?? true) &&
+                          preset.mediaIds.every((id) => mediaGenEnabled[id] ?? true)
+                        return (
                           <span
-                            className={`text-[12px] font-medium ${allOn ? 'text-[var(--color-text-primary)]' : 'text-[var(--color-text-muted)]'}`}
+                            key={preset.label}
+                            onClick={() => {
+                              const target = !allOn
+                              const audioUpdate = { ...audioProviderEnabled }
+                              preset.audioIds.forEach((id) => {
+                                audioUpdate[id] = target
+                              })
+                              const mediaUpdate = { ...mediaGenEnabled }
+                              preset.mediaIds.forEach((id) => {
+                                mediaUpdate[id] = target
+                              })
+                              useVideoStore.setState({
+                                audioProviderEnabled: audioUpdate,
+                                mediaGenEnabled: mediaUpdate,
+                              })
+                            }}
+                            className="flex items-center justify-between py-1.5 cursor-pointer select-none"
                           >
-                            {preset.label}
+                            <span
+                              className={`text-[12px] font-medium ${allOn ? 'text-[var(--color-text-primary)]' : 'text-[var(--color-text-muted)]'}`}
+                            >
+                              {preset.label}
+                            </span>
+                            {allOn ? (
+                              <ToggleRight size={18} className="text-[var(--color-accent)]" />
+                            ) : (
+                              <ToggleLeft size={18} className="text-[var(--color-text-muted)]" />
+                            )}
                           </span>
-                          {allOn ? (
-                            <ToggleRight size={18} className="text-[var(--color-accent)]" />
-                          ) : (
-                            <ToggleLeft size={18} className="text-[var(--color-text-muted)]" />
-                          )}
-                        </span>
-                      )
-                    })
+                        )
+                      })
                   })()}
                 </div>
               </div>
@@ -2245,7 +2449,9 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                   </span>
                 </div>
                 <div className="space-y-1">
-                  {AUDIO_PROVIDERS.filter((p) => audioProviderEnabled[p.id] ?? p.defaultEnabled).map((p) => (
+                  {AUDIO_PROVIDERS.filter(
+                    (p) => configuredProviders.audio.has(p.id) && (audioProviderEnabled[p.id] ?? p.defaultEnabled),
+                  ).map((p) => (
                     <span
                       key={p.id}
                       onClick={() => toggleAudioProvider(p.id)}
@@ -2255,9 +2461,13 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                       <ToggleRight size={18} className="text-[var(--color-accent)]" />
                     </span>
                   ))}
-                  {AUDIO_PROVIDERS.filter((p) => !(audioProviderEnabled[p.id] ?? p.defaultEnabled)).length > 0 && (
+                  {AUDIO_PROVIDERS.filter(
+                    (p) => configuredProviders.audio.has(p.id) && !(audioProviderEnabled[p.id] ?? p.defaultEnabled),
+                  ).length > 0 && (
                     <div className="pt-1 border-t border-[var(--color-border)] mt-1">
-                      {AUDIO_PROVIDERS.filter((p) => !(audioProviderEnabled[p.id] ?? p.defaultEnabled)).map((p) => (
+                      {AUDIO_PROVIDERS.filter(
+                        (p) => configuredProviders.audio.has(p.id) && !(audioProviderEnabled[p.id] ?? p.defaultEnabled),
+                      ).map((p) => (
                         <span
                           key={p.id}
                           onClick={() => toggleAudioProvider(p.id)}
@@ -2289,7 +2499,9 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                   </span>
                 </div>
                 <div className="space-y-1">
-                  {MEDIA_PROVIDERS.filter((p) => mediaGenEnabled[p.id] ?? p.defaultEnabled).map((p) => (
+                  {MEDIA_PROVIDERS.filter(
+                    (p) => configuredProviders.media.has(p.id) && (mediaGenEnabled[p.id] ?? p.defaultEnabled),
+                  ).map((p) => (
                     <span
                       key={p.id}
                       onClick={() => toggleMediaGen(p.id)}
@@ -2299,9 +2511,13 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                       <ToggleRight size={18} className="text-[var(--color-accent)]" />
                     </span>
                   ))}
-                  {MEDIA_PROVIDERS.filter((p) => !(mediaGenEnabled[p.id] ?? p.defaultEnabled)).length > 0 && (
+                  {MEDIA_PROVIDERS.filter(
+                    (p) => configuredProviders.media.has(p.id) && !(mediaGenEnabled[p.id] ?? p.defaultEnabled),
+                  ).length > 0 && (
                     <div className="pt-1 border-t border-[var(--color-border)] mt-1">
-                      {MEDIA_PROVIDERS.filter((p) => !(mediaGenEnabled[p.id] ?? p.defaultEnabled)).map((p) => (
+                      {MEDIA_PROVIDERS.filter(
+                        (p) => configuredProviders.media.has(p.id) && !(mediaGenEnabled[p.id] ?? p.defaultEnabled),
+                      ).map((p) => (
                         <span
                           key={p.id}
                           onClick={() => toggleMediaGen(p.id)}
@@ -2364,708 +2580,834 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
       )}
 
       {/* Messages Area — centered column (Cursor-style), not iMessage L/R lanes */}
-      <div ref={scrollContainerRef} onScroll={handleScroll} className="flex-1 min-h-0 overflow-y-auto px-4 py-4 scrollbar-hide">
+      <div
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+        className="flex-1 min-h-0 overflow-y-auto px-4 py-4 scrollbar-hide"
+      >
         <div className="mx-auto w-full max-w-2xl space-y-4">
-        {pausedAgentRun && (
-          <div className="rounded-lg border border-amber-500/35 bg-amber-500/10 px-3 py-2.5 flex items-center gap-2">
-            <span className="text-[12px] text-amber-300">
-              Paused run: <span className="font-semibold">{pausedAgentRun.toolName}</span> is waiting for permission.
-            </span>
-            <span
-              onClick={() => void handleResumePausedRun()}
-              className={`ml-auto text-[12px] font-semibold px-2.5 py-1 rounded-md bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 ${isGenerating ? 'opacity-40' : 'cursor-pointer hover:bg-emerald-500/25'}`}
-            >
-              Continue
-            </span>
-            <span
-              onClick={() => void persistPausedAgentRun(null)}
-              className="text-[12px] font-semibold px-2.5 py-1 rounded-md border border-[var(--color-border)] cursor-pointer hover:bg-[var(--color-border)]/25"
-            >
-              Dismiss
-            </span>
-          </div>
-        )}
-        {runCheckpoint && !isGenerating && (
-          <div className="mx-2 mb-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
-            <div className="text-sm font-medium text-amber-200 mb-1">Interrupted run detected</div>
-            <div className="text-sm text-[var(--color-text-secondary)] mb-2">
-              {runCheckpoint.completedSceneIds.length} of {runCheckpoint.storyboard?.scenes.length ?? '?'} scenes were
-              built before the run was interrupted.
-            </div>
-            <div className="flex gap-2">
-              <span
-                onClick={handleResumeCheckpoint}
-                className="text-sm px-3 py-1 rounded bg-amber-500/20 text-amber-200 hover:bg-amber-500/30 cursor-pointer transition-colors"
-              >
-                Resume
+          {pausedAgentRun && (
+            <div className="rounded-lg border border-amber-500/35 bg-amber-500/10 px-3 py-2.5 flex items-center gap-2">
+              <span className="text-[12px] text-amber-300">
+                Paused run: <span className="font-semibold">{pausedAgentRun.toolName}</span> is waiting for permission.
               </span>
               <span
-                onClick={handleDiscardCheckpoint}
-                className="text-sm px-3 py-1 rounded bg-[var(--color-panel)] text-[var(--color-text-secondary)] hover:bg-[var(--color-border)] cursor-pointer transition-colors"
+                onClick={() => void handleResumePausedRun()}
+                className={`ml-auto text-[12px] font-semibold px-2.5 py-1 rounded-md bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 ${isGenerating ? 'opacity-40' : 'cursor-pointer hover:bg-emerald-500/25'}`}
               >
-                Discard
+                Continue
+              </span>
+              <span
+                onClick={() => void persistPausedAgentRun(null)}
+                className="text-[12px] font-semibold px-2.5 py-1 rounded-md border border-[var(--color-border)] cursor-pointer hover:bg-[var(--color-border)]/25"
+              >
+                Dismiss
               </span>
             </div>
-          </div>
-        )}
-        {messages
-          .filter((m) => m.content || m.toolCalls?.length || m.thinking)
-          .map((msg) => (
-            <div key={msg.id} className="w-full">
-              {msg.role === 'user' ? (
-                <div className="flex w-full justify-center">
-                  <div
-                    className="w-full rounded-lg px-3.5 py-2.5 text-sm leading-relaxed text-[var(--color-text-primary)]"
-                    style={{ backgroundColor: 'var(--agent-chat-user-surface)' }}
-                  >
-                    {typeof msg.content === 'string' ? (
-                      <span className="whitespace-pre-wrap break-words">{msg.content}</span>
-                    ) : (
-                      <div className="space-y-2">
-                        {msg.content.some((b) => b.type === 'image') && (
-                          <div className="flex gap-2 flex-wrap justify-start">
-                            {msg.content
-                              .filter((b) => b.type === 'image')
-                              .map((b, i) => {
-                                const img = (b as { type: 'image'; image: ImageAttachment }).image
-                                return (
-                                  <div
-                                    key={i}
-                                    className="relative cursor-pointer group"
-                                    onClick={() =>
-                                      setPreviewImage({
-                                        src: img.dataUri,
-                                        alt: img.fileName,
-                                        width: img.width,
-                                        height: img.height,
-                                      })
-                                    }
-                                  >
-                                    <img
-                                      src={img.dataUri}
-                                      className="max-h-48 max-w-[280px] rounded-lg border border-[var(--color-border)] object-cover"
-                                      alt={img.fileName ?? 'Attached'}
-                                    />
-                                    <div className="absolute inset-0 rounded-lg bg-black/0 group-hover:bg-black/10 transition-colors" />
-                                  </div>
-                                )
-                              })}
-                          </div>
-                        )}
-                        {msg.content
-                          .filter((b) => b.type === 'text')
-                          .map((b, i) => (
-                            <span key={i} className="whitespace-pre-wrap break-words">
-                              {(b as { type: 'text'; text: string }).text}
+          )}
+          {runCheckpoint && !isGenerating && (
+            <div className="mx-2 mb-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
+              <div className="text-sm font-medium text-amber-200 mb-1">Interrupted run detected</div>
+              <div className="text-sm text-[var(--color-text-secondary)] mb-2">
+                {runCheckpoint.completedSceneIds.length} of {runCheckpoint.storyboard?.scenes.length ?? '?'} scenes were
+                built before the run was interrupted.
+              </div>
+              <div className="flex gap-2">
+                <span
+                  onClick={handleResumeCheckpoint}
+                  className="text-sm px-3 py-1 rounded bg-amber-500/20 text-amber-200 hover:bg-amber-500/30 cursor-pointer transition-colors"
+                >
+                  Resume
+                </span>
+                <span
+                  onClick={handleDiscardCheckpoint}
+                  className="text-sm px-3 py-1 rounded bg-[var(--color-panel)] text-[var(--color-text-secondary)] hover:bg-[var(--color-border)] cursor-pointer transition-colors"
+                >
+                  Discard
+                </span>
+              </div>
+            </div>
+          )}
+          {messages
+            .filter((m) => m.content || m.toolCalls?.length || m.thinking)
+            .map((msg) => (
+              <div key={msg.id} className="w-full">
+                {msg.role === 'user' ? (
+                  <div className="flex w-full justify-center">
+                    <div
+                      className="w-full rounded-lg px-3.5 py-2.5 text-sm leading-relaxed text-[var(--color-text-primary)]"
+                      style={{ backgroundColor: 'var(--agent-chat-user-surface)' }}
+                    >
+                      {typeof msg.content === 'string' ? (
+                        <span className="whitespace-pre-wrap break-words">{msg.content}</span>
+                      ) : (
+                        <div className="space-y-2">
+                          {msg.content.some((b) => b.type === 'image') && (
+                            <div className="flex gap-2 flex-wrap justify-start">
+                              {msg.content
+                                .filter((b) => b.type === 'image')
+                                .map((b, i) => {
+                                  const img = (b as { type: 'image'; image: ImageAttachment }).image
+                                  return (
+                                    <div
+                                      key={i}
+                                      className="relative cursor-pointer group"
+                                      onClick={() =>
+                                        setPreviewImage({
+                                          src: img.dataUri,
+                                          alt: img.fileName,
+                                          width: img.width,
+                                          height: img.height,
+                                        })
+                                      }
+                                    >
+                                      <img
+                                        src={img.dataUri}
+                                        className="max-h-48 max-w-[280px] rounded-lg border border-[var(--color-border)] object-cover"
+                                        alt={img.fileName ?? 'Attached'}
+                                      />
+                                      <div className="absolute inset-0 rounded-lg bg-black/0 group-hover:bg-black/10 transition-colors" />
+                                    </div>
+                                  )
+                                })}
+                            </div>
+                          )}
+                          {msg.content
+                            .filter((b) => b.type === 'text')
+                            .map((b, i) => (
+                              <span key={i} className="whitespace-pre-wrap break-words">
+                                {(b as { type: 'text'; text: string }).text}
+                              </span>
+                            ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex w-full justify-center">
+                    <div className="relative w-full space-y-1.5">
+                      {/* Agent badge */}
+                      {msg.agentType && (
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="text-[12px] font-semibold"
+                            style={{ color: AGENT_COLORS[msg.agentType] ?? '#6b7280' }}
+                          >
+                            {AGENT_LABELS[msg.agentType] ?? 'Agent'}
+                          </span>
+                          {msg.modelId && (
+                            <span className="text-[11px] text-[var(--color-text-muted)] bg-[var(--color-panel)] px-1.5 py-0.5 rounded">
+                              {resolveAgentModelDisplayName(msg.modelId, modelConfigs)}
                             </span>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Thinking block */}
+                      {msg.thinking && <ThinkingBlock thinking={msg.thinking} />}
+
+                      {/* Interleaved content: text and tool calls in chronological order */}
+                      {msg.contentSegments && msg.contentSegments.length > 0 ? (
+                        <div className="space-y-1.5">
+                          {msg.contentSegments.map((seg, i) => {
+                            if (seg.type === 'text') {
+                              return (
+                                <div
+                                  key={`seg-${i}`}
+                                  className="py-1 text-sm leading-relaxed text-[var(--color-text-primary)] whitespace-pre-wrap break-words"
+                                >
+                                  {renderMarkdown(seg.text)}
+                                </div>
+                              )
+                            }
+                            const toolCall = msg.toolCalls?.find((tc) => tc.id === seg.toolCallId)
+                            return toolCall ? <ToolCallItem key={toolCall.id} call={toolCall} /> : null
+                          })}
+                        </div>
+                      ) : (
+                        <>
+                          {/* Message text */}
+                          <div className="py-2 text-sm leading-relaxed text-[var(--color-text-primary)] whitespace-pre-wrap break-words">
+                            {renderMarkdown(
+                              typeof msg.content === 'string' ? msg.content : messageContentToText(msg.content),
+                            )}
+                          </div>
+
+                          {/* Tool calls — compact summary for Claude Code, individual cards for regular agent */}
+                          {msg.toolCalls &&
+                            msg.toolCalls.length > 0 &&
+                            (msg.modelId === 'claude-code' ||
+                            msg.modelId === 'codex-cli' ||
+                            (msg.modelId === 'sonnet' && msg.toolCalls.length > 3) ? (
+                              <ToolCallSummary calls={msg.toolCalls} />
+                            ) : (
+                              <div>
+                                <div className="text-[11px] text-[var(--color-text-muted)] mb-1 uppercase tracking-wide">
+                                  {msg.toolCalls.length} tool call{msg.toolCalls.length > 1 ? 's' : ''}
+                                </div>
+                                {msg.toolCalls.map((call) => (
+                                  <ToolCallItem key={call.id} call={call} />
+                                ))}
+                              </div>
+                            ))}
+                        </>
+                      )}
+
+                      {/* Permission / Generation confirmation cards */}
+                      {msg.pendingPermissions && msg.pendingPermissions.length > 0 && (
+                        <div className="space-y-2">
+                          {msg.pendingPermissions.map((perm, i) => (
+                            <GenerationConfirmCard
+                              key={`${perm.api}-${i}`}
+                              perm={perm}
+                              onAllow={(overrides) => {
+                                if (overrides) {
+                                  setGenerationOverride(perm.api, overrides)
+                                }
+                                handlePermission(msg.id, perm.api, 'allow')
+                                void continueAfterPermission(msg, perm.api)
+                              }}
+                              onDeny={() => handlePermission(msg.id, perm.api, 'deny')}
+                              onAutoChoose={(genType, defaults) => {
+                                setAutoChooseDefault(genType, defaults)
+                                // Also set session permission to always allow this API
+                                setSessionPermission(perm.api, 'allow')
+                              }}
+                            />
                           ))}
+                        </div>
+                      )}
+
+                      {/* Interrupted / aborted indicator — tells the user they can continue */}
+                      {msg.role === 'assistant' &&
+                        (() => {
+                          const text = typeof msg.content === 'string' ? msg.content : ''
+                          const isAborted = text.includes('Stopped by user') || text.includes('Generation interrupted')
+                          return isAborted ? (
+                            <div className="flex items-center gap-1.5 py-1 text-[11px] text-[var(--color-text-muted)]">
+                              <span className="inline-block w-1.5 h-1.5 rounded-full bg-yellow-500/60" />
+                              Stream interrupted — send a message to continue
+                            </div>
+                          ) : null
+                        })()}
+
+                      {/* Usage + feedback row — actions pinned right */}
+                      <div className="flex w-full min-w-0 items-center justify-between gap-2 pt-0.5">
+                        <div className="min-w-0">{msg.usage ? <UsageBadgeInline usage={msg.usage} /> : null}</div>
+                        <MessageActions
+                          msg={msg}
+                          onRate={handleRate}
+                          onRetry={!isGenerating ? handleRetry : undefined}
+                          onDetails={handleDetails}
+                          conversationId={activeConversationId}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+
+          {/* Storyboard + live stream: same column as assistant, after your messages (feels like one reply) */}
+          {(!!pendingStoryboard || isGenerating) && (
+            <div className="flex w-full justify-center">
+              <div className="w-full space-y-3">
+                <StoryboardReviewCard disabled={isGenerating} onApprove={handleApproveStoryboard} />
+
+                {isGenerating && (
+                  <div className="space-y-2">
+                    {/* Live progress counter */}
+                    {(currentIteration || runProgress) && (
+                      <UsageBadge
+                        live
+                        progress={
+                          runProgress
+                            ? {
+                                toolCallsUsed: runProgress.toolCallsUsed,
+                                toolCallsMax: runProgress.toolCallsMax,
+                                costUsd: runProgress.costUsd,
+                                costMax: runProgress.costMax,
+                                iteration: currentIteration?.iteration ?? 1,
+                                iterationMax: currentIteration?.max,
+                              }
+                            : currentIteration
+                              ? {
+                                  toolCallsUsed: 0,
+                                  toolCallsMax: 0,
+                                  costUsd: 0,
+                                  iteration: currentIteration.iteration,
+                                  iterationMax: currentIteration.max,
+                                }
+                              : undefined
+                        }
+                      />
+                    )}
+
+                    {/* Extended thinking block (streaming) */}
+                    {(isThinkingStreaming || streamingThinking) && (
+                      <div>
+                        <ThinkingBlock thinking={streamingThinking} isStreaming={isThinkingStreaming} />
                       </div>
                     )}
-                  </div>
-                </div>
-              ) : (
-                <div className="flex w-full justify-center">
-                  <div className="relative w-full space-y-1.5">
-                    {/* Agent badge */}
-                    {msg.agentType && (
+
+                    {/* Interleaved text + tool calls in chronological order */}
+                    {(() => {
+                      // Group consecutive tool calls into a summary for compact display
+                      const toolCalls = streamingSegments
+                        .filter((s) => s.type === 'tool')
+                        .map((s) => (s as any).call as ToolCallRecord)
+                      const textSegments = streamingSegments.filter((s) => s.type === 'text')
+                      const useCompactTools =
+                        (modelOverride === 'claude-code' || modelOverride === 'codex-cli') && toolCalls.length > 1
+
+                      return (
+                        <>
+                          {textSegments.map((seg, i) => (
+                            <div
+                              key={`seg-text-${i}`}
+                              className="text-sm leading-relaxed text-[var(--color-text-primary)] whitespace-pre-wrap"
+                            >
+                              {renderMarkdown((seg as any).text)}
+                            </div>
+                          ))}
+                          {useCompactTools ? (
+                            <ToolCallSummary calls={toolCalls} />
+                          ) : (
+                            toolCalls.map((call) => <ToolCallItem key={call.id} call={call} />)
+                          )}
+                        </>
+                      )
+                    })()}
+
+                    {/* Trailing streaming text (text after the last tool call, still being typed) */}
+                    {(() => {
+                      const trailingText = streamingText.slice(lastSnapshotTextRef.current.length).trim()
+                      return trailingText ? (
+                        <div className="text-sm leading-relaxed text-[var(--color-text-primary)] whitespace-pre-wrap">
+                          {renderMarkdown(trailingText)}
+                          <span className="inline-block w-1.5 h-1.5 bg-[var(--color-text-primary)] ml-1 animate-pulse rounded-full align-middle" />
+                        </div>
+                      ) : streamingText && streamingSegments.length === 0 ? (
+                        <div className="text-sm leading-relaxed text-[var(--color-text-primary)] whitespace-pre-wrap">
+                          {renderMarkdown(streamingText)}
+                          <span className="inline-block w-1.5 h-1.5 bg-[var(--color-text-primary)] ml-1 animate-pulse rounded-full align-middle" />
+                        </div>
+                      ) : null
+                    })()}
+
+                    {/* Active tool indicator */}
+                    {activeToolName && (
                       <div className="flex items-center gap-2">
                         <span
-                          className="text-[12px] font-semibold"
-                          style={{ color: AGENT_COLORS[msg.agentType] ?? '#6b7280' }}
-                        >
-                          {AGENT_LABELS[msg.agentType] ?? 'Agent'}
+                          className="w-1.5 h-1.5 rounded-full bg-blue-400 flex-shrink-0"
+                          style={{ animation: 'cursorPulse 1.2s ease-in-out infinite' }}
+                        />
+                        <span className="text-[12px] text-[var(--color-text-primary)] font-mono truncate">
+                          {activeToolName}
                         </span>
-                        {msg.modelId && (
-                          <span className="text-[11px] text-[var(--color-text-muted)] bg-[var(--color-panel)] px-1.5 py-0.5 rounded">
-                            {resolveAgentModelDisplayName(msg.modelId, modelConfigs)}
-                          </span>
-                        )}
+                        <span className="text-[11px] text-blue-400">Running</span>
                       </div>
                     )}
 
-                    {/* Thinking block */}
-                    {msg.thinking && <ThinkingBlock thinking={msg.thinking} />}
-
-                    {/* Interleaved content: text and tool calls in chronological order */}
-                    {msg.contentSegments && msg.contentSegments.length > 0 ? (
-                      <div className="space-y-1.5">
-                        {msg.contentSegments.map((seg, i) => {
-                          if (seg.type === 'text') {
-                            return (
-                              <div key={`seg-${i}`} className="px-3 py-1 text-sm leading-relaxed text-[var(--color-text-primary)] whitespace-pre-wrap break-words">
-                                {renderMarkdown(seg.text)}
-                              </div>
-                            )
-                          }
-                          const toolCall = msg.toolCalls?.find((tc) => tc.id === seg.toolCallId)
-                          return toolCall ? <ToolCallItem key={toolCall.id} call={toolCall} /> : null
-                        })}
-                      </div>
-                    ) : (
-                      <>
-                        {/* Message text */}
-                        <div
-                          className="px-3 py-2 text-sm leading-relaxed text-[var(--color-text-primary)] whitespace-pre-wrap break-words"
-                        >
-                          {renderMarkdown(typeof msg.content === 'string' ? msg.content : messageContentToText(msg.content))}
-                        </div>
-
-                        {/* Tool calls (legacy: not interleaved) */}
-                        {msg.toolCalls && msg.toolCalls.length > 0 && (
-                          <div>
-                            <div className="text-[11px] text-[var(--color-text-muted)] mb-1 uppercase tracking-wide">
-                              {msg.toolCalls.length} tool call{msg.toolCalls.length > 1 ? 's' : ''}
-                            </div>
-                            {msg.toolCalls.map((call) => (
-                              <ToolCallItem key={call.id} call={call} />
-                            ))}
-                          </div>
-                        )}
-                      </>
-                    )}
-
-                    {/* Permission / Generation confirmation cards */}
-                    {msg.pendingPermissions && msg.pendingPermissions.length > 0 && (
-                      <div className="space-y-2">
-                        {msg.pendingPermissions.map((perm, i) => (
-                          <GenerationConfirmCard
-                            key={`${perm.api}-${i}`}
-                            perm={perm}
-                            onAllow={(overrides) => {
-                              if (overrides) {
-                                setGenerationOverride(perm.api, overrides)
-                              }
-                              handlePermission(msg.id, perm.api, 'allow')
-                              void continueAfterPermission(msg, perm.api)
-                            }}
-                            onDeny={() => handlePermission(msg.id, perm.api, 'deny')}
-                            onAutoChoose={(genType, defaults) => {
-                              setAutoChooseDefault(genType, defaults)
-                              // Also set session permission to always allow this API
-                              setSessionPermission(perm.api, 'allow')
-                            }}
-                          />
-                        ))}
+                    {/* Pending indicator — only when nothing else is showing */}
+                    {!streamingText && !activeToolName && !isThinkingStreaming && !streamingThinking && (
+                      <div>
+                        <span className="text-sm text-[var(--color-text-muted)]">
+                          Thinking
+                          <ThinkingDots />
+                        </span>
                       </div>
                     )}
-
-                    {/* Usage + feedback row — actions pinned right */}
-                    <div className="flex w-full min-w-0 items-center justify-between gap-2 pt-0.5">
-                      <div className="min-w-0">{msg.usage ? <UsageBadge usage={msg.usage} /> : null}</div>
-                      <MessageActions
-                        msg={msg}
-                        onRate={handleRate}
-                        onDetails={handleDetails}
-                        conversationId={activeConversationId}
-                      />
-                    </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
-          ))}
+          )}
 
-        {/* Storyboard + live stream: same column as assistant, after your messages (feels like one reply) */}
-        {(!!pendingStoryboard || isGenerating) && (
-          <div className="flex w-full justify-center">
-            <div className="w-full space-y-3">
-              <StoryboardReviewCard disabled={isGenerating} onApprove={handleApproveStoryboard} />
+          <div ref={messagesEndRef} />
+        </div>
 
-              {isGenerating && (
-                <div className="space-y-2">
-                  {/* Iteration + run progress */}
-                  {(currentIteration && currentIteration.iteration > 1 || runProgress) && (
-                    <div className="flex items-center gap-3">
-                      <Loader2 size={11} className="text-[var(--color-text-muted)] animate-spin" />
-                      {currentIteration && currentIteration.iteration > 1 && (
-                        <span className="text-[11px] text-[var(--color-text-muted)] font-mono">
-                          Step {currentIteration.iteration}/{currentIteration.max}
-                        </span>
-                      )}
-                      {runProgress && (
-                        <span className={`text-[11px] font-mono ${
-                          runProgress.toolCallsUsed / runProgress.toolCallsMax > 0.8
-                            ? 'text-red-400'
-                            : runProgress.toolCallsUsed / runProgress.toolCallsMax > 0.5
-                              ? 'text-yellow-400'
-                              : 'text-[var(--color-text-muted)]'
-                        }`}>
-                          {runProgress.toolCallsUsed}/{runProgress.toolCallsMax} tools
-                          {' | '}
-                          ${runProgress.costUsd.toFixed(3)} / ${runProgress.costMax.toFixed(2)}
-                        </span>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Extended thinking block (streaming) */}
-                  {(isThinkingStreaming || streamingThinking) && (
-                    <div>
-                      <ThinkingBlock thinking={streamingThinking} isStreaming={isThinkingStreaming} />
-                    </div>
-                  )}
-
-                  {/* Interleaved text + tool calls in chronological order */}
-                  {streamingSegments.map((seg, i) =>
-                    seg.type === 'text' ? (
-                      <div key={`seg-${i}`} className="text-sm leading-relaxed text-[var(--color-text-primary)] whitespace-pre-wrap">
-                        {renderMarkdown(seg.text)}
-                      </div>
-                    ) : (
-                      <ToolCallItem key={seg.call.id} call={seg.call} />
-                    ),
-                  )}
-
-                  {/* Trailing streaming text (text after the last tool call, still being typed) */}
-                  {(() => {
-                    const trailingText = streamingText.slice(lastSnapshotTextRef.current.length).trim()
-                    return trailingText ? (
-                      <div className="text-sm leading-relaxed text-[var(--color-text-primary)] whitespace-pre-wrap">
-                        {renderMarkdown(trailingText)}
-                        <span className="inline-block w-1.5 h-1.5 bg-[var(--color-text-primary)] ml-1 animate-pulse rounded-full align-middle" />
-                      </div>
-                    ) : streamingText && streamingSegments.length === 0 ? (
-                      <div className="text-sm leading-relaxed text-[var(--color-text-primary)] whitespace-pre-wrap">
-                        {renderMarkdown(streamingText)}
-                        <span className="inline-block w-1.5 h-1.5 bg-[var(--color-text-primary)] ml-1 animate-pulse rounded-full align-middle" />
-                      </div>
-                    ) : null
-                  })()}
-
-                  {/* Active tool indicator */}
-                  {activeToolName && (
-                    <div className="flex items-center gap-2">
-                      <span
-                        className="w-1.5 h-1.5 rounded-full bg-blue-400 flex-shrink-0"
-                        style={{ animation: 'cursorPulse 1.2s ease-in-out infinite' }}
-                      />
-                      <span className="text-[12px] text-[var(--color-text-primary)] font-mono truncate">
-                        {activeToolName}
-                      </span>
-                      <span className="text-[11px] text-blue-400">Running</span>
-                    </div>
-                  )}
-
-                  {/* Pending indicator — only when nothing else is showing */}
-                  {!streamingText && !activeToolName && !isThinkingStreaming && !streamingThinking && (
-                    <div>
-                      <span className="text-sm text-[var(--color-text-muted)]">
-                        Thinking
-                        <ThinkingDots />
-                      </span>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
+        {/* Scroll-to-bottom floating button */}
+        {showScrollButton && (
+          <div className="sticky bottom-2 flex justify-center pointer-events-none z-10">
+            <span
+              onClick={() => {
+                scrollToBottom(true)
+                setShowScrollButton(false)
+              }}
+              className="pointer-events-auto px-3 py-1.5 rounded-full bg-[var(--color-surface)] border border-[var(--color-border)] text-[11px] text-[var(--color-text-muted)] cursor-pointer shadow-lg hover:bg-[var(--color-border)]/30 transition-all duration-200"
+            >
+              <ChevronDown size={12} className="inline mr-1" />
+              Scroll to bottom
+            </span>
           </div>
         )}
-
-        <div ref={messagesEndRef} />
-        </div>
       </div>
 
       {/* Keyword warning */}
       {keywordWarning && (
         <div className="flex-shrink-0 px-4">
-        <div className="mx-auto mb-1 w-full max-w-2xl">
-        <div className="px-3 py-2 rounded-lg bg-amber-900/30 border border-amber-700/40 flex items-center gap-2 text-[12px]">
-          <span className="text-amber-300 flex-1">
-            <strong>{keywordWarning.label}</strong> is disabled for this chat.
-          </span>
-          <button
-            onClick={() => {
-              toggleActiveTool(keywordWarning.capability)
-              setKeywordWarning(null)
-            }}
-            className="text-[11px] font-medium text-amber-200 hover:text-white px-2 py-0.5 rounded bg-amber-800/50 hover:bg-amber-700/60 transition-colors"
-          >
-            Enable
-          </button>
-          <button
-            onClick={() => {
-              setKeywordWarning(null)
-              handleSend()
-            }}
-            className="text-[11px] text-amber-400/70 hover:text-amber-200 transition-colors"
-          >
-            Dismiss
-          </button>
-          <button
-            onClick={() => setKeywordWarning(null)}
-            className="text-amber-500/50 hover:text-amber-300 transition-colors"
-          >
-            <X size={12} />
-          </button>
-        </div>
-        </div>
+          <div className="mx-auto mb-1 w-full max-w-2xl">
+            <div className="px-3 py-2 rounded-lg bg-amber-900/30 border border-amber-700/40 flex items-center gap-2 text-[12px]">
+              <span className="text-amber-300 flex-1">
+                <strong>{keywordWarning.label}</strong> is disabled for this chat.
+              </span>
+              <button
+                onClick={() => {
+                  toggleActiveTool(keywordWarning.capability)
+                  setKeywordWarning(null)
+                }}
+                className="text-[11px] font-medium text-amber-200 hover:text-white px-2 py-0.5 rounded bg-amber-800/50 hover:bg-amber-700/60 transition-colors"
+              >
+                Enable
+              </button>
+              <button
+                onClick={() => {
+                  setKeywordWarning(null)
+                  handleSend()
+                }}
+                className="text-[11px] text-amber-400/70 hover:text-amber-200 transition-colors"
+              >
+                Dismiss
+              </button>
+              <button
+                onClick={() => setKeywordWarning(null)}
+                className="text-amber-500/50 hover:text-amber-300 transition-colors"
+              >
+                <X size={12} />
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
       {/* Input Area */}
       <div className="flex-shrink-0 p-4 bg-gradient-to-t from-[var(--color-bg)] via-[var(--color-bg)] to-transparent pt-8">
         <div className="mx-auto w-full max-w-2xl">
-        <div
-          className={`relative border rounded-xl transition-all p-1 ${
-            isDraggingImage
-              ? 'border-[var(--color-accent)] border-dashed ring-2 ring-[var(--color-accent)]/25'
-              : 'border-[var(--color-border)]'
-          }`}
-          style={{ backgroundColor: 'var(--agent-chat-user-surface)' }}
-          onDragOver={(e) => {
-            e.preventDefault()
-            e.stopPropagation()
-            setIsDraggingImage(true)
-          }}
-          onDragLeave={(e) => {
-            e.preventDefault()
-            e.stopPropagation()
-            setIsDraggingImage(false)
-          }}
-          onDrop={(e) => {
-            e.preventDefault()
-            e.stopPropagation()
-            setIsDraggingImage(false)
-            for (const file of Array.from(e.dataTransfer.files)) {
-              if (file.type.startsWith('image/')) handleImageFile(file)
-            }
-          }}
-        >
-          {/* Pending image chips — above textarea */}
-          {pendingImages.length > 0 && (
-            <div className="flex gap-1.5 px-3 pt-2 pb-1 overflow-x-auto scrollbar-hide">
-              {pendingImages.map((img, i) => (
-                <div
-                  key={i}
-                  className="flex items-center gap-1.5 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-md pl-0.5 pr-1.5 py-0.5 shrink-0 group hover:border-[var(--color-text-muted)] transition-colors"
-                >
-                  <img
-                    src={img.dataUri}
-                    onClick={() =>
-                      setPreviewImage({ src: img.dataUri, alt: img.fileName, width: img.width, height: img.height })
-                    }
-                    className="h-7 w-7 object-cover rounded cursor-pointer"
-                    alt={img.fileName ?? 'Attached'}
-                  />
-                  <span className="text-[11px] text-[var(--color-text-primary)] truncate max-w-[80px]">
-                    {img.fileName ?? 'Image'}
-                  </span>
-                  <span
-                    onClick={() => setPendingImages((prev) => prev.filter((_, j) => j !== i))}
-                    className="cursor-pointer text-[var(--color-text-muted)] hover:text-red-400 transition-colors"
+          <div
+            className={`relative border rounded-xl transition-all p-1 ${
+              isDraggingImage
+                ? 'border-[var(--color-accent)] border-dashed ring-2 ring-[var(--color-accent)]/25'
+                : 'border-[var(--color-border)]'
+            }`}
+            style={{ backgroundColor: 'var(--agent-chat-user-surface)' }}
+            onDragOver={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              setIsDraggingImage(true)
+            }}
+            onDragLeave={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              setIsDraggingImage(false)
+            }}
+            onDrop={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              setIsDraggingImage(false)
+              for (const file of Array.from(e.dataTransfer.files)) {
+                if (file.type.startsWith('image/')) handleImageFile(file)
+              }
+            }}
+          >
+            {/* Pending image chips — above textarea */}
+            {pendingImages.length > 0 && (
+              <div className="flex gap-1.5 px-3 pt-2 pb-1 overflow-x-auto scrollbar-hide">
+                {pendingImages.map((img, i) => (
+                  <div
+                    key={i}
+                    className="flex items-center gap-1.5 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-md pl-0.5 pr-1.5 py-0.5 shrink-0 group hover:border-[var(--color-text-muted)] transition-colors"
                   >
-                    <X size={10} />
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <textarea
-            value={input}
-            onChange={(e) => {
-              setInput(e.target.value)
-              const ta = e.target
-              ta.style.height = 'auto'
-              ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault()
-                handleSend()
-              }
-            }}
-            onPaste={(e) => {
-              const items = e.clipboardData?.items
-              if (!items) return
-              for (const item of Array.from(items)) {
-                if (item.type.startsWith('image/')) {
-                  e.preventDefault()
-                  const file = item.getAsFile()
-                  if (file) handleImageFile(file)
-                }
-              }
-            }}
-            placeholder={pendingImages.length > 0 ? 'Add a message or send images...' : 'Talk to Agent...'}
-            disabled={isGenerating}
-            className="w-full bg-transparent border-none focus:ring-0 focus:outline-none text-sm text-[var(--color-text-primary)] px-4 pt-2 pb-0 min-h-0 max-h-[200px] resize-none scrollbar-hide disabled:opacity-50"
-            rows={1}
-          />
-
-          <div className="flex items-center justify-between px-3 pt-1 pb-1 gap-2">
-            {!isListening ? (
-              <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                <input
-                  ref={imageInputRef}
-                  type="file"
-                  accept="image/png,image/jpeg,image/gif,image/webp"
-                  multiple
-                  className="hidden"
-                  onChange={(e) => {
-                    for (const file of Array.from(e.target.files ?? [])) handleImageFile(file)
-                    e.target.value = ''
-                  }}
-                />
-
-                <div className="flex items-center gap-2">
-                  {/* ── 1. Agent Mode Selection ── */}
-                  <div className="relative">
-                    <button
-                      onClick={() => {
-                        setShowAgentMenu(!showAgentMenu)
-                        setShowModelMenu(false)
-                        setShowSpeechLangMenu(false)
-                      }}
-                      className={`no-style !flex items-center gap-1 px-2.5 transition-all rounded-full whitespace-nowrap h-7 box-border ${
-                        showAgentMenu
-                          ? 'bg-[var(--color-bg)] border border-[var(--color-border)]/50'
-                          : 'bg-[var(--color-bg)]/80 border border-[var(--color-border)]/30 hover:border-[var(--color-border)]'
-                      }`}
-                      style={{
-                        color: showAgentMenu
-                          ? 'var(--color-text-primary)'
-                          : agentOverride
-                            ? currentAgent.color
-                            : 'var(--color-text-muted)',
-                      }}
+                    <img
+                      src={img.dataUri}
+                      onClick={() =>
+                        setPreviewImage({ src: img.dataUri, alt: img.fileName, width: img.width, height: img.height })
+                      }
+                      className="h-7 w-7 object-cover rounded cursor-pointer"
+                      alt={img.fileName ?? 'Attached'}
+                    />
+                    <span className="text-[11px] text-[var(--color-text-primary)] truncate max-w-[80px]">
+                      {img.fileName ?? 'Image'}
+                    </span>
+                    <span
+                      onClick={() => setPendingImages((prev) => prev.filter((_, j) => j !== i))}
+                      className="cursor-pointer text-[var(--color-text-muted)] hover:text-red-400 transition-colors"
                     >
-                      <AgentIcon size={18} strokeWidth={2.5} />
-                      <ChevronDown size={10} strokeWidth={2.5} className="opacity-70" />
-                    </button>
-
-                    {showAgentMenu && (
-                      <>
-                        <div className="fixed inset-0 z-[90]" onClick={() => setShowAgentMenu(false)} />
-                        <div className="absolute bottom-[calc(100%+8px)] left-0 z-[100] bg-[var(--color-panel)] border border-[var(--color-border)] rounded-xl shadow-2xl p-1.5 flex flex-col w-max min-w-[190px] gap-0.5 animate-in slide-in-from-bottom-1 duration-150">
-                          {/* Core agents */}
-                          {coreAgents.map((a) => (
-                            <button
-                              key={a.id ?? 'auto'}
-                              onClick={() => {
-                                setAgentOverride(a.id)
-                                useVideoStore.setState({ directorTemplate: a.directorTemplate ?? null })
-                                setShowAgentMenu(false)
-                              }}
-                              className="w-full !flex !flex-row items-center px-3 py-2.5 !rounded-[8px] transition-colors no-style hover:bg-white/10 cursor-pointer"
-                            >
-                              <a.icon
-                                size={17}
-                                strokeWidth={2}
-                                style={{ color: a.color }}
-                                className="flex-shrink-0 mr-2.5"
-                              />
-                              <div className="flex flex-col items-start flex-1 min-w-0">
-                                <span
-                                  className="text-[13px] font-medium leading-none whitespace-nowrap"
-                                  style={{ color: agentOverride === a.id ? a.color : 'var(--color-text-primary)' }}
-                                >
-                                  {a.label}
-                                </span>
-                                <span className="text-[11px] text-[var(--color-text-muted)] mt-1">{a.desc}</span>
-                              </div>
-                              {agentOverride === a.id && (
-                                <Check
-                                  size={14}
-                                  strokeWidth={2}
-                                  className="ml-2 flex-shrink-0"
-                                  style={{ color: a.color }}
-                                />
-                              )}
-                            </button>
-                          ))}
-
-                          {/* Specialized agents divider */}
-                          <div className="border-t border-[var(--color-border)] mt-1 pt-1">
-                            <div className="px-3 py-1">
-                              <span className="text-[10px] uppercase tracking-widest text-[var(--color-text-muted)] font-semibold">
-                                Specialists
-                              </span>
-                            </div>
-                          </div>
-
-                          {specializedAgents.map((a, i) => (
-                            <button
-                              key={`spec-${i}`}
-                              onClick={() => {
-                                setAgentOverride(a.id)
-                                useVideoStore.setState({ directorTemplate: a.directorTemplate ?? null })
-                                setShowAgentMenu(false)
-                              }}
-                              className="w-full !flex !flex-row items-center px-3 py-2.5 !rounded-[8px] transition-colors no-style hover:bg-white/10 cursor-pointer"
-                            >
-                              <a.icon
-                                size={17}
-                                strokeWidth={2}
-                                style={{ color: a.color }}
-                                className="flex-shrink-0 mr-2.5"
-                              />
-                              <div className="flex flex-col items-start flex-1 min-w-0">
-                                <span className="text-[13px] font-medium leading-none whitespace-nowrap text-[var(--color-text-primary)]">
-                                  {a.label}
-                                </span>
-                                <span className="text-[11px] text-[var(--color-text-muted)] mt-1">{a.desc}</span>
-                              </div>
-                            </button>
-                          ))}
-
-                          {/* Plan first toggle */}
-                          <div className="border-t border-[var(--color-border)] mt-1 pt-1">
-                            <button
-                              onClick={() => {
-                                setPlanFirstMode(!planFirstMode)
-                                setShowAgentMenu(false)
-                              }}
-                              className="w-full !flex !flex-row items-center px-3 py-2.5 !rounded-[8px] transition-colors no-style hover:bg-white/10 cursor-pointer"
-                            >
-                              <ListOrdered
-                                size={14}
-                                strokeWidth={2}
-                                style={{ color: planFirstMode ? '#22d3ee' : 'var(--color-text-muted)' }}
-                                className="flex-shrink-0 mr-2.5"
-                              />
-                              <div className="flex flex-col items-start flex-1 min-w-0">
-                                <span
-                                  className="text-[13px] font-medium leading-none whitespace-nowrap"
-                                  style={{ color: planFirstMode ? '#22d3ee' : 'var(--color-text-primary)' }}
-                                >
-                                  Plan first
-                                </span>
-                                <span className="text-[11px] text-[var(--color-text-muted)] mt-1">Review storyboard before building</span>
-                              </div>
-                              {planFirstMode && (
-                                <Check
-                                  size={14}
-                                  strokeWidth={2}
-                                  className="ml-2 flex-shrink-0"
-                                  style={{ color: '#22d3ee' }}
-                                />
-                              )}
-                            </button>
-                          </div>
-
-                          {/* Add Agent button */}
-                          <div className="border-t border-[var(--color-border)] mt-1 pt-1">
-                            <button
-                              onClick={() => {
-                                setShowAgentMenu(false)
-                                setSettingsTab('agents')
-                              }}
-                              className="w-full !flex !flex-row items-center px-3 py-2.5 !rounded-[8px] transition-colors no-style hover:bg-white/10 cursor-pointer"
-                            >
-                              <Plus
-                                size={14}
-                                strokeWidth={2}
-                                className="flex-shrink-0 mr-2.5 text-[var(--color-text-muted)]"
-                              />
-                              <div className="flex flex-col items-start flex-1 min-w-0">
-                                <span className="text-[13px] font-medium leading-none whitespace-nowrap text-[var(--color-text-primary)]">
-                                  Add Agent
-                                </span>
-                                <span className="text-[11px] text-[var(--color-text-muted)] mt-1">
-                                  Configure in settings
-                                </span>
-                              </div>
-                            </button>
-                          </div>
-                        </div>
-                      </>
-                    )}
+                      <X size={10} />
+                    </span>
                   </div>
+                ))}
+              </div>
+            )}
 
-                  {/* ── 2. Model Selection ── */}
-                  <div className="relative">
-                    <button
-                      onClick={() => {
-                        setShowModelMenu(!showModelMenu)
-                        setShowAgentMenu(false)
-                        setShowSpeechLangMenu(false)
-                      }}
-                      className="no-style !flex items-center gap-1 px-1.5 transition-all rounded-md whitespace-nowrap h-7 border border-transparent box-border"
-                      style={{ color: showModelMenu ? 'var(--color-text-primary)' : 'var(--color-text-muted)' }}
-                    >
-                      {localMode && (
-                        <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 4px', borderRadius: 3, background: 'rgba(74,222,128,0.15)', color: '#4ade80', border: '1px solid rgba(74,222,128,0.3)', lineHeight: 1 }}>LOCAL</span>
-                      )}
-                      <span className="font-semibold text-sm leading-none">{currentModel.modelName}</span>
-                      <ChevronDown size={10} strokeWidth={2.5} className="opacity-70" />
-                    </button>
+            <textarea
+              value={input}
+              onChange={(e) => {
+                setInput(e.target.value)
+                const ta = e.target
+                ta.style.height = 'auto'
+                ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault()
+                  handleSend()
+                } else if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  handleSend()
+                }
+              }}
+              onPaste={(e) => {
+                const items = e.clipboardData?.items
+                if (!items) return
+                for (const item of Array.from(items)) {
+                  if (item.type.startsWith('image/')) {
+                    e.preventDefault()
+                    const file = item.getAsFile()
+                    if (file) handleImageFile(file)
+                  }
+                }
+              }}
+              placeholder={
+                isAgentRunningRemote
+                  ? 'Agent running in another tab...'
+                  : pendingImages.length > 0
+                    ? 'Add a message or send images...'
+                    : 'Talk to Agent...'
+              }
+              disabled={isGenerating || isAgentRunningRemote}
+              className="w-full bg-transparent border-none focus:ring-0 focus:outline-none text-sm text-[var(--color-text-primary)] px-4 pt-2 pb-0 min-h-0 max-h-[200px] resize-none scrollbar-hide disabled:opacity-50"
+              rows={1}
+            />
 
-                    {showModelMenu && (
-                      <>
-                        <div className="fixed inset-0 z-[90]" onClick={() => setShowModelMenu(false)} />
-                        <div
-                          className="absolute bottom-[calc(100%+8px)] left-0 z-[100] rounded-xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-1 duration-150"
-                          style={{
-                            width: 220,
-                            background: 'var(--color-panel)',
-                            border: '1px solid var(--color-border)',
-                          }}
-                        >
-                          {/* Auto toggle */}
-                          <div style={{ padding: '3px 3px 1px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', padding: '3px 6px', borderRadius: 6 }}>
-                              <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)' }}>
-                                  Auto
-                                </div>
-                                <div style={{ fontSize: 10, color: 'var(--color-text-muted)', marginTop: 1 }}>
-                                  Balanced — picks the best model per task
-                                </div>
-                              </div>
-                              <div
+            <div className="flex items-center justify-between px-3 pt-1 pb-1 gap-2">
+              {!isListening ? (
+                <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                  <input
+                    ref={imageInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/gif,image/webp"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => {
+                      for (const file of Array.from(e.target.files ?? [])) handleImageFile(file)
+                      e.target.value = ''
+                    }}
+                  />
+
+                  <div className="flex items-center gap-2">
+                    {/* ── 1. Agent Mode Selection ── */}
+                    <div className="relative">
+                      <button
+                        onClick={() => {
+                          setShowAgentMenu(!showAgentMenu)
+                          setShowModelMenu(false)
+                          setShowSpeechLangMenu(false)
+                        }}
+                        className={`no-style !flex items-center gap-1 px-2.5 transition-all rounded-full whitespace-nowrap h-7 box-border ${
+                          showAgentMenu
+                            ? 'bg-[var(--color-bg)] border border-[var(--color-border)]/50'
+                            : 'bg-[var(--color-bg)]/80 border border-[var(--color-border)]/30 hover:border-[var(--color-border)]'
+                        }`}
+                        style={{
+                          color: showAgentMenu
+                            ? 'var(--color-text-primary)'
+                            : agentOverride
+                              ? currentAgent.color
+                              : 'var(--color-text-muted)',
+                        }}
+                      >
+                        <AgentIcon size={18} strokeWidth={2.5} />
+                        <ChevronDown size={10} strokeWidth={2.5} className="opacity-70" />
+                      </button>
+
+                      {showAgentMenu && (
+                        <>
+                          <div className="fixed inset-0 z-[90]" onClick={() => setShowAgentMenu(false)} />
+                          <div className="absolute bottom-[calc(100%+8px)] left-0 z-[100] bg-[var(--color-panel)] border border-[var(--color-border)] rounded-xl shadow-2xl p-1.5 flex flex-col w-max min-w-[190px] gap-0.5 animate-in slide-in-from-bottom-1 duration-150">
+                            {/* Core agents */}
+                            {coreAgents.map((a) => (
+                              <button
+                                key={a.id ?? 'auto'}
                                 onClick={() => {
-                                  if (modelTier === 'auto' && !modelOverride && !localMode) {
-                                    setModelTier('budget')
-                                  } else {
-                                    setModelTier('auto')
-                                    setModelOverride(null)
-                                    setLocalMode(false)
-                                  }
+                                  setAgentOverride(a.id)
+                                  useVideoStore.setState({ directorTemplate: a.directorTemplate ?? null })
+                                  setShowAgentMenu(false)
                                 }}
-                                style={{
-                                  width: 32,
-                                  height: 18,
-                                  borderRadius: 9,
-                                  cursor: 'pointer',
-                                  position: 'relative',
-                                  transition: 'background 0.2s',
-                                  flexShrink: 0,
-                                  marginLeft: 8,
-                                  background:
-                                    modelTier === 'auto' && !modelOverride && !localMode
-                                      ? 'var(--color-accent)'
-                                      : 'var(--color-border)',
-                                }}
+                                className="w-full !flex !flex-row items-center px-3 py-2.5 !rounded-[8px] transition-colors no-style hover:bg-white/10 cursor-pointer"
                               >
-                                <div
-                                  style={{
-                                    width: 14,
-                                    height: 14,
-                                    borderRadius: 7,
-                                    background: 'white',
-                                    position: 'absolute',
-                                    top: 2,
-                                    left: modelTier === 'auto' && !modelOverride && !localMode ? 16 : 2,
-                                    transition: 'left 0.2s',
-                                    boxShadow: '0 1px 2px rgba(0,0,0,0.2)',
-                                  }}
+                                <a.icon
+                                  size={17}
+                                  strokeWidth={2}
+                                  style={{ color: a.color }}
+                                  className="flex-shrink-0 mr-2.5"
                                 />
+                                <div className="flex flex-col items-start flex-1 min-w-0">
+                                  <span
+                                    className="text-[13px] font-medium leading-none whitespace-nowrap"
+                                    style={{ color: agentOverride === a.id ? a.color : 'var(--color-text-primary)' }}
+                                  >
+                                    {a.label}
+                                  </span>
+                                  <span className="text-[11px] text-[var(--color-text-muted)] mt-1">{a.desc}</span>
+                                </div>
+                                {agentOverride === a.id && (
+                                  <Check
+                                    size={14}
+                                    strokeWidth={2}
+                                    className="ml-2 flex-shrink-0"
+                                    style={{ color: a.color }}
+                                  />
+                                )}
+                              </button>
+                            ))}
+
+                            {/* Specialized agents divider */}
+                            <div className="border-t border-[var(--color-border)] mt-1 pt-1">
+                              <div className="px-3 py-1">
+                                <span className="text-[10px] uppercase tracking-widest text-[var(--color-text-muted)] font-semibold">
+                                  Specialists
+                                </span>
                               </div>
                             </div>
-                          </div>
 
-                          {/* Expanded options — only when auto is off */}
-                          {!(modelTier === 'auto' && !modelOverride && !localMode) && (
-                            <>
-                              {/* Tier options (premium + budget + local) */}
-                              <div style={{ borderTop: '1px solid var(--color-border)', padding: '2px 3px 1px' }}>
-                                {MODEL_OPTIONS.filter((opt) => opt.id !== 'auto').map((opt) => (
-                                  <div
-                                    key={opt.id}
-                                    onClick={() => {
-                                      setModelTier(opt.id)
+                            {specializedAgents.map((a, i) => (
+                              <button
+                                key={`spec-${i}`}
+                                onClick={() => {
+                                  setAgentOverride(a.id)
+                                  useVideoStore.setState({ directorTemplate: a.directorTemplate ?? null })
+                                  setShowAgentMenu(false)
+                                }}
+                                className="w-full !flex !flex-row items-center px-3 py-2.5 !rounded-[8px] transition-colors no-style hover:bg-white/10 cursor-pointer"
+                              >
+                                <a.icon
+                                  size={17}
+                                  strokeWidth={2}
+                                  style={{ color: a.color }}
+                                  className="flex-shrink-0 mr-2.5"
+                                />
+                                <div className="flex flex-col items-start flex-1 min-w-0">
+                                  <span className="text-[13px] font-medium leading-none whitespace-nowrap text-[var(--color-text-primary)]">
+                                    {a.label}
+                                  </span>
+                                  <span className="text-[11px] text-[var(--color-text-muted)] mt-1">{a.desc}</span>
+                                </div>
+                              </button>
+                            ))}
+
+                            {/* Plan first toggle */}
+                            <div className="border-t border-[var(--color-border)] mt-1 pt-1">
+                              <button
+                                onClick={() => {
+                                  setPlanFirstMode(!planFirstMode)
+                                  setShowAgentMenu(false)
+                                }}
+                                className="w-full !flex !flex-row items-center px-3 py-2.5 !rounded-[8px] transition-colors no-style hover:bg-white/10 cursor-pointer"
+                              >
+                                <ListOrdered
+                                  size={14}
+                                  strokeWidth={2}
+                                  style={{ color: planFirstMode ? '#22d3ee' : 'var(--color-text-muted)' }}
+                                  className="flex-shrink-0 mr-2.5"
+                                />
+                                <div className="flex flex-col items-start flex-1 min-w-0">
+                                  <span
+                                    className="text-[13px] font-medium leading-none whitespace-nowrap"
+                                    style={{ color: planFirstMode ? '#22d3ee' : 'var(--color-text-primary)' }}
+                                  >
+                                    Plan first
+                                  </span>
+                                  <span className="text-[11px] text-[var(--color-text-muted)] mt-1">
+                                    Review storyboard before building
+                                  </span>
+                                </div>
+                                {planFirstMode && (
+                                  <Check
+                                    size={14}
+                                    strokeWidth={2}
+                                    className="ml-2 flex-shrink-0"
+                                    style={{ color: '#22d3ee' }}
+                                  />
+                                )}
+                              </button>
+                            </div>
+
+                            {/* Add Agent button */}
+                            <div className="border-t border-[var(--color-border)] mt-1 pt-1">
+                              <button
+                                onClick={() => {
+                                  setShowAgentMenu(false)
+                                  setSettingsTab('agents')
+                                }}
+                                className="w-full !flex !flex-row items-center px-3 py-2.5 !rounded-[8px] transition-colors no-style hover:bg-white/10 cursor-pointer"
+                              >
+                                <Plus
+                                  size={14}
+                                  strokeWidth={2}
+                                  className="flex-shrink-0 mr-2.5 text-[var(--color-text-muted)]"
+                                />
+                                <div className="flex flex-col items-start flex-1 min-w-0">
+                                  <span className="text-[13px] font-medium leading-none whitespace-nowrap text-[var(--color-text-primary)]">
+                                    Add Agent
+                                  </span>
+                                  <span className="text-[11px] text-[var(--color-text-muted)] mt-1">
+                                    Configure in settings
+                                  </span>
+                                </div>
+                              </button>
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </div>
+
+                    {/* ── 2. Model Selection ── */}
+                    <div className="relative">
+                      <button
+                        onClick={() => {
+                          setShowModelMenu(!showModelMenu)
+                          setShowAgentMenu(false)
+                          setShowSpeechLangMenu(false)
+                        }}
+                        className="no-style !flex items-center gap-1 px-1.5 transition-all rounded-md whitespace-nowrap h-7 border border-transparent box-border"
+                        style={{ color: showModelMenu ? 'var(--color-text-primary)' : 'var(--color-text-muted)' }}
+                      >
+                        {localMode && (
+                          <span
+                            style={{
+                              fontSize: 9,
+                              fontWeight: 700,
+                              padding: '1px 4px',
+                              borderRadius: 3,
+                              background: 'rgba(74,222,128,0.15)',
+                              color: '#4ade80',
+                              border: '1px solid rgba(74,222,128,0.3)',
+                              lineHeight: 1,
+                            }}
+                          >
+                            LOCAL
+                          </span>
+                        )}
+                        <span className="font-semibold text-sm leading-none">{currentModel.modelName}</span>
+                        <ChevronDown size={10} strokeWidth={2.5} className="opacity-70" />
+                      </button>
+
+                      {showModelMenu && (
+                        <>
+                          <div className="fixed inset-0 z-[90]" onClick={() => setShowModelMenu(false)} />
+                          <div
+                            className="absolute bottom-[calc(100%+8px)] left-0 z-[100] rounded-xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-1 duration-150"
+                            style={{
+                              width: 220,
+                              background: 'var(--color-panel)',
+                              border: '1px solid var(--color-border)',
+                            }}
+                          >
+                            {/* Auto toggle */}
+                            <div style={{ padding: '3px 3px 1px' }}>
+                              <div
+                                style={{ display: 'flex', alignItems: 'center', padding: '3px 6px', borderRadius: 6 }}
+                              >
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)' }}>
+                                    Auto
+                                  </div>
+                                  <div style={{ fontSize: 10, color: 'var(--color-text-muted)', marginTop: 1 }}>
+                                    Balanced — picks the best model per task
+                                  </div>
+                                </div>
+                                <div
+                                  onClick={() => {
+                                    if (modelTier === 'auto' && !modelOverride && !localMode) {
+                                      setModelTier('budget')
+                                    } else {
+                                      setModelTier('auto')
                                       setModelOverride(null)
                                       setLocalMode(false)
+                                    }
+                                  }}
+                                  style={{
+                                    width: 32,
+                                    height: 18,
+                                    borderRadius: 9,
+                                    cursor: 'pointer',
+                                    position: 'relative',
+                                    transition: 'background 0.2s',
+                                    flexShrink: 0,
+                                    marginLeft: 8,
+                                    background:
+                                      modelTier === 'auto' && !modelOverride && !localMode
+                                        ? 'var(--color-accent)'
+                                        : 'var(--color-border)',
+                                  }}
+                                >
+                                  <div
+                                    style={{
+                                      width: 14,
+                                      height: 14,
+                                      borderRadius: 7,
+                                      background: 'white',
+                                      position: 'absolute',
+                                      top: 2,
+                                      left: modelTier === 'auto' && !modelOverride && !localMode ? 16 : 2,
+                                      transition: 'left 0.2s',
+                                      boxShadow: '0 1px 2px rgba(0,0,0,0.2)',
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Expanded options — only when auto is off */}
+                            {!(modelTier === 'auto' && !modelOverride && !localMode) && (
+                              <>
+                                {/* Tier options (premium + budget + local) */}
+                                <div style={{ borderTop: '1px solid var(--color-border)', padding: '2px 3px 1px' }}>
+                                  {MODEL_OPTIONS.filter((opt) => opt.id !== 'auto').map((opt) => (
+                                    <div
+                                      key={opt.id}
+                                      onClick={() => {
+                                        setModelTier(opt.id)
+                                        setModelOverride(null)
+                                        setLocalMode(false)
+                                      }}
+                                      style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        padding: '3px 6px',
+                                        borderRadius: 6,
+                                        cursor: 'pointer',
+                                        color: 'var(--color-text-primary)',
+                                      }}
+                                      className="hover:bg-white/10 transition-colors"
+                                    >
+                                      <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ fontSize: 13, fontWeight: 500 }}>{opt.modelName}</div>
+                                        <div style={{ fontSize: 10, color: 'var(--color-text-muted)', marginTop: 1 }}>
+                                          {opt.tierLabel}
+                                        </div>
+                                      </div>
+                                      {modelTier === opt.id && !modelOverride && !localMode && (
+                                        <Check
+                                          size={14}
+                                          strokeWidth={2}
+                                          style={{ flexShrink: 0, color: 'var(--color-accent)' }}
+                                        />
+                                      )}
+                                    </div>
+                                  ))}
+
+                                  {/* Local option — same level as Premium/Budget */}
+                                  <div
+                                    onClick={() => {
+                                      setLocalMode(true)
+                                      setModelOverride(null)
+                                      // Auto-select first local model if none selected
+                                      if (!localModelId) {
+                                        const firstLocal = modelConfigs.find((m) => m.provider === 'local' && m.enabled)
+                                        if (firstLocal) setLocalModelId(firstLocal.id)
+                                      }
                                     }}
                                     style={{
                                       display: 'flex',
@@ -3078,12 +3420,283 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                                     className="hover:bg-white/10 transition-colors"
                                   >
                                     <div style={{ flex: 1, minWidth: 0 }}>
-                                      <div style={{ fontSize: 13, fontWeight: 500 }}>{opt.modelName}</div>
+                                      <div
+                                        style={{
+                                          fontSize: 13,
+                                          fontWeight: 500,
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          gap: 4,
+                                        }}
+                                      >
+                                        Local
+                                        <span
+                                          style={{
+                                            fontSize: 9,
+                                            fontWeight: 600,
+                                            padding: '1px 4px',
+                                            borderRadius: 3,
+                                            background: 'rgba(74,222,128,0.15)',
+                                            color: '#4ade80',
+                                            border: '1px solid rgba(74,222,128,0.3)',
+                                          }}
+                                        >
+                                          FREE
+                                        </span>
+                                      </div>
                                       <div style={{ fontSize: 10, color: 'var(--color-text-muted)', marginTop: 1 }}>
-                                        {opt.tierLabel}
+                                        Ollama — runs on your machine
                                       </div>
                                     </div>
-                                    {modelTier === opt.id && !modelOverride && !localMode && (
+                                    {localMode && (
+                                      <Check size={14} strokeWidth={2} style={{ flexShrink: 0, color: '#4ade80' }} />
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* Local model sub-selector — shown when local mode is active */}
+                                {localMode && (
+                                  <div style={{ borderTop: '1px solid var(--color-border)', padding: '2px 3px 1px' }}>
+                                    <div
+                                      style={{
+                                        padding: '0 6px 1px',
+                                        fontSize: 10,
+                                        color: '#4ade80',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.05em',
+                                      }}
+                                    >
+                                      Local Models
+                                    </div>
+                                    {modelConfigs
+                                      .filter((m) => m.provider === 'local' && m.enabled)
+                                      .map((m) => (
+                                        <div
+                                          key={m.id}
+                                          onClick={() => {
+                                            setLocalModelId(m.id)
+                                            setShowModelMenu(false)
+                                          }}
+                                          style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            padding: '3px 6px',
+                                            borderRadius: 6,
+                                            cursor: 'pointer',
+                                            color: 'var(--color-text-primary)',
+                                          }}
+                                          className="hover:bg-white/10 transition-colors"
+                                        >
+                                          <div style={{ flex: 1, minWidth: 0 }}>
+                                            <div style={{ fontSize: 13, fontWeight: 500 }}>{m.displayName}</div>
+                                            <div
+                                              style={{ fontSize: 10, color: 'var(--color-text-muted)', marginTop: 1 }}
+                                            >
+                                              {m.localModelName ?? m.modelId}
+                                            </div>
+                                          </div>
+                                          {localModelId === m.id && (
+                                            <Check
+                                              size={14}
+                                              strokeWidth={2}
+                                              style={{ flexShrink: 0, color: '#4ade80' }}
+                                            />
+                                          )}
+                                        </div>
+                                      ))}
+                                    {modelConfigs.filter((m) => m.provider === 'local' && m.enabled).length === 0 && (
+                                      <div
+                                        onClick={() => {
+                                          setShowModelMenu(false)
+                                          setSettingsTab('models')
+                                        }}
+                                        style={{
+                                          padding: '4px 6px',
+                                          fontSize: 11,
+                                          color: 'var(--color-text-muted)',
+                                          cursor: 'pointer',
+                                        }}
+                                        className="hover:text-[var(--color-text-primary)] transition-colors"
+                                      >
+                                        No local models — click to detect Ollama
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+
+                                {/* Enabled cloud models — hidden when local mode */}
+                                {!localMode && (
+                                  <div style={{ borderTop: '1px solid var(--color-border)', padding: '2px 3px 1px' }}>
+                                    <div
+                                      style={{
+                                        padding: '0 6px 1px',
+                                        fontSize: 10,
+                                        color: 'var(--color-text-muted)',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.05em',
+                                      }}
+                                    >
+                                      Models
+                                    </div>
+                                    {modelConfigs
+                                      .filter((m) => m.enabled && m.provider !== 'local')
+                                      .map((m) => (
+                                        <div
+                                          key={m.id}
+                                          onClick={() => {
+                                            setModelOverride(m.modelId as any)
+                                            setShowModelMenu(false)
+                                          }}
+                                          style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            padding: '3px 6px',
+                                            borderRadius: 6,
+                                            cursor: 'pointer',
+                                            color: 'var(--color-text-primary)',
+                                          }}
+                                          className="hover:bg-white/10 transition-colors"
+                                        >
+                                          <div style={{ flex: 1, minWidth: 0 }}>
+                                            <div style={{ fontSize: 13, fontWeight: 500 }}>{m.displayName}</div>
+                                            <div
+                                              style={{ fontSize: 10, color: 'var(--color-text-muted)', marginTop: 1 }}
+                                            >
+                                              {m.tier}
+                                            </div>
+                                          </div>
+                                          {modelOverride === m.modelId && (
+                                            <Check
+                                              size={14}
+                                              strokeWidth={2}
+                                              style={{ flexShrink: 0, color: 'var(--color-accent)' }}
+                                            />
+                                          )}
+                                        </div>
+                                      ))}
+                                  </div>
+                                )}
+                                {/* Thinking section — hidden for local models (no thinking support) */}
+                                {!localMode && (
+                                  <div style={{ borderTop: '1px solid var(--color-border)', padding: '1px 3px 1px' }}>
+                                    <div
+                                      style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'space-between',
+                                        padding: '2px 6px',
+                                      }}
+                                    >
+                                      <span
+                                        style={{
+                                          fontSize: 10,
+                                          color: 'var(--color-text-muted)',
+                                          textTransform: 'uppercase',
+                                          letterSpacing: '0.05em',
+                                        }}
+                                      >
+                                        Thinking
+                                      </span>
+                                      <div
+                                        onClick={() => setThinkingMode(thinkingMode === 'off' ? 'adaptive' : 'off')}
+                                        style={{
+                                          width: 32,
+                                          height: 18,
+                                          borderRadius: 9,
+                                          cursor: 'pointer',
+                                          position: 'relative',
+                                          transition: 'background 0.2s',
+                                          background:
+                                            thinkingMode !== 'off' ? 'var(--color-accent)' : 'var(--color-border)',
+                                        }}
+                                      >
+                                        <div
+                                          style={{
+                                            width: 14,
+                                            height: 14,
+                                            borderRadius: 7,
+                                            background: 'white',
+                                            position: 'absolute',
+                                            top: 2,
+                                            left: thinkingMode !== 'off' ? 16 : 2,
+                                            transition: 'left 0.2s',
+                                            boxShadow: '0 1px 2px rgba(0,0,0,0.2)',
+                                          }}
+                                        />
+                                      </div>
+                                    </div>
+                                    {thinkingMode !== 'off' &&
+                                      (
+                                        [
+                                          {
+                                            id: 'adaptive' as ThinkingMode,
+                                            label: 'Auto',
+                                            desc: 'Claude decides when to think',
+                                          },
+                                          { id: 'deep' as ThinkingMode, label: 'Deep', desc: 'Always reasons deeply' },
+                                        ] as const
+                                      ).map((opt) => (
+                                        <div
+                                          key={opt.id}
+                                          onClick={() => setThinkingMode(opt.id)}
+                                          style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            padding: '3px 6px',
+                                            borderRadius: 6,
+                                            cursor: 'pointer',
+                                            color: 'var(--color-text-primary)',
+                                          }}
+                                          className="hover:bg-white/10 transition-colors"
+                                        >
+                                          <div style={{ flex: 1, minWidth: 0 }}>
+                                            <div style={{ fontSize: 13, fontWeight: 500 }}>{opt.label}</div>
+                                            <div
+                                              style={{ fontSize: 10, color: 'var(--color-text-muted)', marginTop: 1 }}
+                                            >
+                                              {opt.desc}
+                                            </div>
+                                          </div>
+                                          {thinkingMode === opt.id && (
+                                            <Check
+                                              size={14}
+                                              strokeWidth={2}
+                                              style={{ flexShrink: 0, color: 'var(--color-accent)' }}
+                                            />
+                                          )}
+                                        </div>
+                                      ))}
+                                  </div>
+                                )}
+
+                                {/* CLI runtimes */}
+                                <div style={{ borderTop: '1px solid var(--color-border)', padding: '2px 3px 1px' }}>
+                                  <div
+                                    onClick={() => {
+                                      setModelOverride('codex-cli' as any)
+                                      setLocalMode(false)
+                                      setShowModelMenu(false)
+                                    }}
+                                    style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      padding: '3px 6px',
+                                      borderRadius: 6,
+                                      cursor: 'pointer',
+                                    }}
+                                    className="hover:bg-white/10 transition-colors"
+                                  >
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                      <div
+                                        style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)' }}
+                                      >
+                                        Codex CLI
+                                      </div>
+                                      <div style={{ fontSize: 10, color: 'var(--color-text-muted)', marginTop: 1 }}>
+                                        Local CLI — Cench MCP tools via Codex
+                                      </div>
+                                    </div>
+                                    {modelOverride === 'codex-cli' && (
                                       <Check
                                         size={14}
                                         strokeWidth={2}
@@ -3091,350 +3704,186 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                                       />
                                     )}
                                   </div>
-                                ))}
-
-                                {/* Local option — same level as Premium/Budget */}
-                                <div
-                                  onClick={() => {
-                                    setLocalMode(true)
-                                    setModelOverride(null)
-                                    // Auto-select first local model if none selected
-                                    if (!localModelId) {
-                                      const firstLocal = modelConfigs.find((m) => m.provider === 'local' && m.enabled)
-                                      if (firstLocal) setLocalModelId(firstLocal.id)
-                                    }
-                                  }}
-                                  style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    padding: '3px 6px',
-                                    borderRadius: 6,
-                                    cursor: 'pointer',
-                                    color: 'var(--color-text-primary)',
-                                  }}
-                                  className="hover:bg-white/10 transition-colors"
-                                >
-                                  <div style={{ flex: 1, minWidth: 0 }}>
-                                    <div style={{ fontSize: 13, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 4 }}>
-                                      Local
-                                      <span style={{ fontSize: 9, fontWeight: 600, padding: '1px 4px', borderRadius: 3, background: 'rgba(74,222,128,0.15)', color: '#4ade80', border: '1px solid rgba(74,222,128,0.3)' }}>FREE</span>
-                                    </div>
-                                    <div style={{ fontSize: 10, color: 'var(--color-text-muted)', marginTop: 1 }}>
-                                      Ollama — runs on your machine
-                                    </div>
-                                  </div>
-                                  {localMode && (
-                                    <Check
-                                      size={14}
-                                      strokeWidth={2}
-                                      style={{ flexShrink: 0, color: '#4ade80' }}
-                                    />
-                                  )}
-                                </div>
-                              </div>
-
-                              {/* Local model sub-selector — shown when local mode is active */}
-                              {localMode && (
-                                <div style={{ borderTop: '1px solid var(--color-border)', padding: '2px 3px 1px' }}>
                                   <div
-                                    style={{
-                                      padding: '0 6px 1px',
-                                      fontSize: 10,
-                                      color: '#4ade80',
-                                      textTransform: 'uppercase',
-                                      letterSpacing: '0.05em',
+                                    onClick={() => {
+                                      setModelOverride('claude-code' as any)
+                                      setLocalMode(false)
+                                      setShowModelMenu(false)
                                     }}
-                                  >
-                                    Local Models
-                                  </div>
-                                  {modelConfigs
-                                    .filter((m) => m.provider === 'local' && m.enabled)
-                                    .map((m) => (
-                                      <div
-                                        key={m.id}
-                                        onClick={() => {
-                                          setLocalModelId(m.id)
-                                          setShowModelMenu(false)
-                                        }}
-                                        style={{
-                                          display: 'flex',
-                                          alignItems: 'center',
-                                          padding: '3px 6px',
-                                          borderRadius: 6,
-                                          cursor: 'pointer',
-                                          color: 'var(--color-text-primary)',
-                                        }}
-                                        className="hover:bg-white/10 transition-colors"
-                                      >
-                                        <div style={{ flex: 1, minWidth: 0 }}>
-                                          <div style={{ fontSize: 13, fontWeight: 500 }}>{m.displayName}</div>
-                                          <div style={{ fontSize: 10, color: 'var(--color-text-muted)', marginTop: 1 }}>
-                                            {m.localModelName ?? m.modelId}
-                                          </div>
-                                        </div>
-                                        {localModelId === m.id && (
-                                          <Check
-                                            size={14}
-                                            strokeWidth={2}
-                                            style={{ flexShrink: 0, color: '#4ade80' }}
-                                          />
-                                        )}
-                                      </div>
-                                    ))}
-                                  {modelConfigs.filter((m) => m.provider === 'local' && m.enabled).length === 0 && (
-                                    <div
-                                      onClick={() => {
-                                        setShowModelMenu(false)
-                                        setSettingsTab('models')
-                                      }}
-                                      style={{
-                                        padding: '4px 6px',
-                                        fontSize: 11,
-                                        color: 'var(--color-text-muted)',
-                                        cursor: 'pointer',
-                                      }}
-                                      className="hover:text-[var(--color-text-primary)] transition-colors"
-                                    >
-                                      No local models — click to detect Ollama
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-
-                              {/* Enabled cloud models — hidden when local mode */}
-                              {!localMode && (
-                              <div style={{ borderTop: '1px solid var(--color-border)', padding: '2px 3px 1px' }}>
-                                <div
-                                  style={{
-                                    padding: '0 6px 1px',
-                                    fontSize: 10,
-                                    color: 'var(--color-text-muted)',
-                                    textTransform: 'uppercase',
-                                    letterSpacing: '0.05em',
-                                  }}
-                                >
-                                  Models
-                                </div>
-                                {modelConfigs
-                                  .filter((m) => m.enabled && m.provider !== 'local')
-                                  .map((m) => (
-                                    <div
-                                      key={m.id}
-                                      onClick={() => {
-                                        setModelOverride(m.modelId as any)
-                                        setShowModelMenu(false)
-                                      }}
-                                      style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        padding: '3px 6px',
-                                        borderRadius: 6,
-                                        cursor: 'pointer',
-                                        color: 'var(--color-text-primary)',
-                                      }}
-                                      className="hover:bg-white/10 transition-colors"
-                                    >
-                                      <div style={{ flex: 1, minWidth: 0 }}>
-                                        <div style={{ fontSize: 13, fontWeight: 500 }}>{m.displayName}</div>
-                                        <div style={{ fontSize: 10, color: 'var(--color-text-muted)', marginTop: 1 }}>
-                                          {m.tier}
-                                        </div>
-                                      </div>
-                                      {modelOverride === m.modelId && (
-                                        <Check
-                                          size={14}
-                                          strokeWidth={2}
-                                          style={{ flexShrink: 0, color: 'var(--color-accent)' }}
-                                        />
-                                      )}
-                                    </div>
-                                  ))}
-                              </div>
-                              )}
-                              {/* Thinking section — hidden for local models (no thinking support) */}
-                              {!localMode && <div style={{ borderTop: '1px solid var(--color-border)', padding: '1px 3px 1px' }}>
-                                <div
-                                  style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'space-between',
-                                    padding: '2px 6px',
-                                  }}
-                                >
-                                  <span
                                     style={{
-                                      fontSize: 10,
-                                      color: 'var(--color-text-muted)',
-                                      textTransform: 'uppercase',
-                                      letterSpacing: '0.05em',
-                                    }}
-                                  >
-                                    Thinking
-                                  </span>
-                                  <div
-                                    onClick={() => setThinkingMode(thinkingMode === 'off' ? 'adaptive' : 'off')}
-                                    style={{
-                                      width: 32,
-                                      height: 18,
-                                      borderRadius: 9,
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      padding: '3px 6px',
+                                      borderRadius: 6,
                                       cursor: 'pointer',
-                                      position: 'relative',
-                                      transition: 'background 0.2s',
-                                      background:
-                                        thinkingMode !== 'off' ? 'var(--color-accent)' : 'var(--color-border)',
                                     }}
+                                    className="hover:bg-white/10 transition-colors"
                                   >
-                                    <div
-                                      style={{
-                                        width: 14,
-                                        height: 14,
-                                        borderRadius: 7,
-                                        background: 'white',
-                                        position: 'absolute',
-                                        top: 2,
-                                        left: thinkingMode !== 'off' ? 16 : 2,
-                                        transition: 'left 0.2s',
-                                        boxShadow: '0 1px 2px rgba(0,0,0,0.2)',
-                                      }}
-                                    />
-                                  </div>
-                                </div>
-                                {thinkingMode !== 'off' &&
-                                  (
-                                    [
-                                      {
-                                        id: 'adaptive' as ThinkingMode,
-                                        label: 'Auto',
-                                        desc: 'Claude decides when to think',
-                                      },
-                                      { id: 'deep' as ThinkingMode, label: 'Deep', desc: 'Always reasons deeply' },
-                                    ] as const
-                                  ).map((opt) => (
-                                    <div
-                                      key={opt.id}
-                                      onClick={() => setThinkingMode(opt.id)}
-                                      style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        padding: '3px 6px',
-                                        borderRadius: 6,
-                                        cursor: 'pointer',
-                                        color: 'var(--color-text-primary)',
-                                      }}
-                                      className="hover:bg-white/10 transition-colors"
-                                    >
-                                      <div style={{ flex: 1, minWidth: 0 }}>
-                                        <div style={{ fontSize: 13, fontWeight: 500 }}>{opt.label}</div>
-                                        <div style={{ fontSize: 10, color: 'var(--color-text-muted)', marginTop: 1 }}>
-                                          {opt.desc}
-                                        </div>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                      <div
+                                        style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)' }}
+                                      >
+                                        Claude Code
                                       </div>
-                                      {thinkingMode === opt.id && (
-                                        <Check
-                                          size={14}
-                                          strokeWidth={2}
-                                          style={{ flexShrink: 0, color: 'var(--color-accent)' }}
-                                        />
-                                      )}
+                                      <div style={{ fontSize: 10, color: 'var(--color-text-muted)', marginTop: 1 }}>
+                                        Local CLI — full tool use via MCP
+                                      </div>
                                     </div>
-                                  ))}
-                              </div>}
+                                    {modelOverride === 'claude-code' && (
+                                      <Check
+                                        size={14}
+                                        strokeWidth={2}
+                                        style={{ flexShrink: 0, color: 'var(--color-accent)' }}
+                                      />
+                                    )}
+                                  </div>
+                                </div>
 
-                              {/* Add Model */}
-                              <div style={{ borderTop: '1px solid var(--color-border)', padding: '1px 3px 2px' }}>
-                                <div
-                                  onClick={() => {
-                                    setShowModelMenu(false)
-                                    setSettingsTab('models')
-                                  }}
-                                  style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    padding: '3px 6px',
-                                    borderRadius: 6,
-                                    cursor: 'pointer',
-                                  }}
-                                  className="hover:bg-white/10 transition-colors"
-                                >
-                                  <div style={{ flex: 1, minWidth: 0 }}>
-                                    <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)' }}>
-                                      Add Model
-                                    </div>
-                                    <div style={{ fontSize: 10, color: 'var(--color-text-muted)', marginTop: 1 }}>
-                                      Configure in settings
+                                {/* Add Model */}
+                                <div style={{ borderTop: '1px solid var(--color-border)', padding: '1px 3px 2px' }}>
+                                  <div
+                                    onClick={() => {
+                                      setShowModelMenu(false)
+                                      setSettingsTab('models')
+                                    }}
+                                    style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      padding: '3px 6px',
+                                      borderRadius: 6,
+                                      cursor: 'pointer',
+                                    }}
+                                    className="hover:bg-white/10 transition-colors"
+                                  >
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                      <div
+                                        style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)' }}
+                                      >
+                                        Add Model
+                                      </div>
+                                      <div style={{ fontSize: 10, color: 'var(--color-text-muted)', marginTop: 1 }}>
+                                        Configure in settings
+                                      </div>
                                     </div>
                                   </div>
                                 </div>
-                              </div>
-                            </>
-                          )}
-                        </div>
-                      </>
-                    )}
-                  </div>
+                              </>
+                            )}
+                          </div>
+                        </>
+                      )}
+                    </div>
 
-                </div>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 min-w-0 flex-1">
-                <SpeechWaveformLangControl
-                  active
-                  speechSupported={speechSupported}
-                  speechLang={speechLang}
-                  showMenu={showSpeechLangMenu}
-                  setShowMenu={setShowSpeechLangMenu}
-                  onSelectLang={handleSelectSpeechLang}
-                  onOpenMenu={() => {
-                    setShowModelMenu(false)
-                    setShowAgentMenu(false)
-                  }}
-                />
-                <span className="text-[12px] text-[var(--color-text-muted)] truncate">Listening…</span>
-              </div>
-            )}
-
-            {/* Send / voice / stop */}
-            <div className="flex items-center flex-shrink-0 relative gap-1.5 text-[var(--color-text-muted)]">
-              <span
-                onClick={() => imageInputRef.current?.click()}
-                className="flex items-center justify-center cursor-pointer"
-                style={{ width: '26px', height: '26px', color: COMPOSER_CTRL_ICON }}
-                data-tooltip="Attach image"
-                data-tooltip-pos="top"
-              >
-                <svg width={17} height={17} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21.1935 16.793C20.8437 19.2739 20.6689 20.5143 19.7717 21.2572C18.8745 22 17.5512 22 14.9046 22H9.09536C6.44881 22 5.12553 22 4.22834 21.2572C3.33115 20.5143 3.15626 19.2739 2.80648 16.793L2.38351 13.793C1.93748 10.6294 1.71447 9.04765 2.66232 8.02383C3.61017 7 5.29758 7 8.67239 7H15.3276C18.7024 7 20.3898 7 21.3377 8.02383C22.0865 8.83268 22.1045 9.98979 21.8592 12" />
-                  <path d="M19.5617 7C19.7904 5.69523 18.7863 4.5 17.4617 4.5H6.53788C5.21323 4.5 4.20922 5.69523 4.43784 7" />
-                  <path d="M17.4999 4.5C17.5283 4.24092 17.5425 4.11135 17.5427 4.00435C17.545 2.98072 16.7739 2.12064 15.7561 2.01142C15.6497 2 15.5194 2 15.2588 2H8.74099C8.48035 2 8.35002 2 8.24362 2.01142C7.22584 2.12064 6.45481 2.98072 6.45704 4.00434C6.45727 4.11135 6.47146 4.2409 6.49983 4.5" />
-                  <circle cx="16.5" cy="11.5" r="1.5" />
-                  <path d="M19.9999 20L17.1157 17.8514C16.1856 17.1586 14.8004 17.0896 13.7766 17.6851L13.5098 17.8403C12.7984 18.2542 11.8304 18.1848 11.2156 17.6758L7.37738 14.4989C6.6113 13.8648 5.38245 13.8309 4.5671 14.4214L3.24316 15.3803" />
-                </svg>
-              </span>
-              {isGenerating ? (
-                <span
-                  onClick={handleAbort}
-                  className="flex items-center justify-center cursor-pointer rounded-full"
-                  style={{ width: '26px', height: '26px', backgroundColor: COMPOSER_CTRL_BG }}
-                >
-                  <span
-                    className="animate-pulse"
-                    style={{
-                      width: 10,
-                      height: 10,
-                      borderRadius: 2,
-                      backgroundColor: COMPOSER_CTRL_ICON,
-                      opacity: 0.85,
-                    }}
-                  />
-                </span>
-              ) : isListening ? (
-                <>
-                  {canSend && (
+                    {/* ── 3. Research Toggle ── model-agnostic switch for web_search + fetch_url_content */}
                     <button
                       type="button"
-                      onClick={handleSend}
-                      aria-label="Send"
-                      className="flex items-center justify-center transition-all cursor-pointer no-style rounded-full relative"
+                      onClick={() => setResearchEnabled(!researchEnabled)}
+                      className={`no-style !flex items-center justify-center transition-all rounded-full h-7 w-7 box-border ${
+                        researchEnabled
+                          ? 'bg-[var(--color-accent)]/15 border border-[var(--color-accent)]/40'
+                          : 'bg-transparent border border-transparent hover:border-[var(--color-border)]'
+                      }`}
+                      style={{ color: researchEnabled ? 'var(--color-accent)' : 'var(--color-text-muted)' }}
+                      data-tooltip={
+                        researchEnabled
+                          ? 'Research: on — agent can search the web'
+                          : 'Research: off — enable web search'
+                      }
+                      data-tooltip-pos="top"
+                      aria-label={researchEnabled ? 'Research: on' : 'Research: off'}
+                      aria-pressed={researchEnabled}
+                    >
+                      <Globe size={15} strokeWidth={2.5} />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 min-w-0 flex-1">
+                  <SpeechWaveformLangControl
+                    active
+                    speechSupported={speechSupported}
+                    speechLang={speechLang}
+                    showMenu={showSpeechLangMenu}
+                    setShowMenu={setShowSpeechLangMenu}
+                    onSelectLang={handleSelectSpeechLang}
+                    onOpenMenu={() => {
+                      setShowModelMenu(false)
+                      setShowAgentMenu(false)
+                    }}
+                  />
+                  <span className="text-[12px] text-[var(--color-text-muted)] truncate">Listening…</span>
+                </div>
+              )}
+
+              {/* Send / voice / stop */}
+              <div className="flex items-center flex-shrink-0 relative gap-1.5 text-[var(--color-text-muted)]">
+                <span
+                  onClick={() => imageInputRef.current?.click()}
+                  className="flex items-center justify-center cursor-pointer"
+                  style={{ width: '26px', height: '26px', color: COMPOSER_CTRL_ICON }}
+                  data-tooltip="Attach image"
+                  data-tooltip-pos="top"
+                >
+                  <svg
+                    width={17}
+                    height={17}
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M21.1935 16.793C20.8437 19.2739 20.6689 20.5143 19.7717 21.2572C18.8745 22 17.5512 22 14.9046 22H9.09536C6.44881 22 5.12553 22 4.22834 21.2572C3.33115 20.5143 3.15626 19.2739 2.80648 16.793L2.38351 13.793C1.93748 10.6294 1.71447 9.04765 2.66232 8.02383C3.61017 7 5.29758 7 8.67239 7H15.3276C18.7024 7 20.3898 7 21.3377 8.02383C22.0865 8.83268 22.1045 9.98979 21.8592 12" />
+                    <path d="M19.5617 7C19.7904 5.69523 18.7863 4.5 17.4617 4.5H6.53788C5.21323 4.5 4.20922 5.69523 4.43784 7" />
+                    <path d="M17.4999 4.5C17.5283 4.24092 17.5425 4.11135 17.5427 4.00435C17.545 2.98072 16.7739 2.12064 15.7561 2.01142C15.6497 2 15.5194 2 15.2588 2H8.74099C8.48035 2 8.35002 2 8.24362 2.01142C7.22584 2.12064 6.45481 2.98072 6.45704 4.00434C6.45727 4.11135 6.47146 4.2409 6.49983 4.5" />
+                    <circle cx="16.5" cy="11.5" r="1.5" />
+                    <path d="M19.9999 20L17.1157 17.8514C16.1856 17.1586 14.8004 17.0896 13.7766 17.6851L13.5098 17.8403C12.7984 18.2542 11.8304 18.1848 11.2156 17.6758L7.37738 14.4989C6.6113 13.8648 5.38245 13.8309 4.5671 14.4214L3.24316 15.3803" />
+                  </svg>
+                </span>
+                {isGenerating ? (
+                  <span
+                    onClick={handleAbort}
+                    className="flex items-center justify-center cursor-pointer rounded-full transition-all duration-200"
+                    style={{ width: '26px', height: '26px', backgroundColor: COMPOSER_CTRL_BG }}
+                  >
+                    <span
+                      className="animate-pulse"
+                      style={{
+                        width: 10,
+                        height: 10,
+                        borderRadius: 2,
+                        backgroundColor: COMPOSER_CTRL_ICON,
+                        opacity: 0.85,
+                      }}
+                    />
+                  </span>
+                ) : isListening ? (
+                  <>
+                    {canSend && (
+                      <button
+                        type="button"
+                        onClick={handleSend}
+                        aria-label="Send"
+                        className="flex items-center justify-center transition-all cursor-pointer no-style rounded-full relative"
+                        style={{
+                          width: '30px',
+                          height: '30px',
+                          backgroundColor: COMPOSER_CTRL_BG,
+                          padding: 0,
+                          color: COMPOSER_CTRL_ICON,
+                        }}
+                        data-tooltip="Send"
+                        data-tooltip-pos="top"
+                      >
+                        <Send size={16} strokeWidth={2} className="opacity-90" aria-hidden />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => toggleVoiceInput()}
+                      aria-label="Stop listening"
+                      className="flex items-center justify-center transition-all cursor-pointer no-style rounded-full"
                       style={{
                         width: '30px',
                         height: '30px',
@@ -3442,90 +3891,76 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                         padding: 0,
                         color: COMPOSER_CTRL_ICON,
                       }}
-                      data-tooltip="Send"
+                      data-tooltip="Stop listening"
                       data-tooltip-pos="top"
                     >
-                      <Send size={16} strokeWidth={2} className="opacity-90" aria-hidden />
+                      <Square size={11} strokeWidth={2.5} fill="currentColor" aria-hidden />
                     </button>
-                  )}
+                  </>
+                ) : canSend ? (
                   <button
                     type="button"
-                    onClick={() => toggleVoiceInput()}
-                    aria-label="Stop listening"
-                    className="flex items-center justify-center transition-all cursor-pointer no-style rounded-full"
+                    onClick={handleSend}
+                    aria-label="Send"
+                    className="flex items-center justify-center transition-all cursor-pointer no-style rounded-full relative"
                     style={{
-                      width: '30px',
-                      height: '30px',
+                      width: '26px',
+                      height: '26px',
                       backgroundColor: COMPOSER_CTRL_BG,
                       padding: 0,
                       color: COMPOSER_CTRL_ICON,
                     }}
-                    data-tooltip="Stop listening"
+                    data-tooltip="Send"
                     data-tooltip-pos="top"
                   >
-                    <Square size={11} strokeWidth={2.5} fill="currentColor" aria-hidden />
+                    <Send size={16} strokeWidth={2} className="opacity-90" aria-hidden />
                   </button>
-                </>
-              ) : canSend ? (
-                <button
-                  type="button"
-                  onClick={handleSend}
-                  aria-label="Send"
-                  className="flex items-center justify-center transition-all cursor-pointer no-style rounded-full relative"
-                  style={{
-                    width: '26px',
-                    height: '26px',
-                    backgroundColor: COMPOSER_CTRL_BG,
-                    padding: 0,
-                    color: COMPOSER_CTRL_ICON,
-                  }}
-                  data-tooltip="Send"
-                  data-tooltip-pos="top"
-                >
-                  <Send size={16} strokeWidth={2} className="opacity-90" aria-hidden />
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => speechSupported && toggleVoiceInput()}
-                  disabled={!speechSupported}
-                  aria-label={speechSupported ? 'Voice input' : 'Voice input not supported'}
-                  className={`flex items-center justify-center transition-all no-style rounded-full ${
-                    speechSupported ? 'cursor-pointer' : 'cursor-not-allowed opacity-40'
-                  }`}
-                  style={{
-                    width: '26px',
-                    height: '26px',
-                    backgroundColor: COMPOSER_CTRL_BG,
-                    padding: 0,
-                    color: COMPOSER_CTRL_ICON,
-                  }}
-                  data-tooltip={speechSupported ? 'Voice input' : 'Voice input not supported in this browser'}
-                  data-tooltip-pos="top"
-                >
-                  <Mic
-                    size={16}
-                    strokeWidth={2}
-                    className={speechSupported ? 'opacity-90' : 'opacity-30'}
-                    aria-hidden
-                  />
-                </button>
-              )}
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => speechSupported && toggleVoiceInput()}
+                    disabled={!speechSupported}
+                    aria-label={speechSupported ? 'Voice input' : 'Voice input not supported'}
+                    className={`flex items-center justify-center transition-all no-style rounded-full ${
+                      speechSupported ? 'cursor-pointer' : 'cursor-not-allowed opacity-40'
+                    }`}
+                    style={{
+                      width: '26px',
+                      height: '26px',
+                      backgroundColor: COMPOSER_CTRL_BG,
+                      padding: 0,
+                      color: COMPOSER_CTRL_ICON,
+                    }}
+                    data-tooltip={speechSupported ? 'Voice input' : 'Voice input not supported in this browser'}
+                    data-tooltip-pos="top"
+                  >
+                    <Mic
+                      size={16}
+                      strokeWidth={2}
+                      className={speechSupported ? 'opacity-90' : 'opacity-30'}
+                      aria-hidden
+                    />
+                  </button>
+                )}
+              </div>
             </div>
           </div>
-        </div>
-        <div className="flex items-center gap-1.5 mt-2 text-[12px] text-[var(--color-text-muted)] px-1">
-          {isGenerating ? (
-            <Loader2 size={12} strokeWidth={2} className="animate-spin opacity-60" />
-          ) : (
-            <svg width={16} height={16} viewBox="0 0 24 24" fill="currentColor" className="opacity-60 shrink-0">
-              <path fillRule="evenodd" clipRule="evenodd" d="M2.92377 10.2064C2.80976 10.7866 2.75 11.3863 2.75 12C2.75 12.2264 2.75814 12.451 2.77413 12.6733C2.79516 12.6904 2.81728 12.7083 2.84044 12.7268C3.06058 12.9028 3.37094 13.1369 3.73188 13.3698C4.4894 13.8584 5.33178 14.25 6 14.25C6.43561 14.25 6.9638 14.0813 7.51796 13.8023C7.85469 13.6327 8.17653 13.435 8.46068 13.2423C8.32421 12.8535 8.25 12.4354 8.25 12C8.25 9.92893 9.92893 8.25 12 8.25C14.0711 8.25 15.75 9.92893 15.75 12C15.75 12.7595 15.5242 13.4662 15.1361 14.0568C15.1836 14.0826 15.2334 14.1095 15.2856 14.1377C15.3054 14.1484 15.3255 14.1592 15.3459 14.1703C15.6383 14.3283 16.013 14.5325 16.3261 14.7866C16.9868 14.6782 17.6623 14.7793 18.216 15.1298C18.4093 14.7699 18.6888 14.4463 19.0327 14.1919C19.6351 13.7465 20.3998 13.5477 21.0993 13.6723C21.1983 13.1303 21.25 12.5715 21.25 12C21.25 11.5465 21.2174 11.1007 21.1543 10.6647L19.4953 12.1257C19.1845 12.3995 18.7106 12.3694 18.4368 12.0586C18.163 11.7477 18.1931 11.2738 18.504 11L20.182 9.52217C20.3764 9.351 20.6345 9.29861 20.8676 9.35938C20.6364 8.58192 20.3058 7.84726 19.8905 7.17018L19.5303 7.53033C19.2374 7.82322 18.7626 7.82322 18.4697 7.53033C18.1768 7.23744 18.1768 6.76256 18.4697 6.46967L18.9936 5.94571C17.2976 3.98821 14.7934 2.75 12 2.75C10.2299 2.75 8.57597 3.24718 7.17018 4.10952L7.53033 4.46967C7.82322 4.76256 7.82322 5.23744 7.53033 5.53033C7.23744 5.82322 6.76256 5.82322 6.46967 5.53033L5.94571 5.00637C4.94041 5.87741 4.12481 6.9616 3.56922 8.18863C3.97992 8.16934 4.33019 8.48475 4.3531 8.89609L4.43177 10.3081C4.45481 10.7217 4.13822 11.0756 3.72465 11.0987C3.31107 11.1217 2.95713 10.8051 2.93409 10.3916L2.92377 10.2064ZM14.7095 15.5316C14.6844 15.5179 14.6587 15.5039 14.6326 15.4898C14.5981 15.4712 14.5623 15.4519 14.5252 15.4321C14.3717 15.3497 14.1982 15.2567 14.0279 15.1549C13.4433 15.5315 12.7472 15.75 12 15.75C10.9043 15.75 9.91838 15.2801 9.23274 14.5308C8.92219 14.7382 8.56885 14.9526 8.19255 15.142C7.55133 15.4649 6.77639 15.75 6 15.75C4.98743 15.75 3.95347 15.2623 3.1792 14.7932C4.31219 18.3744 7.56585 21.013 11.4663 21.2349C11.4162 20.421 11.77 19.563 12.498 19.0246C12.8438 18.7689 13.2344 18.5971 13.6339 18.5182C13.3438 17.4575 13.8257 16.275 14.7095 15.5316ZM1.25 12C1.25 6.06294 6.06294 1.25 12 1.25C17.9371 1.25 22.75 6.06294 22.75 12C22.75 13.0111 22.6102 13.9907 22.3484 14.9201C22.2792 15.1662 22.0893 15.36 21.8447 15.4343C21.6002 15.5087 21.3346 15.4534 21.14 15.2876C20.9259 15.105 20.4213 15.0306 19.9246 15.398C19.5124 15.7028 19.3792 16.1229 19.4251 16.3974C19.4651 16.6365 19.3871 16.8801 19.2157 17.0515L19.1143 17.153C18.9599 17.3073 18.746 17.3868 18.5283 17.3706C18.3106 17.3544 18.1107 17.2441 17.9809 17.0686L17.6465 16.6163C17.351 16.2168 16.5445 16.0321 15.7654 16.6083C14.9862 17.1845 14.9266 18.0097 15.2221 18.4092L15.4074 18.6598C15.6282 18.9583 15.5973 19.3735 15.3347 19.6361L15.1494 19.8213C14.9517 20.019 14.6605 20.0904 14.3938 20.0064C14.1352 19.9249 13.747 19.9665 13.3899 20.2306C12.9028 20.5909 12.8699 21.2389 13.103 21.554C13.2677 21.7768 13.2963 22.0721 13.1772 22.3222C13.0582 22.5724 12.811 22.7365 12.5343 22.7492C12.4074 22.755 12.2412 22.7528 12.1175 22.7512C12.0709 22.7505 12.0302 22.75 12 22.75C6.06294 22.75 1.25 17.9371 1.25 12ZM12 9.75C10.7574 9.75 9.75 10.7574 9.75 12C9.75 13.2426 10.7574 14.25 12 14.25C13.2426 14.25 14.25 13.2426 14.25 12C14.25 10.7574 13.2426 9.75 12 9.75Z" />
-            </svg>
-          )}
-          <span className="opacity-60">
-            ${messages.reduce((sum, m) => sum + (m.usage?.costUsd ?? 0), 0).toFixed(4)} session usage
-          </span>
-        </div>
+          <div className="flex items-center gap-1.5 mt-2 text-[12px] text-[var(--color-text-muted)] px-1">
+            {isGenerating ? (
+              <Loader2 size={12} strokeWidth={2} className="animate-spin opacity-60" />
+            ) : (
+              <svg width={16} height={16} viewBox="0 0 24 24" fill="currentColor" className="opacity-60 shrink-0">
+                <path
+                  fillRule="evenodd"
+                  clipRule="evenodd"
+                  d="M2.92377 10.2064C2.80976 10.7866 2.75 11.3863 2.75 12C2.75 12.2264 2.75814 12.451 2.77413 12.6733C2.79516 12.6904 2.81728 12.7083 2.84044 12.7268C3.06058 12.9028 3.37094 13.1369 3.73188 13.3698C4.4894 13.8584 5.33178 14.25 6 14.25C6.43561 14.25 6.9638 14.0813 7.51796 13.8023C7.85469 13.6327 8.17653 13.435 8.46068 13.2423C8.32421 12.8535 8.25 12.4354 8.25 12C8.25 9.92893 9.92893 8.25 12 8.25C14.0711 8.25 15.75 9.92893 15.75 12C15.75 12.7595 15.5242 13.4662 15.1361 14.0568C15.1836 14.0826 15.2334 14.1095 15.2856 14.1377C15.3054 14.1484 15.3255 14.1592 15.3459 14.1703C15.6383 14.3283 16.013 14.5325 16.3261 14.7866C16.9868 14.6782 17.6623 14.7793 18.216 15.1298C18.4093 14.7699 18.6888 14.4463 19.0327 14.1919C19.6351 13.7465 20.3998 13.5477 21.0993 13.6723C21.1983 13.1303 21.25 12.5715 21.25 12C21.25 11.5465 21.2174 11.1007 21.1543 10.6647L19.4953 12.1257C19.1845 12.3995 18.7106 12.3694 18.4368 12.0586C18.163 11.7477 18.1931 11.2738 18.504 11L20.182 9.52217C20.3764 9.351 20.6345 9.29861 20.8676 9.35938C20.6364 8.58192 20.3058 7.84726 19.8905 7.17018L19.5303 7.53033C19.2374 7.82322 18.7626 7.82322 18.4697 7.53033C18.1768 7.23744 18.1768 6.76256 18.4697 6.46967L18.9936 5.94571C17.2976 3.98821 14.7934 2.75 12 2.75C10.2299 2.75 8.57597 3.24718 7.17018 4.10952L7.53033 4.46967C7.82322 4.76256 7.82322 5.23744 7.53033 5.53033C7.23744 5.82322 6.76256 5.82322 6.46967 5.53033L5.94571 5.00637C4.94041 5.87741 4.12481 6.9616 3.56922 8.18863C3.97992 8.16934 4.33019 8.48475 4.3531 8.89609L4.43177 10.3081C4.45481 10.7217 4.13822 11.0756 3.72465 11.0987C3.31107 11.1217 2.95713 10.8051 2.93409 10.3916L2.92377 10.2064ZM14.7095 15.5316C14.6844 15.5179 14.6587 15.5039 14.6326 15.4898C14.5981 15.4712 14.5623 15.4519 14.5252 15.4321C14.3717 15.3497 14.1982 15.2567 14.0279 15.1549C13.4433 15.5315 12.7472 15.75 12 15.75C10.9043 15.75 9.91838 15.2801 9.23274 14.5308C8.92219 14.7382 8.56885 14.9526 8.19255 15.142C7.55133 15.4649 6.77639 15.75 6 15.75C4.98743 15.75 3.95347 15.2623 3.1792 14.7932C4.31219 18.3744 7.56585 21.013 11.4663 21.2349C11.4162 20.421 11.77 19.563 12.498 19.0246C12.8438 18.7689 13.2344 18.5971 13.6339 18.5182C13.3438 17.4575 13.8257 16.275 14.7095 15.5316ZM1.25 12C1.25 6.06294 6.06294 1.25 12 1.25C17.9371 1.25 22.75 6.06294 22.75 12C22.75 13.0111 22.6102 13.9907 22.3484 14.9201C22.2792 15.1662 22.0893 15.36 21.8447 15.4343C21.6002 15.5087 21.3346 15.4534 21.14 15.2876C20.9259 15.105 20.4213 15.0306 19.9246 15.398C19.5124 15.7028 19.3792 16.1229 19.4251 16.3974C19.4651 16.6365 19.3871 16.8801 19.2157 17.0515L19.1143 17.153C18.9599 17.3073 18.746 17.3868 18.5283 17.3706C18.3106 17.3544 18.1107 17.2441 17.9809 17.0686L17.6465 16.6163C17.351 16.2168 16.5445 16.0321 15.7654 16.6083C14.9862 17.1845 14.9266 18.0097 15.2221 18.4092L15.4074 18.6598C15.6282 18.9583 15.5973 19.3735 15.3347 19.6361L15.1494 19.8213C14.9517 20.019 14.6605 20.0904 14.3938 20.0064C14.1352 19.9249 13.747 19.9665 13.3899 20.2306C12.9028 20.5909 12.8699 21.2389 13.103 21.554C13.2677 21.7768 13.2963 22.0721 13.1772 22.3222C13.0582 22.5724 12.811 22.7365 12.5343 22.7492C12.4074 22.755 12.2412 22.7528 12.1175 22.7512C12.0709 22.7505 12.0302 22.75 12 22.75C6.06294 22.75 1.25 17.9371 1.25 12ZM12 9.75C10.7574 9.75 9.75 10.7574 9.75 12C9.75 13.2426 10.7574 14.25 12 14.25C13.2426 14.25 14.25 13.2426 14.25 12C14.25 10.7574 13.2426 9.75 12 9.75Z"
+                />
+              </svg>
+            )}
+            <span className="opacity-60">
+              ${messages.reduce((sum, m) => sum + (m.usage?.costUsd ?? 0), 0).toFixed(4)} session usage
+            </span>
+          </div>
         </div>
       </div>
 

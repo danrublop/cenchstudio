@@ -26,6 +26,10 @@ export function createAgentActions(set: Set, get: Get) {
     // ── Conversation actions ────────────────────────────────────────────────
 
     loadConversations: async (projectId: string) => {
+      if (get().conversationsLoading) {
+        console.log('[Conversations] Already loading, skipping duplicate call')
+        return
+      }
       set({ conversationsLoading: true })
       try {
         const res = await fetch(`/api/conversations?projectId=${projectId}`)
@@ -78,6 +82,10 @@ export function createAgentActions(set: Set, get: Get) {
       // Validate conversation belongs to the current project's list
       const validIds = new Set(get().conversations.map((c) => c.id))
       if (!validIds.has(conversationId)) return
+      // Abort any in-flight agent stream before switching
+      if (get().isAgentRunning) {
+        get().abortAgentRun()
+      }
       const requestId = ++switchConversationCounter
       // Only update the active ID — don't clear messages yet to avoid flash
       set({ activeConversationId: conversationId })
@@ -91,11 +99,14 @@ export function createAgentActions(set: Set, get: Get) {
         const orphanedIds: string[] = []
         const msgs: ChatMessage[] = (data.messages ?? []).map((m: any) => {
           const isOrphaned = m.status === 'streaming'
-          if (isOrphaned) orphanedIds.push(m.id)
+          // Grace period: don't mark recent messages as orphaned (they may still be completing)
+          const createdAt = m.createdAt ? new Date(m.createdAt).getTime() : 0
+          const isRecent = createdAt > 0 && Date.now() - createdAt < 30_000
+          if (isOrphaned && !isRecent) orphanedIds.push(m.id)
           return {
             id: m.id,
             role: m.role as 'user' | 'assistant',
-            content: isOrphaned ? m.content || 'Generation interrupted.' : m.content,
+            content: isOrphaned && !isRecent ? m.content || 'Generation interrupted.' : m.content,
             agentType: m.agentType ?? undefined,
             modelId: m.modelUsed ?? undefined,
             thinking: m.thinkingContent ?? undefined,
@@ -108,6 +119,11 @@ export function createAgentActions(set: Set, get: Get) {
                   apiCalls: m.apiCalls ?? 1,
                   costUsd: m.costUsd ?? 0,
                   totalDurationMs: m.durationMs ?? 0,
+                  provider: m.modelUsed?.startsWith('claude-code:')
+                    ? 'claude-code'
+                    : m.modelUsed?.startsWith('codex-cli:')
+                      ? 'codex-cli'
+                      : undefined,
                 }
               : undefined,
             userRating: m.userRating ?? undefined,
@@ -118,6 +134,9 @@ export function createAgentActions(set: Set, get: Get) {
         // Guard against stale switch (belt-and-suspenders with counter above)
         if (requestId !== switchConversationCounter) return
         if (get().activeConversationId === conversationId) {
+          console.log(
+            `[switchConversation] Loaded ${msgs.length} messages for conversation ${conversationId.slice(0, 8)}…`,
+          )
           // Track all loaded message IDs as persisted (for INSERT vs UPDATE discrimination)
           set({
             chatMessages: msgs,
@@ -191,7 +210,11 @@ export function createAgentActions(set: Set, get: Get) {
     setChatOpen: (open: boolean) => set({ isChatOpen: open }),
 
     addChatMessage: (msg: ChatMessage) => {
+      const before = get().chatMessages.length
       set((state) => ({ chatMessages: [...state.chatMessages, msg] }))
+      console.log(
+        `[Chat] addChatMessage: role=${msg.role} id=${msg.id.slice(0, 8)}… before=${before} after=${get().chatMessages.length}`,
+      )
       // User messages are persisted via persistUserMessage (awaitable).
       // Assistant messages are persisted via persistChatMessage after the agent run.
     },
@@ -229,6 +252,12 @@ export function createAgentActions(set: Set, get: Get) {
     },
 
     updateChatMessage: (id: string, updates: Partial<ChatMessage>) => {
+      const contentLen = typeof updates.content === 'string' ? updates.content.length : 0
+      const hasSegments = !!updates.contentSegments?.length
+      const hasTools = !!updates.toolCalls?.length
+      console.log(
+        `[Chat] updateChatMessage: id=${id.slice(0, 8)}… contentLen=${contentLen} segments=${hasSegments} tools=${hasTools} msgCount=${get().chatMessages.length}`,
+      )
       set((state) => ({
         chatMessages: state.chatMessages.map((m) => (m.id === id ? { ...m, ...updates } : m)),
       }))
@@ -244,13 +273,10 @@ export function createAgentActions(set: Set, get: Get) {
       const textContent = typeof msg.content === 'string' ? msg.content : messageContentToText(msg.content)
       const persisted = get()._persistedMessageIds
 
-      try {
-        if (persisted.has(id)) {
-          // UPDATE path — message already exists in DB
-          await fetch(`/api/conversations/${conversationId}/messages`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
+      const payload = persisted.has(id)
+        ? {
+            method: 'PATCH' as const,
+            body: {
               messageId: id,
               content: textContent || '',
               status: opts?.status ?? 'complete',
@@ -265,14 +291,11 @@ export function createAgentActions(set: Set, get: Get) {
               durationMs: msg.usage?.totalDurationMs,
               apiCalls: msg.usage?.apiCalls,
               generationLogId: msg.generationLogId,
-            }),
-          })
-        } else {
-          // INSERT path — first persist for this message
-          await fetch(`/api/conversations/${conversationId}/messages`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
+            },
+          }
+        : {
+            method: 'POST' as const,
+            body: {
               id,
               projectId,
               role: msg.role,
@@ -289,14 +312,44 @@ export function createAgentActions(set: Set, get: Get) {
               durationMs: msg.usage?.totalDurationMs,
               apiCalls: msg.usage?.apiCalls,
               generationLogId: msg.generationLogId,
-            }),
-          })
+            },
+          }
+
+      const doFetch = () =>
+        fetch(`/api/conversations/${conversationId}/messages`, {
+          method: payload.method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload.body),
+        })
+
+      try {
+        let res = await doFetch()
+        // Retry once on failure — prevents message loss
+        if (!res.ok) {
+          console.warn(`[Chat] persistChatMessage ${payload.method} failed (${res.status}), retrying...`)
+          await new Promise((r) => setTimeout(r, 1000))
+          res = await doFetch()
+          if (!res.ok) console.error(`[Chat] persistChatMessage retry also failed (${res.status})`)
+        }
+        if (res.ok && !persisted.has(id)) {
           const ids = new Set(get()._persistedMessageIds)
           ids.add(id)
           set({ _persistedMessageIds: ids })
         }
       } catch (err) {
-        console.error('[Chat] Failed to persist message:', err)
+        // Retry once on network error
+        console.warn('[Chat] persistChatMessage network error, retrying...', err)
+        try {
+          await new Promise((r) => setTimeout(r, 1000))
+          const res = await doFetch()
+          if (res.ok && !persisted.has(id)) {
+            const ids = new Set(get()._persistedMessageIds)
+            ids.add(id)
+            set({ _persistedMessageIds: ids })
+          }
+        } catch (retryErr) {
+          console.error('[Chat] persistChatMessage retry failed:', retryErr)
+        }
       }
     },
 
@@ -383,7 +436,7 @@ export function createAgentActions(set: Set, get: Get) {
       console.log(`[Store] syncScenesFromAgent: ${updatedScenes.length} scenes`)
       for (const s of updatedScenes) {
         console.log(
-          `[Store]   scene ${s.id.slice(0, 8)}… type=${s.sceneType} html=${s.sceneHTML?.length ?? 0} svg=${s.svgContent?.length ?? 0} canvas=${s.canvasCode?.length ?? 0} code=${s.sceneCode?.length ?? 0} lottie=${s.lottieSource?.length ?? 0}`,
+          `[Store]   scene ${s.id.slice(0, 8)}… type=${s.sceneType} html=${s.sceneHTML?.length ?? 0} svg=${s.svgContent?.length ?? 0} canvas=${s.canvasCode?.length ?? 0} code=${s.sceneCode?.length ?? 0} react=${(s as any).reactCode?.length ?? 0} lottie=${s.lottieSource?.length ?? 0}`,
         )
       }
 
@@ -432,8 +485,15 @@ export function createAgentActions(set: Set, get: Get) {
           if (!existing) return normalizeScene(newScene as Scene)
 
           // If the user edited this scene AFTER the agent run started, preserve their version
-          if (agentRunStart > 0 && existing.updatedAt && existing.updatedAt > agentRunStart && sceneHasRenderableContent(existing)) {
-            console.log(`[Store] Preserving user-edited scene ${existing.id.slice(0, 8)}… (edited at ${existing.updatedAt}, agent started at ${agentRunStart})`)
+          if (
+            agentRunStart > 0 &&
+            existing.updatedAt &&
+            existing.updatedAt > agentRunStart &&
+            sceneHasRenderableContent(existing)
+          ) {
+            console.log(
+              `[Store] Preserving user-edited scene ${existing.id.slice(0, 8)}… (edited at ${existing.updatedAt}, agent started at ${agentRunStart})`,
+            )
             return existing
           }
 

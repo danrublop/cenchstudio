@@ -1,10 +1,17 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Download, Loader2, AlertTriangle, FolderOpen } from 'lucide-react'
 import { useVideoStore } from '@/lib/store'
 import { resolveProjectDimensions } from '@/lib/dimensions'
 import type { ExportFPS, ExportResolution, ExportSettings } from '@/lib/types'
+import {
+  PLATFORM_PROFILES,
+  checkPlatformCompatibility,
+  getPlatformProfile,
+  type PlatformProfileId,
+} from '@/lib/export/platform-profiles'
+import { mergeProjectCaptions, type SceneCaptionInput } from '@/lib/audio/captions'
 
 type OSType = 'mac' | 'windows' | 'linux' | 'unknown'
 
@@ -28,7 +35,9 @@ const OS_WARNINGS: Partial<Record<OSType, { title: string; body: string }>> = {
   },
 }
 
-function getResolutions(aspectRatio?: import('@/lib/dimensions').AspectRatio | null): { value: ExportResolution; label: string; desc: string }[] {
+function getResolutions(
+  aspectRatio?: import('@/lib/dimensions').AspectRatio | null,
+): { value: ExportResolution; label: string; desc: string }[] {
   return (['720p', '1080p', '4k'] as const).map((res) => {
     const d = resolveProjectDimensions(aspectRatio, res)
     return { value: res, label: res === '4k' ? '4K' : res, desc: `${d.width}×${d.height}` }
@@ -38,10 +47,44 @@ function getResolutions(aspectRatio?: import('@/lib/dimensions').AspectRatio | n
 const FPS_OPTIONS: ExportFPS[] = [24, 30, 60]
 
 export default function ExportModal() {
-  const { exportProgress, closeExportModal, exportVideo, isExporting, scenes, project } = useVideoStore()
-  const [resolution, setResolution] = useState<ExportResolution>('1080p')
-  const [fps, setFps] = useState<ExportFPS>(30)
+  const {
+    exportProgress,
+    closeExportModal,
+    exportVideo,
+    isExporting,
+    scenes,
+    project,
+    updateProject,
+    saveProjectToDb,
+  } = useVideoStore()
+  const initialPlatformId: PlatformProfileId = project?.mp4Settings?.platformProfileId ?? 'custom'
+  const initialProfile = getPlatformProfile(initialPlatformId)
+  const [platformId, setPlatformId] = useState<PlatformProfileId>(initialPlatformId)
+  const [resolution, setResolutionState] = useState<ExportResolution>(
+    initialPlatformId === 'custom' ? (project?.mp4Settings?.resolution ?? '1080p') : initialProfile.resolution,
+  )
+  const [fps, setFpsState] = useState<ExportFPS>(
+    initialPlatformId === 'custom' ? (project?.mp4Settings?.fps ?? 30) : initialProfile.fps,
+  )
   const [profile, setProfile] = useState<'fast' | 'quality'>('quality')
+
+  // When the user manually changes resolution or fps after selecting a named
+  // platform, drop back to 'custom' so the label doesn't claim settings it
+  // no longer reflects.
+  const setResolution = (v: ExportResolution) => {
+    setResolutionState(v)
+    if (platformId !== 'custom') {
+      const prof = getPlatformProfile(platformId)
+      if (prof.resolution !== v) setPlatformId('custom')
+    }
+  }
+  const setFps = (v: ExportFPS) => {
+    setFpsState(v)
+    if (platformId !== 'custom') {
+      const prof = getPlatformProfile(platformId)
+      if (prof.fps !== v) setPlatformId('custom')
+    }
+  }
   const [os, setOs] = useState<OSType>('unknown')
   const [filename, setFilename] = useState('')
   const [saveDir, setSaveDir] = useState<FileSystemDirectoryHandle | null>(null)
@@ -78,6 +121,78 @@ export default function ExportModal() {
   }
 
   const osWarning = OS_WARNINGS[os]
+
+  const currentPlatform = useMemo(() => getPlatformProfile(platformId), [platformId])
+  const totalDuration = useMemo(() => scenes.reduce((a, s) => a + s.duration, 0), [scenes])
+  const compat = useMemo(
+    () => checkPlatformCompatibility(currentPlatform, project?.mp4Settings?.aspectRatio ?? '16:9', totalDuration),
+    [currentPlatform, project?.mp4Settings?.aspectRatio, totalDuration],
+  )
+
+  const applyPlatform = (id: PlatformProfileId) => {
+    setPlatformId(id)
+    const prof = getPlatformProfile(id)
+    if (id !== 'custom') {
+      setResolutionState(prof.resolution)
+      setFpsState(prof.fps)
+    }
+    updateProject({
+      mp4Settings: {
+        ...project.mp4Settings,
+        platformProfileId: id === 'custom' ? null : id,
+      },
+    })
+    // Rely on the store's 30s auto-save; explicit save not required here.
+  }
+
+  const applyProjectAspect = () => {
+    if (!currentPlatform.aspectRatio) return
+    updateProject({
+      mp4Settings: {
+        ...project.mp4Settings,
+        aspectRatio: currentPlatform.aspectRatio,
+      },
+    })
+    saveProjectToDb().catch((err) => {
+      console.warn('[ExportModal] failed to persist aspect change', err)
+    })
+  }
+
+  // Stitch per-scene caption word timings into a project-level SRT + VTT
+  // at export time. Memoised so the bundle rebuilds only when scenes change.
+  // Skipped in NLE timeline mode — scene order + `s.duration` don't match
+  // timeline composition offsets when tracks have gaps or overlap.
+  const mergedCaptions = useMemo(() => {
+    if (project?.timeline) return null
+    let cursor = 0
+    const inputs: SceneCaptionInput[] = []
+    for (const s of scenes) {
+      const words = s.audioLayer?.tts?.captions?.words
+      if (words && words.length > 0) {
+        inputs.push({ startSeconds: cursor, words })
+      }
+      cursor += s.duration
+    }
+    if (inputs.length === 0) return null
+    const bundle = mergeProjectCaptions(inputs)
+    if (bundle.cues.length === 0) return null
+    return bundle
+  }, [scenes, project?.timeline])
+
+  const downloadCaptions = (kind: 'srt' | 'vtt') => {
+    if (!mergedCaptions) return
+    const content = kind === 'srt' ? mergedCaptions.srt : mergedCaptions.vtt
+    const mime = kind === 'srt' ? 'application/x-subrip' : 'text/vtt'
+    const blob = new Blob([content], { type: `${mime};charset=utf-8` })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${sanitizedName}.${kind}`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
 
   const isRendering = exportProgress?.phase === 'rendering'
   const isMixingAudio = exportProgress?.phase === 'mixing_audio'
@@ -118,6 +233,60 @@ export default function ExportModal() {
           {/* Settings (shown when no export has been initiated) */}
           {!exportProgress ? (
             <>
+              {/* Platform profile */}
+              <div>
+                <label className="text-[var(--color-text-muted)] text-[11px] uppercase tracking-wider block mb-2">
+                  Platform
+                </label>
+                <select
+                  value={platformId}
+                  onChange={(e) => applyPlatform(e.target.value as PlatformProfileId)}
+                  className="w-full h-9 px-3 rounded border border-[var(--color-border)] bg-[var(--color-bg)] text-[var(--color-text-primary)] text-sm outline-none focus:border-[var(--color-accent)] transition-colors"
+                >
+                  {PLATFORM_PROFILES.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.label}
+                      {p.note ? ` — ${p.note}` : ''}
+                    </option>
+                  ))}
+                </select>
+                {currentPlatform.id !== 'custom' && (
+                  <p className="text-[11px] text-[var(--color-text-muted)] mt-1.5">{currentPlatform.description}</p>
+                )}
+                {currentPlatform.id !== 'custom' && !compat.aspectMatch && (
+                  <div className="mt-2 flex gap-2 bg-amber-950/40 border border-amber-700/40 rounded p-2.5">
+                    <AlertTriangle size={13} className="text-amber-400 flex-shrink-0 mt-0.5" />
+                    <div className="text-[12px] text-amber-200/80 space-y-1.5">
+                      <p>
+                        Project aspect is {compat.actualAspect} but {currentPlatform.label} expects{' '}
+                        {compat.expectedAspect}. The export will render at {compat.actualAspect} unless you switch the
+                        project aspect.
+                      </p>
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        onClick={applyProjectAspect}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') applyProjectAspect()
+                        }}
+                        className="inline-block text-amber-300 underline cursor-pointer hover:text-amber-200"
+                      >
+                        Switch project to {compat.expectedAspect}
+                      </span>
+                    </div>
+                  </div>
+                )}
+                {compat.durationExceeds && compat.maxDurationSeconds !== null && (
+                  <div className="mt-2 flex gap-2 bg-amber-950/40 border border-amber-700/40 rounded p-2.5">
+                    <AlertTriangle size={13} className="text-amber-400 flex-shrink-0 mt-0.5" />
+                    <p className="text-[12px] text-amber-200/80">
+                      Video is {Math.round(compat.totalDurationSeconds)}s — exceeds {currentPlatform.label}'s{' '}
+                      {compat.maxDurationSeconds}s cap. Trim scenes before uploading.
+                    </p>
+                  </div>
+                )}
+              </div>
+
               {/* Resolution */}
               <div>
                 <label className="text-[var(--color-text-muted)] text-[11px] uppercase tracking-wider block mb-2">
@@ -262,6 +431,14 @@ export default function ExportModal() {
                   <span>Backend</span>
                   <span className="text-[var(--color-text-primary)]">{backendLabel}</span>
                 </div>
+                {mergedCaptions && (
+                  <div className="flex justify-between">
+                    <span>Captions</span>
+                    <span className="text-[var(--color-text-primary)]">
+                      {mergedCaptions.cues.length} cues · SRT + VTT
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* OS-specific warning */}
@@ -345,6 +522,35 @@ export default function ExportModal() {
                   >
                     <Download size={14} />
                     Open
+                  </span>
+                </div>
+              )}
+              {mergedCaptions && (
+                <div className="flex items-center justify-center gap-4 pt-1">
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => downloadCaptions('srt')}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') downloadCaptions('srt')
+                    }}
+                    className="inline-flex items-center gap-1.5 text-[12px] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] cursor-pointer transition-colors"
+                  >
+                    <Download size={12} />
+                    Download SRT
+                  </span>
+                  <span className="text-[var(--color-border)]">|</span>
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => downloadCaptions('vtt')}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') downloadCaptions('vtt')
+                    }}
+                    className="inline-flex items-center gap-1.5 text-[12px] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] cursor-pointer transition-colors"
+                  >
+                    <Download size={12} />
+                    Download VTT
                   </span>
                 </div>
               )}

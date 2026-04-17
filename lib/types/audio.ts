@@ -19,6 +19,8 @@ export type TTSProvider =
   | 'puter'
   | 'native-tts'
   | 'openai-edge-tts'
+  | 'pocket-tts'
+  | 'voxcpm'
   | 'google-tts'
   | 'elevenlabs'
   | 'openai-tts'
@@ -35,6 +37,17 @@ export interface TTSTrack {
   status: 'pending' | 'generating' | 'ready' | 'error'
   duration: number | null
   instructions: string | null
+  /** Subtitle files emitted alongside the audio. `null` when caption
+   *  generation was skipped (e.g. empty text, missing duration). */
+  captions?: {
+    srtUrl: string
+    vttUrl: string
+    /** Word-level timings. From provider alignment when available, otherwise
+     *  a naive even distribution across the audio duration. `kind` tells
+     *  downstream consumers which kind they're dealing with. */
+    kind: 'aligned' | 'naive'
+    words: { text: string; start: number; end: number }[]
+  } | null
 }
 
 export interface SFXTrack {
@@ -72,6 +85,8 @@ export interface AudioSettings {
   geminiTTSModel: 'gemini-2.5-flash-preview-tts' | 'gemini-2.5-pro-preview-tts'
   geminiVoice: string | null
   edgeTTSUrl: string | null
+  pocketTTSUrl: string | null
+  voxcpmUrl: string | null
   globalMusicDucking: boolean
   globalMusicDuckLevel: number
 }
@@ -89,6 +104,8 @@ export const DEFAULT_AUDIO_SETTINGS: AudioSettings = {
   geminiTTSModel: 'gemini-2.5-flash-preview-tts',
   geminiVoice: null,
   edgeTTSUrl: null,
+  pocketTTSUrl: null,
+  voxcpmUrl: null,
   globalMusicDucking: true,
   globalMusicDuckLevel: 0.2,
 }

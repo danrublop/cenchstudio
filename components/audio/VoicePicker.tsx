@@ -1,6 +1,11 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
-import { ChevronDown, Play, Loader2 } from 'lucide-react'
+import { ChevronDown, Play, Loader2, Copy, Wand2 } from 'lucide-react'
+import { VoiceCloneDialog } from './VoiceCloneDialog'
+import { VoiceDesignDialog } from './VoiceDesignDialog'
+
+const CLONE_CAPABLE_PROVIDERS = ['pocket-tts', 'voxcpm']
+const DESIGN_CAPABLE_PROVIDERS = ['voxcpm']
 
 interface Voice {
   id: string
@@ -21,6 +26,8 @@ export function VoicePicker({ provider, selectedVoiceId, onSelect }: VoicePicker
   const [loading, setLoading] = useState(false)
   const [open, setOpen] = useState(false)
   const [playing, setPlaying] = useState<string | null>(null)
+  const [showClone, setShowClone] = useState(false)
+  const [showDesign, setShowDesign] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
@@ -111,6 +118,43 @@ export function VoicePicker({ provider, selectedVoiceId, onSelect }: VoicePicker
             </div>
           ))}
         </div>
+      )}
+      {CLONE_CAPABLE_PROVIDERS.includes(provider) && (
+        <div className="flex gap-1 mt-1">
+          <span
+            onClick={() => setShowClone(true)}
+            className="flex items-center gap-1 text-[11px] text-[var(--color-accent)] cursor-pointer hover:opacity-80"
+          >
+            <Copy size={10} /> Clone Voice
+          </span>
+          {DESIGN_CAPABLE_PROVIDERS.includes(provider) && (
+            <span
+              onClick={() => setShowDesign(true)}
+              className="flex items-center gap-1 text-[11px] text-[var(--color-accent)] cursor-pointer hover:opacity-80 ml-2"
+            >
+              <Wand2 size={10} /> Design Voice
+            </span>
+          )}
+        </div>
+      )}
+      {showClone && (
+        <VoiceCloneDialog
+          provider={provider}
+          onClose={() => setShowClone(false)}
+          onCloned={(voiceId, voiceName) => {
+            onSelect(voiceId, voiceName)
+            setShowClone(false)
+          }}
+        />
+      )}
+      {showDesign && (
+        <VoiceDesignDialog
+          onClose={() => setShowDesign(false)}
+          onDesigned={(voiceId, voiceName) => {
+            onSelect(voiceId, voiceName)
+            setShowDesign(false)
+          }}
+        />
       )}
     </div>
   )

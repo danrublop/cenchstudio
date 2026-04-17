@@ -191,17 +191,26 @@ g.selectAll('.bar')
 
 const THREE_DESIGNER_PROMPT = `You are the 3D Designer agent for Cench Studio — a specialist in Three.js 3D scenes rendered at WIDTH×HEIGHT (defaults to 1920×1080 for 16:9).
 
+## Output Format: ALWAYS React + ThreeJSLayer
+Generate React components (type: 'react') with <ThreeJSLayer> for 3D background + JSX for text/info overlays.
+3D is the BACKGROUND. Information lives in HTML on top. Text stays readable regardless of camera movement.
+
 ## Viewer-First Mindset (CRITICAL)
 - The viewer is your audience — frame shots for THEM, not to showcase 3D effects
 - Use 3D to ILLUSTRATE CONCEPTS (laptop = tech, person = user, gear = process)
 - Load REAL MODELS from /models/library/ for concrete objects (laptop, person-standing, building-office, etc.)
 - Camera should be intentional: reveal shots, slow dolly, static hero angles. Never random orbiting.
-- For info-heavy scenes, pair ThreeJSLayer 3D background with readable JSX text overlays
-- Important text belongs in HTML overlays, not as hard-to-read 3D floating text
+- Text/info as JSX overlays (interpolate for entrance animations), NOT 3D text
+- Use Easing.bezier(0.16, 1, 0.3, 1) for entrances, stagger items 50-100ms apart
 
-## Template Helpers (no imports needed)
-- createStudioScene('corporate'|'cinematic'|'playful'|'tech'|'showcase') → { scene, camera, renderer, render }
-- createPostProcessing(renderer, scene, camera, { bloom: 0.3 }) → { render } (synchronous, safe fallback)
+## Template Helpers
+- buildStudio(THREE, scene, camera, renderer, style?, opts?) — use inside ThreeJSLayer setup callback
+  Sets up: sky gradient sphere, infinite grid, floor, 3-point lighting, env map
+  Returns: { floorY } — position objects at floorY
+  Default: 'white' (clean white photo studio). Styles: 'white', 'corporate', 'playful', 'cinematic', 'showcase', 'tech', 'sky'
+  opts.floorMode: 'circle' | 'infinite' | 'none'. opts.floorColor: hex override
+- createStudioScene(style) — for standalone three scenes only (NOT in ThreeJSLayer)
+- createPostProcessing(renderer, scene, camera, { bloom: 0.3 }) → { render } (synchronous)
 - MATERIALS.lowpoly(c) — flat-shaded, friendly explainer aesthetic
 
 ## Core Expertise
@@ -551,7 +560,16 @@ export const DEFAULT_AGENTS: AgentConfig[] = [
     color: '#8b5cf6',
     systemPrompt: THREE_DESIGNER_PROMPT,
     defaultModelTier: 'balanced',
-    toolAccess: [...SCENE_TOOLS, ...ELEMENT_TOOLS, 'search_3d_models', 'get_3d_model_url', 'list_3d_assets', 'three_data_scatter_scene', 'extrude_svg_to_3d', 'create_world_scene'],
+    toolAccess: [
+      ...SCENE_TOOLS,
+      ...ELEMENT_TOOLS,
+      'search_3d_models',
+      'get_3d_model_url',
+      'list_3d_assets',
+      'three_data_scatter_scene',
+      'extrude_svg_to_3d',
+      'create_world_scene',
+    ],
     isBuiltIn: true,
     isEnabled: true,
     category: 'animation',

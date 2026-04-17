@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { ToggleLeft, ToggleRight, Upload, Check, Loader2, Trash2, DollarSign } from 'lucide-react'
 import { useVideoStore } from '@/lib/store'
 import { MEDIA_PROVIDERS } from '@/lib/media/provider-registry'
+import { useConfiguredProviders } from '@/lib/hooks/useConfiguredProviders'
 import { SectionLabel, ListContainer, KeyInputRow } from './shared'
 
 // ── Avatar Provider Toggle List (system-level, same style as Audio/MediaGen) ──
@@ -17,6 +18,7 @@ const AVATAR_API_KEYS: { provider: string; label: string; envVar: string }[] = [
 
 export function AvatarProvidersSection() {
   const { mediaGenEnabled, toggleMediaGen } = useVideoStore()
+  const configuredProviders = useConfiguredProviders()
 
   return (
     <div className="space-y-10">
@@ -25,9 +27,13 @@ export function AvatarProvidersSection() {
         <SectionLabel>Avatar Providers</SectionLabel>
         <ListContainer>
           {AVATAR_PROVIDERS.map((p) => {
-            const isEnabled = mediaGenEnabled[p.id] ?? p.defaultEnabled
+            const isConfigured = configuredProviders.media.has(p.id)
+            const isEnabled = isConfigured && (mediaGenEnabled[p.id] ?? p.defaultEnabled)
             return (
-              <div key={p.id} className="flex items-center justify-between gap-3 py-2 px-1">
+              <div
+                key={p.id}
+                className={`flex items-center justify-between gap-3 py-2 px-1 ${!isConfigured ? 'opacity-40' : ''}`}
+              >
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="text-sm text-[var(--color-text-primary)] font-semibold truncate leading-none">
                     {p.name}
@@ -42,17 +48,20 @@ export function AvatarProvidersSection() {
                       fal.ai
                     </span>
                   )}
+                  {!isConfigured && p.requiresKey && (
+                    <span className="text-[10px] text-[var(--color-text-muted)] truncate">Set {p.requiresKey}</span>
+                  )}
                 </div>
-                <button
-                  onClick={() => toggleMediaGen(p.id)}
-                  className="no-style text-[var(--color-text-muted)] hover:text-[var(--color-accent)] transition-all"
+                <span
+                  onClick={() => isConfigured && toggleMediaGen(p.id)}
+                  className={`select-none ${isConfigured ? 'cursor-pointer text-[var(--color-text-muted)] hover:text-[var(--color-accent)] transition-all' : 'cursor-not-allowed'}`}
                 >
                   {isEnabled ? (
                     <ToggleRight size={22} className="text-[var(--color-accent)]" />
                   ) : (
                     <ToggleLeft size={22} />
                   )}
-                </button>
+                </span>
               </div>
             )
           })}

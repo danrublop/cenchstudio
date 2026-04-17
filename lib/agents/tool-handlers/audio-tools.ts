@@ -10,7 +10,13 @@ export function createAudioToolHandler(deps: {
     api: APIName,
     context?: {
       reason?: string
-      details?: { prompt?: string; duration?: number; model?: string; resolution?: string }
+      details?: {
+        prompt?: string
+        duration?: number
+        model?: string
+        resolution?: string
+        textLength?: number
+      }
     },
   ) => ToolResult | null
   enrichPermission: (
@@ -78,8 +84,9 @@ export function createAudioToolHandler(deps: {
             // In local mode, only use free TTS providers
             if (world.localMode) {
               if (process.platform === 'darwin' && isProviderEnabled('native-tts')) return 'native-tts'
-              if (isProviderEnabled('openai-edge-tts')) return 'openai-edge-tts'
-              if (isProviderEnabled('native-tts')) return 'native-tts'
+              if (process.env.EDGE_TTS_URL && isProviderEnabled('openai-edge-tts')) return 'openai-edge-tts'
+              if (process.env.POCKET_TTS_URL && isProviderEnabled('pocket-tts')) return 'pocket-tts'
+              if (process.platform === 'win32' && isProviderEnabled('native-tts')) return 'native-tts'
               if (isProviderEnabled('web-speech')) return 'web-speech'
               return null
             }
@@ -87,7 +94,10 @@ export function createAudioToolHandler(deps: {
             if (process.env.OPENAI_API_KEY && isProviderEnabled('openai-tts')) return 'openai-tts'
             if (process.env.GEMINI_API_KEY && isProviderEnabled('gemini-tts')) return 'gemini-tts'
             if (process.env.GOOGLE_TTS_API_KEY && isProviderEnabled('google-tts')) return 'google-tts'
-            if (isProviderEnabled('openai-edge-tts')) return 'openai-edge-tts'
+            if (process.env.EDGE_TTS_URL && isProviderEnabled('openai-edge-tts')) return 'openai-edge-tts'
+            if (process.env.POCKET_TTS_URL && isProviderEnabled('pocket-tts')) return 'pocket-tts'
+            if ((process.platform === 'darwin' || process.platform === 'win32') && isProviderEnabled('native-tts'))
+              return 'native-tts'
             if (isProviderEnabled('puter')) return 'puter'
             if (isProviderEnabled('web-speech')) return 'web-speech'
             return null
@@ -104,7 +114,11 @@ export function createAudioToolHandler(deps: {
           ].filter((p) => isProviderEnabled(p.id))
           const blocked = deps.checkApiPermission(world, ttsApiMap[effectiveProvider]!, {
             reason: 'Generate narration audio',
-            details: { prompt: text as string, model: effectiveProvider },
+            details: {
+              prompt: text as string,
+              model: effectiveProvider,
+              textLength: typeof text === 'string' ? text.length : undefined,
+            },
           })
           if (blocked)
             return deps.enrichPermission(blocked, {
@@ -122,7 +136,14 @@ export function createAudioToolHandler(deps: {
           const res = await fetch(`${baseUrl}/api/tts`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text, sceneId, voiceId, provider: effectiveProvider ?? undefined, instructions, localMode: world.localMode }),
+            body: JSON.stringify({
+              text,
+              sceneId,
+              voiceId,
+              provider: effectiveProvider ?? undefined,
+              instructions,
+              localMode: world.localMode,
+            }),
           })
           if (!res.ok) {
             const errData = await res.json().catch(() => ({ error: 'TTS request failed' }))
@@ -154,7 +175,15 @@ export function createAudioToolHandler(deps: {
                 },
               },
             })
-            return ok(sceneId, `Narration added (${data.provider} — browser preview only)`)
+            // Client-only TTS (web-speech / puter) plays in the browser
+            // preview but writes no audio file. MP4 exports of this scene
+            // will be silent. Tell the agent explicitly so it can warn the
+            // user and suggest adding a server-side TTS key.
+            return ok(
+              sceneId,
+              `Narration set up for browser preview only (${data.provider}). MP4 export will be silent for this scene — add a server TTS API key (ElevenLabs, OpenAI, Gemini, or Google Cloud TTS) to generate a real audio file.`,
+              { audioUrl: null, clientOnly: true, provider: data.provider },
+            )
           }
 
           const audioLayer = scene.audioLayer || {
@@ -165,6 +194,17 @@ export function createAudioToolHandler(deps: {
             fadeOut: false,
             startOffset: 0,
           }
+          const captions =
+            data.captions && data.captions.srtUrl && data.captions.vttUrl
+              ? {
+                  srtUrl: data.captions.srtUrl as string,
+                  vttUrl: data.captions.vttUrl as string,
+                  kind: (data.captions.kind === 'naive' ? 'naive' : 'aligned') as 'aligned' | 'naive',
+                  words: Array.isArray(data.captions.words)
+                    ? (data.captions.words as Array<{ text: string; start: number; end: number }>)
+                    : [],
+                }
+              : null
           updateScene(world, sceneId, {
             audioLayer: {
               ...audioLayer,
@@ -178,13 +218,15 @@ export function createAudioToolHandler(deps: {
                 status: 'ready' as const,
                 duration: data.duration || null,
                 instructions: instructions || null,
+                captions,
               },
             },
           })
+          const captionSuffix = captions ? ', captions generated' : ''
           return ok(
             sceneId,
-            `Narration generated (${data.provider})${data.duration ? `, ${data.duration.toFixed(1)}s` : ''}`,
-            { audioUrl: data.url },
+            `Narration generated (${data.provider})${data.duration ? `, ${data.duration.toFixed(1)}s` : ''}${captionSuffix}`,
+            { audioUrl: data.url, ...(captions ? { captionsUrl: captions.vttUrl } : {}) },
           )
         } catch (e: any) {
           return err(`Narration failed: ${e.message}`)

@@ -21,7 +21,7 @@ import { toolRegistry } from './tool-registry'
 import { generateSceneHTML } from '../sceneTemplate'
 import { resolveProjectDimensions } from '../dimensions'
 import { resolveStyle } from '../styles/presets'
-import { API_COST_ESTIMATES, API_DISPLAY_NAMES, checkPermission } from '../permissions'
+import { API_COST_ESTIMATES, API_DISPLAY_NAMES, checkPermission, estimateApiCostUsd } from '../permissions'
 import { generateCode } from '../generation/generate'
 import { ALL_TOOLS } from './tools'
 import { SCENE_ID_RE } from '../api/constants'
@@ -30,6 +30,7 @@ import { createStyleToolHandler, STYLE_TOOL_NAMES } from './tool-handlers/style-
 import { createInteractionToolHandler, INTERACTION_TOOL_NAMES } from './tool-handlers/interaction-tools'
 import { AUDIO_TOOL_NAMES, createAudioToolHandler } from './tool-handlers/audio-tools'
 import { createImageVideoToolHandler, IMAGE_VIDEO_TOOL_NAMES } from './tool-handlers/image-video-tools'
+import { createMediaLibraryExtHandler, MEDIA_LIBRARY_EXT_TOOL_NAMES } from './tool-handlers/media-library-tools'
 import { AVATAR_TOOL_NAMES, createAvatarToolHandler } from './tool-handlers/avatar-tools'
 import { createLayerToolHandler, LAYER_TOOL_NAMES } from './tool-handlers/layer-tools'
 import { createChartToolHandler, CHART_TOOL_NAMES } from './tool-handlers/chart-tools'
@@ -44,6 +45,7 @@ import { createThreeWorldToolHandler, THREE_WORLD_TOOL_NAMES } from './tool-hand
 import { createPhysicsToolHandler, PHYSICS_TOOL_NAMES } from './tool-handlers/physics-tools'
 import { createSkillToolHandler, SKILL_TOOL_NAMES } from './tool-handlers/skill-tools'
 import { createBrandToolHandler, BRAND_TOOL_NAMES } from './tool-handlers/brand-tools'
+import { createResearchToolHandler, RESEARCH_TOOL_NAMES } from './tool-handlers/research-tools'
 
 // ── Tool Error Rate Tracking ─────────────────────────────────────────────────
 
@@ -122,6 +124,7 @@ const GENERATION_TOOL_SET = new Set([
   'generate_chart',
   'generate_physics_scene',
   'create_world_scene',
+  'write_scene_code',
 ])
 
 /** Quick validation checks run automatically after generation tools succeed.
@@ -159,6 +162,10 @@ export interface WorldStateMutable {
   apiPermissions?: APIPermissions
   audioProviderEnabled?: Record<string, boolean>
   mediaGenEnabled?: Record<string, boolean>
+  /** Master switch for web research tools (web_search, fetch_url_content). Model-agnostic. */
+  researchEnabled?: boolean
+  /** Per-provider enabled map for research providers (brave, tavily, exa). */
+  researchProviderEnabled?: Record<string, boolean>
   sessionPermissions?: Record<string, string>
   generationOverrides?: Record<string, { provider?: string; prompt?: string; config?: Record<string, any> }>
   autoChooseDefaults?: Record<string, { provider: string; config: Record<string, any> }>
@@ -388,6 +395,7 @@ function checkApiPermission(
       duration?: number
       model?: string
       resolution?: string
+      textLength?: number
     }
   },
 ): ToolResult | null {
@@ -398,9 +406,19 @@ function checkApiPermission(
   const sessionPermissionsMap = new Map<string, string>(Object.entries(world.sessionPermissions ?? {}))
   const sessionDecision = world.sessionPermissions?.[api]
 
-  // Preserve current UX behavior: once approved in session, skip repeated prompts.
+  // Compute the scalar cost estimate up front — we need it both to evaluate
+  // the threshold AND to keep an "approved but expensive" call honest.
+  const estimatedCostUsd = estimateApiCostUsd(api, context?.details)
+
+  // Preserve current UX: once approved in session, skip repeated prompts —
+  // UNLESS this particular call is above the single-call threshold, in which
+  // case the gate re-asks even after a blanket session approval.
   if (config.mode === 'always_ask' && sessionDecision === 'allow') {
-    return null
+    const threshold =
+      config.singleCallCostThreshold ?? (api === 'freesound' || api === 'pixabay' || api === 'unsplash' ? null : 0.5)
+    if (threshold === null || estimatedCostUsd <= threshold) {
+      return null
+    }
   }
 
   const permission = checkPermission(
@@ -410,6 +428,7 @@ function checkApiPermission(
     context?.reason ?? `Agent requested ${API_DISPLAY_NAMES[api]}`,
     context?.details ?? {},
     sessionPermissionsMap,
+    { estimatedCostUsd },
   )
 
   if (permission.action === 'allow') return null
@@ -417,11 +436,15 @@ function checkApiPermission(
 
   return {
     success: false,
-    error: `Permission required: ${api} usage needs approval.`,
+    error: permission.request.costThresholdExceeded
+      ? `Cost approval required: ${api} call estimated at $${estimatedCostUsd.toFixed(2)} exceeds your threshold.`
+      : `Permission required: ${api} usage needs approval.`,
     permissionNeeded: {
       api,
       estimatedCost: API_COST_ESTIMATES[api] ?? 'unknown',
-      reason: context?.reason ?? `Agent requested ${API_DISPLAY_NAMES[api]}`,
+      estimatedCostUsd,
+      costThresholdExceeded: permission.request.costThresholdExceeded,
+      reason: permission.request.reason,
       details: context?.details ?? {},
     },
   }
@@ -528,6 +551,23 @@ function ensureAllHandlersRegistered(): void {
   })
   toolRegistry.registerMany([...IMAGE_VIDEO_TOOL_NAMES], (toolName, args, world, logger) =>
     imageVideoHandler(toolName, args, world as WorldStateMutable, logger),
+  )
+
+  // ── Media-library tools (query / reuse / regenerate / i2i / variation) ──
+  const mediaLibraryExtHandler = createMediaLibraryExtHandler({
+    checkMediaEnabled,
+    checkApiPermission,
+    enrichPermission,
+    regenerateHTML,
+  })
+  toolRegistry.registerMany([...MEDIA_LIBRARY_EXT_TOOL_NAMES], (toolName, args, world, logger) =>
+    mediaLibraryExtHandler(toolName, args, world as WorldStateMutable, logger),
+  )
+
+  // ── Research tools (web search, URL reader) — gated on researchEnabled world flag ──
+  const researchHandler = createResearchToolHandler()
+  toolRegistry.registerMany([...RESEARCH_TOOL_NAMES], (toolName, args, world) =>
+    researchHandler(toolName, args, world as WorldStateMutable),
   )
 
   // ── Avatar tools ──
@@ -715,7 +755,10 @@ function ensureAllHandlersRegistered(): void {
       `Scene "${scene.name}" (${scene.id.slice(0, 8)}…)`,
       `Type: ${scene.sceneType ?? 'svg'} | Duration: ${scene.duration}s | BG: ${scene.bgColor}`,
       `Capture time: ${t}s`,
-      (() => { const d = resolveProjectDimensions(world.mp4Settings?.aspectRatio, world.mp4Settings?.resolution); return `Dimensions: ${d.width}×${d.height}` })(),
+      (() => {
+        const d = resolveProjectDimensions(world.mp4Settings?.aspectRatio, world.mp4Settings?.resolution)
+        return `Dimensions: ${d.width}×${d.height}`
+      })(),
       '',
       `Layers (${layers.length}):`,
       ...layers.map((l) => `  • ${l}`),
@@ -1393,7 +1436,13 @@ async function regenerateHTML(
   }
   try {
     const start = Date.now()
-    const html = generateSceneHTML(scene, world.globalStyle, undefined, undefined, resolveProjectDimensions(world.mp4Settings?.aspectRatio, world.mp4Settings?.resolution))
+    const html = generateSceneHTML(
+      scene,
+      world.globalStyle,
+      undefined,
+      undefined,
+      resolveProjectDimensions(world.mp4Settings?.aspectRatio, world.mp4Settings?.resolution),
+    )
     updateScene(world, sceneId, { sceneHTML: html })
     // Write to disk immediately so preview iframes can load the latest content
     const scenesDir = path.join(process.cwd(), 'public', 'scenes')

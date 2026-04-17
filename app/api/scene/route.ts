@@ -159,8 +159,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Project not found' }, { status: 404 })
     }
 
-    // Parse existing scenes from JSONB
-    const existingData = readProjectSceneBlob(project.description)
+    // Read scenes from table-based storage first (primary), fall back to blob.
+    // MCP tools write to tables, so scenes created by Claude Code may not be in the blob.
+    const postTableBacked = await readProjectScenesFromTables(projectId)
+    const postBlobData = readProjectSceneBlob(project.description)
+    const existingData = {
+      ...postBlobData,
+      scenes: postTableBacked?.scenes ?? postBlobData.scenes ?? [],
+      sceneGraph: postTableBacked?.sceneGraph ?? postBlobData.sceneGraph,
+    }
     const scenes: any[] = existingData.scenes || []
 
     // Build scene object matching the Zustand Scene interface
@@ -412,11 +419,24 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: 'Project not found' }, { status: 404 })
     }
 
-    const existingData = readProjectSceneBlob(project.description)
+    // Read scenes from table-based storage first (primary), fall back to blob.
+    // MCP tools write to tables via writeProjectScenesToTables, so scenes created
+    // by Claude Code may not exist in the blob yet.
+    const tableBacked = await readProjectScenesFromTables(projectId)
+    const blobData = readProjectSceneBlob(project.description)
+    const useTableScenes = !!tableBacked?.scenes
+    const existingData = {
+      ...blobData,
+      scenes: tableBacked?.scenes ?? blobData.scenes ?? [],
+      sceneGraph: tableBacked?.sceneGraph ?? blobData.sceneGraph,
+    }
 
     const scenes: any[] = existingData.scenes || []
     const sceneIdx = scenes.findIndex((s: any) => s.id === sceneId)
     if (sceneIdx === -1) {
+      console.warn(
+        `[PATCH /api/scene] Scene ${sceneId} not found (source=${useTableScenes ? 'tables' : 'blob'}, count=${scenes.length})`,
+      )
       return NextResponse.json({ error: `Scene ${sceneId} not found` }, { status: 404 })
     }
 

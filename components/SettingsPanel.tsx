@@ -315,6 +315,21 @@ export default function SettingsPanel({ onClose }: Props) {
               <FlaskConical size={13} />
               {isSeedingTextHarness ? 'Loading...' : 'Load Text editing harness (8 scenes)'}
             </button>
+            <div className="pt-3 border-t border-[var(--color-border)] mt-3 space-y-2">
+              <label className="flex items-center justify-between cursor-pointer">
+                <span className="text-[12px] text-[var(--color-text-muted)]">Mock Agent (no API credits)</span>
+                <input
+                  type="checkbox"
+                  checked={useVideoStore((s) => s.mockMode)}
+                  onChange={(e) => useVideoStore.setState({ mockMode: e.target.checked })}
+                  className="accent-[var(--color-accent)]"
+                />
+              </label>
+              <div className="text-[11px] text-[var(--color-text-muted)] opacity-60">
+                Simulates agent responses with canned SSE stream. Use keywords: &quot;multi&quot;, &quot;error&quot;,
+                &quot;permission&quot;, &quot;storyboard&quot;
+              </div>
+            </div>
             <div className="pt-3 border-t border-[var(--color-border)] mt-3">
               <button
                 onClick={async () => {

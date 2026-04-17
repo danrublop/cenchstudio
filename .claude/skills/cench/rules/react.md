@@ -50,7 +50,16 @@ The JSX is transpiled in-browser via Babel. No imports needed — all APIs are a
 
 ### Scene globals (available on `window`)
 
-`PALETTE`, `DURATION`, `FONT`, `STROKE_COLOR`, `WIDTH` (default 1920), `HEIGHT` (default 1080), `ROUGHNESS`, `SCENE_ID` — WIDTH/HEIGHT change based on the project's aspect ratio (e.g. 1080×1920 for 9:16, 1080×1080 for 1:1)
+`PALETTE`, `DURATION`, `FONT`, `BODY_FONT`, `STROKE_COLOR`, `WIDTH` (default 1920), `HEIGHT` (default 1080), `ROUGHNESS`, `SCENE_ID` — WIDTH/HEIGHT change based on the project's aspect ratio (e.g. 1080×1920 for 9:16, 1080×1080 for 1:1)
+
+**Font pairing**: `FONT` is for headings/display text. `BODY_FONT` is for body text,
+descriptions, and labels. When no font pairing is active, `BODY_FONT` equals `FONT`.
+Use both for typographic contrast:
+
+```jsx
+<h1 style={{ fontFamily: FONT }}>Title</h1>
+<p style={{ fontFamily: BODY_FONT }}>Body text here</p>
+```
 
 ---
 
@@ -93,9 +102,17 @@ function Scene() {
 export default Scene;
 ```
 
-**CRITICAL: Do NOT mount the component yourself.** No `ReactDOM.createRoot()` or `.render()`.
-The template bootstrapper automatically wraps your exported component in `<CenchComposition>`
-and mounts it. Just `export default Scene;` at the end.
+**CRITICAL — two things the bootstrapper requires:**
+
+1. **Do NOT mount the component yourself.** No `ReactDOM.createRoot()` or `.render()`.
+   The template bootstrapper automatically wraps your exported component in `<CenchComposition>`
+   and mounts it.
+2. **You MUST end the file with `export default Scene;`** (or `export default Main;` etc.).
+   The bootstrapper uses Babel's `transform-modules-commonjs` and reads
+   `module.exports.default` to find the component. A scene without an export renders
+   as a blank iframe with only a console error — no crash, no fallback.
+   The template auto-injects `export default Scene;` if a `Scene` function is defined
+   and no export is present, but don't rely on that — always write the export explicitly.
 
 ---
 
@@ -311,24 +328,20 @@ Synced with the parent player via postMessage. Persists across the session.
 
 ```jsx
 function Scene() {
-  const frame = useCurrentFrame();
-  const [interestRate, setRate] = useVariable('interestRate', 5);
+  const frame = useCurrentFrame()
+  const [interestRate, setRate] = useVariable('interestRate', 5)
 
   // Rate drives visual output — changes instantly when viewer adjusts slider
-  const monthlyPayment = (200000 * (interestRate / 100 / 12)) / (1 - Math.pow(1 + interestRate / 100 / 12, -360));
+  const monthlyPayment = (200000 * (interestRate / 100 / 12)) / (1 - Math.pow(1 + interestRate / 100 / 12, -360))
 
   return (
     <AbsoluteFill style={{ background: PALETTE[0], fontFamily: FONT }}>
-      <div style={{ fontSize: 120, fontWeight: 700, color: PALETTE[3] }}>
-        ${Math.round(monthlyPayment)}/mo
-      </div>
-      <div style={{ fontSize: 36, color: PALETTE[1] }}>
-        at {interestRate}% interest
-      </div>
+      <div style={{ fontSize: 120, fontWeight: 700, color: PALETTE[3] }}>${Math.round(monthlyPayment)}/mo</div>
+      <div style={{ fontSize: 36, color: PALETTE[1] }}>at {interestRate}% interest</div>
     </AbsoluteFill>
-  );
+  )
 }
-export default Scene;
+export default Scene
 ```
 
 Use `define_scene_variable` MCP tool to declare the variable, then `add_interaction` with type `slider` to let the viewer control it.
@@ -339,16 +352,18 @@ Returns handler props + hover/click state for visual feedback.
 
 ```jsx
 function Scene() {
-  const frame = useCurrentFrame();
-  const card1 = useInteraction('card-pricing');
-  const card2 = useInteraction('card-enterprise');
+  const frame = useCurrentFrame()
+  const card1 = useInteraction('card-pricing')
+  const card2 = useInteraction('card-enterprise')
 
   return (
     <AbsoluteFill style={{ display: 'flex', gap: 40, justifyContent: 'center', alignItems: 'center' }}>
       <div
         {...card1.handlers}
         style={{
-          padding: 40, borderRadius: 16, background: PALETTE[1],
+          padding: 40,
+          borderRadius: 16,
+          background: PALETTE[1],
           transform: `scale(${card1.isHovered ? 1.05 : 1})`,
           boxShadow: card1.isHovered ? '0 20px 60px rgba(0,0,0,0.3)' : '0 4px 20px rgba(0,0,0,0.1)',
           transition: 'all 200ms ease',
@@ -359,7 +374,9 @@ function Scene() {
       <div
         {...card2.handlers}
         style={{
-          padding: 40, borderRadius: 16, background: PALETTE[2],
+          padding: 40,
+          borderRadius: 16,
+          background: PALETTE[2],
           transform: `scale(${card2.isHovered ? 1.05 : 1})`,
           transition: 'all 200ms ease',
         }}
@@ -367,9 +384,9 @@ function Scene() {
         Enterprise — Custom
       </div>
     </AbsoluteFill>
-  );
+  )
 }
-export default Scene;
+export default Scene
 ```
 
 ### useTrigger(name) — fire events to parent
@@ -377,18 +394,18 @@ export default Scene;
 For one-shot events (completed a step, reached a milestone) that cross the iframe boundary.
 
 ```jsx
-const milestone = useTrigger('completed-intro');
+const milestone = useTrigger('completed-intro')
 // Call milestone.fire({ section: 'intro' }) when the viewer finishes
 ```
 
 ### When to use in-scene hooks vs overlay interactions
 
-| Scenario | Use |
-|----------|-----|
-| Hoverable cards, charts, 3D objects | `useInteraction` in scene code |
-| Slider that changes scene visuals | `useVariable` in scene + slider overlay |
-| Standard quiz, choice, gate | Overlay via `add_interaction` |
-| Toggle that shows/hides a scene layer | `useVariable` + toggle overlay |
+| Scenario                              | Use                                     |
+| ------------------------------------- | --------------------------------------- |
+| Hoverable cards, charts, 3D objects   | `useInteraction` in scene code          |
+| Slider that changes scene visuals     | `useVariable` in scene + slider overlay |
+| Standard quiz, choice, gate           | Overlay via `add_interaction`           |
+| Toggle that shows/hides a scene layer | `useVariable` + toggle overlay          |
 
 **Combine both**: A scene with hoverable D3 bars (`useInteraction`) + an overlay quiz (`add_interaction`).
 

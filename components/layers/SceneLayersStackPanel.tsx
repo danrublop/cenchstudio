@@ -31,6 +31,7 @@ import { useVideoStore } from '@/lib/store'
 import type { AILayer, AudioLayer, D3ChartLayer, InteractionElement, PhysicsLayer, Scene, SceneType } from '@/lib/types'
 import { InteractionTextBulkForm } from '@/components/tabs/InteractTab'
 import { compileD3SceneFromLayers } from '@/lib/charts/compile'
+import { extractElementsFromReactCode } from '@/lib/react-extract'
 import { deriveChartLayersFromScene } from '@/lib/charts/extract'
 import {
   compilePhysicsSceneFromLayers,
@@ -97,7 +98,7 @@ const SCENE_RENDERER_STACK_TYPES: readonly SceneType[] = [
   '3d_world',
 ] as const
 
-function pushSceneRendererStackKeys(scene: Scene, keys: StackKey[]) {
+export function pushSceneRendererStackKeys(scene: Scene, keys: StackKey[]) {
   const st = (scene.sceneType ?? 'svg') as SceneType
   if ((SCENE_RENDERER_STACK_TYPES as readonly string[]).includes(st)) {
     keys.push(`scene:${st}` as StackKey)
@@ -107,11 +108,20 @@ function pushSceneRendererStackKeys(scene: Scene, keys: StackKey[]) {
   }
 }
 
-function audioRowVisible(a: AudioLayer): boolean {
-  return a.enabled || !!a.tts?.text?.trim?.() || (a.sfx?.length ?? 0) > 0 || !!a.music
+export function audioRowVisible(a: AudioLayer): boolean {
+  return (
+    a.enabled ||
+    !!a.tts?.src ||
+    !!a.tts?.text?.trim?.() ||
+    a.tts?.status === 'ready' ||
+    a.tts?.status === 'generating' ||
+    a.tts?.status === 'pending' ||
+    (a.sfx?.length ?? 0) > 0 ||
+    !!a.music
+  )
 }
 
-function buildDefaultOrder(scene: Scene): StackKey[] {
+export function buildDefaultOrder(scene: Scene): StackKey[] {
   const keys: StackKey[] = []
   const ai = [...(scene.aiLayers ?? [])].sort((x, y) => y.zIndex - x.zIndex)
   ai.forEach((l) => keys.push(`ai:${l.id}` as StackKey))
@@ -126,13 +136,33 @@ function buildDefaultOrder(scene: Scene): StackKey[] {
   pushSceneRendererStackKeys(scene, keys)
   ;(scene.physicsLayers ?? []).forEach((p) => keys.push(`physics:${p.id}` as StackKey))
   ;(scene.interactions ?? []).forEach((it) => keys.push(`interaction:${it.id}` as StackKey))
+  // Code-extracted elements (React bridge components, Three.js objects, text, etc.)
+  const codeToScan =
+    scene.reactCode?.trim() ||
+    scene.sceneCode?.trim() ||
+    scene.canvasCode?.trim() ||
+    scene.svgContent?.trim() ||
+    scene.sceneHTML?.trim() ||
+    ''
+  if (codeToScan) {
+    const rxElements = extractElementsFromReactCode(codeToScan)
+    const seen = new Set<string>()
+    let rxIdx = 0
+    for (const el of rxElements) {
+      const dedupKey = `${el.kind}:${el.label}`
+      if (seen.has(dedupKey)) continue
+      seen.add(dedupKey)
+      keys.push(`rx:${el.kind}:${rxIdx}` as StackKey)
+      rxIdx++
+    }
+  }
   keys.push(BG_STAGE_STACK_KEY)
   if (scene.videoLayer?.enabled && scene.videoLayer.src) keys.push('video')
   if (scene.audioLayer && audioRowVisible(scene.audioLayer)) keys.push('audio')
   return keys
 }
 
-function mergeOrder(custom: string[] | undefined, fallback: StackKey[]): StackKey[] {
+export function mergeOrder(custom: string[] | undefined, fallback: StackKey[]): StackKey[] {
   const valid = new Set(fallback)
   const out: StackKey[] = []
   if (custom?.length) {
@@ -146,7 +176,7 @@ function mergeOrder(custom: string[] | undefined, fallback: StackKey[]): StackKe
   return pinLayerStackTail(out)
 }
 
-function labelForKey(scene: Scene, key: StackKey): string {
+export function labelForKey(scene: Scene, key: StackKey): string {
   const { kind, id } = parseKey(key)
   if (kind === 'bg' && id === 'stage') return 'Background'
   if (kind === 'video') return 'Video'
@@ -208,10 +238,23 @@ function labelForKey(scene: Scene, key: StackKey): string {
     }
     return labels[id] ?? id
   }
+  if (kind === 'rx') {
+    // Code-extracted elements: id is "subkind:index", e.g. "three:0"
+    const codeToScan = [scene.reactCode, scene.sceneHTML, scene.sceneCode, scene.canvasCode, scene.svgContent]
+      .filter(Boolean)
+      .join('\n')
+    if (codeToScan) {
+      const rxElements = extractElementsFromReactCode(codeToScan)
+      const parts = (id ?? '').split(':')
+      const idx = parseInt(parts[1] ?? '0', 10)
+      if (rxElements[idx]) return rxElements[idx].label
+    }
+    return id ?? 'Element'
+  }
   return kind
 }
 
-function iconForSceneStackId(id: string) {
+export function iconForSceneStackId(id: string) {
   switch (id) {
     case 'canvas2d':
       return Code2
@@ -246,6 +289,8 @@ function sceneHasAudioStackDetails(scene: Scene): boolean {
   if (!a) return false
   return !!(
     (a.tts?.text ?? '').trim() ||
+    a.tts?.src ||
+    a.tts?.status === 'ready' ||
     a.tts?.status === 'generating' ||
     a.tts?.status === 'pending' ||
     (a.src && String(a.src).length > 0) ||
@@ -257,7 +302,13 @@ function sceneHasAudioStackDetails(scene: Scene): boolean {
 function AudioStackSubRows({ scene, onOpenAudio }: { scene: Scene; onOpenAudio: () => void }) {
   const a = scene.audioLayer
   const rows: { id: string; Icon: typeof Volume2; label: string }[] = []
-  if ((a.tts?.text ?? '').trim() || a.tts?.status === 'generating' || a.tts?.status === 'pending') {
+  if (
+    (a.tts?.text ?? '').trim() ||
+    a.tts?.src ||
+    a.tts?.status === 'ready' ||
+    a.tts?.status === 'generating' ||
+    a.tts?.status === 'pending'
+  ) {
     const t = (a.tts?.text ?? '').trim()
     const preview = t ? `${t.slice(0, 40)}${t.length > 40 ? '…' : ''}` : 'Voice / TTS'
     rows.push({ id: 'sub-tts', Icon: Volume2, label: `Narration · ${preview}` })
@@ -313,7 +364,7 @@ function AudioStackSubRows({ scene, onOpenAudio }: { scene: Scene; onOpenAudio: 
   )
 }
 
-function iconForKey(scene: Scene, key: StackKey) {
+export function iconForKey(scene: Scene, key: StackKey) {
   const { kind, id } = parseKey(key)
   if (kind === 'bg' && id === 'stage') return Palette
   if (kind === 'ai' && id) {
@@ -338,6 +389,18 @@ function iconForKey(scene: Scene, key: StackKey) {
       return Atom
     case 'interaction':
       return MousePointerClick
+    case 'rx': {
+      // Code-extracted: parse subkind from id "subkind:index"
+      const sub = (id ?? '').split(':')[0]
+      if (sub === 'three') return Box
+      if (sub === 'canvas2d') return Code2
+      if (sub === 'd3') return BarChart3
+      if (sub === 'svg') return Layers
+      if (sub === 'lottie') return Clapperboard
+      if (sub === 'heading' || sub === 'paragraph' || sub === 'text') return Type
+      if (sub === 'image') return ImageIcon
+      return Sparkles
+    }
     default:
       return Layers
   }
@@ -345,6 +408,16 @@ function iconForKey(scene: Scene, key: StackKey) {
 
 interface Props {
   scene: Scene
+  /** When set, double-clicking a layer row calls this instead of opening the Properties tab */
+  onLayerDoubleClick?: (key: LayerStackKey) => void
+  /** When set, double-clicking a scene row in the scenes list calls this */
+  onSceneDoubleClick?: (sceneId: string) => void
+  /** When true, panel stretches to fill parent height (used when this is the primary view). */
+  fillAvailableHeight?: boolean
+  /** Optional controlled collapsed state. */
+  collapsed?: boolean
+  /** Fires whenever collapsed state changes. */
+  onCollapsedChange?: (collapsed: boolean, meta?: { userAction?: boolean }) => void
 }
 
 type LayerStackRowsProps = {
@@ -613,7 +686,7 @@ function LayerStackRows({ scene, selectedKey, onToggleRow, onOpenLayerProperties
                 <div
                   role="button"
                   tabIndex={0}
-                    onClick={() => {
+                  onClick={() => {
                     onToggleRow(key)
                     if (kind === 'scene') openLayersSection('scene')
                     if (kind === 'chart') openLayersSection('charts')
@@ -956,25 +1029,30 @@ function LayerStackRows({ scene, selectedKey, onToggleRow, onOpenLayerProperties
   )
 }
 
-export default function SceneLayersStackPanel({ scene }: Props) {
+export default function SceneLayersStackPanel({
+  scene,
+  onLayerDoubleClick,
+  onSceneDoubleClick,
+  fillAvailableHeight = false,
+  collapsed,
+  onCollapsedChange,
+}: Props) {
   const scenes = useVideoStore((s) => s.scenes)
   const selectedSceneId = useVideoStore((s) => s.selectedSceneId)
   const selectScene = useVideoStore((s) => s.selectScene)
   const openLayerStackProperties = useVideoStore((s) => s.openLayerStackProperties)
-  const {
-    updateScene,
-    saveSceneHTML,
-    removeAILayer,
-    removeSvgObject,
-    removeTextOverlay,
-    removeInteraction,
-  } = useVideoStore()
+  const { updateScene, saveSceneHTML, removeAILayer, removeSvgObject, removeTextOverlay, removeInteraction } =
+    useVideoStore()
 
   const handleOpenLayerProperties = useCallback(
     (key: StackKey) => {
-      openLayerStackProperties(String(key))
+      if (onLayerDoubleClick) {
+        onLayerDoubleClick(key)
+      } else {
+        openLayerStackProperties(String(key))
+      }
     },
-    [openLayerStackProperties],
+    [openLayerStackProperties, onLayerDoubleClick],
   )
 
   const [stackSegment, setStackSegment] = useState<'layers' | 'scenes'>('layers')
@@ -1021,6 +1099,15 @@ export default function SceneLayersStackPanel({ scene }: Props) {
       window.removeEventListener('mouseup', onUp)
     }
   }, [])
+
+  const isCollapsed = collapsed ?? stackCollapsed
+  const setCollapsedState = useCallback(
+    (next: boolean, meta?: { userAction?: boolean }) => {
+      if (collapsed === undefined) setStackCollapsed(next)
+      onCollapsedChange?.(next, meta)
+    },
+    [collapsed, onCollapsedChange],
+  )
 
   useEffect(() => {
     if (stackSegment === 'scenes' && selectedSceneId) {
@@ -1115,7 +1202,7 @@ export default function SceneLayersStackPanel({ scene }: Props) {
 
   return (
     <div
-      className="flex shrink-0 flex-col border-t bg-[var(--color-panel)]"
+      className={`${fillAvailableHeight ? 'flex min-h-0 flex-1' : 'flex shrink-0'} flex-col border-t bg-[var(--color-panel)]`}
       style={{ borderTopColor: 'var(--color-hairline)' }}
       data-scene-layers-stack
     >
@@ -1130,7 +1217,7 @@ export default function SceneLayersStackPanel({ scene }: Props) {
           e.preventDefault()
           layerStackDragRef.current = { startY: e.clientY, startH: stackBodyHeight }
           setStackResizeDrag(true)
-          if (stackCollapsed) setStackCollapsed(false)
+          if (isCollapsed) setCollapsedState(false, { userAction: false })
           document.body.style.cursor = 'row-resize'
           document.body.style.userSelect = 'none'
         }}
@@ -1138,35 +1225,36 @@ export default function SceneLayersStackPanel({ scene }: Props) {
         <span
           role="button"
           tabIndex={0}
-          onClick={() => setStackCollapsed((c) => !c)}
+          onClick={() => setCollapsedState(!isCollapsed, { userAction: true })}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault()
-              setStackCollapsed((c) => !c)
+              setCollapsedState(!isCollapsed, { userAction: true })
             }
           }}
           className="mr-1 flex h-5 w-5 flex-shrink-0 cursor-pointer items-center justify-center rounded text-[var(--color-text-muted)] hover:text-[var(--kbd-text)] transition-colors"
-          aria-label={stackCollapsed ? 'Expand layers' : 'Collapse layers'}
+          aria-label={isCollapsed ? 'Expand layers' : 'Collapse layers'}
         >
-          <ChevronDown size={12} className={`transition-transform ${stackCollapsed ? '-rotate-90' : ''}`} />
+          <ChevronDown size={12} className={`transition-transform ${isCollapsed ? '-rotate-90' : ''}`} />
         </span>
-        <span className="flex-1 select-none text-[12px] font-semibold uppercase tracking-widest text-[var(--color-text-muted)]">Layers</span>
-
+        <span className="flex-1 select-none text-[12px] font-semibold uppercase tracking-widest text-[var(--color-text-muted)]">
+          Layers
+        </span>
       </div>
 
       <div
-        className="min-h-0 flex-shrink-0 overflow-y-auto overscroll-contain px-1 py-1"
-        style={{ height: stackCollapsed ? 0 : stackBodyHeight, overflow: stackCollapsed ? 'hidden' : undefined }}
+        className={`min-h-0 ${fillAvailableHeight ? 'flex-1' : 'flex-shrink-0'} overflow-y-auto overscroll-contain px-1 py-1`}
+        style={{
+          height: isCollapsed ? 0 : fillAvailableHeight ? undefined : stackBodyHeight,
+          overflow: isCollapsed ? 'hidden' : undefined,
+        }}
       >
         <div className="space-y-0.5">
           {scenes.map((s) => {
-            const open = expandedScenes[s.id] ?? (s.id === selectedSceneId)
+            const open = expandedScenes[s.id] ?? s.id === selectedSceneId
             const isCurrent = s.id === selectedSceneId
             return (
-              <div
-                key={s.id}
-                className="rounded bg-[var(--color-bg)]/30"
-              >
+              <div key={s.id} className="rounded bg-[var(--color-bg)]/30">
                 <div className="flex items-center gap-0.5 rounded px-1 py-0.5 text-[11px] hover:bg-white/[0.04]">
                   <button
                     type="button"
@@ -1181,6 +1269,11 @@ export default function SceneLayersStackPanel({ scene }: Props) {
                     type="button"
                     className="no-style flex min-w-0 flex-1 cursor-pointer items-center gap-1 rounded py-1 pl-0.5 pr-2 text-left"
                     onClick={() => selectScene(s.id)}
+                    onDoubleClick={(e) => {
+                      e.preventDefault()
+                      selectScene(s.id)
+                      onSceneDoubleClick?.(s.id)
+                    }}
                   >
                     <Film size={12} className="shrink-0 text-[var(--color-text-muted)]" />
                     <span className="min-w-0 flex-1 truncate font-medium text-[var(--color-text-primary)]">

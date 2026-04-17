@@ -62,9 +62,22 @@ export async function generateImage(opts: {
   aspectRatio: string
   style?: ImageStyle | null
   skipCache?: boolean
+  /**
+   * Optional reference image URL for image-to-image workflows. Recorded in
+   * provenance by callers. Today we only use it as a prompt hint; true image-
+   * conditioning (passing `image_url` to a FAL i2i endpoint) will land with the
+   * dedicated i2i router path.
+   */
+  referenceImageUrl?: string | null
 }): Promise<{ imageUrl: string; width: number; height: number; cost: number }> {
-  // Check cache
-  const cacheParams = { prompt: opts.prompt, model: opts.model, aspectRatio: opts.aspectRatio, style: opts.style }
+  // Check cache — reference URL is part of the cache key so variations aren't collapsed.
+  const cacheParams = {
+    prompt: opts.prompt,
+    model: opts.model,
+    aspectRatio: opts.aspectRatio,
+    style: opts.style,
+    referenceImageUrl: opts.referenceImageUrl ?? null,
+  }
   if (!opts.skipCache) {
     const cached = await checkCache('imageGen', cacheParams)
     if (cached) {

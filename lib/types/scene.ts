@@ -151,6 +151,7 @@ export interface SvgObject {
 export interface SceneStyleOverride {
   palette?: [string, string, string, string] | null
   font?: string | null
+  bodyFont?: string | null
   roughnessLevel?: number | null
   strokeWidth?: number | null
   bgColor?: string | null

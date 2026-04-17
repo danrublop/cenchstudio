@@ -109,7 +109,7 @@ export async function writeProjectScenesToTablesTx(
 
   await tx
     .update(projects)
-    .set({ sceneGraphStartSceneId: sceneGraph?.startSceneId ?? null, updatedAt: new Date() })
+    .set({ sceneGraphStartSceneId: sceneGraph?.startSceneId || null, updatedAt: new Date() })
     .where(eq(projects.id, projectId))
 
   if (uuidSceneIds.length > 0) {

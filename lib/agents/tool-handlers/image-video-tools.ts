@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid'
 import type { APIName } from '@/lib/types'
 import type { WorldStateMutable } from '@/lib/agents/tool-executor'
 import { ok, err, findScene, updateScene, type ToolResult } from './_shared'
+import { persistGeneratedAsset } from '@/lib/media/provenance'
 
 export const IMAGE_VIDEO_TOOL_NAMES = [
   'search_images',
@@ -149,11 +150,40 @@ export function createImageVideoToolHandler(deps: {
             const bgResult = await removeImageBackground(result.imageUrl)
             result.imageUrl = bgResult.resultUrl
           }
+          // Persist to the media library so query_media_library / reuse_asset can find it later.
+          let assetId: string | null = null
+          if (world.projectId) {
+            try {
+              const persisted = await persistGeneratedAsset({
+                projectId: world.projectId,
+                sourceUrl: result.imageUrl,
+                type: 'image',
+                width: result.width,
+                height: result.height,
+                metadata: {
+                  prompt,
+                  provider: 'imageGen',
+                  model: (model as string) ?? 'flux-schnell',
+                  costCents: Math.round((result.cost ?? 0) * 100),
+                  parentAssetId: null,
+                  referenceAssetIds: null,
+                  enhanceTags: null,
+                },
+              })
+              assetId = persisted.id
+              result.imageUrl = persisted.publicUrl
+            } catch (e) {
+              // Non-fatal: generation succeeded; we just couldn't persist. The tool result
+              // still returns the upstream URL so the agent can place it directly.
+              console.warn('[image-video-tools] persist generated asset failed:', e)
+            }
+          }
           return ok(sceneId, `Image generated: ${prompt.slice(0, 60)}`, {
             imageUrl: result.imageUrl,
             width: result.width,
             height: result.height,
             cost: result.cost,
+            assetId,
           })
         } catch (e: any) {
           return err(`Image generation failed: ${e.message}`)
@@ -182,9 +212,36 @@ export function createImageVideoToolHandler(deps: {
           })
           const { removeImageBackground } = await import('@/lib/apis/background-removal')
           const bgResult = await removeImageBackground(result.imageUrl)
+          let stickerUrl = bgResult.resultUrl
+          let assetId: string | null = null
+          if (world.projectId) {
+            try {
+              const persisted = await persistGeneratedAsset({
+                projectId: world.projectId,
+                sourceUrl: bgResult.resultUrl,
+                type: 'image',
+                name: `sticker: ${prompt.slice(0, 40)}`,
+                tags: ['sticker'],
+                metadata: {
+                  prompt,
+                  provider: 'imageGen',
+                  model: (model as string) ?? 'recraft-v3',
+                  costCents: Math.round((result.cost ?? 0) * 100),
+                  parentAssetId: null,
+                  referenceAssetIds: null,
+                  enhanceTags: null,
+                },
+              })
+              assetId = persisted.id
+              stickerUrl = persisted.publicUrl
+            } catch (e) {
+              console.warn('[image-video-tools] persist sticker failed:', e)
+            }
+          }
           return ok(sceneId, `Sticker generated: ${prompt.slice(0, 60)}`, {
-            imageUrl: bgResult.resultUrl,
+            imageUrl: stickerUrl,
             cost: result.cost,
+            assetId,
           })
         } catch (e: any) {
           return err(`Sticker generation failed: ${e.message}`)

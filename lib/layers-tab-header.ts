@@ -6,12 +6,14 @@ export type LayersTabSectionId =
   | 'properties'
   | 'transitions'
   | 'audio'
+  | 'sfx'
   | 'elements'
   | 'text'
   | 'charts'
   | 'avatar'
   | 'three'
   | 'interact'
+  | 'nodemap'
 
 /** Old tab ids → Scene panel (Content tab removed) */
 const LEGACY_TAB_TO_SCENE = new Set(['media', 'ai', 'content'])
@@ -22,15 +24,16 @@ const LEGACY_STYLE_TO_SCENE = 'style'
 /** Tabs shown in the strip config (⋯) — Elements is opened via preview only, not listed here */
 export const LAYERS_TAB_META: { id: LayersTabSectionId; label: string }[] = [
   { id: 'scenes', label: 'Scenes' },
-  { id: 'scene', label: 'Setup' },
-  { id: 'properties', label: 'Properties' },
+  { id: 'scene', label: 'Style' },
   { id: 'transitions', label: 'Transitions' },
   { id: 'audio', label: 'Audio' },
+  { id: 'sfx', label: 'SFX' },
   { id: 'text', label: 'Text' },
   { id: 'charts', label: 'Charts' },
   { id: 'avatar', label: 'Avatar' },
   { id: 'three', label: '3D' },
   { id: 'interact', label: 'Interact' },
+  { id: 'nodemap', label: 'Layers' },
 ]
 
 const EXTRA_TAB_LABELS: Partial<Record<LayersTabSectionId, string>> = {
@@ -41,7 +44,7 @@ export function layersTabLabel(id: LayersTabSectionId): string {
   return LAYERS_TAB_META.find((m) => m.id === id)?.label ?? EXTRA_TAB_LABELS[id] ?? id
 }
 
-export const DEFAULT_LAYERS_VISIBLE_TABS: LayersTabSectionId[] = ['scene', 'properties', 'transitions', 'audio', 'text']
+export const DEFAULT_LAYERS_VISIBLE_TABS: LayersTabSectionId[] = ['nodemap', 'scene', 'transitions', 'audio', 'text']
 
 const STORAGE_KEY = 'cench.layersTab.subheader.v1'
 
@@ -52,7 +55,7 @@ export type LayersTabHeaderPersisted = {
 
 const DEFAULT_PERSISTED: LayersTabHeaderPersisted = {
   visibleTabIds: [...DEFAULT_LAYERS_VISIBLE_TABS],
-  activeTabId: 'scene',
+  activeTabId: 'nodemap',
 }
 
 function migrateVisibleTabs(rawIds: unknown): LayersTabSectionId[] {
@@ -62,11 +65,16 @@ function migrateVisibleTabs(rawIds: unknown): LayersTabSectionId[] {
     if (typeof id !== 'string') return id as LayersTabSectionId
     if (id === LEGACY_STYLE_TO_SCENE) return 'scene'
     if (LEGACY_TAB_TO_SCENE.has(id)) return 'scene'
+    if (id === 'properties') return 'nodemap'
     return id as LayersTabSectionId
   })
   const deduped: LayersTabSectionId[] = []
   for (const id of mapped) {
     if (!allowed.has(id)) continue
+    if (!deduped.includes(id)) deduped.push(id)
+  }
+  // Auto-add newly-introduced default tabs that weren't in the persisted set
+  for (const id of DEFAULT_LAYERS_VISIBLE_TABS) {
     if (!deduped.includes(id)) deduped.push(id)
   }
   return deduped.length > 0 ? deduped : [...DEFAULT_LAYERS_VISIBLE_TABS]

@@ -97,9 +97,15 @@ the content needs via bridge components:
 The power of React: one scene can have a Three.js background, HTML text overlay,
 Canvas2D particles, and a D3 chart — all composed in JSX.
 
-### Three.js capabilities (via `<ThreeJSLayer>` or standalone `three` scenes)
+### Three.js capabilities (via `<ThreeJSLayer>` — ALWAYS use React scenes for 3D)
 
-Three.js r183 via ES modules. Full toolkit available:
+**Default approach:** `type: 'react'` with `<ThreeJSLayer>` for 3D background + JSX for text overlays.
+Call `buildStudio(THREE, scene, camera, renderer)` inside the ThreeJSLayer setup callback
+to get a full studio environment (sky sphere, infinite grid, floor, lighting, env map).
+Default style is `'white'` (clean white photo studio). Styles: `'white'`, `'corporate'`, `'playful'`, `'cinematic'`, `'showcase'`, `'tech'`, `'sky'`.
+Text/info goes in `<AbsoluteFill>` JSX overlays with `interpolate()` for entrance animations.
+
+Three.js r183. Full toolkit available:
 
 - **3D text**: `troika-three-text` — SDF text with any Google Font, outlines, curved text, PBR materials
 - **CSG booleans**: `three-bvh-csg` — subtract/union/intersect meshes (holes, cutouts, complex shapes)
@@ -293,23 +299,23 @@ For D3 scenes with CenchCharts:
 If the Cench Studio MCP server is connected (`cench-studio` in settings), you have access
 to all 50+ agent tools directly — the same tools the in-app agent uses. Key tools:
 
-| Tool                   | What it does                                                            |
-| ---------------------- | ----------------------------------------------------------------------- |
-| `verify_scene`         | Static analysis: checks content, text overlap, palette, audio, duration |
-| `plan_scenes`          | Generate a storyboard before building scenes                            |
-| `add_narration`        | Add TTS narration (auto-selects provider)                               |
-| `add_sound_effect`     | Search and attach sound effects                                         |
-| `add_background_music` | Search and attach background music                                      |
-| `generate_chart`       | Create animated D3 chart (zero LLM cost)                                |
-| `set_transition`       | Set transition effect between scenes                                    |
-| `set_global_style`     | Set palette, font, preset across all scenes                             |
-| `add_interaction`      | Add overlay interactivity (hotspot, choice, quiz, gate, tooltip, form, slider, toggle) |
-| `define_scene_variable` | Define a typed variable on a scene (for slider/toggle/useVariable binding) |
-| `connect_scenes`       | Create scene graph edges with variable conditions for branching         |
-| `select_project`       | Switch between projects                                                 |
-| `list_scenes`          | List all scenes in current project                                      |
-| `generate_avatar_narration` | Add talking avatar PIP overlay to a scene (auto-selects provider)  |
-| `generate_avatar_scene`     | Create full presenter scene with avatar, panels, gestures          |
+| Tool                        | What it does                                                                           |
+| --------------------------- | -------------------------------------------------------------------------------------- |
+| `verify_scene`              | Static analysis: checks content, text overlap, palette, audio, duration                |
+| `plan_scenes`               | Generate a storyboard before building scenes                                           |
+| `add_narration`             | Add TTS narration (auto-selects provider)                                              |
+| `add_sound_effect`          | Search and attach sound effects                                                        |
+| `add_background_music`      | Search and attach background music                                                     |
+| `generate_chart`            | Create animated D3 chart (zero LLM cost)                                               |
+| `set_transition`            | Set transition effect between scenes                                                   |
+| `set_global_style`          | Set palette, font, preset across all scenes                                            |
+| `add_interaction`           | Add overlay interactivity (hotspot, choice, quiz, gate, tooltip, form, slider, toggle) |
+| `define_scene_variable`     | Define a typed variable on a scene (for slider/toggle/useVariable binding)             |
+| `connect_scenes`            | Create scene graph edges with variable conditions for branching                        |
+| `select_project`            | Switch between projects                                                                |
+| `list_scenes`               | List all scenes in current project                                                     |
+| `generate_avatar_narration` | Add talking avatar PIP overlay to a scene (auto-selects provider)                      |
+| `generate_avatar_scene`     | Create full presenter scene with avatar, panels, gestures                              |
 
 Avatar tools require an avatar provider configured in project settings (Settings > Media Gen).
 See `.claude/skills/cench/rules/avatar.md` for detailed usage, moods, gestures, and placement rules.
@@ -337,6 +343,7 @@ POST /api/projects
 ### Step 2: Create scenes with useVariable/useInteraction hooks in code
 
 Use the hooks in `generatedCode` (see `rules/react.md` → "Interactive Scenes"):
+
 - `useVariable('rate', 5)` — reactive state synced with overlays
 - `useInteraction('card')` — hover/click handlers
 - `useTrigger('done')` — fire events to parent
@@ -390,18 +397,18 @@ You can also pass `interactions` and `variables` in the initial POST when creati
 
 All 10 interaction types work via the same PATCH `interactions` array:
 
-| Type | Key fields | Use case |
-|------|------------|----------|
-| `hotspot` | label, shape, color, jumpsToSceneId | Clickable regions on diagrams |
-| `choice` | question, options[{label, jumpsToSceneId}] | Branching decisions |
-| `quiz` | question, options[], correctOptionId, explanation | Knowledge checks |
-| `gate` | buttonLabel, minimumWatchTime | Progression blocker |
-| `tooltip` | triggerLabel, tooltipTitle, tooltipBody | Info overlays |
-| `form` | fields[], setsVariables[], submitLabel | Data collection |
-| `slider` | min, max, step, setsVariable, label | Numeric control |
-| `toggle` | setsVariable, label, onLabel, offLabel | Boolean switch |
-| `reveal` | triggerLabel, revealedContent | Click-to-expand |
-| `countdown` | durationSeconds, onComplete | Timer |
+| Type        | Key fields                                        | Use case                      |
+| ----------- | ------------------------------------------------- | ----------------------------- |
+| `hotspot`   | label, shape, color, jumpsToSceneId               | Clickable regions on diagrams |
+| `choice`    | question, options[{label, jumpsToSceneId}]        | Branching decisions           |
+| `quiz`      | question, options[], correctOptionId, explanation | Knowledge checks              |
+| `gate`      | buttonLabel, minimumWatchTime                     | Progression blocker           |
+| `tooltip`   | triggerLabel, tooltipTitle, tooltipBody           | Info overlays                 |
+| `form`      | fields[], setsVariables[], submitLabel            | Data collection               |
+| `slider`    | min, max, step, setsVariable, label               | Numeric control               |
+| `toggle`    | setsVariable, label, onLabel, offLabel            | Boolean switch                |
+| `reveal`    | triggerLabel, revealedContent                     | Click-to-expand               |
+| `countdown` | durationSeconds, onComplete                       | Timer                         |
 
 ### Step 5: Connect scene graph with conditions
 

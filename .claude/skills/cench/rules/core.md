@@ -22,7 +22,7 @@ FONT — default font family
 These are injected as globals in every scene template.
 When a preset is active, use ROUGHNESS, TOOL, STROKE_COLOR as constants.
 When no preset is active, these still exist as neutral defaults
-(ROUGHNESS=0, TOOL='pen', FONT='Inter') — override freely.
+(ROUGHNESS=0, TOOL='pen', FONT='Nunito') — override freely.
 
 ## Renderer: React (default)
 
@@ -137,13 +137,20 @@ Keep important content within a 100px inset from all edges (i.e., between x=100 
 
 ## Fonts
 
-Use system fonts or load from Google Fonts via `<link>` in the HTML head. Safe system fonts: `'Arial'`, `'Georgia'`, `'monospace'`. For a modern look, add:
+Use the curated font catalog or load from Google Fonts via `<link>` in the HTML head.
+The scene template automatically loads the project's chosen font. Use the `FONT` and `BODY_FONT` globals.
+
+For manual font loading (rare), use catalog fonts like Figtree, Sora, Manrope, Bitter:
 
 ```html
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&display=swap" rel="stylesheet" />
 ```
 
-Then use `font-family: 'Inter', sans-serif`.
+Then use `font-family: 'Figtree', sans-serif`.
+
+**BODY_FONT global**: When a font pairing is active, `BODY_FONT` holds the body text font
+(different from `FONT` which is for headings/display). Use `BODY_FONT` for paragraphs,
+descriptions, and labels. Falls back to `FONT` when no pairing is set.
 
 ---
 

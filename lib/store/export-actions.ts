@@ -3,6 +3,7 @@
 import type { ExportSettings, ExportProgress } from '../types'
 import { generateSceneHTML } from '../sceneTemplate'
 import { resolveProjectDimensions } from '../dimensions'
+import { mergeProjectCaptions, type SceneCaptionInput } from '../audio/captions'
 import type { Set, Get } from './types'
 
 export function createExportActions(set: Set, get: Get) {
@@ -82,7 +83,13 @@ export function createExportActions(set: Set, get: Get) {
                 if (fullData.scene) fullScene = { ...scene, ...fullData.scene }
               }
             } catch {}
-            const freshHTML = generateSceneHTML(fullScene, get().globalStyle, undefined, get().audioSettings, resolveProjectDimensions(get().project.mp4Settings?.aspectRatio, get().project.mp4Settings?.resolution))
+            const freshHTML = generateSceneHTML(
+              fullScene,
+              get().globalStyle,
+              undefined,
+              get().audioSettings,
+              resolveProjectDimensions(get().project.mp4Settings?.aspectRatio, get().project.mp4Settings?.resolution),
+            )
 
             const bytes = await exportSolidSceneMp4({
               sceneId: fullScene.id,
@@ -155,6 +162,40 @@ export function createExportActions(set: Set, get: Get) {
             cleanup: true,
           })
           pushDiag('concat: done')
+
+          // Caption sidecar: stitch per-scene word timings into a project-
+          // level SRT + VTT and drop them next to the MP4. Skipped when
+          // the project is on an NLE timeline (scene-order duration
+          // accumulation would misalign tracks).
+          try {
+            if (!get().project?.timeline) {
+              let cursor = 0
+              const inputs: SceneCaptionInput[] = []
+              for (const s of scenes) {
+                const words = s.audioLayer?.tts?.captions?.words
+                if (words && words.length > 0) inputs.push({ startSeconds: cursor, words })
+                cursor += s.duration
+              }
+              if (inputs.length > 0) {
+                const bundle = mergeProjectCaptions(inputs)
+                if (bundle.cues.length > 0) {
+                  const base = filePath.replace(/\.mp4$/i, '')
+                  const encoder = new TextEncoder()
+                  await (window as any).electronAPI.writeFile({
+                    filePath: `${base}.srt`,
+                    bytes: encoder.encode(bundle.srt),
+                  })
+                  await (window as any).electronAPI.writeFile({
+                    filePath: `${base}.vtt`,
+                    bytes: encoder.encode(bundle.vtt),
+                  })
+                  pushDiag(`captions: wrote ${bundle.cues.length} cues (.srt + .vtt)`)
+                }
+              }
+            }
+          } catch (capErr) {
+            pushDiag(`captions: skipped (${String(capErr)})`)
+          }
 
           set({
             exportProgress: {

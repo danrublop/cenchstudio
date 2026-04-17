@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Three.js White Studio Test</title>
+  <style>
+    * { margin: 0; padding: 0; }
+    body { background: #000; overflow: hidden; font-family: system-ui, sans-serif; }
+    canvas { display: block; }
+    #controls {
+      position: fixed; top: 16px; right: 16px; z-index: 10;
+      background: rgba(0,0,0,0.7); border-radius: 10px; padding: 16px;
+      display: flex; flex-direction: column; gap: 12px; min-width: 180px;
+    }
+    #controls label { color: #ccc; font-size: 13px; display: flex; align-items: center; gap: 8px; }
+    #controls input[type=color] { width: 36px; height: 24px; border: none; border-radius: 4px; cursor: pointer; background: none; }
+    #controls .title { color: #fff; font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.183.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.183.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+<div id="controls">
+  <div class="title">Studio Controls</div>
+  <label>Floor <input type="color" id="floorColor" value="#ffffff"></label>
+  <label>Sky Top <input type="color" id="skyTopColor" value="#999999"></label>
+  <label>Sky Bottom <input type="color" id="skyBotColor" value="#ffffff"></label>
+  <label>Grid <input type="color" id="gridColor" value="#d0cdc8"></label>
+  <label style="color:#ccc;font-size:13px">Radius <input type="range" id="floorRadius" min="10" max="150" value="80" style="width:100px"></label>
+  <div style="margin-top:8px;display:flex;gap:8px">
+    <button id="modeCircle" style="padding:4px 10px;border:1px solid #666;background:#444;color:#fff;border-radius:4px;cursor:pointer;font-size:12px">Circle Fade</button>
+    <button id="modeInfinite" style="padding:4px 10px;border:1px solid #666;background:#222;color:#aaa;border-radius:4px;cursor:pointer;font-size:12px">Infinite + Fog</button>
+  </div>
+  <div>
+    <label style="color:#ccc;font-size:13px">Fog <input type="range" id="fogDensity" min="0" max="20" value="3" style="width:100px"> <span id="fogVal">0.003</span></label>
+  </div>
+</div>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ── Renderer ──
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.shadowMap.enabled = true;
+renderer.toneMapping = THREE.LinearToneMapping;
+renderer.toneMappingExposure = 1.0;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+
+// ── Scene + Camera ──
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 1, 10000);
+camera.position.set(-10, 8, 20);
+camera.lookAt(0, 0, 0);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+
+// ── White Studio Background ──
+// Hemisphere gradient: white at bottom (floor) → gray at top
+// Uses the standard Three.js hemisphere sky pattern from webgl_lights_hemisphere example
+// Key: high segment count (128) eliminates banding
+const skyGeo = new THREE.SphereGeometry(5000, 32, 128);
+const skyMat = new THREE.ShaderMaterial({
+  uniforms: {
+    topColor:    { value: new THREE.Color(0x999999) },
+    bottomColor: { value: new THREE.Color(0xffffff) },
+    offset:      { value: 50 },
+    exponent:    { value: 0.6 },
+  },
+  vertexShader: `
+    varying vec3 vWorldPosition;
+    void main() {
+      vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+      vWorldPosition = worldPosition.xyz;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
+    uniform vec3 topColor;
+    uniform vec3 bottomColor;
+    uniform float offset;
+    uniform float exponent;
+    varying vec3 vWorldPosition;
+    void main() {
+      float h = normalize(vWorldPosition + offset).y;
+      gl_FragColor = vec4(
+        mix(bottomColor, topColor, max(pow(max(h, 0.0), exponent), 0.0)),
+        1.0
+      );
+    }
+  `,
+  side: THREE.BackSide,
+  depthWrite: false,
+});
+scene.add(new THREE.Mesh(skyGeo, skyMat));
+
+// ── Infinite Grid Helper (from Fyrestar/THREE.InfiniteGridHelper) ──
+class InfiniteGridHelper extends THREE.Mesh {
+  constructor(size1 = 10, size2 = 100, color = new THREE.Color('white'), distance = 8000) {
+    const geometry = new THREE.PlaneGeometry(2, 2, 1, 1);
+    const material = new THREE.ShaderMaterial({
+      side: THREE.DoubleSide,
+      uniforms: {
+        uSize1: { value: size1 },
+        uSize2: { value: size2 },
+        uColor: { value: color },
+        uDistance: { value: distance },
+      },
+      transparent: true,
+      vertexShader: `
+        varying vec3 worldPosition;
+        uniform float uDistance;
+        void main() {
+          vec3 pos = position.xzy * uDistance;
+          pos.xz += cameraPosition.xz;
+          worldPosition = pos;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+        }
+      `,
+      fragmentShader: `
+        varying vec3 worldPosition;
+        uniform float uSize1;
+        uniform float uSize2;
+        uniform vec3 uColor;
+        uniform float uDistance;
+        float getGrid(float size) {
+          vec2 r = worldPosition.xz / size;
+          vec2 grid = abs(fract(r - 0.5) - 0.5) / fwidth(r);
+          float line = min(grid.x, grid.y);
+          return 1.0 - min(line, 1.0);
+        }
+        void main() {
+          float d = 1.0 - min(distance(cameraPosition.xz, worldPosition.xz) / uDistance, 1.0);
+          float g1 = getGrid(uSize1);
+          float g2 = getGrid(uSize2);
+          gl_FragColor = vec4(uColor.rgb, mix(g2, g1, g1) * pow(d, 3.0));
+          gl_FragColor.a = mix(0.5 * gl_FragColor.a, gl_FragColor.a, g2);
+          if (gl_FragColor.a <= 0.0) discard;
+        }
+      `,
+      extensions: { derivatives: true },
+    });
+    super(geometry, material);
+    this.frustumCulled = false;
+  }
+}
+
+// Subtle white/light-gray grid on the studio floor
+const grid = new InfiniteGridHelper(10, 100, new THREE.Color(0xd0cdc8), 3000);
+scene.add(grid);
+
+// ── Circular floor with radial fade ──
+// Uses a CircleGeometry with a custom shader that fades opacity at the edges
+const floorRadius = 80;
+const floorGeo = new THREE.CircleGeometry(floorRadius, 128);
+const floorMat = new THREE.ShaderMaterial({
+  uniforms: {
+    uColor: { value: new THREE.Color(0xffffff) },
+    uRadius: { value: floorRadius },
+  },
+  vertexShader: `
+    varying vec2 vUv;
+    varying vec3 vWorldPos;
+    void main() {
+      vUv = uv;
+      vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
+    uniform vec3 uColor;
+    uniform float uRadius;
+    varying vec2 vUv;
+    varying vec3 vWorldPos;
+    void main() {
+      float dist = length(vWorldPos.xz);
+      float fade = 1.0 - smoothstep(uRadius * 0.3, uRadius * 0.95, dist);
+      gl_FragColor = vec4(uColor, fade);
+    }
+  `,
+  transparent: true,
+  side: THREE.DoubleSide,
+  depthWrite: false,
+});
+const floor = new THREE.Mesh(floorGeo, floorMat);
+floor.rotation.x = -Math.PI / 2;
+floor.position.y = -0.01;
+scene.add(floor);
+
+// Shadow catcher (separate invisible plane that receives shadows)
+const shadowGeo = new THREE.PlaneGeometry(200, 200);
+const shadowMat = new THREE.ShadowMaterial({ opacity: 0.15 });
+const shadowCatcher = new THREE.Mesh(shadowGeo, shadowMat);
+shadowCatcher.rotation.x = -Math.PI / 2;
+shadowCatcher.position.y = -0.005;
+shadowCatcher.receiveShadow = true;
+scene.add(shadowCatcher);
+
+// ── Infinite floor (hidden by default — toggled via button) ──
+const infFloorGeo = new THREE.PlaneGeometry(10000, 10000);
+const infFloorMat = new THREE.MeshStandardMaterial({
+  color: 0xffffff, roughness: 1.0, metalness: 0, envMapIntensity: 0.2,
+});
+const infFloor = new THREE.Mesh(infFloorGeo, infFloorMat);
+infFloor.rotation.x = -Math.PI / 2;
+infFloor.position.y = -0.01;
+infFloor.receiveShadow = true;
+infFloor.visible = false;
+scene.add(infFloor);
+
+// ── Studio Lighting (3-point, soft, warm) ──
+scene.add(new THREE.AmbientLight(0xffffff, 0.3));
+
+const key = new THREE.DirectionalLight(0xfff6e0, 1.0);
+key.position.set(-5, 8, 5);
+key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.camera.left = -15;
+key.shadow.camera.right = 15;
+key.shadow.camera.top = 15;
+key.shadow.camera.bottom = -15;
+key.shadow.bias = -0.001;
+scene.add(key);
+
+const fill = new THREE.DirectionalLight(0xd0e8ff, 0.35);
+fill.position.set(6, 2, 4);
+scene.add(fill);
+
+const rim = new THREE.DirectionalLight(0xffe0d0, 0.5);
+rim.position.set(0, 4, -9);
+scene.add(rim);
+
+// ── Environment map for PBR reflections ──
+const pmrem = new THREE.PMREMGenerator(renderer);
+const envScene = new THREE.Scene();
+const envSkyGeo = new THREE.SphereGeometry(50, 32, 16);
+const envSkyMat = new THREE.ShaderMaterial({
+  side: THREE.BackSide,
+  uniforms: {
+    topColor:    { value: new THREE.Color(0xddeeff) },
+    bottomColor: { value: new THREE.Color(0xfff8f0) },
+  },
+  vertexShader: `
+    varying vec3 vWorldPos;
+    void main() {
+      vec4 wp = modelMatrix * vec4(position, 1.0);
+      vWorldPos = wp.xyz;
+      gl_Position = projectionMatrix * viewMatrix * wp;
+    }
+  `,
+  fragmentShader: `
+    uniform vec3 topColor;
+    uniform vec3 bottomColor;
+    varying vec3 vWorldPos;
+    void main() {
+      float h = normalize(vWorldPos).y * 0.5 + 0.5;
+      gl_FragColor = vec4(mix(bottomColor, topColor, h), 1.0);
+    }
+  `,
+});
+envScene.add(new THREE.Mesh(envSkyGeo, envSkyMat));
+const panelGeo = new THREE.PlaneGeometry(8, 4);
+const panelMat = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+const panel = new THREE.Mesh(panelGeo, panelMat);
+panel.position.set(-6, 8, 5);
+panel.lookAt(0, 0, 0);
+envScene.add(panel);
+const envMap = pmrem.fromScene(envScene, 0.04).texture;
+scene.environment = envMap;
+pmrem.dispose();
+
+// ── Test Objects ──
+const boxMat = new THREE.MeshStandardMaterial({ color: 0xe84545, roughness: 0.4, metalness: 0.1 });
+const box = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2), boxMat);
+box.position.set(0, 1, 0);
+box.castShadow = true;
+scene.add(box);
+
+const sphereMat = new THREE.MeshStandardMaterial({ color: 0x2563eb, roughness: 0.3, metalness: 0.2 });
+const sphere = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 32), sphereMat);
+sphere.position.set(4, 1, -2);
+sphere.castShadow = true;
+scene.add(sphere);
+
+const cylMat = new THREE.MeshStandardMaterial({ color: 0x16a34a, roughness: 0.5, metalness: 0.1 });
+const cyl = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.8, 3, 32), cylMat);
+cyl.position.set(-4, 1.5, 1);
+cyl.castShadow = true;
+scene.add(cyl);
+
+// ── Resize ──
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ── Color Controls — each picker controls ONLY its own thing ──
+document.getElementById('floorColor').addEventListener('input', function(e) {
+  floorMat.uniforms.uColor.value.set(e.target.value);  // circular floor
+  infFloorMat.color.set(e.target.value);                 // infinite floor
+});
+document.getElementById('skyTopColor').addEventListener('input', function(e) {
+  skyMat.uniforms.topColor.value.set(e.target.value);    // sky top only
+});
+document.getElementById('skyBotColor').addEventListener('input', function(e) {
+  skyMat.uniforms.bottomColor.value.set(e.target.value);
+  // Keep fog synced with sky bottom so floor blends into sky at horizon
+  if (scene.fog) scene.fog.color.set(e.target.value);
+});
+document.getElementById('gridColor').addEventListener('input', function(e) {
+  grid.material.uniforms.uColor.value.set(e.target.value);
+});
+document.getElementById('floorRadius').addEventListener('input', function(e) {
+  floorMat.uniforms.uRadius.value = parseFloat(e.target.value);
+});
+
+// ── Mode switching: Circle Fade vs Infinite + Fog ──
+var currentMode = 'circle';
+function setMode(mode) {
+  currentMode = mode;
+  var floorColor = floorMat.uniforms.uColor.value;
+  if (mode === 'circle') {
+    floor.visible = true;
+    infFloor.visible = false;
+    scene.fog = null;
+    document.getElementById('modeCircle').style.background = '#444';
+    document.getElementById('modeCircle').style.color = '#fff';
+    document.getElementById('modeInfinite').style.background = '#222';
+    document.getElementById('modeInfinite').style.color = '#aaa';
+  } else {
+    floor.visible = false;
+    infFloor.visible = true;
+    // Fog matches sky bottom so floor extends to horizon then blends into sky
+    scene.fog = new THREE.FogExp2(skyMat.uniforms.bottomColor.value.clone(), 0.003);
+    document.getElementById('modeInfinite').style.background = '#444';
+    document.getElementById('modeInfinite').style.color = '#fff';
+    document.getElementById('modeCircle').style.background = '#222';
+    document.getElementById('modeCircle').style.color = '#aaa';
+  }
+}
+document.getElementById('modeCircle').addEventListener('click', function() { setMode('circle'); });
+document.getElementById('modeInfinite').addEventListener('click', function() { setMode('infinite'); });
+document.getElementById('fogDensity').addEventListener('input', function(e) {
+  var d = parseFloat(e.target.value) / 1000;
+  document.getElementById('fogVal').textContent = d.toFixed(4);
+  if (scene.fog) scene.fog.density = d;
+});
+
+// ── Animate ──
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  box.rotation.y += 0.005;
+  renderer.render(scene, camera);
+}
+animate();
+</script>
+</body>
+</html>

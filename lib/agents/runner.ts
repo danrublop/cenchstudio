@@ -33,6 +33,9 @@ import type {
 } from './types'
 import { getModelPricing, getModelProvider, messageContentToText, serializeRunProgress } from './types'
 import { THINKING_BUDGETS } from './context-builder'
+import { getAgentPrompt } from './prompts'
+import { AGENT_TOOLS, ALL_TOOLS } from './tools'
+import { resolveStyle } from '../styles/presets'
 // import { routeMessage } from './router' // preserved for future builder delegation
 import {
   buildAgentContext,
@@ -157,7 +160,9 @@ async function* withInactivityTimeout<T>(
     while (true) {
       const result = await Promise.race([
         iterator.next(),
-        new Promise<never>((_, reject) => { rejectTimeout = reject }),
+        new Promise<never>((_, reject) => {
+          rejectTimeout = reject
+        }),
       ])
       if (result.done) break
       resetTimer()
@@ -372,10 +377,13 @@ export interface RunnerOptions {
   enabledModelIds?: string[]
   audioProviderEnabled?: Record<string, boolean>
   mediaGenEnabled?: Record<string, boolean>
+  /** Master switch for web research tools — model-agnostic toggle from chat input. */
+  researchEnabled?: boolean
+  /** Per-provider enabled map for research providers (brave, tavily, exa). */
+  researchProviderEnabled?: Record<string, boolean>
   sessionPermissions?: Record<string, string>
   generationOverrides?: Record<string, { provider?: string; prompt?: string; config?: Record<string, any> }>
   autoChooseDefaults?: Record<string, { provider: string; config: Record<string, any> }>
-  projectAssets?: import('../types').ProjectAsset[]
   /** When set (e.g. after user approves storyboard), Director implements this plan from the first turn */
   initialStoryboard?: Storyboard | null
   /** Resume a blocked tool call after permission approval */
@@ -461,6 +469,62 @@ function emitToolCompleteWithStoryboard(
   }
 }
 
+/** Derive a scene's build phase from the tool that just ran and the scene's content state. */
+function deriveBuildPhase(
+  toolName: string,
+  scene: { svgContent?: string; canvasCode?: string; sceneCode?: string; reactCode?: string; lottieSource?: string },
+): 'created' | 'generating' | 'rendered' | 'verified' | 'done' | 'deleted' {
+  if (toolName === 'delete_scene') return 'deleted'
+  if (toolName === 'verify_scene') return 'verified'
+  // Polish/metadata tools — scene is functionally done
+  if (
+    /^(set_transition|add_narration|set_scene_background|set_scene_duration|set_scene_style|set_camera_motion|add_sound_effect|add_background_music|add_interaction|edit_interaction|add_multiple_interactions|connect_scenes)$/.test(
+      toolName,
+    )
+  )
+    return 'done'
+  if (toolName === 'create_scene') return 'created'
+  // Code generation / content modification tools
+  if (
+    /^(add_layer|write_scene_code|regenerate_layer|patch_layer_code|generate_chart|update_chart|remove_chart|reorder_charts|apply_canvas_motion_template|generate_physics_scene|create_world_scene|migrate_to_react|three_data_scatter_scene|create_zdog_composed_scene)$/.test(
+      toolName,
+    )
+  ) {
+    const hasCode = !!(scene.svgContent || scene.canvasCode || scene.sceneCode || scene.reactCode || scene.lottieSource)
+    return hasCode ? 'rendered' : 'generating'
+  }
+  const hasCode = !!(scene.svgContent || scene.canvasCode || scene.sceneCode || scene.reactCode || scene.lottieSource)
+  return hasCode ? 'rendered' : 'generating'
+}
+
+/** Emit state_change with an incremental scene snapshot so the client can
+ *  update the timeline progressively during the agent build. */
+function emitIncrementalStateChange(
+  emit: (event: SSEEvent) => void,
+  result: ToolResult,
+  world: WorldStateMutable,
+  toolName?: string,
+) {
+  if (!result.changes?.length) return
+  const scene = result.affectedSceneId ? world.scenes.find((s) => s.id === result.affectedSceneId) : undefined
+  if (!scene) {
+    emit({ type: 'state_change', changes: result.changes })
+    return
+  }
+  const phase = deriveBuildPhase(toolName ?? '', scene)
+  if (phase === 'deleted') {
+    // Don't emit the deleted scene — let the client remove it via changes array
+    emit({ type: 'state_change', changes: result.changes })
+    return
+  }
+  const isStillBuilding = phase !== 'verified' && phase !== 'done'
+  emit({
+    type: 'state_change',
+    changes: result.changes,
+    incrementalScene: { ...scene, _building: isStillBuilding, _buildPhase: phase },
+  } as any)
+}
+
 /**
  * Run the agent execution loop, emitting SSE events throughout.
  * Returns the final accumulated state of scenes and globalStyle after all tool calls.
@@ -501,6 +565,8 @@ export async function runAgent(opts: RunnerOptions): Promise<{
     apiPermissions,
     audioProviderEnabled,
     mediaGenEnabled,
+    researchEnabled,
+    researchProviderEnabled,
     sessionPermissions,
     abortSignal,
     emit,
@@ -523,6 +589,377 @@ export async function runAgent(opts: RunnerOptions): Promise<{
   let totalApiCalls = 0
 
   try {
+    // ── 0. CLI providers — early exit before any LLM setup ─────────────────
+    if (modelOverride === 'claude-code' || modelOverride === 'codex-cli') {
+      const isClaudeCode = modelOverride === 'claude-code'
+      logger.log('run', `${isClaudeCode ? 'Claude Code' : 'Codex CLI'} provider: delegating to CLI subprocess`)
+      const runCli = isClaudeCode
+        ? (await import('./claude-code-provider')).runWithClaudeCode
+        : (await import('./codex-cli-provider')).runWithCodexCli
+
+      // ── Resolve agent type (same logic as in-app path) ──
+      const cliAgentType: AgentType = agentOverride ?? 'scene-maker'
+      agentType = cliAgentType
+      logger.log('run', `CLI agent type: ${cliAgentType}`)
+
+      // ── Build rich system prompt — mirrors the in-app agent's context ──
+      // This is the ONLY context Claude Code gets (no CLAUDE.md, no skills, no hooks).
+
+      // 1. World state
+      const cliWorldState = buildWorldState(scenes, globalStyle, projectName, outputMode, selectedSceneId ?? null)
+      const cliWorldSerialized = serializeWorldState(cliWorldState)
+
+      // 2. Agent-specific persona prompt (director, planner, editor, dop, or scene-maker)
+      const resolvedStyle = resolveStyle(globalStyle?.presetId ?? null, globalStyle)
+      const { resolveProjectDimensions: resolveDims } = await import('@/lib/dimensions')
+      const cliDims = resolveDims((opts as any).aspectRatio ?? '16:9', (opts as any).resolution ?? '1080p')
+      const agentBasePrompt = getAgentPrompt(
+        cliAgentType,
+        resolvedStyle,
+        opts.focusedSceneType,
+        opts.directorTemplate,
+        cliDims,
+      )
+
+      // 3. User memories
+      const memoriesBlock = opts.userMemories?.length
+        ? `\n## User Preferences (from prior sessions)\n${opts.userMemories.map((m) => `- [${m.category}] ${m.key}: ${m.value}`).join('\n')}\n`
+        : ''
+
+      // 4. Permission warnings
+      const permissionWarnings = [
+        `## Cost-Aware Tool Usage`,
+        `The following tools call paid external APIs. Use them only when the user explicitly requests:`,
+        `- add_narration (TTS via ElevenLabs — ~$0.01-0.05 per generation)`,
+        `- generate_avatar_narration / generate_avatar_scene (HeyGen — ~$0.10+ per generation)`,
+        `- set_video_layer (Veo3 video generation — expensive)`,
+        `- search_images / place_image (stock image search — generally free, but track usage)`,
+        `Do NOT call these proactively. Only use when the user asks for narration, avatars, or video.`,
+      ].join('\n')
+
+      // 5. Per-agent tool guidance — tells Claude Code which tools to use/avoid per role
+      const agentToolGuidance: Record<string, string> = {
+        planner: [
+          `## Your Role: Planner`,
+          `You ONLY create storyboards. Call plan_scenes with a structured storyboard JSON.`,
+          `Do NOT create scenes, write code, or use any tool other than plan_scenes.`,
+          `Your output is a storyboard for the user to review before building begins.`,
+        ].join('\n'),
+        director: [
+          `## Your Role: Director`,
+          `You orchestrate multi-scene video creation. Your workflow:`,
+          `1. Call plan_scenes to create a storyboard (hook → build → climax → resolution)`,
+          `2. After the user approves, create each scene using write_scene_code or add_layer`,
+          `3. Set transitions between scenes`,
+          `4. Add narration if requested`,
+          `5. Verify each scene`,
+          ``,
+          `You have access to scene tools, layer tools, audio tools, style tools, and more.`,
+          `Focus on narrative arc, pacing, and scene variety.`,
+          ``,
+          `## Skill Library`,
+          `Use search_skills(query) to find animation techniques before building unfamiliar scene types.`,
+          `Use load_skill(skillId) to get full implementation guides with code patterns.`,
+        ].join('\n'),
+        'scene-maker': [
+          `## Your Role: Master Builder`,
+          `You are the flexible default agent with full creative control.`,
+          ``,
+          `## Skill Library`,
+          `You have a library of animation techniques and rendering patterns. Use these before building unfamiliar things:`,
+          `- search_skills(query) — find techniques by description (e.g. "particle explosion", "3D camera flyover")`,
+          `- load_skill(skillId) — get the full implementation guide with code patterns and gotchas`,
+          `- list_skill_categories() — browse what's available`,
+          ``,
+          `## How to create/update scenes`,
+          `Use the write_scene_code MCP tool to write code directly, or add_layer to trigger AI generation.`,
+          `- write_scene_code: pass raw JSX as sceneCode (faster, you write the code)`,
+          `- add_layer: describe what you want and the system generates code (costs an extra LLM call)`,
+          `- Prefer write_scene_code when you can reason about the code. Use add_layer as a fallback.`,
+          ``,
+          `You can also use: generate_chart, set_transition, add_narration, set_global_style,`,
+          `plan_scenes, verify_scene, create_interaction, apply_physics_to_scene, search_3d_models, etc.`,
+          ``,
+          `## Multi-Scene Workflow`,
+          `When the user asks for multiple scenes (e.g. "create a 5-scene explainer about X"):`,
+          `1. First call plan_scenes to create a storyboard`,
+          `2. Then create each scene in order using write_scene_code or add_layer`,
+          `3. After each scene, call verify_scene`,
+          `4. Set transitions between scenes`,
+          `5. Add narration if requested (only after scenes are built)`,
+          ``,
+          `For single-scene requests, skip planning and create directly.`,
+        ].join('\n'),
+        editor: [
+          `## Your Role: Editor`,
+          `You make surgical, precise changes to existing scenes. You do NOT create new scenes.`,
+          ``,
+          `## Before editing, always call read_scene_code or read_scene to see the full code.`,
+          `The world state preview is truncated — you need the full source for precise patches.`,
+          ``,
+          `Your tools: read_scene_code (read full code), patch_layer_code (find-and-replace),`,
+          `write_scene_code (full rewrite), regenerate_layer, set_scene_background, set_transition, verify_scene.`,
+          ``,
+          `Keep changes minimal and targeted. Don't rewrite entire scenes unless asked.`,
+        ].join('\n'),
+        dop: [
+          `## Your Role: Director of Photography`,
+          `You control the global visual style. You do NOT create scenes or write scene code.`,
+          ``,
+          `Your tools: set_global_style, set_all_transitions, set_roughness_all,`,
+          `style_scene, set_camera_motion, capture_frame.`,
+          ``,
+          `Focus on palette, font, roughness, transitions, and camera motion.`,
+          `Make the project visually cohesive.`,
+        ].join('\n'),
+      }
+      const roleBlock = agentToolGuidance[cliAgentType] ?? agentToolGuidance['scene-maker']
+
+      // 6. Scene code reference — only for agents that write code
+      const codeWritingAgent =
+        cliAgentType === 'scene-maker' || cliAgentType === 'director' || cliAgentType === 'editor'
+      const sceneCodeReference = codeWritingAgent
+        ? [
+            `## CRITICAL: Scene code runs in a browser sandbox`,
+            ``,
+            `All APIs are injected as globals. Do NOT use require(), import statements, or any module system.`,
+            `The code runs via Babel in the browser — CommonJS and ES modules are NOT available.`,
+            ``,
+            `### Available globals (do NOT import — they already exist)`,
+            `- useCurrentFrame() — returns current integer frame number`,
+            `- useVideoConfig() — returns { fps, width, height, durationInFrames }`,
+            `- interpolate(value, inputRange, outputRange, options?) — map a value between ranges`,
+            `- spring({ frame, fps, config?, from?, to? }) — spring-based animation`,
+            `- Easing.ease, Easing.easeIn, Easing.easeOut, Easing.bezier(x1,y1,x2,y2)`,
+            `- AbsoluteFill — full-frame absolute positioning div`,
+            `- Sequence — timing container (from, durationInFrames props)`,
+            `- React — available globally (React.useState, React.useEffect, etc.)`,
+            `- ThreeJSLayer, Canvas2DLayer, D3Layer, SVGLayer, LottieLayer — bridge components`,
+            `- CenchCamera — camera motion (see camera section below)`,
+            `- WIDTH, HEIGHT, PALETTE, DURATION, FONT, STROKE_COLOR, ROUGHNESS — scene globals`,
+            ``,
+            `### Scene code pattern`,
+            `\`\`\`jsx`,
+            `export default function Scene() {`,
+            `  const frame = useCurrentFrame();`,
+            `  const { fps, durationInFrames } = useVideoConfig();`,
+            `  // Pick a DIFFERENT camera move per scene — don't repeat the same one`,
+            `  React.useEffect(() => { CenchCamera.pan({ x: -2, y: -1, duration: DURATION }); }, []);`,
+            `  const opacity = interpolate(frame, [0, 20], [0, 1], { extrapolateRight: "clamp" });`,
+            `  return (`,
+            `    <AbsoluteFill style={{ background: PALETTE[0], fontFamily: FONT }}>`,
+            `      <div style={{ opacity, fontSize: 80, fontWeight: 700, color: PALETTE[3] }}>Hello</div>`,
+            `    </AbsoluteFill>`,
+            `  );`,
+            `}`,
+            `\`\`\``,
+            ``,
+            `### Camera motion (VARY per scene — never use the same move for every scene)`,
+            `Available moves (pick different ones for different scenes):`,
+            `- CenchCamera.kenBurns({ duration: DURATION, endScale: 1.04 }) — subtle slow zoom (use sparingly)`,
+            `- CenchCamera.pan({ x: -2, y: -1, duration: DURATION }) — gentle drift in a direction`,
+            `- CenchCamera.dollyIn({ targetSelector: '#key-element', toScale: 1.15, at: 2 }) — zoom to element`,
+            `- CenchCamera.dollyOut({ startScale: 1.2, duration: DURATION }) — pull back to reveal`,
+            `- CenchCamera.presetCinematicPush() — slow forward push (good for reveals)`,
+            `- CenchCamera.presetReveal() — dramatic reveal with zoom + rotation`,
+            `- CenchCamera.shake({ intensity: 0.5, duration: 0.3, at: 1 }) — impact shake (use once per video max)`,
+            `- No camera call at all — static shots work for data-heavy or comparison scenes`,
+            `DO NOT default to kenBurns on every scene. Mix pan, dolly, push, and static shots.`,
+            ``,
+            `### Animation rules`,
+            `- Animation is a PURE FUNCTION of frame. No useState for animation state.`,
+            `- Use interpolate() and spring() — NOT manual lerp or setTimeout.`,
+            `- All motion derived from frame number via useCurrentFrame().`,
+            `- Use <Sequence> for temporal composition — children see a local frame starting at 0.`,
+            `- Use inline styles (style={{ }}) — no external CSS classes.`,
+            ``,
+            `### Pacing & narration alignment`,
+            `- Do NOT show all content at once. Use <Sequence from={X} durationInFrames={Y}> to reveal content over time.`,
+            `- Scene timing: 0-20% background appears, 20-80% content builds in staggered reveals, 80-100% hold for viewer absorption.`,
+            `- If narration is added, time visual reveals to match the narration — each point appears as it's spoken.`,
+            `- Maximum 5 text blocks per scene. If you have more content, split into multiple scenes.`,
+            `- Every element should animate in (opacity, position) — nothing should just "be there" from frame 0.`,
+          ].join('\n')
+        : ''
+
+      // Design principles are now injected via getAgentPrompt() in prompts.ts
+      // (applies to both in-app and CLI agents for code-writing agent types)
+
+      const systemPrompt = [
+        agentBasePrompt,
+        ``,
+        `## Current World State`,
+        ``,
+        cliWorldSerialized,
+        ``,
+        roleBlock,
+        ``,
+        sceneCodeReference,
+        ``,
+        permissionWarnings,
+        memoriesBlock,
+        ``,
+        `## Context Refresh`,
+        `Your initial world state (above) is a snapshot. After creating or editing multiple scenes,`,
+        `call get_world_state to refresh your view of the project. This is especially important`,
+        `when building 3+ scenes — later scenes may need to reference earlier ones.`,
+        ``,
+        `## Reading Existing Scenes`,
+        `Before editing an existing scene, call read_scene or read_scene_code to see its full code.`,
+        `This gives you the complete layer code — essential for patch_layer_code or rewriting.`,
+        ``,
+        `## Critical Rules`,
+        `1. The project is pre-selected. Use MCP tools directly — no need to select_project.`,
+        `2. Do NOT create new projects. Add scenes to "${projectName}" (${opts.projectId}).`,
+        `3. Keep chat responses concise — the user sees previews in the editor.`,
+        `4. After creating scenes, call verify_scene to validate.`,
+        `5. NEVER use require() or import statements in scene code. All APIs are globals.`,
+        `6. Use PALETTE, FONT, STROKE_COLOR globals from the active style — do not hardcode colors unless overriding.`,
+        `7. Match scene types to content: React for layouts/text, Canvas2DLayer for hand-drawn, D3Layer for data, ThreeJSLayer for 3D.`,
+      ].join('\n')
+      // Build per-agent MCP tool allow list (mirrors native agent's AGENT_TOOLS filtering).
+      // Always include utility tools (select_project, refresh_state, list_scenes, read_scene,
+      // read_scene_code, write_scene_code, get_world_state) plus the agent's specific tools.
+      const cliUtilityTools = [
+        'select_project',
+        'refresh_state',
+        'list_scenes',
+        'read_scene',
+        'read_scene_code',
+        'write_scene_code',
+        'get_world_state',
+      ]
+      const agentToolDefs = AGENT_TOOLS[cliAgentType] ?? ALL_TOOLS
+      const agentToolNames = agentToolDefs.map((t) => t.name)
+      const allAllowed = [...new Set([...cliUtilityTools, ...agentToolNames])]
+      const allowedToolsFlag = allAllowed.map((t) => `mcp__cench-studio__${t}`).join(',')
+
+      // Extract images from message content for CLI providers
+      const cliImages =
+        typeof message !== 'string'
+          ? message
+              .filter(
+                (b): b is { type: 'image'; image: { dataUri: string; mimeType: string; fileName?: string } } =>
+                  b.type === 'image',
+              )
+              .map((b) => ({ dataUri: b.image.dataUri, mimeType: b.image.mimeType, fileName: b.image.fileName }))
+          : []
+
+      // Process conversation history for CLI context (same trimming as API path)
+      const cliHistory = history?.length
+        ? trimHistory(history.map((m) => ({ role: m.role, content: m.content }))).map((m) => ({
+            role: m.role,
+            content: typeof m.content === 'string' ? m.content : messageContentToText(m.content),
+          }))
+        : undefined
+
+      const cliResult = await runCli({
+        message: typeof message === 'string' ? message : messageContentToText(message),
+        images: cliImages.length > 0 ? cliImages : undefined,
+        systemPrompt,
+        projectId: opts.projectId ?? '',
+        agentType: cliAgentType,
+        allowedTools: allowedToolsFlag,
+        history: cliHistory,
+        model: isClaudeCode
+          ? opts.modelTier === 'premium'
+            ? 'opus'
+            : opts.modelTier === 'budget'
+              ? 'haiku'
+              : 'sonnet'
+          : undefined,
+        emit,
+        abortSignal: opts.abortSignal,
+      })
+
+      // Read updated state from DB — Claude Code wrote scenes via MCP → REST API → DB,
+      // so the input scenes/globalStyle/sceneGraph are stale.
+      logger.log('run', `CLI run complete. ${cliResult.toolCalls.length} tool calls, reading updated state from DB`)
+      let updatedScenes = scenes
+      let updatedGlobalStyle = globalStyle
+      let updatedSceneGraph = sceneGraph ?? { nodes: [], edges: [], startSceneId: '' }
+
+      if (opts.projectId) {
+        try {
+          const { readProjectScenesFromTables } = await import('@/lib/db/project-scene-table')
+          const { readProjectSceneBlob } = await import('@/lib/db/project-scene-storage')
+          const { db } = await import('@/lib/db')
+          const { projects } = await import('@/lib/db/schema')
+          const { eq } = await import('drizzle-orm')
+
+          const projectRow = await db.select().from(projects).where(eq(projects.id, opts.projectId)).limit(1)
+          if (projectRow[0]) {
+            const tableBacked = await readProjectScenesFromTables(opts.projectId)
+            const blob = readProjectSceneBlob(projectRow[0].description)
+            updatedScenes = tableBacked?.scenes ?? blob.scenes ?? scenes
+            updatedSceneGraph = blob.sceneGraph ?? updatedSceneGraph
+            logger.log(
+              'run',
+              `DB read: ${updatedScenes.length} scenes (table=${!!tableBacked}, blob=${blob.scenes?.length ?? 0})`,
+            )
+            for (const s of updatedScenes) {
+              const sc = s as any
+              logger.log(
+                'run',
+                `  scene ${sc.id?.slice(0, 8)}… type=${sc.sceneType} react=${sc.reactCode?.length ?? 0} code=${sc.sceneCode?.length ?? 0} html=${sc.sceneHTML?.length ?? 0}`,
+              )
+            }
+            if (projectRow[0].globalStyle) {
+              updatedGlobalStyle = projectRow[0].globalStyle as GlobalStyle
+            }
+
+            // Regenerate sceneHTML for scenes that have code but no HTML.
+            // POST /api/scene writes HTML to disk but doesn't store it in the blob,
+            // so scenes read from DB have empty sceneHTML. The client needs sceneHTML
+            // to write the file and render the preview.
+            const { generateSceneHTML } = await import('@/lib/sceneTemplate')
+            const { resolveProjectDimensions } = await import('@/lib/dimensions')
+            const dims = resolveProjectDimensions(
+              (projectRow[0] as any).mp4Settings?.aspectRatio,
+              (projectRow[0] as any).mp4Settings?.resolution,
+            )
+            for (let i = 0; i < updatedScenes.length; i++) {
+              const s = updatedScenes[i] as any
+              const hasCode = s.reactCode || s.svgContent || s.canvasCode || s.sceneCode || s.lottieSource
+              if (hasCode && !s.sceneHTML) {
+                try {
+                  s.sceneHTML = generateSceneHTML(s, updatedGlobalStyle, undefined, undefined, dims)
+                  logger.log('run', `Regenerated sceneHTML for ${s.id.slice(0, 8)}… (${s.sceneHTML.length} chars)`)
+                } catch (e) {
+                  logger.error(
+                    'run',
+                    `Failed to regenerate sceneHTML for ${s.id.slice(0, 8)}…: ${(e as Error).message}`,
+                  )
+                }
+              }
+            }
+          }
+        } catch (err) {
+          logger.error('run', `Failed to read updated state from DB after CLI run: ${(err as Error).message}`)
+        }
+      }
+
+      // Include model tier in modelId so generation logs distinguish CLI runs
+      const cliModelTier = isClaudeCode
+        ? opts.modelTier === 'premium'
+          ? 'opus'
+          : opts.modelTier === 'budget'
+            ? 'haiku'
+            : 'sonnet'
+        : 'default'
+      return {
+        agentType: 'scene-maker',
+        modelId: `${modelOverride}:${cliModelTier}` as ModelId,
+        fullText: cliResult.fullText,
+        toolCalls: cliResult.toolCalls,
+        usage: cliResult.usage,
+        updatedScenes,
+        updatedGlobalStyle,
+        updatedSceneGraph,
+        logger,
+      }
+    }
+
     // ── 1. Route to agent ────────────────────────────────────────────────────
 
     const messageText = messageContentToText(message)
@@ -564,6 +1001,8 @@ export async function runAgent(opts: RunnerOptions): Promise<{
       focusedSceneId,
       audioProviderEnabled,
       mediaGenEnabled,
+      researchEnabled,
+      researchProviderEnabled,
       projectAssets: opts.projectAssets,
       mp4Settings: opts.mp4Settings,
       brandKit: opts.brandKit,
@@ -647,6 +1086,8 @@ export async function runAgent(opts: RunnerOptions): Promise<{
       ...(apiPermissions ? { apiPermissions } : {}),
       ...(audioProviderEnabled ? { audioProviderEnabled } : {}),
       ...(mediaGenEnabled ? { mediaGenEnabled } : {}),
+      ...(researchEnabled !== undefined ? { researchEnabled } : {}),
+      ...(researchProviderEnabled ? { researchProviderEnabled } : {}),
       ...(sessionPermissions ? { sessionPermissions } : {}),
       ...(opts.generationOverrides ? { generationOverrides: opts.generationOverrides } : {}),
       ...(opts.autoChooseDefaults ? { autoChooseDefaults: opts.autoChooseDefaults } : {}),
@@ -680,7 +1121,7 @@ export async function runAgent(opts: RunnerOptions): Promise<{
           emitToolCompleteWithStoryboard(emit, toolName, toolInput, result, world)
           if (result.affectedSceneId)
             emit({ type: 'preview_update', sceneId: result.affectedSceneId, changes: result.changes })
-          if (result.changes?.length) emit({ type: 'state_change', changes: result.changes })
+          emitIncrementalStateChange(emit, result, world, toolName)
 
           // If permission is still required, stop early so UI can prompt again.
           if (result.permissionNeeded) {
@@ -760,9 +1201,13 @@ export async function runAgent(opts: RunnerOptions): Promise<{
     }
 
     const provider = getModelProvider(modelId, opts.modelConfigs)
+    // CLI providers are handled by the early-exit at the top of this function
     if (provider === 'local') {
       const localConfig = opts.modelConfigs?.find((m) => m.id === modelId || m.modelId === modelId)
-      logger.log('run', `Local mode: provider=${provider} model=${modelId} endpoint=${localConfig?.endpoint ?? 'http://localhost:11434'} localModelName=${localConfig?.localModelName ?? modelId}`)
+      logger.log(
+        'run',
+        `Local mode: provider=${provider} model=${modelId} endpoint=${localConfig?.endpoint ?? 'http://localhost:11434'} localModelName=${localConfig?.localModelName ?? modelId}`,
+      )
     } else {
       logger.log('run', `Provider: ${provider} model=${modelId}`)
     }
@@ -897,7 +1342,13 @@ export async function runAgent(opts: RunnerOptions): Promise<{
       totalApiCalls++
 
       // Cost guardrail: abort if accumulated LLM cost exceeds the per-run cap
-      const runningCost = calculateCost(modelId, totalInputTokens, totalOutputTokens, totalCacheCreationTokens, totalCacheReadTokens)
+      const runningCost = calculateCost(
+        modelId,
+        totalInputTokens,
+        totalOutputTokens,
+        totalCacheCreationTokens,
+        totalCacheReadTokens,
+      )
       if (runningCost > rc.maxRunCostUsd) {
         logger.warn('cost', `Run cost $${runningCost.toFixed(3)} exceeds cap $${rc.maxRunCostUsd} — stopping`, {
           iteration,
@@ -928,7 +1379,13 @@ export async function runAgent(opts: RunnerOptions): Promise<{
         runProgress: {
           toolCallsUsed: allToolCalls.length,
           toolCallsMax: rc.maxToolCalls,
-          costUsd: calculateCost(modelId, totalInputTokens, totalOutputTokens, totalCacheCreationTokens, totalCacheReadTokens),
+          costUsd: calculateCost(
+            modelId,
+            totalInputTokens,
+            totalOutputTokens,
+            totalCacheCreationTokens,
+            totalCacheReadTokens,
+          ),
           costMax: rc.maxRunCostUsd,
           iteration,
           iterationMax: effectiveMaxIterations,
@@ -1101,7 +1558,7 @@ export async function runAgent(opts: RunnerOptions): Promise<{
           emitToolCompleteWithStoryboard(emit, block.name, block.args, result, world)
           if (result.affectedSceneId)
             emit({ type: 'preview_update', sceneId: result.affectedSceneId, changes: result.changes })
-          if (result.changes?.length) emit({ type: 'state_change', changes: result.changes })
+          emitIncrementalStateChange(emit, result, world, block.name)
 
           toolResultParts.push({
             functionResponse: {
@@ -1167,7 +1624,10 @@ export async function runAgent(opts: RunnerOptions): Promise<{
 
             // Compact messages to prevent unbounded growth during long builds
             const before = messages.length
-            const compacted = compactInFlightMessages(messages, { maxTokens: rc.compactionMaxTokens, preserveRecent: rc.compactionPreserveRecent })
+            const compacted = compactInFlightMessages(messages, {
+              maxTokens: rc.compactionMaxTokens,
+              preserveRecent: rc.compactionPreserveRecent,
+            })
             if (compacted.length < before) {
               messages.length = 0
               messages.push(...compacted)
@@ -1194,7 +1654,13 @@ export async function runAgent(opts: RunnerOptions): Promise<{
             emit,
             logger,
             toolBudgetRemaining: rc.maxToolCalls - allToolCalls.length,
-            parentCostUsd: calculateCost(modelId, totalInputTokens, totalOutputTokens, totalCacheCreationTokens, totalCacheReadTokens),
+            parentCostUsd: calculateCost(
+              modelId,
+              totalInputTokens,
+              totalOutputTokens,
+              totalCacheCreationTokens,
+              totalCacheReadTokens,
+            ),
             maxRunCostUsd: rc.maxRunCostUsd,
           })
           for (const sr of subResults) {
@@ -1291,7 +1757,8 @@ export async function runAgent(opts: RunnerOptions): Promise<{
         }
 
         // Local models may not support tools — skip tool parameter if supportsTools is false
-        const localConfig = provider === 'local' ? opts.modelConfigs?.find((m) => m.id === modelId || m.modelId === modelId) : null
+        const localConfig =
+          provider === 'local' ? opts.modelConfigs?.find((m) => m.id === modelId || m.modelId === modelId) : null
         const supportsTools = localConfig ? localConfig.supportsTools !== false : true
 
         let stream: any
@@ -1308,9 +1775,10 @@ export async function runAgent(opts: RunnerOptions): Promise<{
         } catch (connectErr) {
           const errMsg = (connectErr as Error).message ?? 'Unknown error'
           logger.error('iteration', `Failed to connect to ${provider === 'local' ? 'Ollama' : 'OpenAI'}: ${errMsg}`)
-          const userMsg = provider === 'local'
-            ? `Failed to connect to Ollama at ${(oaiClient as any)?.baseURL ?? 'localhost:11434'}. Make sure Ollama is running (\`ollama serve\`) and the model is pulled.`
-            : `Failed to connect to OpenAI: ${errMsg}`
+          const userMsg =
+            provider === 'local'
+              ? `Failed to connect to Ollama at ${(oaiClient as any)?.baseURL ?? 'localhost:11434'}. Make sure Ollama is running (\`ollama serve\`) and the model is pulled.`
+              : `Failed to connect to OpenAI: ${errMsg}`
           fullText += `\n\n${userMsg}`
           emit({ type: 'token', token: `\n\n${userMsg}` })
           break
@@ -1322,7 +1790,11 @@ export async function runAgent(opts: RunnerOptions): Promise<{
         let oaiIterInputTokens = 0
         let oaiIterOutputTokens = 0
 
-        for await (const chunk of withInactivityTimeout<any>(stream, STREAM_INACTIVITY_TIMEOUT_MS, 'OpenAI/local stream')) {
+        for await (const chunk of withInactivityTimeout<any>(
+          stream,
+          STREAM_INACTIVITY_TIMEOUT_MS,
+          'OpenAI/local stream',
+        )) {
           const delta = chunk.choices[0]?.delta
           if (chunk.usage) {
             const inTok = chunk.usage.prompt_tokens ?? 0
@@ -1360,9 +1832,13 @@ export async function runAgent(opts: RunnerOptions): Promise<{
         const toolUseBlocks = Object.values(toolCallAccum)
 
         // Execute tools
-        logger.log('iteration', `${provider === 'local' ? 'Local' : 'OpenAI'}: ${toolUseBlocks.length} tool calls to execute`, {
-          toolCallCount: toolUseBlocks.length,
-        })
+        logger.log(
+          'iteration',
+          `${provider === 'local' ? 'Local' : 'OpenAI'}: ${toolUseBlocks.length} tool calls to execute`,
+          {
+            toolCallCount: toolUseBlocks.length,
+          },
+        )
         const toolResultMsgs: OpenAI.ChatCompletionToolMessageParam[] = []
         let stopBecausePermission = false
         let stopBecauseInvalidToolArgs = false
@@ -1438,7 +1914,7 @@ export async function runAgent(opts: RunnerOptions): Promise<{
           emitToolCompleteWithStoryboard(emit, block.name, toolInput, result, world)
           if (result.affectedSceneId)
             emit({ type: 'preview_update', sceneId: result.affectedSceneId, changes: result.changes })
-          if (result.changes?.length) emit({ type: 'state_change', changes: result.changes })
+          emitIncrementalStateChange(emit, result, world, block.name)
 
           if (result.permissionNeeded) {
             stopBecausePermission = true
@@ -1508,7 +1984,10 @@ export async function runAgent(opts: RunnerOptions): Promise<{
 
             // Compact messages to prevent unbounded growth during long builds
             const before = messages.length
-            const compacted = compactInFlightMessages(messages, { maxTokens: rc.compactionMaxTokens, preserveRecent: rc.compactionPreserveRecent })
+            const compacted = compactInFlightMessages(messages, {
+              maxTokens: rc.compactionMaxTokens,
+              preserveRecent: rc.compactionPreserveRecent,
+            })
             if (compacted.length < before) {
               messages.length = 0
               messages.push(...compacted)
@@ -1526,7 +2005,10 @@ export async function runAgent(opts: RunnerOptions): Promise<{
           allToolCalls.some((tc) => tc.toolName === 'set_global_style' || tc.toolName === 'set_all_transitions') &&
           !allToolCalls.some((tc) => tc.toolName === 'add_layer')
         ) {
-          logger.log('orchestrator', `Handing off to orchestrator (${provider}): ${world.storyboard.scenes.length} scenes`)
+          logger.log(
+            'orchestrator',
+            `Handing off to orchestrator (${provider}): ${world.storyboard.scenes.length} scenes`,
+          )
           const { runOrchestrated } = await import('./orchestrator')
           const subResults = await runOrchestrated({
             storyboard: world.storyboard,
@@ -1535,7 +2017,13 @@ export async function runAgent(opts: RunnerOptions): Promise<{
             emit,
             logger,
             toolBudgetRemaining: rc.maxToolCalls - allToolCalls.length,
-            parentCostUsd: calculateCost(modelId, totalInputTokens, totalOutputTokens, totalCacheCreationTokens, totalCacheReadTokens),
+            parentCostUsd: calculateCost(
+              modelId,
+              totalInputTokens,
+              totalOutputTokens,
+              totalCacheCreationTokens,
+              totalCacheReadTokens,
+            ),
             maxRunCostUsd: rc.maxRunCostUsd,
           })
           for (const sr of subResults) {
@@ -1608,14 +2096,31 @@ export async function runAgent(opts: RunnerOptions): Promise<{
                 })
                 // Generate and write HTML
                 const updatedScene = world.scenes.find((s) => s.id === focusedScene.id)!
-                const html = generateSceneHTML(updatedScene, world.globalStyle, undefined, undefined, resolveProjectDimensions(world.mp4Settings?.aspectRatio, world.mp4Settings?.resolution))
+                const html = generateSceneHTML(
+                  updatedScene,
+                  world.globalStyle,
+                  undefined,
+                  undefined,
+                  resolveProjectDimensions(world.mp4Settings?.aspectRatio, world.mp4Settings?.resolution),
+                )
                 updateScene(world, focusedScene.id, { sceneHTML: html })
                 const scenesDir = path.join(process.cwd(), 'public', 'scenes')
                 await fs.mkdir(scenesDir, { recursive: true })
                 await fs.writeFile(path.join(scenesDir, `${focusedScene.id}.html`), html, 'utf-8')
 
-                emit({ type: 'preview_update', sceneId: focusedScene.id, changes: [{ type: 'scene_updated', sceneId: focusedScene.id, description: 'Generated scene code (local)' }] })
-                emit({ type: 'state_change', changes: [{ type: 'scene_updated', sceneId: focusedScene.id, description: 'Generated scene code (local)' }] })
+                emit({
+                  type: 'preview_update',
+                  sceneId: focusedScene.id,
+                  changes: [
+                    { type: 'scene_updated', sceneId: focusedScene.id, description: 'Generated scene code (local)' },
+                  ],
+                })
+                emit({
+                  type: 'state_change',
+                  changes: [
+                    { type: 'scene_updated', sceneId: focusedScene.id, description: 'Generated scene code (local)' },
+                  ],
+                })
 
                 const doneMsg = `_Scene generated successfully._`
                 fullText += doneMsg
@@ -1729,6 +2234,35 @@ export async function runAgent(opts: RunnerOptions): Promise<{
                   input: '',
                 })
                 emit({ type: 'tool_start', toolName: tb.name, toolInput: {} })
+              } else if (blockType === 'server_tool_use') {
+                // Anthropic-native server tool (e.g. web_search_20250305). Runs on
+                // Anthropic's side — we don't execute it, just surface it in the UI.
+                const tb = event.content_block as { id: string; name: string; input?: unknown }
+                emit({ type: 'tool_start', toolName: tb.name, toolInput: (tb.input as Record<string, unknown>) ?? {} })
+              } else if (blockType === 'web_search_tool_result') {
+                // Results for the native web_search server tool. No handler runs;
+                // emit a completion event so the chat UI can render the result pill.
+                const tb = event.content_block as {
+                  tool_use_id?: string
+                  content?: Array<{ type: string; title?: string; url?: string }>
+                }
+                const count = Array.isArray(tb.content) ? tb.content.length : 0
+                emit({
+                  type: 'tool_complete',
+                  toolName: 'web_search',
+                  toolInput: {},
+                  toolResult: {
+                    success: true,
+                    affectedSceneId: null,
+                    changes: [
+                      {
+                        type: 'global_updated',
+                        description: `web_search returned ${count} result${count === 1 ? '' : 's'}`,
+                      },
+                    ],
+                    data: { results: tb.content ?? [] },
+                  },
+                })
               }
               break
             }
@@ -1796,7 +2330,11 @@ export async function runAgent(opts: RunnerOptions): Promise<{
           console.error('[Agent] finalMessage() failed:', err)
           // Abort the stream to release the underlying HTTP connection
           // instead of leaving it in a partially-consumed state.
-          try { stream.abort() } catch { /* best-effort cleanup */ }
+          try {
+            stream.abort()
+          } catch {
+            /* best-effort cleanup */
+          }
           logger.warn('tokens', 'finalMessage() failed — using streaming token counts as fallback')
           finalMsg = {
             id: '',
@@ -1821,8 +2359,14 @@ export async function runAgent(opts: RunnerOptions): Promise<{
           totalCacheReadTokens = (finalMsg.usage as any).cache_read_input_tokens ?? totalCacheReadTokens
           const inputDelta = Math.abs(totalInputTokens - streamInput)
           const outputDelta = Math.abs(totalOutputTokens - streamOutput)
-          if ((streamInput > 0 && inputDelta > streamInput * 0.01) || (streamOutput > 0 && outputDelta > streamOutput * 0.01)) {
-            logger.warn('tokens', `Token count discrepancy >1%: input Δ${inputDelta} (${streamInput}→${totalInputTokens}), output Δ${outputDelta} (${streamOutput}→${totalOutputTokens})`)
+          if (
+            (streamInput > 0 && inputDelta > streamInput * 0.01) ||
+            (streamOutput > 0 && outputDelta > streamOutput * 0.01)
+          ) {
+            logger.warn(
+              'tokens',
+              `Token count discrepancy >1%: input Δ${inputDelta} (${streamInput}→${totalInputTokens}), output Δ${outputDelta} (${streamOutput}→${totalOutputTokens})`,
+            )
           }
         }
 
@@ -1952,7 +2496,7 @@ export async function runAgent(opts: RunnerOptions): Promise<{
           emitToolCompleteWithStoryboard(emit, block.name, block.parsedInput, result, world)
           if (result.affectedSceneId)
             emit({ type: 'preview_update', sceneId: result.affectedSceneId, changes: result.changes })
-          if (result.changes?.length) emit({ type: 'state_change', changes: result.changes })
+          emitIncrementalStateChange(emit, result, world, block.name)
           toolResults.push({
             type: 'tool_result',
             tool_use_id: block.id,
@@ -2046,11 +2590,21 @@ export async function runAgent(opts: RunnerOptions): Promise<{
 
         // Post-tool cost check: catch single-tool overspend that the pre-iteration
         // check at the top of the loop can't see (it only fires before the next iteration).
-        const postToolCost = calculateCost(modelId, totalInputTokens, totalOutputTokens, totalCacheCreationTokens, totalCacheReadTokens)
+        const postToolCost = calculateCost(
+          modelId,
+          totalInputTokens,
+          totalOutputTokens,
+          totalCacheCreationTokens,
+          totalCacheReadTokens,
+        )
         if (postToolCost > rc.maxRunCostUsd) {
-          logger.warn('cost', `Post-tool cost $${postToolCost.toFixed(3)} exceeds cap — stopping after this iteration`, {
-            iteration,
-          })
+          logger.warn(
+            'cost',
+            `Post-tool cost $${postToolCost.toFixed(3)} exceeds cap — stopping after this iteration`,
+            {
+              iteration,
+            },
+          )
           const costMsg = `\n\n⚠ Cost limit reached ($${postToolCost.toFixed(2)} / $${rc.maxRunCostUsd.toFixed(2)} cap). Stopping to prevent overspend.`
           fullText += costMsg
           emit({ type: 'token', token: costMsg })
@@ -2098,7 +2652,10 @@ export async function runAgent(opts: RunnerOptions): Promise<{
 
             // Compact messages to prevent unbounded growth during long builds
             const before = messages.length
-            const compacted = compactInFlightMessages(messages, { maxTokens: rc.compactionMaxTokens, preserveRecent: rc.compactionPreserveRecent })
+            const compacted = compactInFlightMessages(messages, {
+              maxTokens: rc.compactionMaxTokens,
+              preserveRecent: rc.compactionPreserveRecent,
+            })
             if (compacted.length < before) {
               messages.length = 0
               messages.push(...compacted)
@@ -2130,7 +2687,13 @@ export async function runAgent(opts: RunnerOptions): Promise<{
             emit,
             logger,
             toolBudgetRemaining: rc.maxToolCalls - allToolCalls.length,
-            parentCostUsd: calculateCost(modelId, totalInputTokens, totalOutputTokens, totalCacheCreationTokens, totalCacheReadTokens),
+            parentCostUsd: calculateCost(
+              modelId,
+              totalInputTokens,
+              totalOutputTokens,
+              totalCacheCreationTokens,
+              totalCacheReadTokens,
+            ),
             maxRunCostUsd: rc.maxRunCostUsd,
           })
 
@@ -2243,7 +2806,10 @@ export async function runAgent(opts: RunnerOptions): Promise<{
     const stats = getToolStats()
     const failedTools = Object.entries(stats).filter(([, s]) => s.failure > 0)
     if (failedTools.length > 0) {
-      logger.warn('tool_stats', `Tool failures this run: ${failedTools.map(([name, s]) => `${name}=${s.failure}/${s.success + s.failure}`).join(', ')}`)
+      logger.warn(
+        'tool_stats',
+        `Tool failures this run: ${failedTools.map(([name, s]) => `${name}=${s.failure}/${s.success + s.failure}`).join(', ')}`,
+      )
     }
 
     return {
@@ -2324,7 +2890,18 @@ export async function runAgent(opts: RunnerOptions): Promise<{
           remainingSceneIndexes: storyboard.scenes
             .map((_, i) => i)
             .filter((i) => !opts.scenes.some((s) => s.name.toLowerCase() === storyboard.scenes[i].name.toLowerCase())),
-          progress: { scenesCreated: opts.scenes.map((s) => s.id), toolCallsTotal: allToolCalls.length, iterationsUsed: 0, phase: 'unknown', storyboardScenesPlanned: storyboard.scenes.length, errors: [], scenesWithNarration: [] },
+          progress: {
+            scenesCreated: opts.scenes.map((s) => s.id),
+            toolCallsTotal: allToolCalls.length,
+            iterationsUsed: 0,
+            iterationsMax: rc.maxToolIterations,
+            phase: 'unknown',
+            storyboardScenesPlanned: storyboard.scenes.length,
+            storyboardScenesBuilt: 0,
+            errors: [],
+            scenesVerified: [],
+            scenesWithNarration: [],
+          },
           worldSnapshot: {
             scenes: JSON.parse(JSON.stringify(opts.scenes)),
             globalStyle: JSON.parse(JSON.stringify(opts.globalStyle)),

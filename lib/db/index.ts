@@ -48,13 +48,34 @@ export async function closeDb(): Promise<void> {
 
 // ── Spend tracking (async replacements for old SQLite functions) ─────────────
 
-export async function logSpend(projectId: string, api: string, costUsd: number, description: string): Promise<void> {
+export async function logSpend(
+  projectId: string,
+  api: string,
+  costUsd: number,
+  description: string,
+  reservationId?: string,
+): Promise<void> {
   await db.insert(schema.apiSpend).values({
     projectId,
     api,
     costUsd,
     description,
   })
+  // Mirror into the in-memory budget tracker so live budget queries see the
+  // cost even before the DB row is read back. When a reservation exists,
+  // reconcile it (replacing the estimate with the actual); otherwise just
+  // record the raw spend.
+  try {
+    const tracker = await import('../agents/budget-tracker')
+    if (reservationId) {
+      const reconciled = tracker.reconcileSpend(projectId, reservationId, costUsd)
+      if (!reconciled) tracker.recordActualSpend(projectId, costUsd)
+    } else {
+      tracker.recordActualSpend(projectId, costUsd)
+    }
+  } catch {
+    // Tracker is best-effort — never block the DB write on it.
+  }
 }
 
 export async function getSessionSpend(api: string): Promise<number> {

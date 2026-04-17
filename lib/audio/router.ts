@@ -10,6 +10,8 @@ const ttsProviders: Record<string, () => Promise<TTSProviderInterface>> = {
   'gemini-tts': () => import('./providers/gemini-tts').then((m) => m.geminiTTS),
   'google-tts': () => import('./providers/google-tts').then((m) => m.googleTTS),
   'openai-edge-tts': () => import('./providers/openai-edge-tts').then((m) => m.openaiEdgeTTS),
+  'pocket-tts': () => import('./providers/pocket-tts').then((m) => m.pocketTTS),
+  voxcpm: () => import('./providers/voxcpm-tts').then((m) => m.voxcpmTTS),
   'native-tts': () => import('./providers/native-tts').then((m) => m.nativeTTS),
   'web-speech': () => import('./providers/web-speech').then((m) => m.webSpeechTTS),
   puter: () => import('./providers/puter-tts').then((m) => m.puterTTS),
@@ -76,6 +78,8 @@ export function getAvailableProviders(): {
       { id: 'gemini-tts', name: 'Gemini TTS', available: !!process.env.GEMINI_API_KEY },
       { id: 'google-tts', name: 'Google Cloud TTS', available: !!process.env.GOOGLE_TTS_API_KEY },
       { id: 'openai-edge-tts', name: 'Edge TTS (local)', available: !!process.env.EDGE_TTS_URL },
+      { id: 'pocket-tts', name: 'Pocket TTS (local)', available: !!process.env.POCKET_TTS_URL },
+      { id: 'voxcpm', name: 'VoxCPM2 (local GPU)', available: !!process.env.VOXCPM_URL },
       {
         id: 'native-tts',
         name: 'System Voice',

@@ -27,7 +27,7 @@ function formatTimecode(s: number) {
   return `${m}:${sec.toString().padStart(2, '0')}.${fr}`
 }
 
-const DIVIDER_HEIGHT = 6
+const DIVIDER_HEIGHT = 1
 const SCROLLBAR_WIDTH = 14
 const LEFT_GUTTER = TOOLBAR_WIDTH + TRACK_HEADER_WIDTH
 const MIN_SECTION_HEIGHT = TRACK_ROW_HEIGHT + 4
@@ -72,10 +72,15 @@ export default function Timeline({ currentTime, totalDuration, onSeek, trackHeig
     if (!project.timeline) initTimeline()
   }, [project.timeline, initTimeline])
 
-  const prevScenesSigRef = useRef('')
+  const prevScenesSigRef = useRef<string | null>(null)
   useEffect(() => {
-    const sig = scenes.map((s) => `${s.id}:${s.duration}`).join(',')
-    if (prevScenesSigRef.current && sig !== prevScenesSigRef.current && project.timeline) {
+    const sig = scenes
+      .map(
+        (s) =>
+          `${s.id}:${s.duration}:${s.audioLayer?.tts?.src ?? ''}:${s.audioLayer?.music?.src ?? ''}:${s.audioLayer?.sfx?.length ?? 0}`,
+      )
+      .join(',')
+    if (project.timeline && sig !== prevScenesSigRef.current) {
       syncTimelineFromScenes()
     }
     prevScenesSigRef.current = sig
@@ -384,7 +389,13 @@ export default function Timeline({ currentTime, totalDuration, onSeek, trackHeig
   return (
     <div
       className="w-full flex flex-col"
-      style={{ height: trackHeight, position: 'relative', overflow: 'hidden', background: 'var(--tl-bg)', borderTop: '1px solid var(--tl-border)' }}
+      style={{
+        height: trackHeight,
+        position: 'relative',
+        overflow: 'hidden',
+        background: 'var(--tl-bg)',
+        borderTop: '1px solid var(--tl-border)',
+      }}
       ref={containerRef}
     >
       {/* Ruler row: timecode gutter + ruler */}
@@ -446,7 +457,7 @@ export default function Timeline({ currentTime, totalDuration, onSeek, trackHeig
 
           {/* Divider */}
           <div
-            className="flex-shrink-0 flex items-center justify-center select-none"
+            className="flex-shrink-0 select-none"
             style={{
               height: DIVIDER_HEIGHT,
               cursor: 'row-resize',
@@ -456,11 +467,7 @@ export default function Timeline({ currentTime, totalDuration, onSeek, trackHeig
               transition: isDividerDragging ? 'none' : 'background 0.15s',
             }}
             onPointerDown={handleDividerPointerDown}
-          >
-            <div
-              style={{ width: 30, height: 2, borderRadius: 1, background: 'var(--tl-toolbar-text)', opacity: 0.5 }}
-            />
-          </div>
+          />
 
           {/* Audio section */}
           <TrackSection
@@ -514,10 +521,11 @@ export default function Timeline({ currentTime, totalDuration, onSeek, trackHeig
 
       {/* Streaming lock indicator */}
       {isAgentRunning && (
-        <div className="absolute top-0 left-0 right-0 z-50 pointer-events-none"
-          style={{ height: 2, background: 'var(--tl-playhead)', opacity: 0.6 }} />
+        <div
+          className="absolute top-0 left-0 right-0 z-50 pointer-events-none"
+          style={{ height: 2, background: 'var(--tl-playhead)', opacity: 0.6 }}
+        />
       )}
-
     </div>
   )
 }
@@ -753,7 +761,12 @@ function TrackSection({
       </div>
 
       {/* Track content */}
-      <div className="flex-1 overflow-hidden relative" style={{ background: 'var(--tl-track-bg)' }} onClick={onContentClick} onWheel={handleWheel}>
+      <div
+        className="flex-1 overflow-hidden relative"
+        style={{ background: 'var(--tl-track-bg)' }}
+        onClick={onContentClick}
+        onWheel={handleWheel}
+      >
         <div style={{ transform: `translateY(${bottomOffset - scrollY}px)` }}>
           {tracks.map((track) => {
             const isDropTarget =
@@ -787,7 +800,6 @@ function TrackSection({
               </div>
             )
           })}
-
         </div>
 
         {/* Drag ghost */}

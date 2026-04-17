@@ -16,11 +16,7 @@ const MAX_EMBED_BYTES = 5 * 1024 * 1024
 
 export async function serializeProject(projectId: string): Promise<CenchBundle> {
   // 1. Load project row
-  const [row] = await db
-    .select()
-    .from(projects)
-    .where(eq(projects.id, projectId))
-    .limit(1)
+  const [row] = await db.select().from(projects).where(eq(projects.id, projectId)).limit(1)
 
   if (!row) {
     throw new Error(`Project not found: ${projectId}`)
@@ -95,10 +91,11 @@ export async function serializeProject(projectId: string): Promise<CenchBundle> 
     name: row.name,
     outputMode: row.outputMode as 'mp4' | 'interactive',
     globalStyle: (row.globalStyle as BundleProject['globalStyle']) ?? {
-      presetId: 'whiteboard',
+      presetId: null,
       paletteOverride: null,
       bgColorOverride: null,
       fontOverride: null,
+      bodyFontOverride: null,
       strokeColorOverride: null,
     },
     mp4Settings: (row.mp4Settings as BundleProject['mp4Settings']) ?? {
@@ -128,6 +125,8 @@ export async function serializeProject(projectId: string): Promise<CenchBundle> 
       geminiTTSModel: 'gemini-2.5-flash-preview-tts',
       geminiVoice: null,
       edgeTTSUrl: null,
+      pocketTTSUrl: null,
+      voxcpmUrl: null,
       globalMusicDucking: true,
       globalMusicDuckLevel: 0.2,
     },

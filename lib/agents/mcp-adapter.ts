@@ -28,6 +28,7 @@ async function apiFetch(path: string, options?: RequestInit): Promise<any> {
 
 let currentProjectId: string | null = null
 let cachedScenes: { id: string; name: string; sceneType: string; duration: number }[] = []
+let cachedProjectInfo: { name: string; outputMode: string; globalStyle: Record<string, unknown> } | null = null
 
 // ── Project Management ──────────────────────────────────────────────────────
 
@@ -44,6 +45,22 @@ export async function loadWorldState(projectId?: string): Promise<void> {
   }
 
   currentProjectId = projectId
+
+  // Load project info
+  try {
+    const projects = await apiFetch('/api/projects')
+    const project = projects.find((p: any) => p.id === projectId)
+    if (project) {
+      const desc = typeof project.description === 'string' ? JSON.parse(project.description) : project.description
+      cachedProjectInfo = {
+        name: project.name,
+        outputMode: desc?.outputMode ?? 'mp4',
+        globalStyle: desc?.globalStyle ?? {},
+      }
+    }
+  } catch {
+    // Non-fatal — project info is optional context
+  }
 
   // Load scene list
   const scenesData = await apiFetch(`/api/scene?projectId=${projectId}`)
@@ -70,6 +87,28 @@ export function getSceneList(): { id: string; name: string; type: string; durati
     type: s.sceneType,
     duration: s.duration,
   }))
+}
+
+export function getProjectInfo(): {
+  projectId: string | null
+  name: string
+  outputMode: string
+  globalStyle: Record<string, unknown>
+} {
+  return {
+    projectId: currentProjectId,
+    name: cachedProjectInfo?.name ?? 'Unknown',
+    outputMode: cachedProjectInfo?.outputMode ?? 'mp4',
+    globalStyle: cachedProjectInfo?.globalStyle ?? {},
+  }
+}
+
+/** Fetch a single scene with full layer code from the API */
+export async function readScene(sceneId: string): Promise<Record<string, unknown>> {
+  const pid = currentProjectId
+  if (!pid) throw new Error('No project selected.')
+  const data = await apiFetch(`/api/scene?projectId=${pid}&sceneId=${sceneId}`)
+  return data.scene ?? data
 }
 
 // ── Tool Execution ──────────────────────────────────────────────────────────
@@ -103,6 +142,22 @@ export async function executeToolCall(
       await refreshWorld()
     } catch {
       // Non-fatal
+    }
+  }
+
+  // Surface permission blocks as clear, actionable messages so Claude Code
+  // can inform the user (the MCP path has no interactive approval UI).
+  if (result.permissionNeeded) {
+    const pn = result.permissionNeeded
+    return {
+      success: false,
+      content:
+        `Permission required: ${pn.api ?? 'API'} usage needs approval.\n` +
+        `Reason: ${pn.reason ?? 'Agent requested a paid API'}\n` +
+        `Estimated cost: ${pn.estimatedCost ?? 'unknown'}\n\n` +
+        `To approve, open the app's Settings → Permissions panel and set the API to "always allow", ` +
+        `or use a free provider instead (e.g., provider: "openai-edge-tts" for TTS).`,
+      data: result.data,
     }
   }
 

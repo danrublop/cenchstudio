@@ -60,6 +60,7 @@ export function resolveSceneStyle(sceneOverride: SceneStyleOverride, globalStyle
     palette: sceneOverride.palette ?? base.palette,
     bgColor: sceneOverride.bgColor ?? base.bgColor,
     font: sceneOverride.font ?? base.font,
+    bodyFont: sceneOverride.bodyFont ?? base.bodyFont,
     roughnessLevel: sceneOverride.roughnessLevel ?? base.roughnessLevel,
     defaultTool: (sceneOverride.defaultTool as ResolvedStyle['defaultTool']) ?? base.defaultTool,
     textureStyle: (sceneOverride.textureStyle as ResolvedStyle['textureStyle']) ?? base.textureStyle,

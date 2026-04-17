@@ -3,6 +3,7 @@
 ## Viewer-first mindset
 
 The viewer is your audience — frame shots for them, not for showcasing 3D capability.
+
 - Use 3D to **illustrate concepts** (laptop = technology, person = user, building = enterprise)
 - **Text in HTML overlays, NOT 3D space**: Use React scenes (`type: 'react'`) with `<ThreeJSLayer>` for 3D background + JSX `<AbsoluteFill>` for titles/text on top. HTML text stays fixed on screen regardless of 3D camera movement — always readable.
 - Only use troika 3D text for decorative effects where readability isn't critical
@@ -11,61 +12,173 @@ The viewer is your audience — frame shots for them, not for showcasing 3D capa
 - Don't orbit randomly — orbit only to show all sides of a product
 - For info-heavy scenes, keep camera static or very slow
 
-### React + ThreeJSLayer pattern (recommended for production)
+### React + ThreeJSLayer — the default for all 3D videos
+
+Use `type: 'react'`. 3D is the background via `<ThreeJSLayer>`. Text/info is HTML via JSX.
+Call `buildStudio(THREE, scene, camera, renderer, 'corporate')` in the setup callback
+to get the full studio environment (sky sphere, grid, floor, lighting, env map).
+
+#### Explainer / Educational Template
 
 ```jsx
 function Scene() {
-  const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
+  const frame = useCurrentFrame()
+  const { fps, durationInFrames } = useVideoConfig()
+  React.useEffect(() => {
+    CenchCamera.kenBurns({ duration: DURATION, endScale: 1.03 })
+  }, [])
+
+  const titleOp = interpolate(frame, [0, 20], [0, 1], { extrapolateRight: 'clamp' })
+  const titleY = interpolate(frame, [0, 20], [40, 0], {
+    extrapolateRight: 'clamp',
+    easing: Easing.bezier(0.16, 1, 0.3, 1),
+  })
+  const subOp = interpolate(frame, [12, 30], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+
   return (
     <AbsoluteFill>
-      {/* 3D background — camera moves independently */}
       <AbsoluteFill style={{ zIndex: 0 }}>
         <ThreeJSLayer
           setup={(THREE, scene, camera, renderer) => {
-            // Use createStudioScene() or build custom setup
-            // Add models, geometry, lighting
+            buildStudio(THREE, scene, camera, renderer, 'corporate')
+            camera.position.set(0, 3, 10)
+            camera.lookAt(0, 0, 0)
+            // Add 3D content: models, geometry
           }}
           update={(scene, camera, frame, config) => {
-            const t = frame / config.fps;
-            // Animate camera, objects
+            const t = frame / config.fps
+            // Animate 3D objects using t
           }}
         />
       </AbsoluteFill>
-      {/* Text overlay — stays fixed, always readable */}
-      <AbsoluteFill style={{ zIndex: 1, padding: '6% 7%' }}>
-        <h1 style={{ fontSize: 80, color: '#1a1a2e' }}>Title Here</h1>
-        <p style={{ fontSize: 32, color: '#4a4a5a' }}>Subtitle text</p>
+      <AbsoluteFill
+        style={{ zIndex: 1, padding: '6% 7%', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}
+      >
+        <div style={{ opacity: titleOp, transform: 'translateY(' + titleY + 'px)' }}>
+          <h1 style={{ fontSize: 72, fontWeight: 800, color: '#1a1a2e', margin: 0 }}>Title Here</h1>
+        </div>
+        <div style={{ opacity: subOp, marginTop: 12 }}>
+          <p style={{ fontSize: 28, color: '#4a4a5a', margin: 0 }}>Subtitle or description text</p>
+        </div>
       </AbsoluteFill>
     </AbsoluteFill>
-  );
+  )
 }
-export default Scene;
+export default Scene
 ```
 
-## Template helpers (no imports needed)
+#### Product Showcase Template
 
-**`createStudioScene(style)`** — one-call scene setup, returns `{ scene, camera, renderer, floor, render }`
-Styles: `'corporate'`, `'cinematic'`, `'playful'`, `'tech'`, `'showcase'`
-Sets up renderer, camera, lighting, floor, and environment map automatically.
+3D model rotating in background, feature info as HTML cards.
+
+```jsx
+// setup: buildStudio(THREE, scene, camera, renderer, 'showcase');
+//        Load model with GLTFLoader, place on floor
+// update: model.rotation.y = t * 0.2
+// JSX overlay: product name, feature bullets animating in with stagger
+```
+
+#### Data / Business Template
+
+3D objects as visual metaphor in background, metrics as large HTML numbers.
+
+```jsx
+// setup: buildStudio(THREE, scene, camera, renderer, 'corporate');
+//        Add 3D bar chart or relevant geometry
+// update: animate bars rising
+// JSX overlay: big stat number (fontSize: 120), label, comparison text
+```
+
+#### Cinematic Template
+
+Full 3D with minimal or no text. Camera path, dramatic lighting.
+
+```jsx
+// setup: buildStudio(THREE, scene, camera, renderer, 'cinematic');
+//        Load models, add particles
+// update: camera follows CatmullRomCurve3 path, animate objects
+// JSX overlay: minimal — just a small title or none
+```
+
+## Template helpers
+
+**`buildStudio(THREE, scene, camera, renderer, style?, opts?)`** — for use inside `<ThreeJSLayer setup={...}>`
+Sets up: sky gradient sphere (128 segments), infinite grid, floor, 3-point lighting, env map.
+Returns: `{ floorY }` — use `floorY` to position objects on the floor.
+
+**Styles** (default: `'white'`):
+
+- `'white'` — default. Clean white studio with circle-fade floor (ShaderMaterial, pure white). Like a photo studio.
+- `'corporate'` — same as white but with infinite floor + fog blend
+- `'playful'` — warm tones, soft overhead light, isometric feel
+- `'cinematic'` — dark studio, dramatic lighting
+- `'showcase'` — dark product display, subtle grid
+- `'tech'` — dark void with neon palette lights
+- `'sky'` — outdoor atmospheric sky (THREE.Sky shader), no colored floor, just grid + shadow catcher
+
+**Floor modes** (via `opts.floorMode`):
+
+- White style defaults to `'circle'` (ShaderMaterial — renders pure white, unaffected by lighting)
+- Other styles default to `'infinite'` (MeshStandardMaterial + FogExp2 blend)
+- `'circle'` — circular floor with radial shader fadeout
+- `'none'` — no floor, just sky sphere + grid + shadow catcher
+
+**Options:**
+
+- `opts.floorMode` — `'infinite'` | `'circle'` | `'none'`
+- `opts.floorColor` — hex string to override floor color
+- `opts.floorRadius` — radius for circle mode (default: 80)
+
+```jsx
+<ThreeJSLayer
+  setup={(THREE, scene, camera, renderer) => {
+    // Default white studio (circle fade floor, pure white)
+    const { floorY } = buildStudio(THREE, scene, camera, renderer)
+
+    // Outdoor sky
+    // buildStudio(THREE, scene, camera, renderer, 'sky');
+
+    // Dark showcase
+    // buildStudio(THREE, scene, camera, renderer, 'showcase');
+
+    // Custom floor color
+    // buildStudio(THREE, scene, camera, renderer, 'white', { floorColor: '#e0d8c8' });
+  }}
+/>
+```
+
+**`createStudioScene(style)`** — for standalone `type: 'three'` scenes only.
+Returns `{ scene, camera, renderer, floor, render }`. NOT available inside ThreeJSLayer.
 
 ```js
 const { scene, camera, renderer, render } = createStudioScene('corporate')
 // Just add your objects and animate:
 scene.add(myMesh)
 const state = { progress: 0 }
-window.__tl.to(state, { progress: 1, duration: DURATION, ease: 'none',
-  onUpdate: function() { const t = state.progress * DURATION; /* animate */ render() }
-}, 0)
+window.__tl.to(
+  state,
+  {
+    progress: 1,
+    duration: DURATION,
+    ease: 'none',
+    onUpdate: function () {
+      const t = state.progress * DURATION
+      /* animate */ render()
+    },
+  },
+  0,
+)
 render()
 ```
 
 **`createPostProcessing(renderer, scene, camera, opts)`** — safe synchronous post-processing
+
 ```js
 const pp = createPostProcessing(renderer, scene, camera, { bloom: 0.3 })
 // In animation loop: pp.render() instead of renderer.render(scene, camera)
 // No .then() needed — it's synchronous
 ```
+
 Falls back to direct render if post-processing fails. No need to import EffectComposer yourself.
 
 ## Import pattern — ES modules via importmap
@@ -173,15 +286,15 @@ The template also injects **`createCenchDataScatterplot(scene, { points, orbitSp
 ## Materials — use MATERIALS presets (available in scene template)
 
 ```js
-MATERIALS.plastic(PALETTE[0])    // matte colored plastic
-MATERIALS.metal(PALETTE[1])      // shiny metal
-MATERIALS.glass(PALETTE[2])      // transparent glass
-MATERIALS.matte(PALETTE[0])      // completely matte
-MATERIALS.glow(PALETTE[3])       // emissive, glowing
-MATERIALS.clearcoat(PALETTE[0])  // car paint / lacquer finish (clearcoat layer)
+MATERIALS.plastic(PALETTE[0]) // matte colored plastic
+MATERIALS.metal(PALETTE[1]) // shiny metal
+MATERIALS.glass(PALETTE[2]) // transparent glass
+MATERIALS.matte(PALETTE[0]) // completely matte
+MATERIALS.glow(PALETTE[3]) // emissive, glowing
+MATERIALS.clearcoat(PALETTE[0]) // car paint / lacquer finish (clearcoat layer)
 MATERIALS.iridescent(PALETTE[1]) // oil-slick / holographic shimmer
-MATERIALS.velvet(PALETTE[2])     // soft fabric / velvet sheen
-MATERIALS.lowpoly(PALETTE[0])   // flat-shaded, friendly explainer aesthetic
+MATERIALS.velvet(PALETTE[2]) // soft fabric / velvet sheen
+MATERIALS.lowpoly(PALETTE[0]) // flat-shaded, friendly explainer aesthetic
 ```
 
 Or custom MeshPhysicalMaterial for maximum control:
@@ -191,15 +304,15 @@ new THREE.MeshPhysicalMaterial({
   color: new THREE.Color(PALETTE[0]),
   roughness: 0.3,
   metalness: 0.5,
-  clearcoat: 1.0,        // glossy top layer
+  clearcoat: 1.0, // glossy top layer
   clearcoatRoughness: 0.1,
-  iridescence: 0.5,      // rainbow shift at angles
-  sheen: 0.8,            // fabric-like soft highlight
+  iridescence: 0.5, // rainbow shift at angles
+  sheen: 0.8, // fabric-like soft highlight
   sheenRoughness: 0.4,
   sheenColor: new THREE.Color(PALETTE[1]),
-  transmission: 0.9,     // glass-like transparency
-  thickness: 0.5,        // refraction depth (with transmission)
-  ior: 1.5,              // index of refraction
+  transmission: 0.9, // glass-like transparency
+  thickness: 0.5, // refraction depth (with transmission)
+  ior: 1.5, // index of refraction
 })
 ```
 
@@ -263,7 +376,8 @@ camera.position.set(0, 15, 0)
 camera.lookAt(0, 0, 0)
 
 // Dolly in (move toward subject)
-const startZ = 15, endZ = 5
+const startZ = 15,
+  endZ = 5
 const ease = 1 - Math.pow(1 - Math.min(t / (DURATION * 0.7), 1), 3)
 camera.position.z = startZ + (endZ - startZ) * ease
 camera.lookAt(0, 0, 0)
@@ -491,14 +605,14 @@ The returned string is ready for injection as scene code into `generateThreeHTML
 
 ## 3D Style Guide — pick one to match the content
 
-| Style | Lighting | Materials | Camera | Post-proc | Environment | Use for |
-|-------|----------|-----------|--------|-----------|-------------|---------|
-| **Corporate Clean** | `lighting-studio` | matte + clearcoat | `camera-orbit-slow` or `camera-dolly-in` | subtle DOF | `env-studio-backdrop` or `env-grid-floor` | SaaS, enterprise, product |
-| **Cinematic Dark** | `lighting-dramatic` | metal + iridescent | `camera-crane-up` or `camera-path` | bloom + DOF | `env-fog-atmosphere` + particles | Film, premium, reveals |
-| **Playful Isometric** | `lighting-soft-overhead` | plastic + velvet | `camera-isometric` | none | `env-gradient-bg` | Education, kids, tutorials |
-| **Tech Wireframe** | `lighting-neon` | glass + glow + wireframe edges | `camera-orbit-slow` | bloom | `env-grid-floor` + stars | Cyberpunk, data, AI |
-| **Product Showcase** | `lighting-cinematic` | clearcoat + glass | `camera-dolly-in` + orbit | shallow DOF | `env-studio-backdrop` | Product demos, launches |
-| **Nature/Organic** | `lighting-sunset` | velvet + matte (earth) | `camera-path` | subtle bloom | `env-fog-atmosphere` | Wellness, environment |
+| Style                 | Lighting                 | Materials                      | Camera                                   | Post-proc    | Environment                               | Use for                    |
+| --------------------- | ------------------------ | ------------------------------ | ---------------------------------------- | ------------ | ----------------------------------------- | -------------------------- |
+| **Corporate Clean**   | `lighting-studio`        | matte + clearcoat              | `camera-orbit-slow` or `camera-dolly-in` | subtle DOF   | `env-studio-backdrop` or `env-grid-floor` | SaaS, enterprise, product  |
+| **Cinematic Dark**    | `lighting-dramatic`      | metal + iridescent             | `camera-crane-up` or `camera-path`       | bloom + DOF  | `env-fog-atmosphere` + particles          | Film, premium, reveals     |
+| **Playful Isometric** | `lighting-soft-overhead` | plastic + velvet               | `camera-isometric`                       | none         | `env-gradient-bg`                         | Education, kids, tutorials |
+| **Tech Wireframe**    | `lighting-neon`          | glass + glow + wireframe edges | `camera-orbit-slow`                      | bloom        | `env-grid-floor` + stars                  | Cyberpunk, data, AI        |
+| **Product Showcase**  | `lighting-cinematic`     | clearcoat + glass              | `camera-dolly-in` + orbit                | shallow DOF  | `env-studio-backdrop`                     | Product demos, launches    |
+| **Nature/Organic**    | `lighting-sunset`        | velvet + matte (earth)         | `camera-path`                            | subtle bloom | `env-fog-atmosphere`                      | Wellness, environment      |
 
 Don't default to the same style. Match the 3D aesthetic to the video's audience and purpose.
 
@@ -567,7 +681,7 @@ import { SVGLoader } from 'three/addons/loaders/SVGLoader.js'
 const pivot = new THREE.Group()
 scene.add(pivot)
 
-const svgText = await fetch(svgUrl).then(r => r.text())
+const svgText = await fetch(svgUrl).then((r) => r.text())
 const data = new SVGLoader().parse(svgText)
 const inner = new THREE.Group()
 let i = 0
@@ -575,11 +689,17 @@ for (const path of data.paths) {
   const shapes = SVGLoader.createShapes(path)
   for (const shape of shapes) {
     const geo = new THREE.ExtrudeGeometry(shape, {
-      depth: 20, bevelEnabled: true, bevelThickness: 2, bevelSize: 1.5,
-      bevelSegments: 8, curveSegments: 24
+      depth: 20,
+      bevelEnabled: true,
+      bevelThickness: 2,
+      bevelSize: 1.5,
+      bevelSegments: 8,
+      curveSegments: 24,
     })
     const mat = new THREE.MeshStandardMaterial({
-      color: PALETTE[i % PALETTE.length], metalness: 0.6, roughness: 0.25
+      color: PALETTE[i % PALETTE.length],
+      metalness: 0.6,
+      roughness: 0.25,
     })
     const mesh = new THREE.Mesh(geo, mat)
     mesh.castShadow = true
@@ -716,10 +836,7 @@ import { SUBTRACTION, ADDITION, INTERSECTION, Brush, Evaluator } from 'three-bvh
 
 // Create operands — Brush extends Mesh, so position/rotate them normally
 const sphere = new Brush(new THREE.SphereGeometry(1.5, 32, 32), MATERIALS.metal(PALETTE[0]))
-const cylinder = new Brush(
-  new THREE.CylinderGeometry(0.5, 0.5, 4, 32),
-  MATERIALS.plastic(PALETTE[1])
-)
+const cylinder = new Brush(new THREE.CylinderGeometry(0.5, 0.5, 4, 32), MATERIALS.plastic(PALETTE[1]))
 cylinder.updateMatrixWorld()
 
 const evaluator = new Evaluator()

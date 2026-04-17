@@ -2,17 +2,14 @@
 
 import dynamic from 'next/dynamic'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Play, Pause, Layers, SquareDashedMousePointer, AlignStartVertical, SlidersHorizontal, Minus, Plus, Maximize, SkipBack, SkipForward } from 'lucide-react'
+import { Layers, SquareDashedMousePointer } from 'lucide-react'
 import { useVideoStore } from '@/lib/store'
 import { resolveProjectDimensions } from '@/lib/dimensions'
-import Timeline from './timeline'
 import StudioRecordPreview from './recording/StudioRecordPreview'
-import RecordingControlPanel from './recording/RecordingControlPanel'
 import ZdogViewport from './zdog-studio/ZdogViewport'
 import ZdogProperties from './zdog-studio/ZdogProperties'
 import SvgObjectEditor from './SvgObjectEditor'
 import SvgElementEditor from './SvgElementEditor'
-import SceneGraphEditor from './SceneGraphEditor'
 import InteractionOverlay from './InteractionOverlay'
 import GridOverlay from './GridOverlay'
 import { ScenePlayer } from '@/lib/scene-player'
@@ -58,6 +55,8 @@ export default function PreviewPlayer() {
     zdogStudioMode,
     studioRecordMode,
     compositorPreview,
+    setTimelineTransport,
+    timelineView,
   } = useVideoStore()
   const outputMode = project.outputMode
   const projectDims = resolveProjectDimensions(project.mp4Settings?.aspectRatio, project.mp4Settings?.resolution)
@@ -86,38 +85,30 @@ export default function PreviewPlayer() {
   const [loadedScenes, setLoadedScenes] = useState<Set<string>>(new Set())
   const [failedScenes, setFailedScenes] = useState<Set<string>>(new Set())
   const sceneWriteErrors = useVideoStore((s) => s.sceneWriteErrors)
-  const [timelineView, setTimelineView] = useState<'track' | 'graph'>('track')
-  const [bottomTab, setBottomTab] = useState<'controls' | 'timeline'>('controls')
-
-  // Reset to controls tab when entering studio mode
-  useEffect(() => {
-    if (studioRecordMode) {
-      console.log('[PreviewPlayer] Studio record mode activated, timelineHeight:', timelineHeight)
-      setBottomTab('controls')
-    }
-  }, [studioRecordMode, timelineHeight])
+  const setTimelineView = useVideoStore((s) => s.setTimelineView)
   const [zoom, setZoom] = useState(1)
   const zoomRef = useRef(1)
   const panXRef = useRef(0)
   const panYRef = useRef(0)
-  useEffect(() => { zoomRef.current = zoom; setPreviewZoom(zoom) }, [zoom, setPreviewZoom])
+  useEffect(() => {
+    zoomRef.current = zoom
+    setPreviewZoom(zoom)
+  }, [zoom, setPreviewZoom])
   const [panX, setPanX] = useState(0)
   const [panY, setPanY] = useState(0)
-  useEffect(() => { panXRef.current = panX }, [panX])
-  useEffect(() => { panYRef.current = panY }, [panY])
+  useEffect(() => {
+    panXRef.current = panX
+  }, [panX])
+  useEffect(() => {
+    panYRef.current = panY
+  }, [panY])
   const [isDragging, setIsDragging] = useState(false)
   const isFullscreen = isPreviewFullscreen
   const setIsFullscreen = setPreviewFullscreen
   const [showObjectEditor, setShowObjectEditor] = useState(false)
   const [showSelectMode, setShowSelectMode] = useState(false)
-  const [visualScrubTime, setVisualScrubTime] = useState<number | null>(null)
-
-  const timelineDrag = useRef<{ startY: number; startH: number } | null>(null)
   const preFullscreenTimelineHeightRef = useRef<number>(200)
   const wasFullscreenRef = useRef(false)
-  const [isDraggingTimeline, setIsDraggingTimeline] = useState(false)
-  const scrubBarRef = useRef<HTMLDivElement>(null)
-  const isScrubbing = useRef(false)
 
   useEffect(() => {
     if (isFullscreen && !wasFullscreenRef.current) {
@@ -394,8 +385,10 @@ export default function PreviewPlayer() {
       const player = playerMapRef.current[sceneId]
       if (player) {
         player.seek(0)
-        // Small delay to let iframe process the seek before playing
-        setTimeout(() => resumeAndTick(), 50)
+        // postMessages are processed in order — one rAF is enough for the seek
+        // to land before resume. 50ms was a pessimistic guess that added 300ms
+        // of accumulated dead air over a 7-scene video; rAF is ~16ms.
+        requestAnimationFrame(() => resumeAndTick())
       } else {
         pendingPlayRef.current = sceneId
       }
@@ -448,26 +441,20 @@ export default function PreviewPlayer() {
       },
       [goToSceneAndPlay, resumeAndTick],
     ),
-    onSliderChange: useCallback(
-      (el: any, value: number) => {
-        const sceneId = selectedIdRef.current
-        if (!sceneId) return
-        useVideoStore.getState().setRuntimeVariable(sceneId, el.setsVariable, value)
-        const player = playerMapRef.current[sceneId]
-        player?.setVariable(el.setsVariable, value)
-      },
-      [],
-    ),
-    onToggleChange: useCallback(
-      (el: any, value: boolean) => {
-        const sceneId = selectedIdRef.current
-        if (!sceneId) return
-        useVideoStore.getState().setRuntimeVariable(sceneId, el.setsVariable, value)
-        const player = playerMapRef.current[sceneId]
-        player?.setVariable(el.setsVariable, value)
-      },
-      [],
-    ),
+    onSliderChange: useCallback((el: any, value: number) => {
+      const sceneId = selectedIdRef.current
+      if (!sceneId) return
+      useVideoStore.getState().setRuntimeVariable(sceneId, el.setsVariable, value)
+      const player = playerMapRef.current[sceneId]
+      player?.setVariable(el.setsVariable, value)
+    }, []),
+    onToggleChange: useCallback((el: any, value: boolean) => {
+      const sceneId = selectedIdRef.current
+      if (!sceneId) return
+      useVideoStore.getState().setRuntimeVariable(sceneId, el.setsVariable, value)
+      const player = playerMapRef.current[sceneId]
+      player?.setVariable(el.setsVariable, value)
+    }, []),
     onResume: useCallback(() => {
       resumeAndTick()
     }, [resumeAndTick]),
@@ -605,37 +592,6 @@ export default function PreviewPlayer() {
     if (player) player.seek(idleT)
   }, [])
 
-  // Commands from app header controls (used in fullscreen layout)
-  useEffect(() => {
-    const onPreviewCommand = (event: Event) => {
-      const custom = event as CustomEvent<{ action?: string }>
-      const action = custom.detail?.action
-      if (!action) return
-      if (action === 'undo') {
-        undo()
-        return
-      }
-      if (action === 'redo') {
-        redo()
-        return
-      }
-      if (action === 'zoom_in') {
-        zoomIn()
-        return
-      }
-      if (action === 'zoom_out') {
-        zoomOut()
-        return
-      }
-      if (action === 'zoom_reset') {
-        resetView()
-        return
-      }
-    }
-    window.addEventListener('cench-preview-command', onPreviewCommand as EventListener)
-    return () => window.removeEventListener('cench-preview-command', onPreviewCommand as EventListener)
-  }, [undo, redo, zoomIn, zoomOut, resetView])
-
   const handleSeek = useCallback(
     (globalT: number) => {
       // Cancel polling loop immediately to prevent stale time overwriting the seek
@@ -675,6 +631,54 @@ export default function PreviewPlayer() {
     [pauseAllScenes],
   )
 
+  // Commands from app header controls and TransportBar
+  useEffect(() => {
+    const onPreviewCommand = (event: Event) => {
+      const custom = event as CustomEvent<{ action?: string; time?: number }>
+      const action = custom.detail?.action
+      if (!action) return
+      if (action === 'undo') {
+        undo()
+        return
+      }
+      if (action === 'redo') {
+        redo()
+        return
+      }
+      if (action === 'zoom_in') {
+        zoomIn()
+        return
+      }
+      if (action === 'zoom_out') {
+        zoomOut()
+        return
+      }
+      if (action === 'zoom_reset') {
+        resetView()
+        return
+      }
+      if (action === 'toggle_play') {
+        if (isPlayingRef.current) pause()
+        else play()
+        return
+      }
+      if (action === 'seek' && typeof custom.detail?.time === 'number') {
+        handleSeek(custom.detail.time)
+        return
+      }
+      if (action === 'step_back') {
+        stepFrame(-1)
+        return
+      }
+      if (action === 'step_forward') {
+        stepFrame(1)
+        return
+      }
+    }
+    window.addEventListener('cench-preview-command', onPreviewCommand as EventListener)
+    return () => window.removeEventListener('cench-preview-command', onPreviewCommand as EventListener)
+  }, [undo, redo, zoomIn, zoomOut, resetView, play, pause, handleSeek, stepFrame])
+
   // ── Scene load handler ────────────────────────────────────────────────────
   const handleSceneLoad = useCallback(
     (sceneId: string) => {
@@ -699,19 +703,9 @@ export default function PreviewPlayer() {
           const idx = allScenes.findIndex((s) => s.id === sceneId)
           if (idx < allScenes.length - 1) {
             const nextScene = allScenes[idx + 1]
-            pauseAllScenes()
-            isAutoAdvancing.current = true
-            useVideoStore.getState().selectScene(nextScene.id)
-            setCurrentTime(0)
-            const nextPlayer = playerMapRef.current[nextScene.id]
-            if (nextPlayer) {
-              nextPlayer.seek(0)
-              nextPlayer.play()
-            } else {
-              // Scene iframe not loaded yet — queue play for handleSceneLoad
-              pendingPlayRef.current = nextScene.id
-            }
+            goToSceneAndPlay(nextScene.id)
           } else {
+            pauseAllScenes()
             setIsPlaying(false)
           }
         }
@@ -782,7 +776,16 @@ export default function PreviewPlayer() {
   // ── Element selection from iframe (inspector integration) ─────────────────
   useEffect(() => {
     const handler = (e: MessageEvent) => {
-      if (!e.data || e.data.source !== 'cench-scene') return
+      if (!e.data) return
+
+      // Audio error from scene iframe — surface to user
+      if (e.data.type === 'cench:audio-error') {
+        console.warn('[PreviewPlayer] Audio playback error:', e.data.error, e.data.track)
+        // TODO: wire to toast notification system when available
+        return
+      }
+
+      if (e.data.source !== 'cench-scene') return
       const store = useVideoStore.getState()
 
       if (e.data.type === 'element_selected') {
@@ -804,59 +807,6 @@ export default function PreviewPlayer() {
 
     window.addEventListener('message', handler)
     return () => window.removeEventListener('message', handler)
-  }, [])
-
-  // ── Scrub drag ────────────────────────────────────────────────────────────
-  const getScrubTime = useCallback(
-    (clientX: number) => {
-      const rect = scrubBarRef.current?.getBoundingClientRect()
-      if (!rect) return 0
-      return Math.max(0, Math.min(totalDuration, ((clientX - rect.left) / rect.width) * totalDuration))
-    },
-    [totalDuration],
-  )
-
-  useEffect(() => {
-    const onMove = (e: MouseEvent) => {
-      if (!isScrubbing.current) return
-      setVisualScrubTime(getScrubTime(e.clientX))
-    }
-    const onUp = (e: MouseEvent) => {
-      if (!isScrubbing.current) return
-      isScrubbing.current = false
-      document.body.style.userSelect = ''
-      setVisualScrubTime(null)
-      handleSeek(getScrubTime(e.clientX))
-    }
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-    return () => {
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-    }
-  }, [getScrubTime, handleSeek])
-
-  // ── Timeline resize drag ──────────────────────────────────────────────────
-  useEffect(() => {
-    const onMove = (e: MouseEvent) => {
-      const d = timelineDrag.current
-      if (!d) return
-      e.preventDefault()
-      setTimelineHeight(Math.max(0, Math.min(Math.round(window.innerHeight * 0.75), d.startH + (d.startY - e.clientY))))
-    }
-    const onUp = () => {
-      if (!timelineDrag.current) return
-      timelineDrag.current = null
-      setIsDraggingTimeline(false)
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-    }
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-    return () => {
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-    }
   }, [])
 
   // ── Non-passive wheel for zoom-to-cursor ──────────────────────────────────
@@ -1009,7 +959,11 @@ export default function PreviewPlayer() {
   const sceneIndex = scenes.findIndex((s) => s.id === selectedSceneId)
   const sceneStartOffset = scenes.slice(0, Math.max(0, sceneIndex)).reduce((a, s) => a + s.duration, 0)
   const globalTime = sceneStartOffset + currentTime
-  const scrubPct = totalDuration > 0 ? ((visualScrubTime ?? globalTime) / totalDuration) * 100 : 0
+
+  // Sync transport state to store so Editor/TransportBar can read it
+  useEffect(() => {
+    setTimelineTransport({ globalTime, totalDuration, isPlaying })
+  }, [globalTime, totalDuration, isPlaying, setTimelineTransport])
   const hasAnyScene = scenes.some((s) => {
     if (s.sceneType === 'react') return !!s.reactCode
     if (s.sceneType === 'lottie') return !!s.lottieSource
@@ -1082,8 +1036,10 @@ export default function PreviewPlayer() {
           aspectRatio: previewAspect,
           ...(projectDims.width >= projectDims.height
             ? { width: isFullscreen ? 'min(1280px, 88vw)' : 'min(780px, 62vw)' }
-            : { height: isFullscreen ? 'min(85vh, 900px)' : 'min(70vh, 700px)', maxWidth: isFullscreen ? '88vw' : '62vw' }
-          ),
+            : {
+                height: isFullscreen ? 'min(85vh, 900px)' : 'min(70vh, 700px)',
+                maxWidth: isFullscreen ? '88vw' : '62vw',
+              }),
         }}
       >
         {/* Compositor preview (Pixi canvas) — continuous timeline rendering */}
@@ -1138,10 +1094,14 @@ export default function PreviewPlayer() {
           const isSelected = !compositorPreview && scene.id === selectedSceneId
           const hasError = failedScenes.has(scene.id) || !!sceneWriteErrors[scene.id]
           return (
-            <div key={scene.id} className="absolute inset-0" style={{
-              visibility: isSelected ? 'visible' : 'hidden',
-              zIndex: scene.id === selectedSceneId ? 2 : 1,
-            }}>
+            <div
+              key={scene.id}
+              className="absolute inset-0"
+              style={{
+                visibility: isSelected ? 'visible' : 'hidden',
+                zIndex: scene.id === selectedSceneId ? 2 : 1,
+              }}
+            >
               <iframe
                 ref={(el) => {
                   iframeMapRef.current[scene.id] = el
@@ -1350,150 +1310,6 @@ export default function PreviewPlayer() {
     </div>
   )
 
-  // ── Transport bar (Premiere-style) ─────────────────────────────────────────
-  const transportBar = (
-    <div className="w-full flex-shrink-0 px-0 py-1.5" style={{ background: 'var(--tl-bg)', borderTop: '1px solid var(--tl-border)' }}>
-      <div className="flex items-center gap-2 px-2">
-        <div className="flex items-center gap-0.5">
-          <span
-            onClick={() => stepFrame(-1)}
-            className="flex h-6 w-6 items-center justify-center cursor-pointer transition-colors"
-            style={{ color: 'var(--tl-toolbar-text)' }}
-            data-tooltip="Step back"
-          >
-            <SkipBack size={12} fill="currentColor" />
-          </span>
-          <span
-            onClick={isPlaying ? pause : play}
-            className="flex h-7 w-7 items-center justify-center cursor-pointer transition-colors"
-            style={{ color: 'var(--color-text-primary)' }}
-          >
-            {isPlaying ? <Pause size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" />}
-          </span>
-          <span
-            onClick={() => stepFrame(1)}
-            className="flex h-6 w-6 items-center justify-center cursor-pointer transition-colors"
-            style={{ color: 'var(--tl-toolbar-text)' }}
-            data-tooltip="Step forward"
-          >
-            <SkipForward size={12} fill="currentColor" />
-          </span>
-        </div>
-
-        {/* Scrub bar */}
-        <div
-          ref={scrubBarRef}
-          className="flex-1 h-1.5 rounded-full cursor-pointer relative"
-          style={{ background: 'var(--tl-border)' }}
-          onMouseDown={(e) => {
-            isScrubbing.current = true
-            document.body.style.userSelect = 'none'
-            const t = getScrubTime(e.clientX)
-            setVisualScrubTime(t)
-            handleSeek(t)
-            e.preventDefault()
-          }}
-        >
-          {/* Progress fill */}
-          <div
-            className="absolute inset-y-0 left-0 rounded-full pointer-events-none"
-            style={{ background: 'var(--tl-playhead)', width: `${scrubPct}%` }}
-          />
-          {/* Playhead */}
-          <div
-            className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow-md pointer-events-none"
-            style={{ left: `calc(${scrubPct}% - 6px)` }}
-          />
-        </div>
-
-        {/* Timecode */}
-        <div className="px-1.5 py-0.5 flex items-center justify-center text-[10px] font-mono tabular-nums whitespace-nowrap" style={{ color: 'var(--color-text-muted)' }}>
-          {formatTime(visualScrubTime ?? globalTime)} / {formatTime(totalDuration)}
-        </div>
-
-        {/* Divider */}
-        <div className="w-px h-4" style={{ background: 'var(--tl-border)' }} />
-
-        {/* Zoom controls */}
-        <span
-          onClick={zoomOut}
-          className="w-5 h-5 flex items-center justify-center cursor-pointer transition-colors"
-          style={{ color: 'var(--tl-toolbar-text)' }}
-          data-tooltip="Zoom out"
-        >
-          <Minus size={12} />
-        </span>
-        <span
-          className="text-[10px] font-mono tabular-nums w-8 text-center select-none cursor-pointer transition-colors"
-          style={{ color: 'var(--color-text-muted)' }}
-          onClick={resetView}
-          data-tooltip="Reset zoom"
-        >
-          {Math.round(zoom * 100)}%
-        </span>
-        <span
-          onClick={zoomIn}
-          className="w-5 h-5 flex items-center justify-center cursor-pointer transition-colors"
-          style={{ color: 'var(--tl-toolbar-text)' }}
-          data-tooltip="Zoom in"
-        >
-          <Plus size={12} />
-        </span>
-        <span
-          onClick={fitToViewport}
-          className="w-6 h-6 flex items-center justify-center cursor-pointer transition-colors rounded"
-          style={{ color: 'var(--tl-toolbar-text)' }}
-          data-tooltip="Fit to viewport"
-        >
-          <Maximize size={12} />
-        </span>
-
-        {/* Divider */}
-        <div className="w-px h-4" style={{ background: 'var(--tl-border)' }} />
-
-        {/* Timeline view toggle */}
-        <span
-          onClick={() => setTimelineView((v) => (v === 'track' ? 'graph' : 'track'))}
-          data-tooltip={timelineView === 'track' ? 'Switch to node graph' : 'Switch to track timeline'}
-          data-tooltip-pos={isFullscreen ? 'top-left' : 'top'}
-          className="w-6 h-6 flex items-center justify-center cursor-pointer transition-colors rounded"
-          style={{ color: 'var(--tl-toolbar-text)' }}
-        >
-          {timelineView === 'track' ? (
-            <AlignStartVertical size={12} strokeWidth={2.5} />
-          ) : (
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              aria-hidden
-            >
-              <circle cx="6" cy="6" r="3" />
-              <circle cx="18" cy="18" r="3" />
-              <line x1="8.5" y1="8.5" x2="15.5" y2="15.5" />
-            </svg>
-          )}
-        </span>
-      </div>
-    </div>
-  )
-
-  const timelineResizeHandle = (
-    <div
-      className="h-2.5 flex-shrink-0 hover:bg-[var(--color-border)] cursor-row-resize z-[100] relative"
-      onMouseDown={(e) => {
-        e.preventDefault()
-        timelineDrag.current = { startY: e.clientY, startH: timelineHeight }
-        setIsDraggingTimeline(true)
-        document.body.style.cursor = 'row-resize'
-        document.body.style.userSelect = 'none'
-      }}
-    />
-  )
-
   // ── Render ────────────────────────────────────────────────────────────────
 
   // Zdog Studio mode: replace entire preview+timeline with Zdog viewport + properties
@@ -1510,7 +1326,6 @@ export default function PreviewPlayer() {
 
   return (
     <div className="flex flex-col flex-1 overflow-visible relative">
-      {isDraggingTimeline && <div className="fixed inset-0 z-[9999]" style={{ cursor: 'row-resize' }} />}
       <div className="flex-1 relative">
         {studioRecordMode ? (
           <div className="absolute inset-0 overflow-hidden">
@@ -1522,56 +1337,6 @@ export default function PreviewPlayer() {
           </div>
         )}
       </div>
-      {timelineResizeHandle}
-      {/* Tab bar (only in studio record mode) */}
-      {studioRecordMode && timelineHeight > 0 && (
-        <div
-          className="flex items-center gap-0 flex-shrink-0"
-          style={{ background: 'var(--color-timeline-bg, var(--color-panel))', borderTop: '1px solid var(--color-border)' }}
-        >
-          <span
-            onClick={() => setBottomTab('controls')}
-            className="flex items-center gap-1.5 px-4 py-1.5 text-[11px] font-medium cursor-pointer transition-colors"
-            style={{
-              color: bottomTab === 'controls' ? 'var(--color-text-primary)' : 'var(--color-text-muted)',
-              borderBottom: bottomTab === 'controls' ? '2px solid #e05252' : '2px solid transparent',
-            }}
-          >
-            <SlidersHorizontal size={12} />
-            Controls
-          </span>
-          <span
-            onClick={() => setBottomTab('timeline')}
-            className="flex items-center gap-1.5 px-4 py-1.5 text-[11px] font-medium cursor-pointer transition-colors"
-            style={{
-              color: bottomTab === 'timeline' ? 'var(--color-text-primary)' : 'var(--color-text-muted)',
-              borderBottom: bottomTab === 'timeline' ? '2px solid var(--color-accent)' : '2px solid transparent',
-            }}
-          >
-            <AlignStartVertical size={12} />
-            Timeline
-          </span>
-        </div>
-      )}
-      {!studioRecordMode && transportBar}
-      {timelineHeight > 0 && (
-        studioRecordMode && bottomTab === 'controls' ? (
-          <div style={{ height: timelineHeight }} className="border-t border-[var(--color-border)]">
-            <RecordingControlPanel />
-          </div>
-        ) : timelineView === 'graph' ? (
-          <div style={{ height: timelineHeight }} className="border-t border-[var(--color-border)] overflow-hidden flex-shrink-0">
-            <SceneGraphEditor />
-          </div>
-        ) : (
-          <Timeline
-            currentTime={globalTime}
-            totalDuration={totalDuration}
-            onSeek={handleSeek}
-            trackHeight={timelineHeight}
-          />
-        )
-      )}
     </div>
   )
 }

@@ -1,13 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server'
-import {
-  generateVeo3Video,
-  getVeo3Status,
-  downloadVeo3Video,
-  enhanceVeo3Prompt,
-  VEO3_COST_ESTIMATE,
-} from '@/lib/apis/veo3'
 import { saveToCache } from '@/lib/apis/media-cache'
 import { logSpend } from '@/lib/db'
+import { firstConfiguredVideoProvider, getVideoProvider } from '@/lib/apis/video/registry'
+
+function requireProvider(id: string | undefined | null) {
+  if (!id || id === 'auto') {
+    const p = firstConfiguredVideoProvider()
+    if (!p) {
+      return { error: 'No video provider configured. Add GOOGLE_AI_KEY, FAL_KEY, or RUNWAY_API_KEY.', provider: null }
+    }
+    return { error: null, provider: p }
+  }
+  const p = getVideoProvider(id)
+  if (!p) return { error: `Unknown video provider: ${id}`, provider: null }
+  if (!process.env[p.envKey]) {
+    return {
+      error: `${p.name} not configured — set ${p.envKey} or pick a different provider.`,
+      provider: null,
+    }
+  }
+  return { error: null, provider: p }
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -16,84 +29,90 @@ export async function POST(req: NextRequest) {
       projectId,
       sceneId,
       layerId,
+      provider: providerId,
       prompt,
       negativePrompt,
       aspectRatio = '16:9',
       duration = 5,
-      enhancePrompt = true,
+      seed,
     } = body
 
     if (!prompt) {
       return NextResponse.json({ error: 'Prompt is required' }, { status: 400 })
     }
 
-    if (!process.env.GOOGLE_AI_KEY) {
-      return NextResponse.json({ error: 'GOOGLE_AI_KEY not configured' }, { status: 503 })
+    const { error, provider } = requireProvider(providerId)
+    if (error || !provider) {
+      return NextResponse.json({ error: error ?? 'Provider not available' }, { status: 503 })
     }
 
-    // Enhance prompt with cinematic language
-    const finalPrompt = enhancePrompt ? await enhanceVeo3Prompt(prompt).catch(() => prompt) : prompt
-
-    // Start generation (cost logged on completion in GET handler, not here)
-    const { operationName } = await generateVeo3Video({
-      prompt: finalPrompt,
+    const { operationId, enhancedPrompt } = await provider.generate({
+      prompt,
       negativePrompt,
       aspectRatio,
-      durationSeconds: duration,
+      durationSeconds: Number(duration) || 5,
+      seed,
     })
 
     return NextResponse.json({
-      operationName,
-      enhancedPrompt: finalPrompt,
-      estimatedCost: VEO3_COST_ESTIMATE,
+      operationName: operationId,
+      enhancedPrompt: enhancedPrompt ?? prompt,
+      estimatedCost: provider.costPerCallUsd,
+      provider: provider.id,
       projectId,
       sceneId,
       layerId,
     })
   } catch (error: any) {
-    console.error('Veo 3 generation error:', error)
-    return NextResponse.json({ error: error.message ?? 'Veo 3 generation failed' }, { status: 500 })
+    console.error('Video generation error:', error)
+    return NextResponse.json({ error: error?.message ?? 'Video generation failed' }, { status: 500 })
   }
 }
 
-// GET: poll for Veo 3 generation status
 export async function GET(req: NextRequest) {
   const operationName = req.nextUrl.searchParams.get('operationName')
   const projectId = req.nextUrl.searchParams.get('projectId')
   const prompt = req.nextUrl.searchParams.get('prompt')
+  const providerId = req.nextUrl.searchParams.get('provider')
   if (!operationName) {
     return NextResponse.json({ error: 'operationName is required' }, { status: 400 })
   }
 
+  const { error, provider } = requireProvider(providerId)
+  if (error || !provider) {
+    return NextResponse.json({ error: error ?? 'Provider not available' }, { status: 503 })
+  }
+
   try {
-    const result = await getVeo3Status(operationName)
+    const result = await provider.pollStatus(operationName)
 
     if (result.done && result.videoUri) {
-      // Download and cache
-      const buffer = await downloadVeo3Video(result.videoUri)
-      const publicPath = await saveToCache('veo3', { operationName }, buffer, 'mp4')
+      const buffer = await provider.download(result.videoUri)
+      const publicPath = await saveToCache(provider.id, { operationName }, buffer, 'mp4')
 
-      // Log cost only on successful completion
       if (projectId) {
-        await logSpend(projectId, 'veo3', VEO3_COST_ESTIMATE, `Veo3: ${(prompt || '').slice(0, 100)}`)
+        await logSpend(
+          projectId,
+          provider.id as any,
+          provider.costPerCallUsd,
+          `${provider.name}: ${(prompt || '').slice(0, 100)}`,
+        )
       }
 
       return NextResponse.json({
         done: true,
         videoUrl: publicPath,
+        provider: provider.id,
       })
     }
 
     if (result.done && result.error) {
-      return NextResponse.json({
-        done: true,
-        error: result.error,
-      })
+      return NextResponse.json({ done: true, error: result.error, provider: provider.id })
     }
 
-    return NextResponse.json({ done: false })
+    return NextResponse.json({ done: false, provider: provider.id })
   } catch (error: any) {
-    console.error('Veo 3 status poll error:', error)
-    return NextResponse.json({ error: error.message ?? 'Failed to check Veo 3 status' }, { status: 500 })
+    console.error(`${provider.name} status poll error:`, error)
+    return NextResponse.json({ error: error?.message ?? 'Failed to check status' }, { status: 500 })
   }
 }

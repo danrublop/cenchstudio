@@ -1,6 +1,6 @@
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { projects, conversations } from '@/lib/db/schema'
+import { projects, conversations, workspaces } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 
@@ -70,14 +70,14 @@ export async function assertProjectAccess(projectId: string) {
  * Returns the conversation + project or a 403/404 NextResponse.
  */
 export async function assertConversationAccess(conversationId: string) {
-  const [conv] = await db
-    .select()
-    .from(conversations)
-    .where(eq(conversations.id, conversationId))
-    .limit(1)
+  const [conv] = await db.select().from(conversations).where(eq(conversations.id, conversationId)).limit(1)
 
   if (!conv) {
-    return { error: NextResponse.json({ error: 'Conversation not found' }, { status: 404 }), conversation: null, project: null }
+    return {
+      error: NextResponse.json({ error: 'Conversation not found' }, { status: 404 }),
+      conversation: null,
+      project: null,
+    }
   }
 
   const access = await assertProjectAccess(conv.projectId)
@@ -86,6 +86,33 @@ export async function assertConversationAccess(conversationId: string) {
   }
 
   return { error: null, conversation: conv, project: access.project, user: access.user }
+}
+
+/**
+ * Load a workspace and verify the current user has access.
+ * - Guest workspaces (userId=NULL) are accessible to everyone.
+ * - Owned workspaces require the session user to match.
+ */
+export async function assertWorkspaceAccess(workspaceId: string) {
+  const user = await getOptionalUser()
+
+  const workspace = await db.query.workspaces.findFirst({
+    where: eq(workspaces.id, workspaceId),
+  })
+
+  if (!workspace) {
+    return { error: NextResponse.json({ error: 'Workspace not found' }, { status: 404 }), workspace: null }
+  }
+
+  if (workspace.userId === null) {
+    return { error: null, workspace, user }
+  }
+
+  if (!user || workspace.userId !== user.id) {
+    return { error: NextResponse.json({ error: 'Forbidden' }, { status: 403 }), workspace: null }
+  }
+
+  return { error: null, workspace, user }
 }
 
 /** Helper to return a JSON 401 response. */

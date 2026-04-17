@@ -18,6 +18,7 @@ import * as schema from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { readProjectScenesFromTables, writeProjectScenesToTables } from '@/lib/db/project-scene-table'
 import { readProjectSceneBlob } from '@/lib/db/project-scene-storage'
+import { createDefaultAPIPermissions } from '@/lib/permissions'
 import { generateSceneHTML } from '@/lib/sceneTemplate'
 import { resolveProjectDimensions } from '@/lib/dimensions'
 import { resolveStyle } from '@/lib/styles/presets'
@@ -33,11 +34,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Load project
-    const [project] = await db
-      .select()
-      .from(schema.projects)
-      .where(eq(schema.projects.id, projectId))
-      .limit(1)
+    const [project] = await db.select().from(schema.projects).where(eq(schema.projects.id, projectId)).limit(1)
 
     if (!project) {
       return NextResponse.json({ error: 'Project not found' }, { status: 404 })
@@ -49,8 +46,9 @@ export async function POST(req: NextRequest) {
     const scenes: Scene[] = tableBacked?.scenes ?? blob.scenes ?? []
 
     const globalStyle: GlobalStyle = (project as any).globalStyle ?? {
-      presetId: 'clean',
+      presetId: null,
       fontOverride: null,
+      bodyFontOverride: null,
       bgColorOverride: null,
       paletteOverride: null,
       strokeColorOverride: null,
@@ -64,7 +62,7 @@ export async function POST(req: NextRequest) {
       projectId,
       outputMode: (project as any).outputMode ?? 'interactive',
       sceneGraph: (project as any).sceneGraph ?? { nodes: [], edges: [] },
-      apiPermissions: (project as any).apiPermissions ?? {},
+      apiPermissions: (project as any).apiPermissions ?? createDefaultAPIPermissions(),
       audioProviderEnabled: (project as any).audioProviderEnabled ?? {},
       mediaGenEnabled: (project as any).mediaGenEnabled ?? {},
       sessionPermissions: {},
@@ -91,7 +89,13 @@ export async function POST(req: NextRequest) {
         if (scene) {
           try {
             const resolved = resolveStyle(world.globalStyle.presetId, world.globalStyle)
-            const html = generateSceneHTML(scene, world.globalStyle, undefined, undefined, resolveProjectDimensions(world.mp4Settings?.aspectRatio, world.mp4Settings?.resolution))
+            const html = generateSceneHTML(
+              scene,
+              world.globalStyle,
+              undefined,
+              undefined,
+              resolveProjectDimensions(world.mp4Settings?.aspectRatio, world.mp4Settings?.resolution),
+            )
             const scenesDir = path.join(process.cwd(), 'public', 'scenes')
             await fs.mkdir(scenesDir, { recursive: true })
             await fs.writeFile(path.join(scenesDir, `${scene.id}.html`), html, 'utf-8')
@@ -125,9 +129,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: result.success,
-      content: result.success
-        ? parts.join('\n\n') || 'Done'
-        : result.error ?? 'Tool execution failed',
+      content: result.success ? parts.join('\n\n') || 'Done' : (result.error ?? 'Tool execution failed'),
       data: result.data,
       affectedSceneId: result.affectedSceneId,
       permissionNeeded: result.permissionNeeded,

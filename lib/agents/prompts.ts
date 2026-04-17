@@ -4,6 +4,7 @@
 
 import type { AgentType } from './types'
 import type { ResolvedStyle } from '../styles/presets'
+import { getDesignPrinciples } from '../generation/design-principles'
 
 // ── Router Prompt ─────────────────────────────────────────────────────────────
 
@@ -310,6 +311,19 @@ Always provide at least a start and end keyframe.
 - Simple text + chart scenes → regular scene types are faster and cleaner
 - Scenes shorter than 4 seconds → not enough time to establish the world
 - Dense data visualizations → use D3 instead
+
+## Media Library — query before you generate
+
+The project has a media library of uploaded + AI-generated assets. Always check it before spending a generation call.
+
+1. Call \`query_media_library\` first whenever the user references "the image we made", "our logo", "that reference photo", or you suspect something usable already exists. Filter by promptContains, tag, type.
+2. If a match returns, call \`reuse_asset\` to place it — this is instant and free.
+3. Only call \`generate_image\` / \`generate_sticker\` when the library has no match or the user explicitly asks for a new one.
+4. For "try again" / "make it sharper" / "different style" requests, call \`regenerate_asset\` with the parent assetId instead of \`generate_image\` with a fresh prompt — the result is linked via parentAssetId for lineage.
+5. For mood-board / "in the style of this" requests, use \`generate_image_from_reference\`.
+6. For "give me options", call \`generate_variation\` 2-3 times on the same parent.
+
+Every successful generation is auto-persisted to the library with full provenance (prompt, provider, model, cost, enhanceTags), so future runs can find and reuse it.
 
 ## Camera Motion
 CenchCamera is available in all scenes via set_camera_motion. Use it to add cinematic movement.
@@ -711,7 +725,8 @@ function sceneTypeGuidanceMotion(W = 1920, H = 1080) {
 - Use flexbox/grid for layout — NEVER position:absolute with pixel values that exceed ${W}×${H}
 - Use clamp(), vw/vh, percentages for responsive sizing
 - CSS @keyframes for entrance animations so content shows before play is pressed
-- Do NOT redeclare template globals (DURATION, WIDTH, HEIGHT, PALETTE, etc.)
+- Do NOT redeclare template globals (DURATION, WIDTH, HEIGHT, PALETTE, BG_COLOR, etc.)
+- Use BG_COLOR global or var(--bg-color) CSS property for the scene background color — this lets users override it from the Layers panel
 
 ### CenchMotion Component Library (available in all scene types)
 All scenes load CenchMotion — pre-built GSAP animation components. Use these instead of writing raw GSAP for common patterns:
@@ -864,7 +879,12 @@ Think it through, then build with confidence. Don't over-plan — act.
 - Be concise in text responses. The work speaks for itself.
 
 ## Building
-- Build scenes one at a time: create_scene, then IMMEDIATELY add_layer for that scene before creating the next. Never batch-create empty scenes — each scene must have content before moving on.
+- Build scenes one at a time: create_scene, then IMMEDIATELY add content before creating the next. Never batch-create empty scenes.
+- Two ways to add content:
+  - **write_scene_code** — YOU write the code directly. Faster, no extra LLM call. Use when you know what to build.
+  - **add_layer** — triggers AI generation from a prompt. Use when you want the system to generate code from a description.
+  - Prefer write_scene_code when you can reason about the code yourself. Use add_layer as a fallback.
+- Before editing existing scenes, call **read_scene_code** to see the full source (world state preview is truncated).
 - Set global style (palette, font) early with set_global_style
 - Add transitions with set_all_transitions
 - Just build. If the user wants a plan, they'll enable Plan First mode.
@@ -894,7 +914,7 @@ When audio tools are available:
 - Every scene should pass the Slop Test: if it looks like something any AI tool would produce by default, push the composition, color, or animation in a more distinctive direction.
 
 ## Self-Verification — MANDATORY
-After every add_layer, regenerate_layer, or generate_chart call, you MUST call verify_scene to check your work.
+After every add_layer, write_scene_code, regenerate_layer, or generate_chart call, you MUST call verify_scene to check your work.
 Pass expectedElements listing the key visuals you intended (e.g. ["title", "bar chart", "legend"]).
 If verify_scene reports issues, fix them with patch_layer_code or regenerate_layer before proceeding.
 Never skip verification — catching problems immediately saves the user from broken scenes.`
@@ -1007,9 +1027,13 @@ Use edit_element, move_element, resize_element — these make clean targeted upd
 ### For timing changes:
 Use adjust_element_timing or set_layer_timing — don't regenerate the whole layer.
 
+### For reading existing code:
+Use read_scene_code first — the world state preview is truncated. This returns the full source code so you can make precise patches.
+
 ### For code changes:
 Use patch_layer_code with the specific function or block to replace.
 Provide oldCode (the exact string to find) and newCode (the replacement).
+For full rewrites, use write_scene_code instead of regenerating.
 
 ### For complete scene regeneration (rare):
 Only use regenerate_layer if the user explicitly asks to "redo" or "regenerate" a scene.
@@ -1055,8 +1079,8 @@ Your role: Define and apply the overarching visual identity across ALL scenes in
 ### Font Selection (curated catalog only)
 You MUST choose from the curated font catalog. Do NOT invent font names.
 
-Sans-serif: Inter, Outfit, Plus Jakarta Sans, Space Grotesk, Nunito, Poppins, Work Sans
-Serif: Playfair Display, Lora, Merriweather, Source Serif 4
+Sans-serif: Satoshi, Figtree, Sora, Manrope, Bricolage Grotesque, Nunito, Poppins, Work Sans
+Serif: Bitter, Vollkorn, Merriweather, Source Serif 4
 Handwritten: Caveat, Patrick Hand, Kalam, Architects Daughter
 Monospace: DM Mono, JetBrains Mono, Space Mono, Fira Code
 Display: Bebas Neue, Righteous, Fredoka, Permanent Marker
@@ -1064,12 +1088,29 @@ System: Georgia, monospace
 
 Guidelines:
 - Handwritten fonts (Caveat, Patrick Hand) for whiteboard/chalkboard/casual
-- Sans-serif (Inter, Outfit, Poppins) for clean/modern/corporate
-- Serif (Playfair Display, Lora) for editorial/elegant content
+- Sans-serif (Figtree, Sora, Manrope) for clean/modern/corporate
+- Serif (Bitter, Vollkorn, Merriweather) for editorial/elegant content
 - Monospace (DM Mono, Space Mono) for technical/data/code
 - Display (Bebas Neue, Permanent Marker) for bold headings/impact
+- Bricolage Grotesque for playful/distinctive character
+- Satoshi for geometric/minimal premium feel
 
-Anti-default: Do NOT choose Inter or Poppins as your first instinct — they are the most overused AI-output fonts. Prefer Outfit, Plus Jakarta Sans, Space Grotesk, or Nunito for modern sans-serif needs.
+Anti-default: Do NOT choose Poppins or Nunito as your first instinct. Prefer Figtree, Sora, Manrope, or Bricolage Grotesque — they are distinctive and underused.
+
+### Font Pairing (recommended — use fontPairing field in style tools)
+Set BOTH a heading font and body font for typographic contrast. Use the fontPairing shortcut or set font + bodyFont independently.
+
+Curated pairings:
+- impact-friendly: Bebas Neue + Nunito (bold headings, friendly body)
+- editorial-clean: Merriweather + Work Sans (editorial gravitas)
+- geometric-warmth: Sora + Bitter (modern + warm)
+- handmade-modern: Caveat + Figtree (casual charm)
+- bold-precise: Righteous + Manrope (energetic + technical)
+- display-grotesk: Fredoka + Bricolage Grotesque (playful + distinctive)
+- classic-sans: Vollkorn + Sora (scholarly + geometric)
+- marker-clean: Permanent Marker + Work Sans (raw + clean)
+- mono-serif: JetBrains Mono + Source Serif 4 (code + prose)
+- grotesk-text: Bricolage Grotesque + Nunito (quirky + friendly)
 
 ### Roughness (strokeWidth 1-5)
 - 1: Precise, technical, digital
@@ -1136,6 +1177,13 @@ export function getAgentPrompt(
   } else {
     base = AGENT_PROMPTS[agentType]
   }
+
+  // Inject design principles for agents that write scene code
+  const codeWritingAgent = agentType === 'scene-maker' || agentType === 'director' || agentType === 'editor'
+  if (codeWritingAgent) {
+    base += `\n\n## Design Principles (MANDATORY — follow these for every scene)\n\n${getDesignPrinciples(dims)}\n`
+  }
+
   if (
     (agentType === 'scene-maker' || agentType === 'director' || agentType === 'dop' || agentType === 'planner') &&
     style

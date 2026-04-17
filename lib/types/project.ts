@@ -14,6 +14,7 @@ export interface GlobalStyle {
   paletteOverride: [string, string, string, string] | null
   bgColorOverride: string | null
   fontOverride: string | null
+  bodyFontOverride: string | null
   strokeColorOverride: string | null
 
   // Legacy fields — kept for migration compatibility
@@ -88,6 +89,10 @@ export interface MP4Settings {
   fps: 24 | 30 | 60
   format: 'mp4' | 'webm'
   aspectRatio?: AspectRatio
+  /** Last-selected platform profile (YouTube, TikTok, etc.). `null` or
+   *  omitted means Custom. Persisted so re-opening the export modal
+   *  remembers the user's target destination. */
+  platformProfileId?: import('../export/platform-profiles').PlatformProfileId | null
 }
 
 export interface InteractiveSettings {
@@ -138,12 +143,7 @@ export interface Project {
   createdAt: string
   updatedAt: string
 
-  mp4Settings: {
-    resolution: '720p' | '1080p' | '4k'
-    fps: 24 | 30 | 60
-    format: 'mp4' | 'webm'
-    aspectRatio?: AspectRatio
-  }
+  mp4Settings: MP4Settings
 
   interactiveSettings: {
     playerTheme: 'dark' | 'light' | 'transparent'

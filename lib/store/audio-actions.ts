@@ -21,6 +21,13 @@ export function createAudioActions(set: Set, get: Get) {
         mediaGenEnabled: { ...s.mediaGenEnabled, [id]: !s.mediaGenEnabled[id] },
       })),
 
+    setResearchEnabled: (enabled: boolean) => set({ researchEnabled: enabled }),
+
+    toggleResearchProvider: (id: string) =>
+      set((s) => ({
+        researchProviderEnabled: { ...s.researchProviderEnabled, [id]: !s.researchProviderEnabled[id] },
+      })),
+
     generateNarration: async (
       sceneId: string,
       text: string,

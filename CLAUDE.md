@@ -85,6 +85,7 @@ Each scene is a self-contained HTML file at `/public/scenes/{id}.html`. Written 
 - `FONT` = font family from style preset
 - `TOOL` = default drawing tool from style preset
 - `STROKE_COLOR` = primary stroke color from style preset
+- `BG_COLOR` = background color (hex string, user-overridable via Layers panel)
 - `DATA` = suggestedData object (D3 template only)
 - `AXIS_COLOR`, `GRID_COLOR` = chart styling (D3 template only)
 

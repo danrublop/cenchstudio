@@ -1,5 +1,5 @@
 import { normalizeTransition } from '@/lib/transitions'
-import { FONT_FAMILIES, isValidFont } from '@/lib/fonts/catalog'
+import { FONT_FAMILIES, isValidFont, getFontPairing } from '@/lib/fonts/catalog'
 import { SCENE_STYLE_PRESETS } from '@/lib/styles/scene-presets'
 import type { AgentLogger } from '@/lib/agents/logger'
 import type { GlobalStyle, SceneStyleOverride } from '@/lib/types'
@@ -44,6 +44,8 @@ export function createStyleToolHandler(deps: {
         const {
           palette,
           font,
+          bodyFont,
+          fontPairing,
           strokeWidth,
           theme,
           duration,
@@ -55,6 +57,8 @@ export function createStyleToolHandler(deps: {
         } = args as {
           palette?: string[]
           font?: string
+          bodyFont?: string
+          fontPairing?: string
           strokeWidth?: number
           theme?: 'dark' | 'light'
           duration?: number
@@ -63,6 +67,14 @@ export function createStyleToolHandler(deps: {
           bgColorOverride?: string | null
           fontOverride?: string | null
           scope?: 'project_default' | 'all_scenes' | 'new_scenes_only'
+        }
+        // Resolve font pairing first — it sets both heading + body font
+        if (fontPairing) {
+          const pairing = getFontPairing(fontPairing)
+          if (pairing) {
+            world.globalStyle.fontOverride = pairing.heading
+            world.globalStyle.bodyFontOverride = pairing.body
+          }
         }
         if (presetId !== undefined)
           world.globalStyle.presetId = presetId === 'none' ? null : (presetId as StylePresetId | null)
@@ -79,8 +91,17 @@ export function createStyleToolHandler(deps: {
             changes: [],
           }
         }
+        if (bodyFont && !isValidFont(bodyFont)) {
+          return {
+            success: false,
+            affectedSceneId: null,
+            error: `Body font "${bodyFont}" is not in the curated catalog. Available fonts: ${FONT_FAMILIES.join(', ')}`,
+            changes: [],
+          }
+        }
         if (palette) world.globalStyle.palette = palette as GlobalStyle['palette']
         if (font) world.globalStyle.font = font
+        if (bodyFont) world.globalStyle.bodyFontOverride = bodyFont
         if (strokeWidth !== undefined) world.globalStyle.strokeWidth = Math.max(1, Math.min(5, strokeWidth))
         if (theme) world.globalStyle.theme = theme
         if (duration) world.globalStyle.duration = duration
@@ -120,27 +141,41 @@ export function createStyleToolHandler(deps: {
       }
 
       case 'set_scene_style': {
-        const { sceneId, preset, palette, bgColor, font, roughnessLevel, defaultTool } = args as {
-          sceneId: string
-          preset?: string
-          palette?: string[]
-          bgColor?: string
-          font?: string
-          roughnessLevel?: number
-          defaultTool?: string
-        }
+        const { sceneId, preset, palette, bgColor, font, bodyFont, fontPairing, roughnessLevel, defaultTool } =
+          args as {
+            sceneId: string
+            preset?: string
+            palette?: string[]
+            bgColor?: string
+            font?: string
+            bodyFont?: string
+            fontPairing?: string
+            roughnessLevel?: number
+            defaultTool?: string
+          }
         const scene = findScene(world, sceneId)
         if (!scene) return err(`Scene ${sceneId} not found`)
         let override: SceneStyleOverride = { ...scene.styleOverride }
         if (preset && preset in SCENE_STYLE_PRESETS) {
           override = { ...SCENE_STYLE_PRESETS[preset as SceneStylePresetName] }
         }
+        if (fontPairing) {
+          const pairing = getFontPairing(fontPairing)
+          if (pairing) {
+            override.font = pairing.heading
+            override.bodyFont = pairing.body
+          }
+        }
         if (font && !isValidFont(font)) {
           return err(`Font "${font}" is not in the curated catalog. Available: ${FONT_FAMILIES.join(', ')}`)
+        }
+        if (bodyFont && !isValidFont(bodyFont)) {
+          return err(`Body font "${bodyFont}" is not in the curated catalog. Available: ${FONT_FAMILIES.join(', ')}`)
         }
         if (palette && palette.length === 4) override.palette = palette as [string, string, string, string]
         if (bgColor) override.bgColor = bgColor
         if (font) override.font = font
+        if (bodyFont) override.bodyFont = bodyFont
         if (roughnessLevel !== undefined) override.roughnessLevel = roughnessLevel
         if (defaultTool) override.defaultTool = defaultTool
         updateScene(world, sceneId, { styleOverride: override })
@@ -155,6 +190,8 @@ export function createStyleToolHandler(deps: {
           bgColor,
           bgStyle,
           font,
+          bodyFont,
+          fontPairing,
           roughnessLevel,
           defaultTool,
           strokeColorOverride,
@@ -171,6 +208,8 @@ export function createStyleToolHandler(deps: {
           bgColor?: string
           bgStyle?: string
           font?: string
+          bodyFont?: string
+          fontPairing?: string
           roughnessLevel?: number
           defaultTool?: string
           strokeColorOverride?: string
@@ -187,11 +226,22 @@ export function createStyleToolHandler(deps: {
         if (font && !isValidFont(font)) {
           return err(`Font "${font}" is not in the curated catalog. Available: ${FONT_FAMILIES.join(', ')}`)
         }
+        if (bodyFont && !isValidFont(bodyFont)) {
+          return err(`Body font "${bodyFont}" is not in the curated catalog. Available: ${FONT_FAMILIES.join(', ')}`)
+        }
         const override: SceneStyleOverride = { ...scene.styleOverride }
+        if (fontPairing) {
+          const pairing = getFontPairing(fontPairing)
+          if (pairing) {
+            override.font = pairing.heading
+            override.bodyFont = pairing.body
+          }
+        }
         if (palette && palette.length === 4) override.palette = palette as [string, string, string, string]
         if (bgColor) override.bgColor = bgColor
         if (bgStyle) override.bgStyle = bgStyle as SceneStyleOverride['bgStyle']
         if (font) override.font = font
+        if (bodyFont) override.bodyFont = bodyFont
         if (roughnessLevel !== undefined) override.roughnessLevel = roughnessLevel
         if (defaultTool) override.defaultTool = defaultTool
         if (strokeColorOverride) override.strokeColorOverride = strokeColorOverride

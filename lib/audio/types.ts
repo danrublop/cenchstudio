@@ -8,10 +8,25 @@ export interface Voice {
   previewUrl?: string | null
 }
 
+export interface TTSCaptions {
+  /** Public URL to the SRT file (written alongside the audio). */
+  srtUrl: string
+  /** Public URL to the VTT file (written alongside the audio). */
+  vttUrl: string
+  /** `aligned` when the provider returned true word/character timestamps;
+   *  `naive` when generated from audio duration + word count as a fallback. */
+  kind: 'aligned' | 'naive'
+  /** Word-level segments (scene-relative times, in seconds). */
+  words: { text: string; start: number; end: number }[]
+}
+
 export interface TTSResult {
   audioUrl: string
   duration: number | null
   provider: TTSProvider
+  /** Present when captions were emitted. Aligned for providers that return
+   *  timestamps (ElevenLabs); naive fallback otherwise. */
+  captions?: TTSCaptions
 }
 
 export interface TTSParams {
@@ -23,6 +38,30 @@ export interface TTSParams {
   speakers?: { speaker: string; voiceName: string }[]
 }
 
+export interface VoiceCloneParams {
+  name: string
+  audioBuffer: Buffer
+  transcript?: string
+  /** VoxCPM clone mode: 'controllable' or 'ultimate' */
+  mode?: string
+}
+
+export interface VoiceCloneResult {
+  voiceId: string
+  name: string
+}
+
+export interface VoiceDesignParams {
+  description: string
+  sampleText?: string
+}
+
+export interface VoiceDesignResult {
+  voiceId: string
+  name: string
+  previewUrl?: string
+}
+
 export interface TTSProviderInterface {
   id: TTSProvider
   name: string
@@ -30,6 +69,8 @@ export interface TTSProviderInterface {
   requiresKey: string | null
   generate(params: TTSParams): Promise<TTSResult>
   listVoices?(): Promise<Voice[]>
+  cloneVoice?(params: VoiceCloneParams): Promise<VoiceCloneResult>
+  designVoice?(params: VoiceDesignParams): Promise<VoiceDesignResult>
 }
 
 export interface SFXResult {

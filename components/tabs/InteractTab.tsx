@@ -760,8 +760,8 @@ function InteractionStyleEditor({
           <label className={labelClass}>Font</label>
           <select className={fieldClass} value={s.fontFamily} onChange={(e) => set('fontFamily', e.target.value)}>
             <option value="system-ui, -apple-system, sans-serif">System UI</option>
-            <option value="'Inter', sans-serif">Inter</option>
-            <option value="'Space Grotesk', sans-serif">Space Grotesk</option>
+            <option value="'Figtree', sans-serif">Figtree</option>
+            <option value="'Sora', sans-serif">Sora</option>
             <option value="'JetBrains Mono', monospace">JetBrains Mono</option>
             <option value="monospace">Monospace</option>
             <option value="Georgia, serif">Georgia</option>

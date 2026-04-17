@@ -87,7 +87,17 @@ export function createProjectActions(set: Set, get: Get) {
         const res = await fetch('/api/projects')
         if (res.ok) {
           const list = await res.json()
-          set({ projectList: list.map((p: any) => ({ id: p.id, name: p.name, updatedAt: p.updatedAt })) })
+          set({
+            projectList: list.map((p: any) => ({
+              id: p.id,
+              name: p.name,
+              updatedAt: p.updatedAt,
+              thumbnailUrl: p.thumbnailUrl,
+              outputMode: p.outputMode,
+              createdAt: p.createdAt,
+              workspaceId: p.workspaceId ?? null,
+            })),
+          })
         }
       } catch (e) {
         console.error('Failed to fetch projects:', e)
@@ -151,6 +161,7 @@ export function createProjectActions(set: Set, get: Get) {
             mediaGenEnabled: st.mediaGenEnabled,
             scenes: st.scenes,
             sceneGraph: st.project.sceneGraph,
+            workspaceId: st.activeWorkspaceId,
           }),
         })
         if (res.ok) {
@@ -179,6 +190,7 @@ export function createProjectActions(set: Set, get: Get) {
     refreshProjectFromServer: async () => {
       const { project, _dbLoadComplete } = get()
       if (!project?.id || !_dbLoadComplete) return
+      console.log(`[Store] refreshProjectFromServer: chatMessages=${get().chatMessages.length} before refresh`)
       try {
         const res = await fetch(`/api/projects/${project.id}`)
         if (!res.ok) return
@@ -190,7 +202,13 @@ export function createProjectActions(set: Set, get: Get) {
           outputMode: data.outputMode || 'mp4',
           createdAt: data.createdAt,
           updatedAt: data.updatedAt,
-          mp4Settings: { resolution: '1080p', fps: 30, format: 'mp4', aspectRatio: '16:9' as const, ...data.mp4Settings },
+          mp4Settings: {
+            resolution: '1080p',
+            fps: 30,
+            format: 'mp4',
+            aspectRatio: '16:9' as const,
+            ...data.mp4Settings,
+          },
           interactiveSettings: data.interactiveSettings || {
             playerTheme: 'dark',
             showProgressBar: true,
@@ -243,9 +261,43 @@ export function createProjectActions(set: Set, get: Get) {
           runCheckpoint: loadedRunCheckpoint,
           brandKit: loadedProject.brandKit,
         })
-        for (const scene of newScenes) {
-          if (sceneHasRenderableContent(scene)) {
-            get().saveSceneHTML(scene.id, true)
+        console.log(
+          `[Store] refreshProjectFromServer: chatMessages=${get().chatMessages.length} after set (should be unchanged)`,
+        )
+        // Regenerate HTML directly from API data (bypasses store which persist may strip)
+        try {
+          const { generateSceneHTML } = await import('@/lib/sceneTemplate')
+          const { resolveProjectDimensions } = await import('@/lib/dimensions')
+          const dims = resolveProjectDimensions(
+            loadedProject.mp4Settings?.aspectRatio,
+            loadedProject.mp4Settings?.resolution,
+          )
+          for (const scene of newScenes) {
+            if (sceneHasRenderableContent(scene)) {
+              try {
+                const html = generateSceneHTML(
+                  scene,
+                  data.globalStyle || DEFAULT_GLOBAL_STYLE,
+                  undefined,
+                  loadedProject.audioSettings,
+                  dims,
+                )
+                fetch('/api/scene', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ id: scene.id, html }),
+                }).catch(() => {})
+              } catch (e) {
+                console.error(`[refreshProject] generateSceneHTML failed for ${scene.id}:`, e)
+              }
+            }
+          }
+        } catch (e) {
+          // Fallback to store-based saveSceneHTML
+          for (const scene of newScenes) {
+            if (sceneHasRenderableContent(scene)) {
+              get().saveSceneHTML(scene.id, true)
+            }
           }
         }
       } catch (e) {
@@ -288,7 +340,13 @@ export function createProjectActions(set: Set, get: Get) {
           outputMode: data.outputMode || 'mp4',
           createdAt: data.createdAt,
           updatedAt: data.updatedAt,
-          mp4Settings: { resolution: '1080p', fps: 30, format: 'mp4', aspectRatio: '16:9' as const, ...data.mp4Settings },
+          mp4Settings: {
+            resolution: '1080p',
+            fps: 30,
+            format: 'mp4',
+            aspectRatio: '16:9' as const,
+            ...data.mp4Settings,
+          },
           interactiveSettings: data.interactiveSettings || {
             playerTheme: 'dark',
             showProgressBar: true,
@@ -345,14 +403,43 @@ export function createProjectActions(set: Set, get: Get) {
           brandKit: loadedProject.brandKit,
         })
 
-        // Regenerate scene HTML to inject updated element-registry code
-        // Only for scenes that actually have content (avoid overwriting existing HTML with empty output)
+        // Rebuild timeline from fresh scene data (including audio clips).
+        // The DB may have timeline: null or a stale timeline missing audio tracks.
+        get().initTimeline(true)
+
+        // Regenerate scene HTML directly from API data (not from store, which
+        // persist middleware may strip). This ensures template fixes propagate.
         const loadedScenes = data.scenes || []
         let savedAny = false
-        for (const scene of loadedScenes) {
-          if (sceneHasRenderableContent(scene)) {
-            get().saveSceneHTML(scene.id, true)
-            savedAny = true
+        try {
+          const { generateSceneHTML } = await import('@/lib/sceneTemplate')
+          const { resolveProjectDimensions } = await import('@/lib/dimensions')
+          const dims = resolveProjectDimensions(
+            loadedProject.mp4Settings?.aspectRatio,
+            loadedProject.mp4Settings?.resolution,
+          )
+          for (const scene of loadedScenes) {
+            if (sceneHasRenderableContent(scene)) {
+              try {
+                const html = generateSceneHTML(scene, loadedStyle, undefined, loadedProject.audioSettings, dims)
+                fetch('/api/scene', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ id: scene.id, html }),
+                }).catch(() => {})
+                savedAny = true
+              } catch (e) {
+                console.error(`[loadProject] generateSceneHTML failed for ${scene.id}:`, e)
+              }
+            }
+          }
+        } catch (e) {
+          // Fallback to store-based saveSceneHTML if dynamic import fails
+          for (const scene of loadedScenes) {
+            if (sceneHasRenderableContent(scene)) {
+              get().saveSceneHTML(scene.id, true)
+              savedAny = true
+            }
           }
         }
         // Bump sceneHtmlVersion so PreviewPlayer knows HTML files exist
@@ -370,9 +457,7 @@ export function createProjectActions(set: Set, get: Get) {
         // Guard against persist middleware clobbering rich scenes with stripped
         // localStorage data. If after a short delay the store's scenes lost their
         // code fields, re-fetch from the server.
-        const richSceneIds = loadedScenes
-          .filter((s: any) => sceneHasRenderableContent(s))
-          .map((s: any) => s.id)
+        const richSceneIds = loadedScenes.filter((s: any) => sceneHasRenderableContent(s)).map((s: any) => s.id)
         if (richSceneIds.length > 0) {
           setTimeout(() => {
             const current = get().scenes
@@ -493,7 +578,9 @@ export function createProjectActions(set: Set, get: Get) {
                   set({ project: { ...get().project, updatedAt: freshProject.updatedAt } })
                 }
               }
-            } catch { /* proceed with retry anyway */ }
+            } catch {
+              /* proceed with retry anyway */
+            }
             continue
           }
           break

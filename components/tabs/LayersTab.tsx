@@ -27,9 +27,11 @@ import {
   Paintbrush,
   Boxes,
   Stamp,
+  Music,
 } from 'lucide-react'
 
 const MonacoEditor = dynamic(() => import('@monaco-editor/react'), { ssr: false })
+const NodeMapPanel = dynamic(() => import('@/components/layers/NodeMapPanel'), { ssr: false })
 import { useVideoStore } from '@/lib/store'
 import type {
   AILayer,
@@ -47,7 +49,7 @@ import CameraEffectPickerGrid from '@/components/camera/CameraEffectPickerGrid'
 import type { GridConfig } from '@/lib/grid'
 import type { SceneStyleOverride, SceneStylePresetName } from '@/lib/types'
 import { SCENE_STYLE_PRESETS, getScenePresetName } from '@/lib/styles/scene-presets'
-import AudioTabPanel from '@/components/audio/AudioTabPanel'
+import AudioTabPanel, { SfxTabPanel, NarrationPanel } from '@/components/audio/AudioTabPanel'
 import { createDefaultInteraction, TYPE_COLORS, TYPE_ICONS } from '@/components/tabs/InteractTab'
 import StylePresetPicker from '@/components/StylePresetPicker'
 import FontPicker from '@/components/FontPicker'
@@ -62,8 +64,11 @@ import ColorSelect from '@/components/ui/ColorSelect'
 import { ASPECT_RATIO_OPTIONS, resolveProjectDimensions, type AspectRatio } from '@/lib/dimensions'
 import SceneLayersStackPanel from '@/components/layers/SceneLayersStackPanel'
 import TextTab from '@/components/tabs/TextTab'
+import LayersMediaTab from '@/components/media/LayersMediaTab'
 import AvatarLayerPropertiesForm from '@/components/layers/AvatarLayerPropertiesForm'
 import type { LayersTabSectionId } from '@/lib/layers-tab-header'
+import type { LayersStripTabId } from '@/lib/layers-strip-dock'
+import { LAYERS_TAB_DRAG_TYPE, parseLayersStripCenterTabId } from '@/lib/layers-strip-dock'
 import { CENCH_THREE_ENVIRONMENTS } from '@/lib/three-environments/registry'
 import {
   parseAppliedThreeEnvironmentId,
@@ -214,6 +219,8 @@ interface Props {
   /** Electron left rail: New Scene shortcut above setup (scene list lives in timeline / layer stack) */
   showScenesSection?: boolean
   isLeftCollapsed?: boolean
+  /** When set, this instance is docked in the center strip: one strip mode only, no sub-tab bar. */
+  lockedStripMode?: LayersStripTabId
 }
 
 // Top-level group dropdown for the reorganized Controls tab
@@ -245,10 +252,7 @@ function SectionGroup({
         >
           <Icon size={13} style={{ color }} />
         </div>
-        <span
-          className="text-[12px] font-semibold tracking-wide flex-1"
-          style={{ color: 'var(--color-text-primary)' }}
-        >
+        <span className="text-[12px] font-semibold tracking-wide flex-1" style={{ color: 'var(--color-text-primary)' }}>
           {title}
         </span>
         {count !== undefined && count > 0 && (
@@ -264,11 +268,7 @@ function SectionGroup({
           className={`transition-transform duration-200 shrink-0 text-[var(--color-text-muted)]${isOpen ? '' : ' -rotate-90'}`}
         />
       </div>
-      {isOpen && (
-        <div className="pb-1">
-          {children}
-        </div>
-      )}
+      {isOpen && <div className="pb-1">{children}</div>}
     </div>
   )
 }
@@ -276,13 +276,13 @@ function SectionGroup({
 // Stable colors for section headers when active
 const SECTION_COLORS: Record<string, string> = {
   'Scene Settings': '#e8a849',
-  'Style': '#c678dd',
+  Style: '#c678dd',
   'Scene Style': '#e06c75',
   'Grid & Snapping': '#61afef',
   'Transition to Next Scene': '#d19a66',
   'Camera Animation': '#56b6c2',
-  'Physics': '#5ec4b6',
-  'Charts': '#98c379',
+  Physics: '#5ec4b6',
+  Charts: '#98c379',
   'SVG Layer': '#e5c07b',
   'Video Layer': '#61afef',
   'Audio Layer': '#c678dd',
@@ -345,12 +345,7 @@ function CollapsibleSection({
         >
           {title}
         </span>
-        {isActive && (
-          <span
-            className="w-2 h-2 rounded-full shrink-0"
-            style={{ backgroundColor: activeColor }}
-          />
-        )}
+        {isActive && <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: activeColor }} />}
         {onEnabledChange && (
           <div className="flex items-center" onClick={(e) => e.stopPropagation()}>
             <div className="relative">
@@ -396,6 +391,7 @@ export default function LayersTab({
   scene,
   showScenesSection = false,
   isLeftCollapsed = false,
+  lockedStripMode,
 }: Props) {
   const {
     addScene,
@@ -422,6 +418,9 @@ export default function LayersTab({
     openLayersSection,
     addAILayer,
     removeAILayer,
+    centerOpenTabs,
+    layersStripDragTabId,
+    setLayersStripDragTabId,
   } = useVideoStore()
 
   const [isRecordingScreen, setIsRecordingScreen] = useState(false)
@@ -446,10 +445,33 @@ export default function LayersTab({
   const setZdogStudioMode = useVideoStore((s) => s.setZdogStudioMode)
   const [threeEnvPatchHint, setThreeEnvPatchHint] = useState<string | null>(null)
   const [layerViewMode, setLayerViewMode] = useState<
-    'properties' | 'scene' | 'transitions' | 'effects' | 'audio' | 'text' | 'charts' | 'avatar' | 'three' | 'elements' | 'code'
-  >('properties')
+    | 'properties'
+    | 'scene'
+    | 'transitions'
+    | 'effects'
+    | 'audio'
+    | 'sfx'
+    | 'text'
+    | 'charts'
+    | 'avatar'
+    | 'three'
+    | 'media'
+    | 'elements'
+    | 'code'
+    | 'nodemap'
+  >(() => lockedStripMode ?? 'nodemap')
+  const detachedStripIds = useMemo(() => {
+    const out = new Set<LayersStripTabId>()
+    for (const t of centerOpenTabs) {
+      const id = parseLayersStripCenterTabId(t)
+      if (id) out.add(id)
+    }
+    return out
+  }, [centerOpenTabs])
   const [avatarTabLayerId, setAvatarTabLayerId] = useState<string | null>(null)
   const [codeSubTab, setCodeSubTab] = useState<'jsx' | 'css'>('jsx')
+  const [secondaryStackCollapsed, setSecondaryStackCollapsed] = useState(true)
+  const [secondaryStackPinnedOpen, setSecondaryStackPinnedOpen] = useState(false)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
@@ -458,18 +480,30 @@ export default function LayersTab({
     const pendingToMode: Partial<
       Record<
         LayersTabSectionId,
-        'properties' | 'scene' | 'transitions' | 'audio' | 'text' | 'charts' | 'avatar' | 'three' | 'elements'
+        | 'properties'
+        | 'scene'
+        | 'transitions'
+        | 'audio'
+        | 'sfx'
+        | 'text'
+        | 'charts'
+        | 'avatar'
+        | 'three'
+        | 'elements'
+        | 'nodemap'
       >
     > = {
-      properties: 'properties',
+      properties: 'nodemap',
       scene: 'scene',
       transitions: 'transitions',
       audio: 'audio',
+      sfx: 'sfx',
       text: 'text',
       charts: 'charts',
       avatar: 'avatar',
       three: 'three',
       elements: 'elements',
+      nodemap: 'nodemap',
     }
     const mode = pendingToMode[layersTabSectionPending]
     if (mode) {
@@ -482,6 +516,21 @@ export default function LayersTab({
   useEffect(() => {
     setThreeEnvPatchHint(null)
   }, [scene.id])
+
+  useEffect(() => {
+    if (lockedStripMode == null) return
+    setLayerViewMode(lockedStripMode)
+  }, [lockedStripMode, scene.id])
+
+  useEffect(() => {
+    if (layerViewMode === 'nodemap') {
+      // Keep it out of the way when returning to main Layers map view.
+      setSecondaryStackCollapsed(true)
+      return
+    }
+    // Default collapsed on non-main tabs unless user explicitly chose to keep it open.
+    setSecondaryStackCollapsed(!secondaryStackPinnedOpen)
+  }, [layerViewMode, secondaryStackPinnedOpen])
 
   useEffect(() => {
     const marker = scene.videoLayer?.src
@@ -982,41 +1031,59 @@ export default function LayersTab({
         className="hidden"
         aria-hidden
       />
-      {/* ── Tab bar ── */}
-      <div className="flex items-center gap-1 px-2 pt-1.5 pb-1 shrink-0 overflow-x-auto scrollbar-none" role="tablist">
-        {([
-          { id: 'properties' as const, label: 'Properties', icon: SlidersHorizontal },
-          { id: 'scene' as const, label: 'Scene', icon: Film },
-          { id: 'transitions' as const, label: 'Transitions', icon: Clapperboard },
-          { id: 'effects' as const, label: 'Effects', icon: Sparkles },
-          { id: 'audio' as const, label: 'Audio', icon: Volume2 },
-          { id: 'text' as const, label: 'Text', icon: Type },
-          { id: 'charts' as const, label: 'Charts', icon: BarChart3 },
-          { id: 'avatar' as const, label: 'Avatar', icon: User },
-          { id: 'three' as const, label: '3D', icon: Boxes },
-          { id: 'elements' as const, label: 'Elements', icon: Box },
-          { id: 'code' as const, label: 'Code', icon: Code2 },
-        ] as const).map((tab) => {
-          const isActive = layerViewMode === tab.id
-          const TabIcon = tab.icon
-          return (
-            <span
-              key={tab.id}
-              role="tab"
-              aria-selected={isActive}
-              onClick={() => setLayerViewMode(tab.id)}
-              className={`flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-medium rounded-md cursor-pointer transition-colors select-none whitespace-nowrap ${
-                isActive
-                  ? 'bg-[var(--agent-chat-user-surface)]'
-                  : 'hover:text-[var(--color-text-primary)]'
-              }`}
-            >
-              <TabIcon size={11} />
-              {tab.label}
-            </span>
+      {/* ── Tab bar (hidden when docked in center; strip tabs torn into center are omitted here) ── */}
+      {lockedStripMode == null && (
+        <div
+          className="flex items-center gap-1 px-2 pt-1.5 pb-1 shrink-0 overflow-x-auto scrollbar-none"
+          role="tablist"
+        >
+          {(
+            [
+              { id: 'nodemap' as const, label: 'Layers', icon: Layers },
+              { id: 'scene' as const, label: 'Style', icon: Film },
+              { id: 'transitions' as const, label: 'Transitions', icon: Clapperboard },
+              { id: 'effects' as const, label: 'Effects', icon: Sparkles },
+              { id: 'audio' as const, label: 'Audio', icon: Volume2 },
+              { id: 'sfx' as const, label: 'SFX', icon: Music },
+              { id: 'text' as const, label: 'Text', icon: Type },
+              { id: 'charts' as const, label: 'Charts', icon: BarChart3 },
+              { id: 'avatar' as const, label: 'Avatar', icon: User },
+              { id: 'three' as const, label: '3D', icon: Boxes },
+              { id: 'media' as const, label: 'Media', icon: Sparkles },
+              { id: 'code' as const, label: 'Code', icon: Code2 },
+            ] as const
           )
-        })}
-      </div>
+            .filter((tab) => !detachedStripIds.has(tab.id))
+            .map((tab) => {
+              const isActive = layerViewMode === tab.id
+              const TabIcon = tab.icon
+              return (
+                <span
+                  key={tab.id}
+                  role="tab"
+                  aria-selected={isActive}
+                  draggable
+                  onDragStart={(ev) => {
+                    ev.dataTransfer.setData(LAYERS_TAB_DRAG_TYPE, tab.id)
+                    ev.dataTransfer.setData('text/plain', `cench-layers-tab:${tab.id}`)
+                    ev.dataTransfer.effectAllowed = 'copy'
+                    setLayersStripDragTabId(tab.id)
+                  }}
+                  onDragEnd={() => {
+                    setLayersStripDragTabId(null)
+                  }}
+                  onClick={() => setLayerViewMode(tab.id)}
+                  className={`flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-medium rounded-md cursor-pointer transition-colors select-none whitespace-nowrap ${
+                    isActive ? 'bg-[var(--agent-chat-user-surface)]' : 'hover:text-[var(--color-text-primary)]'
+                  }`}
+                >
+                  <TabIcon size={11} />
+                  {tab.label}
+                </span>
+              )
+            })}
+        </div>
+      )}
 
       {/* ── Code tab ── */}
       {layerViewMode === 'code' && (
@@ -1027,7 +1094,9 @@ export default function LayersTab({
               aria-selected={codeSubTab === 'jsx'}
               onClick={() => setCodeSubTab('jsx')}
               className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded cursor-pointer transition-all ${
-                codeSubTab === 'jsx' ? 'bg-[#e84545]/15 text-[#e84545]' : 'text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]'
+                codeSubTab === 'jsx'
+                  ? 'bg-[#e84545]/15 text-[#e84545]'
+                  : 'text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]'
               }`}
             >
               {scene.sceneType === 'react' ? 'JSX' : scene.sceneType === 'svg' ? 'SVG' : 'JS'}
@@ -1037,7 +1106,9 @@ export default function LayersTab({
               aria-selected={codeSubTab === 'css'}
               onClick={() => setCodeSubTab('css')}
               className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded cursor-pointer transition-all ${
-                codeSubTab === 'css' ? 'bg-[#4a90d9]/15 text-[#4a90d9]' : 'text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]'
+                codeSubTab === 'css'
+                  ? 'bg-[#4a90d9]/15 text-[#4a90d9]'
+                  : 'text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]'
               }`}
             >
               CSS
@@ -1046,8 +1117,21 @@ export default function LayersTab({
           </div>
           <div className="flex-1 min-h-0">
             <MonacoEditor
-              language={codeEditorLanguage} value={codeEditorValue} onChange={handleCodeEdit} theme="vs-dark"
-              options={{ minimap: { enabled: false }, fontSize: 12, lineNumbers: 'on', wordWrap: 'on', scrollBeyondLastLine: false, tabSize: 2, renderWhitespace: 'none', folding: true, automaticLayout: true }}
+              language={codeEditorLanguage}
+              value={codeEditorValue}
+              onChange={handleCodeEdit}
+              theme="vs-dark"
+              options={{
+                minimap: { enabled: false },
+                fontSize: 12,
+                lineNumbers: 'on',
+                wordWrap: 'on',
+                scrollBeyondLastLine: false,
+                tabSize: 2,
+                renderWhitespace: 'none',
+                folding: true,
+                automaticLayout: true,
+              }}
             />
           </div>
         </div>
@@ -1369,7 +1453,9 @@ export default function LayersTab({
               className="text-[11px] text-[#6b6b7a] text-center py-8 border border-dashed rounded space-y-2"
               style={{ borderColor: 'var(--color-border)' }}
             >
-              <p>No avatar layer yet. Add a local talking-head overlay or use the Agent / HeyGen flows to generate one.</p>
+              <p>
+                No avatar layer yet. Add a local talking-head overlay or use the Agent / HeyGen flows to generate one.
+              </p>
               <button
                 type="button"
                 onClick={() => void addTalkingHeadAvatar()}
@@ -1391,9 +1477,7 @@ export default function LayersTab({
                         type="button"
                         onClick={() => setAvatarTabLayerId(l.id)}
                         className={`kbd px-2 py-1 text-[10px] font-medium ${
-                          active
-                            ? 'border-[#e84545] text-[#e84545] bg-[#e84545]/10'
-                            : 'text-[var(--color-text-muted)]'
+                          active ? 'border-[#e84545] text-[#e84545] bg-[#e84545]/10' : 'text-[var(--color-text-muted)]'
                         }`}
                       >
                         {l.label?.trim() || 'Avatar'}
@@ -1425,6 +1509,11 @@ export default function LayersTab({
               )}
             </div>
           )}
+
+          {/* Narration & TTS */}
+          <div className="mt-4">
+            <NarrationPanel scene={scene} />
+          </div>
         </div>
       )}
 
@@ -1469,26 +1558,35 @@ export default function LayersTab({
         </div>
       )}
 
+      {/* ── Media (Generate + Library) tab ── */}
+      {layerViewMode === 'media' && (
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <LayersMediaTab scene={scene} />
+        </div>
+      )}
+
       {/* ── Scene tab ── */}
       {layerViewMode === 'scene' && (
-      <div className="min-h-0 flex-1 overflow-y-auto py-1">
-        {showScenesSection && (
-          <div className="mb-2 flex flex-shrink-0 border-b px-2 py-2" style={{ borderBottomColor: 'var(--color-hairline)' }}>
-            <button
-              type="button"
-              onClick={() => addScene()}
-              className={`kbd h-8 !py-0 gap-2 text-sm font-medium shadow-black/40 transition-all duration-200 flex w-full items-center justify-center overflow-hidden ${
-                isLeftCollapsed ? 'px-0' : 'px-3'
-              }`}
+        <div className="min-h-0 flex-1 overflow-y-auto py-1">
+          {showScenesSection && (
+            <div
+              className="mb-2 flex flex-shrink-0 border-b px-2 py-2"
+              style={{ borderBottomColor: 'var(--color-hairline)' }}
             >
-              <Plus size={14} strokeWidth={1.5} className="flex-shrink-0" />
-              {!isLeftCollapsed && <span className="whitespace-nowrap">New Scene</span>}
-            </button>
-          </div>
-        )}
+              <button
+                type="button"
+                onClick={() => addScene()}
+                className={`kbd h-8 !py-0 gap-2 text-sm font-medium shadow-black/40 transition-all duration-200 flex w-full items-center justify-center overflow-hidden ${
+                  isLeftCollapsed ? 'px-0' : 'px-3'
+                }`}
+              >
+                <Plus size={14} strokeWidth={1.5} className="flex-shrink-0" />
+                {!isLeftCollapsed && <span className="whitespace-nowrap">New Scene</span>}
+              </button>
+            </div>
+          )}
 
           {/* ═══ SCENE ═══ */}
-          <SectionGroup title="Scene" icon={Film} color="#e8a849" defaultOpen>
           <CollapsibleSection title="Scene Settings" icon={Film} active>
             <div>
               <label className="text-[#6b6b7a] text-[11px] uppercase tracking-wider block mb-1.5">Name</label>
@@ -1547,8 +1645,7 @@ export default function LayersTab({
                   type="text"
                   value={scene.bgColor}
                   onChange={(e) => {
-                    if (/^#[0-9a-fA-F]{0,6}$/.test(e.target.value))
-                      updateScene(scene.id, { bgColor: e.target.value })
+                    if (/^#[0-9a-fA-F]{0,6}$/.test(e.target.value)) updateScene(scene.id, { bgColor: e.target.value })
                   }}
                   onBlur={commitLayer}
                   className="flex-1 border rounded px-3 py-1.5 text-sm font-mono focus:outline-none focus:border-[#e84545] transition-colors"
@@ -1600,128 +1697,108 @@ export default function LayersTab({
                 })()}
               </div>
             </div>
-
           </CollapsibleSection>
-          </SectionGroup>
 
-              {/* ═══ BRAND KIT ═══ */}
-              <SectionGroup title="Brand Kit" icon={Stamp} color="#e8a849">
-                <BrandKitPanel />
-              </SectionGroup>
+          {/* ═══ BRAND KIT ═══ */}
+          <CollapsibleSection title="Brand Kit" icon={Stamp}>
+            <BrandKitPanel />
+          </CollapsibleSection>
 
-              {/* ═══ PRESETS ═══ */}
-              <SectionGroup title="Presets" icon={Paintbrush} color="#c678dd">
-              <CollapsibleSection title="Style" icon={Palette} active={!!globalStyle.presetId}>
-                <StylePresetPicker
-                  currentPresetId={globalStyle.presetId}
-                  onChange={(id) =>
-                    updateGlobalStyle({
-                      presetId: id,
-                      paletteOverride: null,
-                      bgColorOverride: null,
-                      fontOverride: null,
-                      strokeColorOverride: null,
-                    })
-                  }
-                />
+          {/* ═══ STYLE ═══ */}
+          <CollapsibleSection title="Style" icon={Palette} active={!!globalStyle.presetId}>
+            {/* Font picker */}
+            <FontPicker
+              value={globalStyle.fontOverride ?? null}
+              presetFont={
+                globalStyle.presetId && STYLE_PRESETS[globalStyle.presetId as StylePresetId]
+                  ? STYLE_PRESETS[globalStyle.presetId as StylePresetId].font
+                  : null
+              }
+              onChange={(family) => updateGlobalStyle({ fontOverride: family })}
+            />
 
-                {/* Font picker */}
-                <FontPicker
-                  value={globalStyle.fontOverride ?? null}
-                  presetFont={
-                    globalStyle.presetId && STYLE_PRESETS[globalStyle.presetId as StylePresetId]
-                      ? STYLE_PRESETS[globalStyle.presetId as StylePresetId].font
-                      : 'Inter'
-                  }
-                  onChange={(family) => updateGlobalStyle({ fontOverride: family })}
-                />
-
-                {/* Advanced overrides (collapsed) */}
-                <details className="group">
-                  <summary className="text-[11px] text-[#6b6b7a] cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden flex items-center gap-1">
-                    <ChevronDown size={10} className="group-open:rotate-180 transition-transform" />
-                    Advanced overrides
-                  </summary>
-                  <div className="mt-2 space-y-3">
-                    {/* Palette override */}
-                    <div>
-                      <label className="text-[#6b6b7a] text-[11px] uppercase tracking-wider block mb-1.5">
-                        Palette override
-                      </label>
-                      <div className="flex gap-1">
-                        {[0, 1, 2, 3].map((i) => {
-                          const presetPalette = globalStyle.presetId
-                            ? STYLE_PRESETS[globalStyle.presetId as StylePresetId]?.palette
-                            : (['#374151', '#6b7280', '#9ca3af', '#d1d5db'] as [string, string, string, string])
-                          return (
-                            <input
-                              key={i}
-                              type="color"
-                              value={globalStyle.paletteOverride?.[i] ?? presetPalette?.[i] ?? '#000000'}
-                              onChange={(e) => {
-                                const current =
-                                  globalStyle.paletteOverride ??
-                                  ([...(presetPalette ?? ['#000000', '#000000', '#000000', '#000000'])] as [
-                                    string,
-                                    string,
-                                    string,
-                                    string,
-                                  ])
-                                const updated = [...current] as [string, string, string, string]
-                                updated[i] = e.target.value
-                                updateGlobalStyle({ paletteOverride: updated })
-                              }}
-                              className="w-8 h-6 border border-[var(--color-border)] rounded cursor-pointer"
-                            />
-                          )
-                        })}
-                        {globalStyle.paletteOverride && (
-                          <button
-                            onClick={() => updateGlobalStyle({ paletteOverride: null })}
-                            className="text-[10px] text-[#6b6b7a] hover:text-[var(--color-accent)] ml-1"
-                          >
-                            reset
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Background override */}
-                    <div>
-                      <label className="text-[#6b6b7a] text-[11px] uppercase tracking-wider block mb-1.5">
-                        Background override
-                      </label>
-                      <div className="flex items-center gap-2">
+            {/* Overrides (collapsed) */}
+            <details className="group">
+              <summary className="text-[11px] text-[#6b6b7a] cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden flex items-center gap-1">
+                <ChevronDown size={10} className="group-open:rotate-180 transition-transform" />
+                Advanced overrides
+              </summary>
+              <div className="mt-2 space-y-3">
+                {/* Palette override */}
+                <div>
+                  <label className="text-[#6b6b7a] text-[11px] uppercase tracking-wider block mb-1.5">
+                    Palette override
+                  </label>
+                  <div className="flex gap-1">
+                    {[0, 1, 2, 3].map((i) => {
+                      const presetPalette = globalStyle.presetId
+                        ? STYLE_PRESETS[globalStyle.presetId as StylePresetId]?.palette
+                        : (['#374151', '#6b7280', '#9ca3af', '#d1d5db'] as [string, string, string, string])
+                      return (
                         <input
+                          key={i}
                           type="color"
-                          value={globalStyle.bgColorOverride ?? '#ffffff'}
-                          onChange={(e) => updateGlobalStyle({ bgColorOverride: e.target.value })}
+                          value={globalStyle.paletteOverride?.[i] ?? presetPalette?.[i] ?? '#000000'}
+                          onChange={(e) => {
+                            const current =
+                              globalStyle.paletteOverride ??
+                              ([...(presetPalette ?? ['#000000', '#000000', '#000000', '#000000'])] as [
+                                string,
+                                string,
+                                string,
+                                string,
+                              ])
+                            const updated = [...current] as [string, string, string, string]
+                            updated[i] = e.target.value
+                            updateGlobalStyle({ paletteOverride: updated })
+                          }}
                           className="w-8 h-6 border border-[var(--color-border)] rounded cursor-pointer"
                         />
-                        {globalStyle.bgColorOverride && (
-                          <button
-                            onClick={() => updateGlobalStyle({ bgColorOverride: null })}
-                            className="text-[10px] text-[#6b6b7a] hover:text-[var(--color-accent)]"
-                          >
-                            reset
-                          </button>
-                        )}
-                      </div>
-                    </div>
+                      )
+                    })}
+                    {globalStyle.paletteOverride && (
+                      <button
+                        onClick={() => updateGlobalStyle({ paletteOverride: null })}
+                        className="text-[10px] text-[#6b6b7a] hover:text-[var(--color-accent)] ml-1"
+                      >
+                        reset
+                      </button>
+                    )}
                   </div>
-                </details>
-              </CollapsibleSection>
+                </div>
 
-              <CollapsibleSection title="Scene Style" icon={Palette} active={Object.keys(scene.styleOverride ?? {}).length > 0}>
-                {Object.keys(scene.styleOverride ?? {}).length === 0 ? (
-                  <div className="space-y-2">
-                    <p className="text-[11px] text-[#6b6b7a]">Inheriting from project style</p>
-                    <details className="group">
-                      <summary className="text-[11px] text-[#e84545] cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden flex items-center gap-1">
-                        <ChevronDown size={10} className="group-open:rotate-180 transition-transform" />
-                        Apply scene override
-                      </summary>
-                      <div className="mt-2 grid grid-cols-2 gap-1.5">
+                {/* Background override */}
+                <div>
+                  <label className="text-[#6b6b7a] text-[11px] uppercase tracking-wider block mb-1.5">
+                    Background override
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={globalStyle.bgColorOverride ?? '#ffffff'}
+                      onChange={(e) => updateGlobalStyle({ bgColorOverride: e.target.value })}
+                      className="w-8 h-6 border border-[var(--color-border)] rounded cursor-pointer"
+                    />
+                    {globalStyle.bgColorOverride && (
+                      <button
+                        onClick={() => updateGlobalStyle({ bgColorOverride: null })}
+                        className="text-[10px] text-[#6b6b7a] hover:text-[var(--color-accent)]"
+                      >
+                        reset
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Scene style override */}
+                <div>
+                  <label className="text-[#6b6b7a] text-[11px] uppercase tracking-wider block mb-1.5">
+                    Scene override
+                  </label>
+                  {Object.keys(scene.styleOverride ?? {}).length === 0 ? (
+                    <div className="space-y-2">
+                      <p className="text-[10px] text-[#6b6b7a]">Inheriting from project style</p>
+                      <div className="grid grid-cols-2 gap-1.5">
                         {(Object.keys(SCENE_STYLE_PRESETS) as SceneStylePresetName[]).map((name) => (
                           <button
                             key={name}
@@ -1741,30 +1818,27 @@ export default function LayersTab({
                           </button>
                         ))}
                       </div>
-                    </details>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2">
-                      <div className="flex gap-1">
-                        {(scene.styleOverride.palette ?? []).map((c, i) => (
-                          <div
-                            key={i}
-                            className="w-4 h-4 rounded border"
-                            style={{ background: c, borderColor: 'var(--color-border)' }}
-                          />
-                        ))}
-                      </div>
-                      {scene.styleOverride.bgColor && (
-                        <div
-                          className="w-4 h-4 rounded border"
-                          style={{ background: scene.styleOverride.bgColor, borderColor: 'var(--color-border)' }}
-                          title="Background"
-                        />
-                      )}
                     </div>
-                    <div>
-                      <label className="text-[#6b6b7a] text-[11px] uppercase tracking-wider block mb-1.5">Preset</label>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <div className="flex gap-1">
+                          {(scene.styleOverride.palette ?? []).map((c, i) => (
+                            <div
+                              key={i}
+                              className="w-4 h-4 rounded border"
+                              style={{ background: c, borderColor: 'var(--color-border)' }}
+                            />
+                          ))}
+                        </div>
+                        {scene.styleOverride.bgColor && (
+                          <div
+                            className="w-4 h-4 rounded border"
+                            style={{ background: scene.styleOverride.bgColor, borderColor: 'var(--color-border)' }}
+                            title="Background"
+                          />
+                        )}
+                      </div>
                       <div className="grid grid-cols-2 gap-1.5">
                         {(Object.keys(SCENE_STYLE_PRESETS) as SceneStylePresetName[]).map((name) => {
                           const isActive =
@@ -1794,238 +1868,758 @@ export default function LayersTab({
                           )
                         })}
                       </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        updateScene(scene.id, { styleOverride: {} })
-                        commitLayer()
-                      }}
-                      className="text-[11px] text-[#e84545] hover:underline"
-                    >
-                      Clear override — inherit from project
-                    </button>
-                  </div>
-                )}
-              </CollapsibleSection>
-
-              <CollapsibleSection title="Grid & Snapping" icon={Grid3X3} active={gridConfig.enabled}>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={gridConfig.enabled}
-                    onChange={(e) => updateGridConfig({ enabled: e.target.checked })}
-                    className="accent-[#e84545]"
-                  />
-                  <span className="text-[12px] text-[var(--color-text-primary)]">Enable snapping</span>
-                </label>
-                <div>
-                  <label className="text-[#6b6b7a] text-[11px] uppercase tracking-wider block mb-1.5">Grid size</label>
-                  <div className="flex gap-1.5">
-                    {([20, 40, 80] as const).map((size) => (
                       <button
-                        key={size}
                         type="button"
-                        onClick={() => updateGridConfig({ size })}
-                        className={`kbd h-7 flex-1 text-[11px] ${
-                          gridConfig.size === size
-                            ? 'border-[#e84545] text-[#e84545] shadow-[#800]'
-                            : 'text-[#6b6b7a] hover:text-[#f0ece0]'
-                        }`}
+                        onClick={() => {
+                          updateScene(scene.id, { styleOverride: {} })
+                          commitLayer()
+                        }}
+                        className="text-[10px] text-[#e84545] hover:underline"
                       >
-                        {size}px
+                        Clear override — inherit from project
                       </button>
-                    ))}
-                  </div>
+                    </div>
+                  )}
                 </div>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={gridConfig.showGrid}
-                    onChange={(e) => updateGridConfig({ showGrid: e.target.checked })}
-                    className="accent-[#e84545]"
-                  />
-                  <span className="text-[12px] text-[var(--color-text-primary)]">Show grid overlay</span>
-                  <span className="text-[10px] text-[#6b6b7a] ml-auto">G</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={gridConfig.snapToElements}
-                    onChange={(e) => updateGridConfig({ snapToElements: e.target.checked })}
-                    className="accent-[#e84545]"
-                  />
-                  <span className="text-[12px] text-[var(--color-text-primary)]">Snap to other elements</span>
-                </label>
-              </CollapsibleSection>
-              </SectionGroup>
+              </div>
+            </details>
 
-      </div>
+            {/* Style starting point */}
+            <StylePresetPicker
+              currentPresetId={globalStyle.presetId}
+              onChange={(id) =>
+                updateGlobalStyle({
+                  presetId: id,
+                  paletteOverride: null,
+                  bgColorOverride: null,
+                  fontOverride: null,
+                  strokeColorOverride: null,
+                })
+              }
+            />
+          </CollapsibleSection>
+
+          <CollapsibleSection title="Grid & Snapping" icon={Grid3X3} active={gridConfig.enabled}>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={gridConfig.enabled}
+                onChange={(e) => updateGridConfig({ enabled: e.target.checked })}
+                className="accent-[#e84545]"
+              />
+              <span className="text-[12px] text-[var(--color-text-primary)]">Enable snapping</span>
+            </label>
+            <div>
+              <label className="text-[#6b6b7a] text-[11px] uppercase tracking-wider block mb-1.5">Grid size</label>
+              <div className="flex gap-1.5">
+                {([20, 40, 80] as const).map((size) => (
+                  <button
+                    key={size}
+                    type="button"
+                    onClick={() => updateGridConfig({ size })}
+                    className={`kbd h-7 flex-1 text-[11px] ${
+                      gridConfig.size === size
+                        ? 'border-[#e84545] text-[#e84545] shadow-[#800]'
+                        : 'text-[#6b6b7a] hover:text-[#f0ece0]'
+                    }`}
+                  >
+                    {size}px
+                  </button>
+                ))}
+              </div>
+            </div>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={gridConfig.showGrid}
+                onChange={(e) => updateGridConfig({ showGrid: e.target.checked })}
+                className="accent-[#e84545]"
+              />
+              <span className="text-[12px] text-[var(--color-text-primary)]">Show grid overlay</span>
+              <span className="text-[10px] text-[#6b6b7a] ml-auto">G</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={gridConfig.snapToElements}
+                onChange={(e) => updateGridConfig({ snapToElements: e.target.checked })}
+                className="accent-[#e84545]"
+              />
+              <span className="text-[12px] text-[var(--color-text-primary)]">Snap to other elements</span>
+            </label>
+          </CollapsibleSection>
+        </div>
       )}
 
       {/* ── 3D tab ── */}
       {layerViewMode === 'three' && (
         <div className="min-h-0 flex-1 overflow-y-auto py-1">
           <SectionGroup title="3D" icon={Boxes} color="#56b6c2" defaultOpen>
-              <div className="space-y-2 border-t pt-3 mt-1" style={{ borderColor: 'var(--color-border)' }}>
-                <div className="flex items-center gap-2">
-                  <Box size={12} className="text-[#6b6b7a] shrink-0" />
-                  <span className="text-[#6b6b7a] text-[11px] uppercase tracking-wider">3D stage environment</span>
-                </div>
-                <p className="text-[10px] leading-snug text-[#6b6b7a]">
-                  For Three.js scenes: built-in world behind your models (
-                  <span className="font-mono text-[var(--color-text-muted)]">applyCenchThreeEnvironment</span>
-                  ). With an empty scene code, choosing an environment creates a starter Three.js scene you can edit.
-                  Animated worlds need{' '}
-                  <span className="font-mono text-[var(--color-text-muted)]">
-                    updateCenchThreeEnvironment(t)
-                  </span>{' '}
-                  each frame.
-                </p>
-                <ColorSelect
-                  size="md"
-                  value={
-                    parseAppliedThreeEnvironmentId(scene.sceneCode || '') ?? scene.threeEnvironmentPresetId ?? ''
-                  }
-                  onChange={async (v) => {
-                    const envId = v === '' ? null : v
-                    const code = scene.sceneCode || ''
-                    const res = patchThreeEnvironmentInSceneCode(code, envId)
+            <div className="space-y-2 border-t pt-3 mt-1" style={{ borderColor: 'var(--color-border)' }}>
+              <div className="flex items-center gap-2">
+                <Box size={12} className="text-[#6b6b7a] shrink-0" />
+                <span className="text-[#6b6b7a] text-[11px] uppercase tracking-wider">3D stage environment</span>
+              </div>
+              <p className="text-[10px] leading-snug text-[#6b6b7a]">
+                For Three.js scenes: built-in world behind your models (
+                <span className="font-mono text-[var(--color-text-muted)]">applyCenchThreeEnvironment</span>
+                ). With an empty scene code, choosing an environment creates a starter Three.js scene you can edit.
+                Animated worlds need{' '}
+                <span className="font-mono text-[var(--color-text-muted)]">updateCenchThreeEnvironment(t)</span> each
+                frame.
+              </p>
+              <ColorSelect
+                size="md"
+                value={parseAppliedThreeEnvironmentId(scene.sceneCode || '') ?? scene.threeEnvironmentPresetId ?? ''}
+                onChange={async (v) => {
+                  const envId = v === '' ? null : v
+                  const code = scene.sceneCode || ''
+                  const res = patchThreeEnvironmentInSceneCode(code, envId)
 
-                    if (envId && res.injectFailed && !code.trim()) {
-                      setThreeEnvPatchHint(null)
-                      updateScene(scene.id, {
-                        sceneType: 'three',
-                        threeEnvironmentPresetId: envId,
-                        sceneCode: buildThreeEnvironmentShowcaseSceneCode(envId),
-                      })
-                      await saveSceneHTML(scene.id)
-                      return
-                    }
-
-                    if (res.injectFailed && envId) {
-                      setThreeEnvPatchHint(
-                        'Could not patch this code. Add camera.lookAt(...) or applyCenchThreeEnvironment, or clear Three.js code and pick an environment again for a fresh starter.',
-                      )
-                      updateScene(scene.id, { threeEnvironmentPresetId: envId })
-                      await saveSceneHTML(scene.id)
-                      return
-                    }
-
+                  if (envId && res.injectFailed && !code.trim()) {
                     setThreeEnvPatchHint(null)
                     updateScene(scene.id, {
+                      sceneType: 'three',
                       threeEnvironmentPresetId: envId,
-                      sceneCode: res.sceneCode,
+                      sceneCode: buildThreeEnvironmentShowcaseSceneCode(envId),
                     })
                     await saveSceneHTML(scene.id)
-                  }}
-                  options={[
-                    { value: '', label: 'None (custom backdrop only)' },
-                    ...CENCH_THREE_ENVIRONMENTS.map((env) => ({ value: env.id, label: env.name })),
-                  ]}
-                />
-                {threeEnvPatchHint ? (
-                  <p className="text-[10px] leading-snug text-amber-600 dark:text-amber-400/90">{threeEnvPatchHint}</p>
-                ) : null}
-              </div>
+                    return
+                  }
 
+                  if (res.injectFailed && envId) {
+                    setThreeEnvPatchHint(
+                      'Could not patch this code. Add camera.lookAt(...) or applyCenchThreeEnvironment, or clear Three.js code and pick an environment again for a fresh starter.',
+                    )
+                    updateScene(scene.id, { threeEnvironmentPresetId: envId })
+                    await saveSceneHTML(scene.id)
+                    return
+                  }
 
-              <CollapsibleSection
-                title="Physics"
-                icon={Sparkles}
-                active={physicsLayers.length > 0}
-                extraHeaderContent={
-                  <button onClick={addPhysicsLayer} className="kbd h-6 px-2 text-[#6b6b7a] hover:text-[#e84545]">
-                    <Plus size={11} />
-                    <span className="text-[11px]">Add</span>
-                  </button>
-                }
-                badge={
-                  <span className="text-[11px] text-[#6b6b7a]">
-                    {physicsLayers.length} layer{physicsLayers.length === 1 ? '' : 's'}
-                  </span>
-                }
-              >
-                {physicsLayers.length === 0 ? (
-                  <div
-                    className="text-[11px] text-[#6b6b7a] text-center py-3 border border-dashed rounded"
-                    style={{ borderColor: 'var(--color-border)' }}
-                  >
-                    No physics layers yet. Add one to edit simulation params manually.
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {physicsLayers.map((layer, idx) => (
-                      <div
-                        key={layer.id}
-                        className="border rounded p-2.5 space-y-2"
-                        style={{ borderColor: 'var(--color-border)' }}
-                      >
-                        <div className="flex items-center gap-2">
-                          <input
-                            value={layer.name}
-                            onChange={(e) => {
+                  setThreeEnvPatchHint(null)
+                  updateScene(scene.id, {
+                    threeEnvironmentPresetId: envId,
+                    sceneCode: res.sceneCode,
+                  })
+                  await saveSceneHTML(scene.id)
+                }}
+                options={[
+                  { value: '', label: 'None (custom backdrop only)' },
+                  ...CENCH_THREE_ENVIRONMENTS.map((env) => ({ value: env.id, label: env.name })),
+                ]}
+              />
+              {threeEnvPatchHint ? (
+                <p className="text-[10px] leading-snug text-amber-600 dark:text-amber-400/90">{threeEnvPatchHint}</p>
+              ) : null}
+            </div>
+
+            <CollapsibleSection
+              title="Physics"
+              icon={Sparkles}
+              active={physicsLayers.length > 0}
+              extraHeaderContent={
+                <button onClick={addPhysicsLayer} className="kbd h-6 px-2 text-[#6b6b7a] hover:text-[#e84545]">
+                  <Plus size={11} />
+                  <span className="text-[11px]">Add</span>
+                </button>
+              }
+              badge={
+                <span className="text-[11px] text-[#6b6b7a]">
+                  {physicsLayers.length} layer{physicsLayers.length === 1 ? '' : 's'}
+                </span>
+              }
+            >
+              {physicsLayers.length === 0 ? (
+                <div
+                  className="text-[11px] text-[#6b6b7a] text-center py-3 border border-dashed rounded"
+                  style={{ borderColor: 'var(--color-border)' }}
+                >
+                  No physics layers yet. Add one to edit simulation params manually.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {physicsLayers.map((layer, idx) => (
+                    <div
+                      key={layer.id}
+                      className="border rounded p-2.5 space-y-2"
+                      style={{ borderColor: 'var(--color-border)' }}
+                    >
+                      <div className="flex items-center gap-2">
+                        <input
+                          value={layer.name}
+                          onChange={(e) => {
+                            const next = [...physicsLayers]
+                            next[idx] = { ...layer, name: e.target.value }
+                            updatePhysicsLayers(next)
+                          }}
+                          className="flex-1 border rounded px-2 py-1 text-[12px] focus:outline-none focus:border-[#e84545]"
+                          style={{
+                            backgroundColor: 'var(--color-input-bg)',
+                            borderColor: 'var(--color-border)',
+                            color: 'var(--color-text-primary)',
+                          }}
+                        />
+                        <ColorSelect
+                          value={layer.simulation}
+                          onChange={(v) => {
+                            const next = [...physicsLayers]
+                            next[idx] = { ...layer, simulation: v as PhysicsSimulationType }
+                            updatePhysicsLayers(next)
+                          }}
+                          options={PHYSICS_SIM_TYPES.map((t) => ({ value: t, label: t }))}
+                        />
+                        <button
+                          onClick={() => {
+                            const next = physicsLayers.filter((_, i) => i !== idx)
+                            updatePhysicsLayers(next)
+                          }}
+                          className="text-[#6b6b7a] hover:text-[#e84545]"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <ColorSelect
+                            className="w-full"
+                            label="Layout"
+                            value={layer.layout}
+                            onChange={(v) => {
                               const next = [...physicsLayers]
-                              next[idx] = { ...layer, name: e.target.value }
+                              next[idx] = { ...layer, layout: v as PhysicsLayer['layout'] }
                               updatePhysicsLayers(next)
                             }}
-                            className="flex-1 border rounded px-2 py-1 text-[12px] focus:outline-none focus:border-[#e84545]"
+                            options={[
+                              { value: 'split', label: 'split' },
+                              { value: 'fullscreen', label: 'fullscreen' },
+                              { value: 'equation_focus', label: 'equation_focus' },
+                            ]}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Equation Keys (comma)</label>
+                          <input
+                            value={(layer.equations || []).join(', ')}
+                            onChange={(e) => {
+                              const next = [...physicsLayers]
+                              next[idx] = {
+                                ...layer,
+                                equations: e.target.value
+                                  .split(',')
+                                  .map((s) => s.trim())
+                                  .filter(Boolean),
+                              }
+                              updatePhysicsLayers(next)
+                            }}
+                            className="w-full border rounded px-2 py-1 text-[11px]"
                             style={{
                               backgroundColor: 'var(--color-input-bg)',
                               borderColor: 'var(--color-border)',
                               color: 'var(--color-text-primary)',
                             }}
                           />
-                          <ColorSelect
-                            value={layer.simulation}
-                            onChange={(v) => {
-                              const next = [...physicsLayers]
-                              next[idx] = { ...layer, simulation: v as PhysicsSimulationType }
-                              updatePhysicsLayers(next)
-                            }}
-                            options={PHYSICS_SIM_TYPES.map((t) => ({ value: t, label: t }))}
-                          />
-                          <button
-                            onClick={() => {
-                              const next = physicsLayers.filter((_, i) => i !== idx)
-                              updatePhysicsLayers(next)
-                            }}
-                            className="text-[#6b6b7a] hover:text-[#e84545]"
-                          >
-                            <Trash2 size={12} />
-                          </button>
                         </div>
+                      </div>
 
+                      <div>
+                        <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Title</label>
+                        <input
+                          value={layer.title}
+                          onChange={(e) => {
+                            const next = [...physicsLayers]
+                            next[idx] = { ...layer, title: e.target.value }
+                            updatePhysicsLayers(next)
+                          }}
+                          className="w-full border rounded px-2 py-1 text-[11px]"
+                          style={{
+                            backgroundColor: 'var(--color-input-bg)',
+                            borderColor: 'var(--color-border)',
+                            color: 'var(--color-text-primary)',
+                          }}
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Narration</label>
+                        <textarea
+                          rows={2}
+                          value={layer.narration}
+                          onChange={(e) => {
+                            const next = [...physicsLayers]
+                            next[idx] = { ...layer, narration: e.target.value }
+                            updatePhysicsLayers(next)
+                          }}
+                          className="w-full border rounded px-2 py-1 text-[11px]"
+                          style={{
+                            backgroundColor: 'var(--color-input-bg)',
+                            borderColor: 'var(--color-border)',
+                            color: 'var(--color-text-primary)',
+                          }}
+                        />
+                      </div>
+
+                      {layer.simulation === 'electric_field' ? (
+                        <div>
+                          <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Charges JSON</label>
+                          <textarea
+                            rows={4}
+                            value={JSON.stringify(
+                              (layer.params as any)?.charges ?? [{ x: 960, y: 540, q: 1 }],
+                              null,
+                              2,
+                            )}
+                            onChange={(e) => {
+                              try {
+                                const parsed = JSON.parse(e.target.value || '[]')
+                                const next = [...physicsLayers]
+                                next[idx] = { ...layer, params: { ...(layer.params || {}), charges: parsed } }
+                                updatePhysicsLayers(next)
+                              } catch {}
+                            }}
+                            className="w-full border rounded px-2 py-1 text-[11px] font-mono"
+                            style={{
+                              backgroundColor: 'var(--color-input-bg)',
+                              borderColor: 'var(--color-border)',
+                              color: 'var(--color-text-primary)',
+                            }}
+                          />
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-2 gap-2">
+                          {(PHYSICS_PARAM_FIELDS[layer.simulation] || []).map((f) => (
+                            <div key={f.key}>
+                              <label className="text-[10px] text-[#6b6b7a] block mb-0.5">{f.label}</label>
+                              <input
+                                type="number"
+                                min={f.min}
+                                max={f.max}
+                                step={f.step ?? 0.1}
+                                value={Number((layer.params as any)?.[f.key] ?? 0)}
+                                onChange={(e) => {
+                                  const next = [...physicsLayers]
+                                  next[idx] = {
+                                    ...layer,
+                                    params: { ...(layer.params || {}), [f.key]: parseFloat(e.target.value) },
+                                  }
+                                  updatePhysicsLayers(next)
+                                }}
+                                className="w-full border rounded px-2 py-1 text-[11px]"
+                                style={{
+                                  backgroundColor: 'var(--color-input-bg)',
+                                  borderColor: 'var(--color-border)',
+                                  color: 'var(--color-text-primary)',
+                                }}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {layer.layout !== 'fullscreen' && (
                         <div className="grid grid-cols-2 gap-2">
                           <div>
-                            <ColorSelect
-                              className="w-full"
-                              label="Layout"
-                              value={layer.layout}
-                              onChange={(v) => {
-                                const next = [...physicsLayers]
-                                next[idx] = { ...layer, layout: v as PhysicsLayer['layout'] }
-                                updatePhysicsLayers(next)
-                              }}
-                              options={[
-                                { value: 'split', label: 'split' },
-                                { value: 'fullscreen', label: 'fullscreen' },
-                                { value: 'equation_focus', label: 'equation_focus' },
-                              ]}
-                            />
-                          </div>
-                          <div>
-                            <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Equation Keys (comma)</label>
+                            <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Card X (%)</label>
                             <input
-                              value={(layer.equations || []).join(', ')}
+                              type="number"
+                              min={0}
+                              max={100}
+                              step={1}
+                              value={Number((layer.params as any)?.ui_cardX ?? 74)}
                               onChange={(e) => {
                                 const next = [...physicsLayers]
                                 next[idx] = {
                                   ...layer,
-                                  equations: e.target.value
-                                    .split(',')
-                                    .map((s) => s.trim())
-                                    .filter(Boolean),
+                                  params: { ...(layer.params || {}), ui_cardX: parseFloat(e.target.value) },
+                                }
+                                updatePhysicsLayers(next)
+                              }}
+                              className="w-full border rounded px-2 py-1 text-[11px]"
+                              style={{
+                                backgroundColor: 'var(--color-input-bg)',
+                                borderColor: 'var(--color-border)',
+                                color: 'var(--color-text-primary)',
+                              }}
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Card Y (%)</label>
+                            <input
+                              type="number"
+                              min={0}
+                              max={100}
+                              step={1}
+                              value={Number((layer.params as any)?.ui_cardY ?? 50)}
+                              onChange={(e) => {
+                                const next = [...physicsLayers]
+                                next[idx] = {
+                                  ...layer,
+                                  params: { ...(layer.params || {}), ui_cardY: parseFloat(e.target.value) },
+                                }
+                                updatePhysicsLayers(next)
+                              }}
+                              className="w-full border rounded px-2 py-1 text-[11px]"
+                              style={{
+                                backgroundColor: 'var(--color-input-bg)',
+                                borderColor: 'var(--color-border)',
+                                color: 'var(--color-text-primary)',
+                              }}
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Card Width (%)</label>
+                            <input
+                              type="number"
+                              min={16}
+                              max={55}
+                              step={1}
+                              value={Number((layer.params as any)?.ui_cardWidth ?? 30)}
+                              onChange={(e) => {
+                                const next = [...physicsLayers]
+                                next[idx] = {
+                                  ...layer,
+                                  params: { ...(layer.params || {}), ui_cardWidth: parseFloat(e.target.value) },
+                                }
+                                updatePhysicsLayers(next)
+                              }}
+                              className="w-full border rounded px-2 py-1 text-[11px]"
+                              style={{
+                                backgroundColor: 'var(--color-input-bg)',
+                                borderColor: 'var(--color-border)',
+                                color: 'var(--color-text-primary)',
+                              }}
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Sim Scale</label>
+                            <input
+                              type="number"
+                              min={0.35}
+                              max={1.2}
+                              step={0.01}
+                              value={Number(
+                                (layer.params as any)?.ui_simScale ??
+                                  (String(layer.layout) === 'fullscreen' ? 1 : 0.82),
+                              )}
+                              onChange={(e) => {
+                                const next = [...physicsLayers]
+                                next[idx] = {
+                                  ...layer,
+                                  params: { ...(layer.params || {}), ui_simScale: parseFloat(e.target.value) },
+                                }
+                                updatePhysicsLayers(next)
+                              }}
+                              className="w-full border rounded px-2 py-1 text-[11px]"
+                              style={{
+                                backgroundColor: 'var(--color-input-bg)',
+                                borderColor: 'var(--color-border)',
+                                color: 'var(--color-text-primary)',
+                              }}
+                            />
+                          </div>
+                          <div>
+                            <ColorSelect
+                              className="w-full"
+                              label="Card Preset"
+                              value={String((layer.params as any)?.ui_cardPreset ?? 'glass_dark')}
+                              onChange={(v) => {
+                                const next = [...physicsLayers]
+                                next[idx] = {
+                                  ...layer,
+                                  params: { ...(layer.params || {}), ui_cardPreset: v },
+                                }
+                                updatePhysicsLayers(next)
+                              }}
+                              options={[
+                                { value: 'glass_dark', label: 'glass_dark' },
+                                { value: 'glass_light', label: 'glass_light' },
+                                { value: 'neon', label: 'neon' },
+                                { value: 'chalk', label: 'chalk' },
+                              ]}
+                            />
+                          </div>
+                          <label className="flex items-center gap-1 text-[11px] text-[#6b6b7a]">
+                            <input
+                              type="checkbox"
+                              checked={Boolean((layer.params as any)?.ui_cardAuto)}
+                              onChange={(e) => {
+                                const next = [...physicsLayers]
+                                next[idx] = {
+                                  ...layer,
+                                  params: { ...(layer.params || {}), ui_cardAuto: e.target.checked },
+                                }
+                                updatePhysicsLayers(next)
+                              }}
+                            />
+                            auto card position
+                          </label>
+                        </div>
+                      )}
+
+                      {layer.layout !== 'fullscreen' && (
+                        <div>
+                          <label className="text-[10px] text-[#6b6b7a] block mb-1">Visual card position/size</label>
+                          <div
+                            className="relative h-36 rounded border overflow-hidden"
+                            style={{
+                              borderColor: 'var(--color-border)',
+                              background: 'linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.08))',
+                            }}
+                            onClick={(e) => {
+                              const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect()
+                              const xPct = ((e.clientX - rect.left) / rect.width) * 100
+                              const yPct = ((e.clientY - rect.top) / rect.height) * 100
+                              const width = Number((layer.params as any)?.ui_cardWidth ?? 30)
+                              const half = width / 2
+                              const next = [...physicsLayers]
+                              next[idx] = {
+                                ...layer,
+                                params: {
+                                  ...(layer.params || {}),
+                                  ui_cardX: Math.max(half + 1, Math.min(99 - half, xPct)),
+                                  ui_cardY: Math.max(8, Math.min(92, yPct)),
+                                },
+                              }
+                              updatePhysicsLayers(next)
+                            }}
+                          >
+                            <div className="absolute inset-0 opacity-40 pointer-events-none">
+                              <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[10px] text-[#6b6b7a]">
+                                simulation center
+                              </div>
+                            </div>
+
+                            <div
+                              className="absolute border rounded cursor-move"
+                              style={{
+                                left: `${Number((layer.params as any)?.ui_cardX ?? 74)}%`,
+                                top: `${Number((layer.params as any)?.ui_cardY ?? 50)}%`,
+                                width: `${Number((layer.params as any)?.ui_cardWidth ?? 30)}%`,
+                                height: '34%',
+                                transform: 'translate(-50%, -50%)',
+                                borderColor: '#e84545',
+                                background: 'rgba(232,69,69,0.08)',
+                              }}
+                              onMouseDown={(e) => {
+                                e.stopPropagation()
+                                setPhysicsCardDrag({
+                                  idx,
+                                  mode: 'move',
+                                  startClientX: e.clientX,
+                                  startClientY: e.clientY,
+                                  startX: Number((layer.params as any)?.ui_cardX ?? 74),
+                                  startY: Number((layer.params as any)?.ui_cardY ?? 50),
+                                  startW: Number((layer.params as any)?.ui_cardWidth ?? 30),
+                                })
+                              }}
+                            >
+                              <div className="absolute left-1 top-1 text-[10px] text-[#f0b4b4] pointer-events-none">
+                                card
+                              </div>
+                              <div
+                                className="absolute right-0 bottom-0 w-3 h-3 bg-[#e84545] cursor-ew-resize"
+                                onMouseDown={(e) => {
+                                  e.stopPropagation()
+                                  setPhysicsCardDrag({
+                                    idx,
+                                    mode: 'resize',
+                                    startClientX: e.clientX,
+                                    startClientY: e.clientY,
+                                    startX: Number((layer.params as any)?.ui_cardX ?? 74),
+                                    startY: Number((layer.params as any)?.ui_cardY ?? 50),
+                                    startW: Number((layer.params as any)?.ui_cardWidth ?? 30),
+                                  })
+                                }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      <details>
+                        <summary className="text-[11px] text-[#6b6b7a] cursor-pointer">
+                          Card style + text controls
+                        </summary>
+                        <div className="mt-2 grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Card Opacity</label>
+                            <input
+                              type="number"
+                              min={0.2}
+                              max={1}
+                              step={0.05}
+                              value={Number((layer.params as any)?.ui_cardOpacity ?? 1)}
+                              onChange={(e) => {
+                                const next = [...physicsLayers]
+                                next[idx] = {
+                                  ...layer,
+                                  params: { ...(layer.params || {}), ui_cardOpacity: parseFloat(e.target.value) },
+                                }
+                                updatePhysicsLayers(next)
+                              }}
+                              className="w-full border rounded px-2 py-1 text-[11px]"
+                              style={{
+                                backgroundColor: 'var(--color-input-bg)',
+                                borderColor: 'var(--color-border)',
+                                color: 'var(--color-text-primary)',
+                              }}
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Blur (px)</label>
+                            <input
+                              type="number"
+                              min={0}
+                              max={18}
+                              step={0.5}
+                              value={Number((layer.params as any)?.ui_cardBlur ?? 3)}
+                              onChange={(e) => {
+                                const next = [...physicsLayers]
+                                next[idx] = {
+                                  ...layer,
+                                  params: { ...(layer.params || {}), ui_cardBlur: parseFloat(e.target.value) },
+                                }
+                                updatePhysicsLayers(next)
+                              }}
+                              className="w-full border rounded px-2 py-1 text-[11px]"
+                              style={{
+                                backgroundColor: 'var(--color-input-bg)',
+                                borderColor: 'var(--color-border)',
+                                color: 'var(--color-text-primary)',
+                              }}
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Radius (px)</label>
+                            <input
+                              type="number"
+                              min={0}
+                              max={40}
+                              step={1}
+                              value={Number((layer.params as any)?.ui_cardRadius ?? 14)}
+                              onChange={(e) => {
+                                const next = [...physicsLayers]
+                                next[idx] = {
+                                  ...layer,
+                                  params: { ...(layer.params || {}), ui_cardRadius: parseFloat(e.target.value) },
+                                }
+                                updatePhysicsLayers(next)
+                              }}
+                              className="w-full border rounded px-2 py-1 text-[11px]"
+                              style={{
+                                backgroundColor: 'var(--color-input-bg)',
+                                borderColor: 'var(--color-border)',
+                                color: 'var(--color-text-primary)',
+                              }}
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Padding (px)</label>
+                            <input
+                              type="number"
+                              min={8}
+                              max={56}
+                              step={1}
+                              value={Number((layer.params as any)?.ui_cardPadding ?? 22)}
+                              onChange={(e) => {
+                                const next = [...physicsLayers]
+                                next[idx] = {
+                                  ...layer,
+                                  params: { ...(layer.params || {}), ui_cardPadding: parseFloat(e.target.value) },
+                                }
+                                updatePhysicsLayers(next)
+                              }}
+                              className="w-full border rounded px-2 py-1 text-[11px]"
+                              style={{
+                                backgroundColor: 'var(--color-input-bg)',
+                                borderColor: 'var(--color-border)',
+                                color: 'var(--color-text-primary)',
+                              }}
+                            />
+                          </div>
+                          <div>
+                            <ColorSelect
+                              className="w-full"
+                              label="Text Align"
+                              value={String(
+                                (layer.params as any)?.ui_textAlign ??
+                                  (layer.layout === 'equation_focus' ? 'center' : 'left'),
+                              )}
+                              onChange={(v) => {
+                                const next = [...physicsLayers]
+                                next[idx] = {
+                                  ...layer,
+                                  params: { ...(layer.params || {}), ui_textAlign: v },
+                                }
+                                updatePhysicsLayers(next)
+                              }}
+                              options={[
+                                { value: 'left', label: 'left' },
+                                { value: 'center', label: 'center' },
+                              ]}
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Title Size (px)</label>
+                            <input
+                              type="number"
+                              min={16}
+                              max={84}
+                              step={1}
+                              value={Number((layer.params as any)?.ui_titleSize ?? 42)}
+                              onChange={(e) => {
+                                const next = [...physicsLayers]
+                                next[idx] = {
+                                  ...layer,
+                                  params: { ...(layer.params || {}), ui_titleSize: parseFloat(e.target.value) },
+                                }
+                                updatePhysicsLayers(next)
+                              }}
+                              className="w-full border rounded px-2 py-1 text-[11px]"
+                              style={{
+                                backgroundColor: 'var(--color-input-bg)',
+                                borderColor: 'var(--color-border)',
+                                color: 'var(--color-text-primary)',
+                              }}
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Body Size (px)</label>
+                            <input
+                              type="number"
+                              min={12}
+                              max={54}
+                              step={1}
+                              value={Number((layer.params as any)?.ui_bodySize ?? 26)}
+                              onChange={(e) => {
+                                const next = [...physicsLayers]
+                                next[idx] = {
+                                  ...layer,
+                                  params: { ...(layer.params || {}), ui_bodySize: parseFloat(e.target.value) },
+                                }
+                                updatePhysicsLayers(next)
+                              }}
+                              className="w-full border rounded px-2 py-1 text-[11px]"
+                              style={{
+                                backgroundColor: 'var(--color-input-bg)',
+                                borderColor: 'var(--color-border)',
+                                color: 'var(--color-text-primary)',
+                              }}
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Equation Size (px)</label>
+                            <input
+                              type="number"
+                              min={14}
+                              max={88}
+                              step={1}
+                              value={Number((layer.params as any)?.ui_equationSize ?? 32)}
+                              onChange={(e) => {
+                                const next = [...physicsLayers]
+                                next[idx] = {
+                                  ...layer,
+                                  params: { ...(layer.params || {}), ui_equationSize: parseFloat(e.target.value) },
                                 }
                                 updatePhysicsLayers(next)
                               }}
@@ -2038,590 +2632,77 @@ export default function LayersTab({
                             />
                           </div>
                         </div>
+                      </details>
 
-                        <div>
-                          <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Title</label>
-                          <input
-                            value={layer.title}
-                            onChange={(e) => {
+                      <details>
+                        <summary className="text-[11px] text-[#6b6b7a] cursor-pointer">Params JSON</summary>
+                        <textarea
+                          rows={5}
+                          value={JSON.stringify(layer.params ?? {}, null, 2)}
+                          onChange={(e) => {
+                            try {
+                              const parsed = JSON.parse(e.target.value || '{}')
                               const next = [...physicsLayers]
-                              next[idx] = { ...layer, title: e.target.value }
+                              next[idx] = { ...layer, params: parsed }
                               updatePhysicsLayers(next)
-                            }}
-                            className="w-full border rounded px-2 py-1 text-[11px]"
-                            style={{
-                              backgroundColor: 'var(--color-input-bg)',
-                              borderColor: 'var(--color-border)',
-                              color: 'var(--color-text-primary)',
-                            }}
-                          />
-                        </div>
+                            } catch {
+                              // keep invalid draft in field; user can fix JSON
+                            }
+                          }}
+                          className="w-full mt-1 border rounded px-2 py-1 text-[11px] font-mono"
+                          style={{
+                            backgroundColor: 'var(--color-input-bg)',
+                            borderColor: 'var(--color-border)',
+                            color: 'var(--color-text-primary)',
+                          }}
+                        />
+                      </details>
+                    </div>
+                  ))}
+                  <p className="text-[10px] text-[#6b6b7a]">
+                    Primary render currently uses the first physics layer in this list.
+                  </p>
+                </div>
+              )}
+            </CollapsibleSection>
 
-                        <div>
-                          <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Narration</label>
-                          <textarea
-                            rows={2}
-                            value={layer.narration}
-                            onChange={(e) => {
-                              const next = [...physicsLayers]
-                              next[idx] = { ...layer, narration: e.target.value }
-                              updatePhysicsLayers(next)
-                            }}
-                            className="w-full border rounded px-2 py-1 text-[11px]"
-                            style={{
-                              backgroundColor: 'var(--color-input-bg)',
-                              borderColor: 'var(--color-border)',
-                              color: 'var(--color-text-primary)',
-                            }}
-                          />
-                        </div>
-
-                        {layer.simulation === 'electric_field' ? (
-                          <div>
-                            <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Charges JSON</label>
-                            <textarea
-                              rows={4}
-                              value={JSON.stringify(
-                                (layer.params as any)?.charges ?? [{ x: 960, y: 540, q: 1 }],
-                                null,
-                                2,
-                              )}
-                              onChange={(e) => {
-                                try {
-                                  const parsed = JSON.parse(e.target.value || '[]')
-                                  const next = [...physicsLayers]
-                                  next[idx] = { ...layer, params: { ...(layer.params || {}), charges: parsed } }
-                                  updatePhysicsLayers(next)
-                                } catch {}
-                              }}
-                              className="w-full border rounded px-2 py-1 text-[11px] font-mono"
-                              style={{
-                                backgroundColor: 'var(--color-input-bg)',
-                                borderColor: 'var(--color-border)',
-                                color: 'var(--color-text-primary)',
-                              }}
-                            />
-                          </div>
-                        ) : (
-                          <div className="grid grid-cols-2 gap-2">
-                            {(PHYSICS_PARAM_FIELDS[layer.simulation] || []).map((f) => (
-                              <div key={f.key}>
-                                <label className="text-[10px] text-[#6b6b7a] block mb-0.5">{f.label}</label>
-                                <input
-                                  type="number"
-                                  min={f.min}
-                                  max={f.max}
-                                  step={f.step ?? 0.1}
-                                  value={Number((layer.params as any)?.[f.key] ?? 0)}
-                                  onChange={(e) => {
-                                    const next = [...physicsLayers]
-                                    next[idx] = {
-                                      ...layer,
-                                      params: { ...(layer.params || {}), [f.key]: parseFloat(e.target.value) },
-                                    }
-                                    updatePhysicsLayers(next)
-                                  }}
-                                  className="w-full border rounded px-2 py-1 text-[11px]"
-                                  style={{
-                                    backgroundColor: 'var(--color-input-bg)',
-                                    borderColor: 'var(--color-border)',
-                                    color: 'var(--color-text-primary)',
-                                  }}
-                                />
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
-                        {layer.layout !== 'fullscreen' && (
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Card X (%)</label>
-                              <input
-                                type="number"
-                                min={0}
-                                max={100}
-                                step={1}
-                                value={Number((layer.params as any)?.ui_cardX ?? 74)}
-                                onChange={(e) => {
-                                  const next = [...physicsLayers]
-                                  next[idx] = {
-                                    ...layer,
-                                    params: { ...(layer.params || {}), ui_cardX: parseFloat(e.target.value) },
-                                  }
-                                  updatePhysicsLayers(next)
-                                }}
-                                className="w-full border rounded px-2 py-1 text-[11px]"
-                                style={{
-                                  backgroundColor: 'var(--color-input-bg)',
-                                  borderColor: 'var(--color-border)',
-                                  color: 'var(--color-text-primary)',
-                                }}
-                              />
-                            </div>
-                            <div>
-                              <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Card Y (%)</label>
-                              <input
-                                type="number"
-                                min={0}
-                                max={100}
-                                step={1}
-                                value={Number((layer.params as any)?.ui_cardY ?? 50)}
-                                onChange={(e) => {
-                                  const next = [...physicsLayers]
-                                  next[idx] = {
-                                    ...layer,
-                                    params: { ...(layer.params || {}), ui_cardY: parseFloat(e.target.value) },
-                                  }
-                                  updatePhysicsLayers(next)
-                                }}
-                                className="w-full border rounded px-2 py-1 text-[11px]"
-                                style={{
-                                  backgroundColor: 'var(--color-input-bg)',
-                                  borderColor: 'var(--color-border)',
-                                  color: 'var(--color-text-primary)',
-                                }}
-                              />
-                            </div>
-                            <div>
-                              <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Card Width (%)</label>
-                              <input
-                                type="number"
-                                min={16}
-                                max={55}
-                                step={1}
-                                value={Number((layer.params as any)?.ui_cardWidth ?? 30)}
-                                onChange={(e) => {
-                                  const next = [...physicsLayers]
-                                  next[idx] = {
-                                    ...layer,
-                                    params: { ...(layer.params || {}), ui_cardWidth: parseFloat(e.target.value) },
-                                  }
-                                  updatePhysicsLayers(next)
-                                }}
-                                className="w-full border rounded px-2 py-1 text-[11px]"
-                                style={{
-                                  backgroundColor: 'var(--color-input-bg)',
-                                  borderColor: 'var(--color-border)',
-                                  color: 'var(--color-text-primary)',
-                                }}
-                              />
-                            </div>
-                            <div>
-                              <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Sim Scale</label>
-                              <input
-                                type="number"
-                                min={0.35}
-                                max={1.2}
-                                step={0.01}
-                                value={Number(
-                                  (layer.params as any)?.ui_simScale ??
-                                    (String(layer.layout) === 'fullscreen' ? 1 : 0.82),
-                                )}
-                                onChange={(e) => {
-                                  const next = [...physicsLayers]
-                                  next[idx] = {
-                                    ...layer,
-                                    params: { ...(layer.params || {}), ui_simScale: parseFloat(e.target.value) },
-                                  }
-                                  updatePhysicsLayers(next)
-                                }}
-                                className="w-full border rounded px-2 py-1 text-[11px]"
-                                style={{
-                                  backgroundColor: 'var(--color-input-bg)',
-                                  borderColor: 'var(--color-border)',
-                                  color: 'var(--color-text-primary)',
-                                }}
-                              />
-                            </div>
-                            <div>
-                              <ColorSelect
-                                className="w-full"
-                                label="Card Preset"
-                                value={String((layer.params as any)?.ui_cardPreset ?? 'glass_dark')}
-                                onChange={(v) => {
-                                  const next = [...physicsLayers]
-                                  next[idx] = {
-                                    ...layer,
-                                    params: { ...(layer.params || {}), ui_cardPreset: v },
-                                  }
-                                  updatePhysicsLayers(next)
-                                }}
-                                options={[
-                                  { value: 'glass_dark', label: 'glass_dark' },
-                                  { value: 'glass_light', label: 'glass_light' },
-                                  { value: 'neon', label: 'neon' },
-                                  { value: 'chalk', label: 'chalk' },
-                                ]}
-                              />
-                            </div>
-                            <label className="flex items-center gap-1 text-[11px] text-[#6b6b7a]">
-                              <input
-                                type="checkbox"
-                                checked={Boolean((layer.params as any)?.ui_cardAuto)}
-                                onChange={(e) => {
-                                  const next = [...physicsLayers]
-                                  next[idx] = {
-                                    ...layer,
-                                    params: { ...(layer.params || {}), ui_cardAuto: e.target.checked },
-                                  }
-                                  updatePhysicsLayers(next)
-                                }}
-                              />
-                              auto card position
-                            </label>
-                          </div>
-                        )}
-
-                        {layer.layout !== 'fullscreen' && (
-                          <div>
-                            <label className="text-[10px] text-[#6b6b7a] block mb-1">Visual card position/size</label>
-                            <div
-                              className="relative h-36 rounded border overflow-hidden"
-                              style={{
-                                borderColor: 'var(--color-border)',
-                                background: 'linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.08))',
-                              }}
-                              onClick={(e) => {
-                                const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect()
-                                const xPct = ((e.clientX - rect.left) / rect.width) * 100
-                                const yPct = ((e.clientY - rect.top) / rect.height) * 100
-                                const width = Number((layer.params as any)?.ui_cardWidth ?? 30)
-                                const half = width / 2
-                                const next = [...physicsLayers]
-                                next[idx] = {
-                                  ...layer,
-                                  params: {
-                                    ...(layer.params || {}),
-                                    ui_cardX: Math.max(half + 1, Math.min(99 - half, xPct)),
-                                    ui_cardY: Math.max(8, Math.min(92, yPct)),
-                                  },
-                                }
-                                updatePhysicsLayers(next)
-                              }}
-                            >
-                              <div className="absolute inset-0 opacity-40 pointer-events-none">
-                                <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[10px] text-[#6b6b7a]">
-                                  simulation center
-                                </div>
-                              </div>
-
-                              <div
-                                className="absolute border rounded cursor-move"
-                                style={{
-                                  left: `${Number((layer.params as any)?.ui_cardX ?? 74)}%`,
-                                  top: `${Number((layer.params as any)?.ui_cardY ?? 50)}%`,
-                                  width: `${Number((layer.params as any)?.ui_cardWidth ?? 30)}%`,
-                                  height: '34%',
-                                  transform: 'translate(-50%, -50%)',
-                                  borderColor: '#e84545',
-                                  background: 'rgba(232,69,69,0.08)',
-                                }}
-                                onMouseDown={(e) => {
-                                  e.stopPropagation()
-                                  setPhysicsCardDrag({
-                                    idx,
-                                    mode: 'move',
-                                    startClientX: e.clientX,
-                                    startClientY: e.clientY,
-                                    startX: Number((layer.params as any)?.ui_cardX ?? 74),
-                                    startY: Number((layer.params as any)?.ui_cardY ?? 50),
-                                    startW: Number((layer.params as any)?.ui_cardWidth ?? 30),
-                                  })
-                                }}
-                              >
-                                <div className="absolute left-1 top-1 text-[10px] text-[#f0b4b4] pointer-events-none">
-                                  card
-                                </div>
-                                <div
-                                  className="absolute right-0 bottom-0 w-3 h-3 bg-[#e84545] cursor-ew-resize"
-                                  onMouseDown={(e) => {
-                                    e.stopPropagation()
-                                    setPhysicsCardDrag({
-                                      idx,
-                                      mode: 'resize',
-                                      startClientX: e.clientX,
-                                      startClientY: e.clientY,
-                                      startX: Number((layer.params as any)?.ui_cardX ?? 74),
-                                      startY: Number((layer.params as any)?.ui_cardY ?? 50),
-                                      startW: Number((layer.params as any)?.ui_cardWidth ?? 30),
-                                    })
-                                  }}
-                                />
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        <details>
-                          <summary className="text-[11px] text-[#6b6b7a] cursor-pointer">
-                            Card style + text controls
-                          </summary>
-                          <div className="mt-2 grid grid-cols-2 gap-2">
-                            <div>
-                              <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Card Opacity</label>
-                              <input
-                                type="number"
-                                min={0.2}
-                                max={1}
-                                step={0.05}
-                                value={Number((layer.params as any)?.ui_cardOpacity ?? 1)}
-                                onChange={(e) => {
-                                  const next = [...physicsLayers]
-                                  next[idx] = {
-                                    ...layer,
-                                    params: { ...(layer.params || {}), ui_cardOpacity: parseFloat(e.target.value) },
-                                  }
-                                  updatePhysicsLayers(next)
-                                }}
-                                className="w-full border rounded px-2 py-1 text-[11px]"
-                                style={{
-                                  backgroundColor: 'var(--color-input-bg)',
-                                  borderColor: 'var(--color-border)',
-                                  color: 'var(--color-text-primary)',
-                                }}
-                              />
-                            </div>
-                            <div>
-                              <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Blur (px)</label>
-                              <input
-                                type="number"
-                                min={0}
-                                max={18}
-                                step={0.5}
-                                value={Number((layer.params as any)?.ui_cardBlur ?? 3)}
-                                onChange={(e) => {
-                                  const next = [...physicsLayers]
-                                  next[idx] = {
-                                    ...layer,
-                                    params: { ...(layer.params || {}), ui_cardBlur: parseFloat(e.target.value) },
-                                  }
-                                  updatePhysicsLayers(next)
-                                }}
-                                className="w-full border rounded px-2 py-1 text-[11px]"
-                                style={{
-                                  backgroundColor: 'var(--color-input-bg)',
-                                  borderColor: 'var(--color-border)',
-                                  color: 'var(--color-text-primary)',
-                                }}
-                              />
-                            </div>
-                            <div>
-                              <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Radius (px)</label>
-                              <input
-                                type="number"
-                                min={0}
-                                max={40}
-                                step={1}
-                                value={Number((layer.params as any)?.ui_cardRadius ?? 14)}
-                                onChange={(e) => {
-                                  const next = [...physicsLayers]
-                                  next[idx] = {
-                                    ...layer,
-                                    params: { ...(layer.params || {}), ui_cardRadius: parseFloat(e.target.value) },
-                                  }
-                                  updatePhysicsLayers(next)
-                                }}
-                                className="w-full border rounded px-2 py-1 text-[11px]"
-                                style={{
-                                  backgroundColor: 'var(--color-input-bg)',
-                                  borderColor: 'var(--color-border)',
-                                  color: 'var(--color-text-primary)',
-                                }}
-                              />
-                            </div>
-                            <div>
-                              <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Padding (px)</label>
-                              <input
-                                type="number"
-                                min={8}
-                                max={56}
-                                step={1}
-                                value={Number((layer.params as any)?.ui_cardPadding ?? 22)}
-                                onChange={(e) => {
-                                  const next = [...physicsLayers]
-                                  next[idx] = {
-                                    ...layer,
-                                    params: { ...(layer.params || {}), ui_cardPadding: parseFloat(e.target.value) },
-                                  }
-                                  updatePhysicsLayers(next)
-                                }}
-                                className="w-full border rounded px-2 py-1 text-[11px]"
-                                style={{
-                                  backgroundColor: 'var(--color-input-bg)',
-                                  borderColor: 'var(--color-border)',
-                                  color: 'var(--color-text-primary)',
-                                }}
-                              />
-                            </div>
-                            <div>
-                              <ColorSelect
-                                className="w-full"
-                                label="Text Align"
-                                value={String(
-                                  (layer.params as any)?.ui_textAlign ??
-                                    (layer.layout === 'equation_focus' ? 'center' : 'left'),
-                                )}
-                                onChange={(v) => {
-                                  const next = [...physicsLayers]
-                                  next[idx] = {
-                                    ...layer,
-                                    params: { ...(layer.params || {}), ui_textAlign: v },
-                                  }
-                                  updatePhysicsLayers(next)
-                                }}
-                                options={[
-                                  { value: 'left', label: 'left' },
-                                  { value: 'center', label: 'center' },
-                                ]}
-                              />
-                            </div>
-                            <div>
-                              <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Title Size (px)</label>
-                              <input
-                                type="number"
-                                min={16}
-                                max={84}
-                                step={1}
-                                value={Number((layer.params as any)?.ui_titleSize ?? 42)}
-                                onChange={(e) => {
-                                  const next = [...physicsLayers]
-                                  next[idx] = {
-                                    ...layer,
-                                    params: { ...(layer.params || {}), ui_titleSize: parseFloat(e.target.value) },
-                                  }
-                                  updatePhysicsLayers(next)
-                                }}
-                                className="w-full border rounded px-2 py-1 text-[11px]"
-                                style={{
-                                  backgroundColor: 'var(--color-input-bg)',
-                                  borderColor: 'var(--color-border)',
-                                  color: 'var(--color-text-primary)',
-                                }}
-                              />
-                            </div>
-                            <div>
-                              <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Body Size (px)</label>
-                              <input
-                                type="number"
-                                min={12}
-                                max={54}
-                                step={1}
-                                value={Number((layer.params as any)?.ui_bodySize ?? 26)}
-                                onChange={(e) => {
-                                  const next = [...physicsLayers]
-                                  next[idx] = {
-                                    ...layer,
-                                    params: { ...(layer.params || {}), ui_bodySize: parseFloat(e.target.value) },
-                                  }
-                                  updatePhysicsLayers(next)
-                                }}
-                                className="w-full border rounded px-2 py-1 text-[11px]"
-                                style={{
-                                  backgroundColor: 'var(--color-input-bg)',
-                                  borderColor: 'var(--color-border)',
-                                  color: 'var(--color-text-primary)',
-                                }}
-                              />
-                            </div>
-                            <div>
-                              <label className="text-[10px] text-[#6b6b7a] block mb-0.5">Equation Size (px)</label>
-                              <input
-                                type="number"
-                                min={14}
-                                max={88}
-                                step={1}
-                                value={Number((layer.params as any)?.ui_equationSize ?? 32)}
-                                onChange={(e) => {
-                                  const next = [...physicsLayers]
-                                  next[idx] = {
-                                    ...layer,
-                                    params: { ...(layer.params || {}), ui_equationSize: parseFloat(e.target.value) },
-                                  }
-                                  updatePhysicsLayers(next)
-                                }}
-                                className="w-full border rounded px-2 py-1 text-[11px]"
-                                style={{
-                                  backgroundColor: 'var(--color-input-bg)',
-                                  borderColor: 'var(--color-border)',
-                                  color: 'var(--color-text-primary)',
-                                }}
-                              />
-                            </div>
-                          </div>
-                        </details>
-
-                        <details>
-                          <summary className="text-[11px] text-[#6b6b7a] cursor-pointer">Params JSON</summary>
-                          <textarea
-                            rows={5}
-                            value={JSON.stringify(layer.params ?? {}, null, 2)}
-                            onChange={(e) => {
-                              try {
-                                const parsed = JSON.parse(e.target.value || '{}')
-                                const next = [...physicsLayers]
-                                next[idx] = { ...layer, params: parsed }
-                                updatePhysicsLayers(next)
-                              } catch {
-                                // keep invalid draft in field; user can fix JSON
-                              }
-                            }}
-                            className="w-full mt-1 border rounded px-2 py-1 text-[11px] font-mono"
-                            style={{
-                              backgroundColor: 'var(--color-input-bg)',
-                              borderColor: 'var(--color-border)',
-                              color: 'var(--color-text-primary)',
-                            }}
-                          />
-                        </details>
-                      </div>
-                    ))}
-                    <p className="text-[10px] text-[#6b6b7a]">
-                      Primary render currently uses the first physics layer in this list.
-                    </p>
-                  </div>
-                )}
-              </CollapsibleSection>
-
-              <CollapsibleSection
-                title="Zdog Studio"
-                icon={User}
-                active={zdogStudioMode}
-                badge={
-                  zdogStudioMode ? (
-                    <span className="text-[11px] text-teal-400">active</span>
-                  ) : (
-                    <span className="text-[11px] text-[#6b6b7a]">shape builder</span>
-                  )
-                }
-              >
-                {zdogStudioMode ? (
-                  <div className="space-y-2">
-                    <ZdogOutliner projectId={project.id} />
-                    <button
-                      onClick={() => setZdogStudioMode(false)}
-                      className="kbd h-7 px-3 text-[11px] text-[#6b6b7a] hover:text-[#e84545] w-full"
-                    >
-                      Exit Zdog Studio
-                    </button>
-                  </div>
+            <CollapsibleSection
+              title="Zdog Studio"
+              icon={User}
+              active={zdogStudioMode}
+              badge={
+                zdogStudioMode ? (
+                  <span className="text-[11px] text-teal-400">active</span>
                 ) : (
-                  <div className="space-y-2">
-                    <p className="text-[11px] text-[#6b6b7a]">Build reusable Zdog shapes, characters, and items.</p>
-                    <button
-                      onClick={() => setZdogStudioMode(true)}
-                      className="kbd h-7 px-3 text-[11px] text-[#6b6b7a] hover:text-teal-400 w-full"
-                    >
-                      Enter Zdog Studio
-                    </button>
-                  </div>
-                )}
-              </CollapsibleSection>
-
+                  <span className="text-[11px] text-[#6b6b7a]">shape builder</span>
+                )
+              }
+            >
+              {zdogStudioMode ? (
+                <div className="space-y-2">
+                  <ZdogOutliner projectId={project.id} />
+                  <button
+                    onClick={() => setZdogStudioMode(false)}
+                    className="kbd h-7 px-3 text-[11px] text-[#6b6b7a] hover:text-[#e84545] w-full"
+                  >
+                    Exit Zdog Studio
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-[11px] text-[#6b6b7a]">Build reusable Zdog shapes, characters, and items.</p>
+                  <button
+                    onClick={() => setZdogStudioMode(true)}
+                    className="kbd h-7 px-3 text-[11px] text-[#6b6b7a] hover:text-teal-400 w-full"
+                  >
+                    Enter Zdog Studio
+                  </button>
+                </div>
+              )}
+            </CollapsibleSection>
           </SectionGroup>
         </div>
       )}
-
 
       {/* ── Audio tab ── */}
       {layerViewMode === 'audio' && (
@@ -2630,102 +2711,28 @@ export default function LayersTab({
         </div>
       )}
 
-      {/* ── Elements tab ── */}
-      {(layerViewMode === 'elements' || layerViewMode === 'properties') && (
-      <div className="min-h-0 flex-1 overflow-y-auto py-1">
-              {/* ═══ ELEMENTS ═══ */}
-              <SectionGroup title="Elements" icon={Box} color="#e8a849" count={Object.keys(inspectorElements).length} defaultOpen>
-
-              {/* Scene Elements (registered from iframe) — primary content */}
-              {Object.keys(inspectorElements).length > 0 ? (
-              <div className="px-2 py-1 space-y-1">
-                {Object.values(inspectorElements).map((element) => {
-                  const isSelected = inspectorSelectedElement?.id === element.id
-                  return (
-                    <div key={element.id}>
-                      <div
-                        onClick={() => handleSelectElement(element)}
-                        className={`flex items-center gap-2 px-2.5 py-1.5 rounded cursor-pointer transition-colors ${
-                          isSelected
-                            ? 'bg-[#e84545]/10 border border-[#e84545]/30'
-                            : 'hover:bg-white/5 border border-transparent'
-                        }`}
-                      >
-                        <Box size={10} className={isSelected ? 'text-[#e84545]' : 'text-[#6b6b7a]'} />
-                        <span
-                          className={`text-[12px] flex-1 truncate ${
-                            isSelected ? 'text-[var(--color-text-primary)] font-medium' : 'text-[var(--color-text-primary)]'
-                          }`}
-                        >
-                          {element.label || element.id}
-                        </span>
-                        <span className="text-[10px] font-mono text-[#4a4a52] bg-[#1a1a1f] px-1 py-0.5 rounded flex-shrink-0">
-                          {element.type}
-                        </span>
-                        <span
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleInspectorPatch(element.id, 'visible', !element.visible)
-                          }}
-                          className="text-[#6b6b7a] hover:text-[var(--color-text-primary)] cursor-pointer flex-shrink-0"
-                        >
-                          {element.visible !== false ? <Eye size={11} /> : <EyeOff size={11} />}
-                        </span>
-                        <ChevronDown
-                          size={10}
-                          className={`text-[#6b6b7a] transition-transform flex-shrink-0 ${isSelected ? 'rotate-0' : '-rotate-90'}`}
-                        />
-                      </div>
-                      {isSelected && inspectorSelectedElement && (
-                        <div className="ml-2 border-l-2 border-[#e84545]/20 pl-1 mt-1 mb-2">
-                          <ElementInspector
-                            element={inspectorSelectedElement}
-                            layerId={null}
-                            sceneId={selectedSceneId}
-                            palette={palette}
-                            onPatch={handleInspectorPatch}
-                            hasOverrides={!!(scene.elementOverrides?.[inspectorSelectedElement.id] && Object.keys(scene.elementOverrides[inspectorSelectedElement.id]).length > 0)}
-                            onResetOverrides={() => {
-                              if (!scene.elementOverrides?.[inspectorSelectedElement.id]) return
-                              const next = { ...scene.elementOverrides }
-                              delete next[inspectorSelectedElement.id]
-                              updateScene(scene.id, { elementOverrides: next })
-                              saveSceneHTML(scene.id)
-                            }}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-              ) : (
-                <p className="py-4 text-center text-[11px] text-[var(--color-text-muted)]">
-                  Click an element in the preview to inspect it.
-                </p>
-              )}
-              </SectionGroup>
-
-          {/* Interactions (only in interactive mode) */}
-          {layerViewMode === 'elements' && project.outputMode === 'interactive' && (
-            <CollapsibleSection
-              title="Interactions"
-              icon={Layers}
-              active={(scene.interactions ?? []).length > 0}
-              badge={
-                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#e84545]/20 text-[#e84545] font-bold">
-                  Interactive
-                </span>
-              }
-            >
-              <InteractionsSection scene={scene} addInteraction={addInteraction} />
-            </CollapsibleSection>
-          )}
-      </div>
+      {/* ── SFX tab ── */}
+      {layerViewMode === 'sfx' && (
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <SfxTabPanel scene={scene} />
+        </div>
       )}
 
-      <SceneLayersStackPanel scene={scene} />
+      {layerViewMode === 'nodemap' && <NodeMapPanel scene={scene} />}
 
+      {layerViewMode !== 'nodemap' && layersStripDragTabId == null && (
+        <SceneLayersStackPanel
+          scene={scene}
+          collapsed={secondaryStackCollapsed}
+          onCollapsedChange={(collapsed, meta) => {
+            setSecondaryStackCollapsed(collapsed)
+            if (meta?.userAction) {
+              // Respect user intent across tab switches so it doesn't feel jumpy.
+              setSecondaryStackPinnedOpen(!collapsed)
+            }
+          }}
+        />
+      )}
     </div>
   )
 }

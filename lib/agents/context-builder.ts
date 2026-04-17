@@ -22,14 +22,16 @@ import { getModelProvider } from './types'
 import { resolveStyle, getPreset, type StylePresetId } from '../styles/presets'
 import { ALL_TOOLS, AGENT_TOOLS, patchToolDimensions } from './tools'
 import { resolveProjectDimensions } from '../dimensions'
-import { AUDIO_PROVIDERS } from '../audio/provider-registry'
-import { MEDIA_PROVIDERS } from '../media/provider-registry'
+import { AUDIO_PROVIDERS, type AudioProviderDef, isAudioProviderReady } from '../audio/provider-registry'
+import { MEDIA_PROVIDERS, type MediaProviderDef, isMediaProviderReady } from '../media/provider-registry'
 import { DEFAULT_MODELS, type ModelConfig } from './model-config'
 
 // Token budget constants
 const MAX_WORLD_STATE_TOKENS = 2000
-const MAX_FULL_SCENE_TOKENS = 3000
+const MAX_FULL_SCENE_TOKENS = 4000
 const MAX_HISTORY_MESSAGES = 20
+const CODE_PREVIEW_SVG_LIMIT = 1500
+const CODE_PREVIEW_SCENE_LIMIT = 2000
 
 const MODEL_DEFAULTS: Record<AgentType, ModelId> = {
   router: 'claude-haiku-4-5-20251001',
@@ -112,6 +114,10 @@ export function resolveModel(
 ): ModelId {
   // Normalize: treat 'auto' as no override
   const override = explicitOverride && explicitOverride !== 'auto' ? explicitOverride : null
+
+  // CLI runtimes are special providers — always pass through
+  if (explicitOverride === 'codex-cli') return 'codex-cli' as ModelId
+  if (explicitOverride === 'claude-code') return 'claude-code' as ModelId
 
   // Filter enabled models to only those that support tools
   const toolCapableIds = enabledModelIds?.filter((id) => modelSupportsTools(id, modelConfigs))
@@ -243,10 +249,11 @@ function serializeGlobalStyle(style: GlobalStyle): string {
   const resolved = resolveStyle(style.presetId, style)
   const palette = resolved.palette
   const font = resolved.font
+  const bodyFont = resolved.bodyFont
   return `Global Style:
   preset: ${style.presetId ?? 'none (custom)'}
   palette: [${palette.join(', ')}]
-  font: ${font}
+  font: ${font}${bodyFont && bodyFont !== font ? `\n  bodyFont: ${bodyFont}` : ''}
   roughness: ${resolved.roughnessLevel}
   tool: ${resolved.defaultTool}
   renderer: ${resolved.preferredRenderer}`
@@ -292,8 +299,9 @@ function serializeFullScene(scene: Scene): string {
       // Include code preview for surgical edits
       const codeSnippet = scene.sceneType === 'svg' ? o.svgContent : ''
       if (codeSnippet) {
-        // Only include first 500 chars of code to stay within token budget
-        parts.push(`      code preview: ${codeSnippet.slice(0, 500)}${codeSnippet.length > 500 ? '...' : ''}`)
+        parts.push(
+          `      code preview: ${codeSnippet.slice(0, CODE_PREVIEW_SVG_LIMIT)}${codeSnippet.length > CODE_PREVIEW_SVG_LIMIT ? '...' : ''}`,
+        )
       }
     })
   }
@@ -340,8 +348,10 @@ function serializeFullScene(scene: Scene): string {
               ? scene.sceneCode
               : ''
   if (codeField) {
-    const preview = codeField.slice(0, 800)
-    parts.push(`  ${scene.sceneType} code preview:\n${preview}${codeField.length > 800 ? '\n  ... (truncated)' : ''}`)
+    const preview = codeField.slice(0, CODE_PREVIEW_SCENE_LIMIT)
+    parts.push(
+      `  ${scene.sceneType} code preview:\n${preview}${codeField.length > CODE_PREVIEW_SCENE_LIMIT ? '\n  ... (truncated)' : ''}`,
+    )
   }
 
   if (scene.canvasBackgroundCode?.trim()) {
@@ -394,9 +404,15 @@ function filterToolsForAgent(
   audioProviderEnabled?: Record<string, boolean>,
   mediaGenEnabled?: Record<string, boolean>,
   mp4Settings?: import('../types').MP4Settings,
+  researchEnabled?: boolean,
 ): ClaudeToolDefinition[] {
   const dims = resolveProjectDimensions(mp4Settings?.aspectRatio, mp4Settings?.resolution)
-  const agentTools = patchToolDimensions(AGENT_TOOLS[agentType] ?? ALL_TOOLS, dims.width, dims.height)
+  const rawAgentTools = patchToolDimensions(AGENT_TOOLS[agentType] ?? ALL_TOOLS, dims.width, dims.height)
+
+  // Research tools are ALWAYS hidden when the master switch is off — regardless of activeTools.
+  // This keeps the switch model-agnostic: any model sees these tools only when the user flipped the toggle.
+  const RESEARCH_TOOL_NAMES_SET = new Set(['web_search', 'fetch_url_content'])
+  const agentTools = researchEnabled ? rawAgentTools : rawAgentTools.filter((t) => !RESEARCH_TOOL_NAMES_SET.has(t.name))
 
   // If no filter active, return all agent tools
   if (!activeTools || activeTools.length === 0) return agentTools
@@ -412,14 +428,19 @@ function filterToolsForAgent(
   if (activeTools.includes('zdog')) allowedLayerTypes.add('zdog')
   if (activeTools.includes('physics')) allowedLayerTypes.add('physics')
 
-  // Check which provider categories have at least one enabled provider
+  // Check which provider categories have at least one provider that is both
+  // ENABLED (toggle in configure modal) and CONFIGURED (API key set / server running).
   const isAudioEnabled = (id: string) => !audioProviderEnabled || (audioProviderEnabled[id] ?? true)
   const isMediaEnabled = (id: string) => !mediaGenEnabled || (mediaGenEnabled[id] ?? true)
-  const hasTTS = AUDIO_PROVIDERS.some((p) => p.category === 'tts' && isAudioEnabled(p.id))
-  const hasSFX = AUDIO_PROVIDERS.some((p) => p.category === 'sfx' && isAudioEnabled(p.id))
-  const hasMusic = AUDIO_PROVIDERS.some((p) => p.category === 'music' && isAudioEnabled(p.id))
-  const hasAvatar = MEDIA_PROVIDERS.some((p) => p.category === 'avatar' && isMediaEnabled(p.id))
-  const hasVideo = MEDIA_PROVIDERS.some((p) => p.category === 'video' && isMediaEnabled(p.id))
+
+  const isAudioAvailable = (p: (typeof AUDIO_PROVIDERS)[number]) => isAudioEnabled(p.id) && isAudioProviderReady(p)
+  const isMediaAvailable = (p: (typeof MEDIA_PROVIDERS)[number]) => isMediaEnabled(p.id) && isMediaProviderReady(p)
+
+  const hasTTS = AUDIO_PROVIDERS.some((p) => p.category === 'tts' && isAudioAvailable(p))
+  const hasSFX = AUDIO_PROVIDERS.some((p) => p.category === 'sfx' && isAudioAvailable(p))
+  const hasMusic = AUDIO_PROVIDERS.some((p) => p.category === 'music' && isAudioAvailable(p))
+  const hasAvatar = MEDIA_PROVIDERS.some((p) => p.category === 'avatar' && isMediaAvailable(p))
+  const hasVideo = MEDIA_PROVIDERS.some((p) => p.category === 'video' && isMediaAvailable(p))
 
   // Filter tools based on active tool categories
   return agentTools.filter((tool) => {
@@ -440,6 +461,8 @@ function filterToolsForAgent(
         'set_layer_timing',
         'regenerate_layer',
         'patch_layer_code',
+        'write_scene_code',
+        'read_scene_code',
         'add_element',
         'edit_element',
         'delete_element',
@@ -493,6 +516,35 @@ function filterToolsForAgent(
 
     return true
   })
+}
+
+/**
+ * Replace our custom web_search tool definition with the provider's native
+ * server-tool when the active model supports it (Anthropic/OpenAI/Google run
+ * search on their side — zero Brave key, single round-trip, no handler exec).
+ * For local / unknown providers, keep our Brave-backed custom tool.
+ */
+function swapNativeSearchTool(
+  tools: ClaudeToolDefinition[],
+  provider: 'anthropic' | 'openai' | 'google' | 'local' | 'claude-code',
+  researchEnabled: boolean,
+): ClaudeToolDefinition[] {
+  if (!researchEnabled) return tools
+  const hasWebSearch = tools.some((t) => t.name === 'web_search')
+  if (!hasWebSearch) return tools
+
+  if (provider === 'anthropic') {
+    // Anthropic's web_search_20250305 server tool — max_uses caps per-turn calls.
+    return tools.map((t) =>
+      t.name === 'web_search' ? { name: 'web_search', type: 'web_search_20250305', max_uses: 5 } : t,
+    )
+  }
+  // OpenAI Responses API has web_search_preview but our runner currently uses
+  // Chat Completions, so leave our Brave-backed handler active for OpenAI too
+  // until the runner gains a Responses-API path.
+  // Gemini has google_search grounding via a different shape — same note.
+  // Local / claude-code / unknown: use our Brave-backed custom tool as-is.
+  return tools
 }
 
 // ── Context Builder ────────────────────────────────────────────────────────────
@@ -648,33 +700,114 @@ When planning scenes, design a scene graph — not just a list:
     }
   }
 
-  // Audio provider availability — only show categories with enabled providers
-  if (
-    opts.activeTools.includes('audio') &&
-    (agentType === 'director' || agentType === 'scene-maker' || agentType === 'planner')
-  ) {
-    const enabledMap = opts.audioProviderEnabled ?? {}
-    const isEnabled = (id: string) => enabledMap[id] ?? true
-    const enabledTTS = AUDIO_PROVIDERS.filter((p) => p.category === 'tts' && isEnabled(p.id)).map((p) => p.name)
-    const enabledSFX = AUDIO_PROVIDERS.filter((p) => p.category === 'sfx' && isEnabled(p.id)).map((p) => p.name)
-    const enabledMusic = AUDIO_PROVIDERS.filter((p) => p.category === 'music' && isEnabled(p.id)).map((p) => p.name)
-    const parts = []
-    if (enabledTTS.length > 0) parts.push(`TTS: ${enabledTTS.join(', ')}`)
-    if (enabledSFX.length > 0) parts.push(`SFX: ${enabledSFX.join(', ')}`)
-    if (enabledMusic.length > 0) parts.push(`Music: ${enabledMusic.join(', ')}`)
-    if (parts.length > 0) {
-      cascadeParts.push(`## Audio Providers\nEnabled: ${parts.join(' | ')}`)
+  // Capability disclosure — honest "X of Y" counts per provider category,
+  // plus an explicit preflight rule that the agent must acknowledge gaps to
+  // the user before falling back to a degraded path.
+  const disclosureAgents = new Set<AgentType>(['director', 'scene-maker', 'planner', 'editor', 'dop'])
+  if (disclosureAgents.has(agentType)) {
+    const audioMap = opts.audioProviderEnabled ?? {}
+    const mediaMap = opts.mediaGenEnabled ?? {}
+    const isAudioEn = (id: string) => audioMap[id] ?? true
+    const isMediaEn = (id: string) => mediaMap[id] ?? true
+    const isAudioAvail = (p: AudioProviderDef) => isAudioEn(p.id) && isAudioProviderReady(p)
+    const isMediaAvail = (p: MediaProviderDef) => isMediaEn(p.id) && isMediaProviderReady(p)
+
+    type Row = { label: string; total: number; names: string[]; gated: boolean }
+    const rows: Row[] = []
+    const audioGated = opts.activeTools.includes('audio')
+    const videoGated = opts.activeTools.includes('video')
+    const avatarGated = opts.activeTools.includes('avatars')
+    const imageGated = opts.activeTools.includes('assets')
+
+    const audioByCat = (cat: 'tts' | 'sfx' | 'music') => {
+      const all = AUDIO_PROVIDERS.filter((p) => p.category === cat)
+      const enabled = all.filter(isAudioAvail).map((p) => p.name)
+      return { total: all.length, names: enabled }
+    }
+    const mediaByCat = (cat: 'video' | 'image' | 'avatar') => {
+      const all = MEDIA_PROVIDERS.filter((p) => p.category === cat)
+      const enabled = all.filter(isMediaAvail).map((p) => p.name)
+      return { total: all.length, names: enabled }
+    }
+
+    const tts = audioByCat('tts')
+    const sfx = audioByCat('sfx')
+    const music = audioByCat('music')
+    const video = mediaByCat('video')
+    const image = mediaByCat('image')
+    const avatar = mediaByCat('avatar')
+
+    rows.push({ label: 'TTS (narration)', ...tts, gated: !audioGated })
+    rows.push({ label: 'SFX', ...sfx, gated: !audioGated })
+    rows.push({ label: 'Background music', ...music, gated: !audioGated })
+    rows.push({ label: 'Image generation', ...image, gated: !imageGated })
+    rows.push({ label: 'Video generation', ...video, gated: !videoGated })
+    rows.push({ label: 'Avatar / talking head', ...avatar, gated: !avatarGated })
+
+    const fmt = (r: Row) => {
+      if (r.gated) return `- ${r.label}: tooling disabled for this run`
+      if (r.names.length === 0) return `- ${r.label}: UNAVAILABLE (0 of ${r.total} providers configured)`
+      return `- ${r.label}: ${r.names.length} of ${r.total} enabled — ${r.names.join(', ')}`
+    }
+
+    // Sub-capability caveats that aren't a full category row.
+    const subCaveats: string[] = []
+    // Captions: ElevenLabs returns aligned timestamps, other providers get a
+    // naive even-distribution fallback. Always emitted when a scene has
+    // narration, unless the TTS provider is purely client-side.
+    if (!audioGated && tts.names.length > 0) {
+      const elevenlabsOn = tts.names.some((n) => /elevenlabs/i.test(n))
+      subCaveats.push(
+        elevenlabsOn
+          ? 'Captions (SRT/VTT): word-aligned when narration uses ElevenLabs, otherwise a naive even-distribution fallback. Merged project-level captions are emitted with every MP4 export.'
+          : 'Captions (SRT/VTT): naive even-distribution fallback (no provider returns timestamps). Add ElevenLabs for word-level alignment. Merged captions are still emitted on export.',
+      )
+    }
+
+    const hasActiveRow = rows.some((r) => !r.gated)
+    const hasAnyGap = rows.some((r) => !r.gated && r.names.length === 0)
+    const hasAnyDegraded = rows.some((r) => !r.gated && r.names.length > 0 && r.names.length < r.total)
+
+    const disclosureRule = hasAnyGap
+      ? `If the user asks for any capability listed as UNAVAILABLE, tell them upfront in one short sentence (e.g. "Heads up: no TTS provider is configured, so I'll skip narration — or you can add an API key in Settings") before proceeding with a degraded path. Do not silently substitute.`
+      : hasAnyDegraded
+        ? `If the user's request implicitly depends on a provider we don't have, mention the trade-off briefly before committing to it. No need to enumerate providers unprompted.`
+        : `All provider categories relevant to this run are available — no capability caveats needed unless something fails mid-run.`
+
+    const subBlock =
+      subCaveats.length > 0 ? `\n\nSub-capability notes:\n${subCaveats.map((c) => `- ${c}`).join('\n')}` : ''
+
+    // Skip the whole block when every category is gated off (e.g. editor
+    // runs with no media tooling) — it would read as a wall of "disabled".
+    if (hasActiveRow) {
+      cascadeParts.push(`## Capability Disclosure
+${rows.map(fmt).join('\n')}${subBlock}
+
+${disclosureRule}`)
     }
   }
 
-  // Media provider availability — only show enabled providers
-  if (agentType === 'director' || agentType === 'scene-maker' || agentType === 'planner') {
-    const mediaMap = opts.mediaGenEnabled ?? {}
-    const isMediaEnabled = (id: string) => mediaMap[id] ?? true
-    const enabled = MEDIA_PROVIDERS.filter((p) => isMediaEnabled(p.id)).map((p) => p.name)
-    if (enabled.length > 0) {
-      cascadeParts.push(`## Media Providers\nEnabled: ${enabled.join(', ')}`)
-    }
+  // Research mode — only surfaced when the user flipped the switch in chat input.
+  // Model-agnostic: any model gets the same instructions; toolset is gated server-side.
+  // Only add to agents that actually have research tools in AGENT_TOOLS (director + scene-maker).
+  // Planner intentionally has a narrow toolset (plan_scenes only), so no addendum for it.
+  if (opts.researchEnabled && (agentType === 'director' || agentType === 'scene-maker')) {
+    cascadeParts.push(`## Research Mode — ON
+You have web access.
+
+Tools available:
+- **web_search(query, count?, recency?, site?)** — returns titles, URLs, snippets. Use for any real-world fact, current event, product spec, brand detail, or topic outside your training data.
+- **fetch_url_content(url, extract?)** — pulls title, description, body text, and images from a URL. Run this on the most promising search results to get full article text before writing narration or captions.
+
+How to use:
+1. Before writing scene narration that makes factual claims, verify with web_search.
+2. For current-events topics, set recency="week" or "month".
+3. When the user pastes a URL, call fetch_url_content on it directly — don't search first.
+4. When you cite a fact in narration, include the source inline like "[source: domain.com]" so the user can trust the output.
+5. Prefer findings from authoritative domains (official sites, wikipedia, established publications) over random blogs.
+6. Only fetch public URLs on the open web — never try to fetch localhost, private IPs, or internal services.
+
+Do NOT use these tools for topics you already know well — training knowledge is faster and free.`)
   }
 
   // Inject project asset library
@@ -779,10 +912,20 @@ ${worldStateSerialized}
 \`\`\``
   const systemPrompt = `${staticPrompt}${dynamicPrompt}`
 
-  const tools = filterToolsForAgent(agentType, opts.activeTools, opts.audioProviderEnabled, opts.mediaGenEnabled, opts.mp4Settings)
+  const rawTools = filterToolsForAgent(
+    agentType,
+    opts.activeTools,
+    opts.audioProviderEnabled,
+    opts.mediaGenEnabled,
+    opts.mp4Settings,
+    opts.researchEnabled,
+  )
   const modelId = resolveModel(agentType, modelTier ?? 'auto', modelOverride, enabledModelIds)
   // Router never uses thinking; non-Anthropic models don't support thinking param
   const provider = getModelProvider(modelId)
+  // Swap our custom web_search tool for the provider-native server-tool when the
+  // active model supports it. Zero Brave key needed for cloud providers.
+  const tools = swapNativeSearchTool(rawTools, provider, opts.researchEnabled ?? false)
   const effectiveThinking = agentType === 'router' || provider !== 'anthropic' ? ('off' as ThinkingMode) : thinkingMode
   // Only inflate maxTokens for thinking budget on Anthropic models
   const maxTokens = resolveMaxTokensForThinking(MAX_TOKENS_BY_AGENT[agentType], effectiveThinking)

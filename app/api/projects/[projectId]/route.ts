@@ -72,9 +72,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pr
       pausedAgentRun,
       runCheckpoint,
       timeline,
+      workspaceId,
     } = body
 
     const updateData: Record<string, any> = { updatedAt: new Date() }
+    if (workspaceId !== undefined) updateData.workspaceId = workspaceId || null
     if (name !== undefined) updateData.name = name
     if (outputMode !== undefined) {
       if (!['mp4', 'interactive'].includes(outputMode)) {

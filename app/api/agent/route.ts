@@ -26,7 +26,10 @@ import { runAgent } from '@/lib/agents/runner'
 import { AgentLogger } from '@/lib/agents/logger'
 import { createGenerationLog, updateGenerationLog } from '@/lib/db/queries/generation-logs'
 import { db } from '@/lib/db'
+import * as schema from '@/lib/db/schema'
 import { projectAssets as projectAssetsTable, projects as projectsTable } from '@/lib/db/schema'
+import { readProjectSceneBlob } from '@/lib/db/project-scene-storage'
+import { readProjectScenesFromTables } from '@/lib/db/project-scene-table'
 import { persistScenesFromAgentRun, getRunCheckpoint, clearRunCheckpoint } from '@/lib/db/queries/projects'
 import { assertProjectAccess } from '@/lib/auth-helpers'
 import { getMemoriesForUser, upsertMemory } from '@/lib/db/queries/user-memory'
@@ -68,6 +71,10 @@ export interface AgentAPIRequest {
   enabledModelIds?: string[]
   audioProviderEnabled?: Record<string, boolean>
   mediaGenEnabled?: Record<string, boolean>
+  /** Master switch for web research tools — flipped by user via Research toggle in chat input. */
+  researchEnabled?: boolean
+  /** Per-provider enabled map for research providers (brave, tavily, exa). */
+  researchProviderEnabled?: Record<string, boolean>
   sessionPermissions?: Record<string, string>
   generationOverrides?: Record<string, { provider?: string; prompt?: string; config?: Record<string, any> }>
   autoChooseDefaults?: Record<string, { provider: string; config: Record<string, any> }>
@@ -85,6 +92,8 @@ export interface AgentAPIRequest {
   planFirstMode?: boolean
   /** Local mode flag — routes all calls through local LLM */
   localMode?: boolean
+  /** Mock mode — use canned SSE stream, no API credits spent */
+  mockMode?: boolean
   /** Model configs for resolving local model endpoints */
   modelConfigs?: import('@/lib/agents/model-config').ModelConfig[]
   /** MP4/export settings including aspect ratio */
@@ -179,7 +188,8 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Mock mode: return canned SSE stream without hitting any LLM API ──────
-  if (process.env.MOCK_AGENT === 'true') {
+  // Activated via env var OR client-side toggle (body.mockMode)
+  if (process.env.MOCK_AGENT === 'true' || body.mockMode === true) {
     return createMockAgentResponse(body)
   }
 
@@ -413,10 +423,10 @@ export async function POST(req: NextRequest) {
   if (body.projectId) {
     const existing = activeRuns.get(body.projectId)
     if (existing && Date.now() - existing.startedAt < STALE_RUN_TIMEOUT_MS) {
-      return new Response(
-        JSON.stringify({ error: 'Agent run already in progress for this project' }),
-        { status: 409, headers: { 'Content-Type': 'application/json' } },
-      )
+      return new Response(JSON.stringify({ error: 'Agent run already in progress for this project' }), {
+        status: 409,
+        headers: { 'Content-Type': 'application/json' },
+      })
     }
     // Clean up stale entry if any, then register this run
     activeRuns.set(body.projectId, { startedAt: Date.now() })
@@ -449,6 +459,8 @@ export async function POST(req: NextRequest) {
     enabledModelIds: body.enabledModelIds,
     audioProviderEnabled: body.audioProviderEnabled,
     mediaGenEnabled: body.mediaGenEnabled,
+    researchEnabled: body.researchEnabled,
+    researchProviderEnabled: body.researchProviderEnabled,
     sessionPermissions: body.sessionPermissions,
     generationOverrides: body.generationOverrides,
     autoChooseDefaults: body.autoChooseDefaults,
@@ -608,6 +620,17 @@ export async function POST(req: NextRequest) {
       // The 'done' event is already emitted inside runAgent.
       // Send the final updated state + generationLogId as a state_change event.
       // Use cleanScenesForPersistence to avoid sending placeholder content to the client.
+      logger.log(
+        'api',
+        `Sending state_change: ${cleanScenesForPersistence.length} scenes, hasGlobalStyle=${!!result.updatedGlobalStyle}`,
+      )
+      for (const s of cleanScenesForPersistence) {
+        const sc = s as any
+        logger.log(
+          'api',
+          `  scene ${sc.id?.slice(0, 8)}… type=${sc.sceneType} react=${sc.reactCode?.length ?? 0} html=${sc.sceneHTML?.length ?? 0}`,
+        )
+      }
       sendEvent({
         type: 'state_change',
         changes: [

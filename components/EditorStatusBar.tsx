@@ -110,21 +110,13 @@ export default function EditorStatusBar() {
 
         <div className="mx-1 h-3 w-px shrink-0 bg-[var(--color-border)]" aria-hidden />
 
-        <span
-          className={`${itemClass} shrink-0 cursor-default`}
-          title={errorTitle || 'No errors'}
-          role="status"
-        >
-          <XCircle size={12} className="shrink-0 text-red-400/90" strokeWidth={2} />
+        <span className={`${itemClass} shrink-0 cursor-default`} title={errorTitle || 'No errors'} role="status">
+          <XCircle size={12} className="shrink-0" strokeWidth={2} />
           <span>{errorCount}</span>
         </span>
 
-        <span
-          className={`${itemClass} shrink-0 cursor-default`}
-          title={publishError || 'No warnings'}
-          role="status"
-        >
-          <AlertTriangle size={12} className="shrink-0 text-amber-400/90" strokeWidth={2} />
+        <span className={`${itemClass} shrink-0 cursor-default`} title={publishError || 'No warnings'} role="status">
+          <AlertTriangle size={12} className="shrink-0" strokeWidth={2} />
           <span>{warnCount}</span>
         </span>
       </div>

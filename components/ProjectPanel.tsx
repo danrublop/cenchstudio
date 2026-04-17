@@ -1,14 +1,16 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useVideoStore } from '@/lib/store'
-import { FolderOpen, Plus, X, ChevronDown, Film, Layers, Clock } from 'lucide-react'
+import { Plus, ChevronDown, Package2, MoreHorizontal, Briefcase } from 'lucide-react'
+import type { WorkspaceListItem } from '@/lib/types'
 
 interface ProjectListItem {
   id: string
   name: string
   description: string | null
   outputMode: string
+  workspaceId: string | null
   updatedAt: string
   createdAt: string
 }
@@ -30,22 +32,129 @@ function formatRelative(iso: string) {
   return formatDate(iso)
 }
 
+function ProjectRow({
+  p,
+  isCurrent,
+  workspaces,
+  onSelect,
+  onConfirmDelete,
+  onMove,
+}: {
+  p: ProjectListItem
+  isCurrent: boolean
+  workspaces: WorkspaceListItem[]
+  onSelect: (id: string) => void
+  onConfirmDelete: (id: string) => void
+  onMove: (projectId: string, workspaceId: string | null) => void
+}) {
+  const [menuOpen, setMenuOpen] = useState<{ x: number; y: number } | null>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!menuOpen) return
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(null)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [menuOpen])
+
+  return (
+    <div
+      className={`group/item flex items-center gap-2 rounded-lg px-2 py-1.5 cursor-pointer transition-colors relative ${
+        isCurrent ? 'bg-[var(--color-panel)]/50' : 'hover:bg-[var(--color-panel)]/50'
+      }`}
+      onClick={() => onSelect(p.id)}
+    >
+      <span className="text-[13px] font-medium truncate flex-1 min-w-0 text-[var(--color-text-secondary)] opacity-80 group-hover/item:opacity-100">
+        {p.name}
+      </span>
+
+      <span
+        onClick={(e) => {
+          e.stopPropagation()
+          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+          setMenuOpen({ x: rect.right - 160, y: rect.bottom + 4 })
+        }}
+        className="opacity-0 group-hover/item:opacity-100 transition-opacity text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] cursor-pointer shrink-0"
+      >
+        <MoreHorizontal size={14} />
+      </span>
+
+      {/* Inline dropdown menu */}
+      {menuOpen && (
+        <div
+          ref={menuRef}
+          className="fixed z-[10000] bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg shadow-xl py-1 min-w-[160px]"
+          style={{ left: menuOpen.x, top: menuOpen.y }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {workspaces.length > 0 && (
+            <>
+              <div className="px-3 py-1 text-[10px] uppercase tracking-wider text-[var(--color-text-muted)]">
+                Move to...
+              </div>
+              {workspaces
+                .filter((w) => w.id !== p.workspaceId)
+                .map((w) => (
+                  <div
+                    key={w.id}
+                    className="px-3 py-1.5 text-[12px] text-[var(--color-text-primary)] hover:bg-white/5 cursor-pointer flex items-center gap-2"
+                    onClick={() => {
+                      onMove(p.id, w.id)
+                      setMenuOpen(null)
+                    }}
+                  >
+                    {w.color && <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: w.color }} />}
+                    <span className="truncate">{w.name}</span>
+                  </div>
+                ))}
+              {p.workspaceId && (
+                <div
+                  className="px-3 py-1.5 text-[12px] text-[var(--color-text-primary)] hover:bg-white/5 cursor-pointer"
+                  onClick={() => {
+                    onMove(p.id, null)
+                    setMenuOpen(null)
+                  }}
+                >
+                  Unassign from workspace
+                </div>
+              )}
+              <div className="border-t border-[var(--color-border)] my-1" />
+            </>
+          )}
+          <div
+            className="px-3 py-1.5 text-[12px] text-red-400 hover:bg-white/5 cursor-pointer"
+            onClick={() => {
+              onConfirmDelete(p.id)
+              setMenuOpen(null)
+            }}
+          >
+            Delete project
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function ProjectPanel({ onClose }: { onClose: () => void }) {
   const {
     project,
     scenes,
     projectList,
-    isLoadingProjects,
-    fetchProjectList,
     createNewProject,
     loadProject,
     deleteProjectFromDb,
     saveProjectToDb,
+    workspaces,
+    fetchWorkspaces,
+    moveProjectToWorkspace,
+    setCenterTab,
   } = useVideoStore()
 
   const [projects, setProjects] = useState<ProjectListItem[]>([])
   const [loading, setLoading] = useState(true)
-  const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [isRenaming, setIsRenaming] = useState(false)
   const [renameValue, setRenameValue] = useState(project.name)
 
@@ -66,18 +175,8 @@ export default function ProjectPanel({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     fetchProjects()
-  }, [fetchProjects])
-
-  // Count scenes from description JSON for other projects
-  const getSceneCount = (p: ProjectListItem) => {
-    if (p.id === project.id) return scenes.length
-    try {
-      const data = JSON.parse(p.description || '{}')
-      return data.scenes?.length ?? 0
-    } catch {
-      return 0
-    }
-  }
+    fetchWorkspaces()
+  }, [fetchProjects, fetchWorkspaces])
 
   const handleRename = async () => {
     if (renameValue.trim() && renameValue !== project.name) {
@@ -90,9 +189,7 @@ export default function ProjectPanel({ onClose }: { onClose: () => void }) {
 
   const handleDelete = async (id: string) => {
     await deleteProjectFromDb(id)
-    setConfirmDelete(null)
     if (id === project.id) {
-      // Deleted current project — load another or create new
       const remaining = projects.filter((p) => p.id !== id)
       if (remaining.length > 0) {
         await loadProject(remaining[0].id)
@@ -101,18 +198,22 @@ export default function ProjectPanel({ onClose }: { onClose: () => void }) {
       }
     }
     fetchProjects()
+    fetchWorkspaces()
   }
 
   const handleCreate = async () => {
     await createNewProject()
-    onClose()
   }
 
   const handleSelect = async (id: string) => {
     if (id !== project.id) {
       await loadProject(id)
     }
-    onClose()
+  }
+
+  const handleMoveProject = async (projectId: string, workspaceId: string | null) => {
+    await moveProjectToWorkspace(projectId, workspaceId)
+    fetchProjects()
   }
 
   const currentSceneCount = scenes.length
@@ -121,14 +222,9 @@ export default function ProjectPanel({ onClose }: { onClose: () => void }) {
   return (
     <div className="flex flex-col h-full text-[var(--color-text-primary)] bg-transparent">
       <div className="flex-1 overflow-y-auto">
-        {/* Current project details */}
-        <div className="border-b border-[var(--color-border)] p-4">
-          <div className="text-[11px] uppercase tracking-wider text-[var(--color-text-muted)] mb-2">
-            Current Project
-          </div>
-
-          {/* Project name + updated */}
-          <div className="flex items-center gap-2">
+        {/* Current project */}
+        <div className="sticky top-0 z-10 border-b border-[var(--color-border)] p-4 bg-[var(--color-bg)]">
+          <div className="px-2">
             <input
               value={isRenaming ? renameValue : project.name}
               onFocus={() => {
@@ -144,137 +240,122 @@ export default function ProjectPanel({ onClose }: { onClose: () => void }) {
                   setRenameValue(project.name)
                 }
               }}
-              className="flex-1 min-w-0 text-sm font-semibold bg-transparent border-none outline-none text-[var(--color-text-primary)] truncate"
+              className="w-full text-[15px] font-medium bg-transparent border-none outline-none text-[var(--color-text-secondary)] opacity-80 truncate mb-1"
             />
-            <span className="text-[11px] text-[var(--color-text-muted)] shrink-0">
-              {formatRelative(project.updatedAt)}
-            </span>
-          </div>
 
-          {/* Stats row */}
-          <div className="flex items-center gap-3 mt-2 text-[var(--color-text-muted)]">
-            <div className="flex items-center gap-1.5">
-              <Layers size={12} />
-              <span className="text-[12px] tabular-nums">
-                {currentSceneCount} scene{currentSceneCount !== 1 ? 's' : ''}
-              </span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <Clock size={12} />
-              <span className="text-[12px] tabular-nums">{totalDuration}s</span>
-            </div>
-            <span className="text-[12px] tabular-nums uppercase ml-auto">{project.outputMode}</span>
+            <details className="mt-1 group">
+              <summary className="flex items-center gap-2 text-[11px] text-[var(--color-text-muted)] cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
+                <span className="tabular-nums">{totalDuration}s</span>
+                <span>·</span>
+                <span>{project.mp4Settings?.aspectRatio || '16:9'}</span>
+                <span>·</span>
+                <span className="uppercase">{project.outputMode}</span>
+                <ChevronDown size={10} className="group-open:rotate-180 transition-transform" />
+              </summary>
+              <div className="mt-2 space-y-2 text-[12px]">
+                <div className="flex justify-between">
+                  <span className="text-[var(--color-text-muted)]">ID</span>
+                  <span className="text-[var(--color-text-secondary)] font-mono text-[11px] truncate ml-2 max-w-[160px]">
+                    {project.id}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[var(--color-text-muted)]">FPS</span>
+                  <span className="text-[var(--color-text-secondary)]">{project.mp4Settings?.fps || 30}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[var(--color-text-muted)]">Aspect ratio</span>
+                  <span className="text-[var(--color-text-secondary)]">
+                    {project.mp4Settings?.aspectRatio || '16:9'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[var(--color-text-muted)]">Scenes</span>
+                  <span className="text-[var(--color-text-secondary)]">{currentSceneCount}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[var(--color-text-muted)]">Created</span>
+                  <span className="text-[var(--color-text-secondary)]">{formatDate(project.createdAt)}</span>
+                </div>
+              </div>
+            </details>
           </div>
-
-          {/* Project settings */}
-          <details className="mt-3 group">
-            <summary className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-[var(--color-text-muted)] cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
-              Details
-              <ChevronDown size={10} className="group-open:rotate-180 transition-transform" />
-            </summary>
-            <div className="mt-2 space-y-2 text-[12px]">
-              <div className="flex justify-between">
-                <span className="text-[var(--color-text-muted)]">ID</span>
-                <span className="text-[var(--color-text-secondary)] font-mono text-[11px] truncate ml-2 max-w-[160px]">
-                  {project.id}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[var(--color-text-muted)]">Resolution</span>
-                <span className="text-[var(--color-text-secondary)]">{project.mp4Settings?.resolution || '1080p'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[var(--color-text-muted)]">FPS</span>
-                <span className="text-[var(--color-text-secondary)]">{project.mp4Settings?.fps || 30}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[var(--color-text-muted)]">Format</span>
-                <span className="text-[var(--color-text-secondary)] uppercase">
-                  {project.mp4Settings?.format || 'mp4'}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[var(--color-text-muted)]">Created</span>
-                <span className="text-[var(--color-text-secondary)]">{formatDate(project.createdAt)}</span>
-              </div>
-            </div>
-          </details>
         </div>
 
-        {/* All projects */}
-        <div className="p-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="text-[11px] uppercase tracking-wider text-[var(--color-text-muted)]">All Projects</div>
-            <span
-              onClick={handleCreate}
-              className="cursor-pointer text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors"
-            >
-              <Plus size={14} />
+        <div className="px-4 pt-1 pb-4">
+          {/* Workspaces button */}
+          <div
+            onClick={handleCreate}
+            className="group flex items-center gap-2 px-2 py-1.5 mb-0 rounded-lg hover:bg-[var(--color-panel)]/50 cursor-pointer transition-colors"
+          >
+            <span className="flex items-center justify-center w-6 h-6 shrink-0">
+              <span className="flex items-center justify-center w-6 h-6 rounded-full bg-[color:color-mix(in_srgb,var(--color-text-muted)_22%,var(--color-bg))] group-hover:bg-[color:color-mix(in_srgb,var(--color-text-muted)_32%,var(--color-bg))] transition-colors">
+                <Plus
+                  size={16}
+                  className="text-[var(--color-text-secondary)] group-hover:text-[var(--color-text-primary)] transition-colors"
+                />
+              </span>
             </span>
+            <span className="text-[15px] font-medium text-[var(--color-text-secondary)] opacity-80 group-hover:opacity-100 group-hover:text-[var(--color-text-primary)] transition-colors flex-1">
+              New project
+            </span>
+          </div>
+
+          <div
+            onClick={() => setCenterTab('workspace')}
+            className="group flex items-center gap-2 px-2 py-1.5 mb-0 rounded-lg hover:bg-[var(--color-panel)]/50 cursor-pointer transition-colors"
+          >
+            <span className="flex items-center justify-center w-6 h-6 shrink-0">
+              <Package2
+                size={16}
+                className="text-[var(--color-text-muted)] group-hover:text-[var(--color-text-secondary)] transition-colors"
+              />
+            </span>
+            <span className="text-[15px] font-medium text-[var(--color-text-secondary)] opacity-80 group-hover:opacity-100 group-hover:text-[var(--color-text-primary)] transition-colors flex-1">
+              Workspaces
+            </span>
+          </div>
+
+          {/* Customize button */}
+          <div
+            onClick={() => setCenterTab('customize')}
+            className="group flex items-center gap-2 px-2 py-1.5 mb-4 rounded-lg hover:bg-[var(--color-panel)]/50 cursor-pointer transition-colors"
+          >
+            <span className="flex items-center justify-center w-6 h-6 shrink-0">
+              <Briefcase
+                size={16}
+                className="text-[var(--color-text-muted)] group-hover:text-[var(--color-text-secondary)] transition-colors"
+              />
+            </span>
+            <span className="text-[15px] font-medium text-[var(--color-text-secondary)] opacity-80 group-hover:opacity-100 group-hover:text-[var(--color-text-primary)] transition-colors flex-1">
+              Customize
+            </span>
+          </div>
+
+          {/* Recents */}
+          <div className="flex items-center justify-between mb-0 px-2">
+            <span className="text-sm font-semibold text-[var(--color-text-muted)]">Recents</span>
           </div>
 
           {loading ? (
-            <div className="text-[12px] text-[var(--color-text-muted)] py-4 text-center">Loading projects...</div>
+            <div className="text-[12px] text-[var(--color-text-muted)] py-4 text-center">Loading...</div>
           ) : projects.length === 0 ? (
             <div className="text-[12px] text-[var(--color-text-muted)] py-4 text-center">No projects yet</div>
           ) : (
-            <div className="space-y-1">
-              {projects.map((p) => {
-                const isCurrent = p.id === project.id
-                const sceneCount = getSceneCount(p)
-                return (
-                  <div
+            <div className="space-y-0">
+              {[...projects]
+                .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+                .map((p) => (
+                  <ProjectRow
                     key={p.id}
-                    className={`group/item rounded-lg px-3 py-2.5 cursor-pointer transition-colors ${
-                      isCurrent
-                        ? 'bg-white/5 border border-[var(--color-border)]'
-                        : 'hover:bg-white/5 border border-transparent'
-                    }`}
-                    onClick={() => handleSelect(p.id)}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2 min-w-0 flex-1">
-                        <FolderOpen size={13} className="text-[var(--color-text-muted)] shrink-0" />
-                        <span className="text-[12px] font-medium truncate">{p.name}</span>
-                      </div>
-                      {confirmDelete !== p.id && (
-                        <span
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setConfirmDelete(p.id)
-                          }}
-                          className="opacity-0 group-hover/item:opacity-100 transition-opacity text-[var(--color-text-muted)] hover:text-red-400 cursor-pointer shrink-0 ml-2"
-                        >
-                          <X size={12} />
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-3 mt-1 text-[11px] text-[var(--color-text-muted)]">
-                      <span>
-                        {sceneCount} scene{sceneCount !== 1 ? 's' : ''}
-                      </span>
-                      <span className="uppercase">{p.outputMode || 'mp4'}</span>
-                      <span className="ml-auto">{formatRelative(p.updatedAt)}</span>
-                    </div>
-                    {confirmDelete === p.id && (
-                      <div className="flex gap-2 mt-1.5 justify-end" onClick={(e) => e.stopPropagation()}>
-                        <span
-                          onClick={() => handleDelete(p.id)}
-                          className="text-[10px] text-red-400 hover:text-red-300 cursor-pointer transition-colors"
-                        >
-                          Delete
-                        </span>
-                        <span
-                          onClick={() => setConfirmDelete(null)}
-                          className="text-[10px] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] cursor-pointer transition-colors"
-                        >
-                          Cancel
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
+                    p={p}
+                    isCurrent={p.id === project.id}
+                    workspaces={workspaces}
+                    onSelect={handleSelect}
+                    onConfirmDelete={handleDelete}
+                    onMove={handleMoveProject}
+                  />
+                ))}
             </div>
           )}
         </div>

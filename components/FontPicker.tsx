@@ -9,7 +9,7 @@ const CATEGORY_ORDER: FontCategory[] = ['sans-serif', 'serif', 'handwritten', 'm
 
 interface Props {
   value: string | null // current fontOverride (null = preset default)
-  presetFont: string // font from the active preset
+  presetFont: string | null // font from the active preset (null = no preset active)
   onChange: (family: string | null) => void
   /** Omit the “Default (preset)” row (e.g. Settings → General UI font). */
   hidePresetOption?: boolean
@@ -23,7 +23,7 @@ export default function FontPicker({ value, presetFont, onChange, hidePresetOpti
   const ref = useRef<HTMLDivElement>(null)
   const { favoriteFonts, toggleFavoriteFont } = useVideoStore()
 
-  const activeFont = value ?? presetFont
+  const activeFont = value ?? presetFont ?? 'Nunito'
 
   useEffect(() => {
     if (!open) return
@@ -94,8 +94,8 @@ export default function FontPicker({ value, presetFont, onChange, hidePresetOpti
             {/* Default (preset) option */}
             {!hidePresetOption && (
               <FontRow
-                family={presetFont}
-                label={`Default (${presetFont})`}
+                family={presetFont ?? 'Nunito'}
+                label={presetFont ? `Default (${presetFont})` : 'Default'}
                 isActive={value === null}
                 isFavorite={false}
                 onSelect={() => {

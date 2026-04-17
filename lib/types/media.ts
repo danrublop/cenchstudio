@@ -2,7 +2,21 @@
 
 export type AssetType = 'image' | 'video' | 'svg'
 
-export interface ProjectAsset {
+export type AssetSource = 'upload' | 'generated'
+
+export type MediaIntent = 't2i' | 'i2i' | 'sticker' | 'video' | 'avatar'
+
+export interface AssetGenerationMetadata {
+  prompt: string | null
+  provider: string | null
+  model: string | null
+  costCents: number | null
+  parentAssetId: string | null
+  referenceAssetIds: string[] | null
+  enhanceTags: string[] | null
+}
+
+export interface ProjectAsset extends AssetGenerationMetadata {
   id: string
   projectId: string
   filename: string
@@ -18,6 +32,7 @@ export interface ProjectAsset {
   tags: string[]
   thumbnailUrl: string | null
   extractedColors: string[]
+  source: AssetSource
   createdAt: string
 }
 

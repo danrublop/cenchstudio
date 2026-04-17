@@ -51,8 +51,9 @@ export async function GET(req: NextRequest) {
   }
 
   const globalStyle: GlobalStyle = (project as any).globalStyle ?? {
-    presetId: 'clean',
+    presetId: null,
     fontOverride: null,
+    bodyFontOverride: null,
     bgColorOverride: null,
     paletteOverride: null,
     strokeColorOverride: null,

@@ -59,7 +59,11 @@ export default function SceneEditor() {
       )}
       {/* Tab content: clip here; each tab (Layers, Agent, Media) scrolls inside its own panel */}
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        {activeTab === 'prompt' && <PromptTab scene={selectedScene} />}
+        {/* PromptTab stays mounted (hidden via CSS) so closing the chat panel
+            doesn't unmount AgentChat and abort the active SSE stream. */}
+        <div className={`flex min-h-0 flex-1 flex-col ${activeTab === 'prompt' ? '' : 'hidden'}`}>
+          <PromptTab scene={selectedScene} />
+        </div>
         {activeTab === 'layers' && selectedScene && <LayersTab scene={selectedScene} />}
         {activeTab === 'media' && <MediaLibrary />}
       </div>

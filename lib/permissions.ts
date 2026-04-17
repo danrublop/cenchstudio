@@ -2,6 +2,12 @@ import type { APIName, APIPermissions, PermissionConfig, PermissionRequest, Perm
 
 // ── Default permissions ─────────────────────────────────────────────────────
 
+/** Project-level default for the single-call cost approval threshold.
+ *  Any tool call whose estimated USD cost exceeds this value prompts the
+ *  user even if the per-API mode is `always_allow`. Per-API
+ *  `singleCallCostThreshold` overrides this. $0.50 matches OpenMontage. */
+export const DEFAULT_SINGLE_CALL_COST_THRESHOLD_USD = 0.5
+
 export function createDefaultPermissionConfig(): PermissionConfig {
   return {
     mode: 'always_ask',
@@ -9,6 +15,7 @@ export function createDefaultPermissionConfig(): PermissionConfig {
     monthlyLimit: null,
     sessionSpend: 0,
     monthlySpend: 0,
+    singleCallCostThreshold: null,
   }
 }
 
@@ -16,6 +23,8 @@ export function createDefaultAPIPermissions(): APIPermissions {
   return {
     heygen: createDefaultPermissionConfig(),
     veo3: createDefaultPermissionConfig(),
+    kling: createDefaultPermissionConfig(),
+    runway: createDefaultPermissionConfig(),
     imageGen: createDefaultPermissionConfig(),
     backgroundRemoval: createDefaultPermissionConfig(),
     elevenLabs: createDefaultPermissionConfig(),
@@ -35,6 +44,8 @@ export function createDefaultAPIPermissions(): APIPermissions {
 export const API_COST_ESTIMATES: Record<string, string> = {
   heygen: '~$0.10–$1.00 per video',
   veo3: '~$0.50–$2.00 per clip',
+  kling: '~$0.40–$0.55 per clip',
+  runway: '~$0.70–$1.20 per clip',
   'imageGen:flux-1.1-pro': '~$0.05',
   'imageGen:flux-schnell': '~$0.003',
   'imageGen:ideogram-v3': '~$0.08',
@@ -52,9 +63,77 @@ export const API_COST_ESTIMATES: Record<string, string> = {
   falAvatar: '~$0.04–$0.15 per scene',
 }
 
+// ── Scalar cost estimates (USD) ─────────────────────────────────────────────
+//
+// Parallel to API_COST_ESTIMATES (display strings) but numeric so the cost
+// approval gate can compare against thresholds. Picked to approximate the
+// midpoint of each public pricing range as of 2026-04. Override via
+// `estimateApiCostUsd()` when args are known (duration, resolution, length).
+
+interface CostScalar {
+  /** Typical per-call cost in USD. */
+  perCall: number
+  /** If set, cost scales with this arg. e.g. `{ perSecond: 0.5 }` for video. */
+  perSecond?: number
+  /** If set, cost scales per 1000 characters of text (TTS). */
+  per1KChars?: number
+}
+
+export const API_COST_SCALARS: Record<APIName, CostScalar> = {
+  heygen: { perCall: 0.5 },
+  veo3: { perCall: 1.25, perSecond: 0.2 },
+  kling: { perCall: 0.45, perSecond: 0.09 },
+  runway: { perCall: 0.9, perSecond: 0.18 },
+  imageGen: { perCall: 0.04 },
+  backgroundRemoval: { perCall: 0.01 },
+  elevenLabs: { perCall: 0.06, per1KChars: 0.3 },
+  unsplash: { perCall: 0 },
+  googleTts: { perCall: 0.004, per1KChars: 0.04 },
+  googleImageGen: { perCall: 0.03 },
+  openaiTts: { perCall: 0.015, per1KChars: 0.022 },
+  geminiTts: { perCall: 0.01, per1KChars: 0.015 },
+  freesound: { perCall: 0 },
+  pixabay: { perCall: 0 },
+  falAvatar: { perCall: 0.1 },
+}
+
+/** Estimate the USD cost of a single API call, using any `details` we have.
+ *  Falls back to `perCall` when args don't refine the estimate. */
+export function estimateApiCostUsd(
+  api: APIName,
+  details?: PermissionRequest['details'] & { textLength?: number },
+): number {
+  const scalar = API_COST_SCALARS[api]
+  if (!scalar) return 0
+  let cost = scalar.perCall
+  if (scalar.perSecond && details?.duration && details.duration > 0) {
+    cost = Math.max(cost, scalar.perSecond * details.duration)
+  }
+  if (scalar.per1KChars) {
+    const len = details?.textLength ?? (details?.prompt ? details.prompt.length : 0)
+    if (len > 0) cost = Math.max(cost, (scalar.per1KChars * len) / 1000)
+  }
+  return cost
+}
+
+/** Resolve the effective single-call threshold for an API, falling back
+ *  from per-API override → project default. `null` or undefined means
+ *  "no threshold — never upgrade auto-allow to ask on cost alone". */
+export function resolveCostThreshold(
+  config: PermissionConfig,
+  projectDefault: number | null = DEFAULT_SINGLE_CALL_COST_THRESHOLD_USD,
+): number | null {
+  if (config.singleCallCostThreshold !== undefined && config.singleCallCostThreshold !== null) {
+    return config.singleCallCostThreshold
+  }
+  return projectDefault
+}
+
 export const API_DISPLAY_NAMES: Record<APIName, string> = {
   heygen: 'HeyGen Avatars',
   veo3: 'Veo 3 Video',
+  kling: 'Kling 2.1 Video',
+  runway: 'Runway Gen-4 Video',
   imageGen: 'Image Generation (FAL)',
   backgroundRemoval: 'Background Removal',
   elevenLabs: 'ElevenLabs TTS',
@@ -75,6 +154,14 @@ export type PermissionCheckResult =
   | { action: 'deny'; reason: string }
   | { action: 'ask'; request: PermissionRequest }
 
+export interface CheckPermissionExtras {
+  /** Scalar cost estimate in USD. Used to evaluate the per-API or project
+   *  single-call threshold. If omitted, the cost gate is a no-op. */
+  estimatedCostUsd?: number
+  /** Project-level default threshold. Overrides the built-in $0.50 when set. */
+  projectCostThreshold?: number | null
+}
+
 export function checkPermission(
   permissions: APIPermissions,
   api: APIName,
@@ -82,6 +169,7 @@ export function checkPermission(
   reason: string,
   details: PermissionRequest['details'],
   sessionPermissions: Map<string, string>,
+  extras?: CheckPermissionExtras,
 ): PermissionCheckResult {
   const config = permissions[api]
 
@@ -99,29 +187,49 @@ export function checkPermission(
     }
   }
 
+  // Resolve the effective decision from mode + session history. Free APIs
+  // (cost scalar == 0) always skip the cost gate.
+  const threshold = resolveCostThreshold(config, extras?.projectCostThreshold)
+  const estimate = extras?.estimatedCostUsd ?? 0
+  const wouldExceedThreshold = threshold !== null && estimate > threshold
+
+  let autoDecision: 'allow' | 'deny' | 'ask' = 'ask'
   switch (config.mode) {
     case 'always_allow':
-      return { action: 'allow' }
+      autoDecision = 'allow'
+      break
     case 'always_deny':
       return { action: 'deny', reason: `${API_DISPLAY_NAMES[api]} is disabled in project settings.` }
     case 'ask_once': {
       const sessionDecision = sessionPermissions.get(api)
-      if (sessionDecision === 'allow') return { action: 'allow' }
-      if (sessionDecision === 'deny') return { action: 'deny', reason: 'Previously denied this session.' }
-      // Fall through to ask
+      if (sessionDecision === 'allow') autoDecision = 'allow'
+      else if (sessionDecision === 'deny') return { action: 'deny', reason: 'Previously denied this session.' }
+      // else fall through to ask
       break
     }
     case 'always_ask':
     default:
+      autoDecision = 'ask'
       break
   }
+
+  // Upgrade auto-allow to ask when the scalar estimate exceeds the threshold.
+  // This is the cost approval gate — it catches expensive single calls even
+  // when the user has granted a blanket "always_allow" for an API.
+  const costTriggered = autoDecision === 'allow' && wouldExceedThreshold
+
+  if (autoDecision === 'allow' && !costTriggered) return { action: 'allow' }
 
   // Need to ask the user
   const request: PermissionRequest = {
     id: crypto.randomUUID(),
     api,
     estimatedCost,
-    reason,
+    estimatedCostUsd: extras?.estimatedCostUsd,
+    costThresholdExceeded: costTriggered,
+    reason: costTriggered
+      ? `${reason} — estimated $${estimate.toFixed(2)} exceeds the $${threshold?.toFixed(2)} single-call approval threshold.`
+      : reason,
     details,
   }
   return { action: 'ask', request }

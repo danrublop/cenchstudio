@@ -50,7 +50,7 @@ document.querySelectorAll('.stroke').forEach((el) => {
 - Use `<text>` only — never `<foreignObject>`
 - Specify `dominant-baseline` and `text-anchor` on every text element
 - Apply `class="slide-up"` or `class="fadein"` with staggered `--delay`
-- Large display text: 80–160px; labels/annotations: 32–56px; captions: 24–40px
+- VIDEO sizing — nothing below 24px. Display: 100–180px; headings: 48–72px; body/labels: 32–56px; smallest annotations: 24px minimum
 
 ---
 

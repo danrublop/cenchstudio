@@ -2,6 +2,7 @@ import fs from 'fs/promises'
 import path from 'path'
 import type { TTSProviderInterface, TTSParams, TTSResult, Voice } from '../types'
 import { safeAudioFilename } from '../sanitize'
+import { buildCaptionBundle, type CharAlignment } from '../captions'
 
 const API_BASE = 'https://api.elevenlabs.io/v1'
 const DEFAULT_VOICE_ID = '21m00Tcm4TlvDq8ikWAM' // Rachel
@@ -24,12 +25,12 @@ export const elevenlabsTTS: TTSProviderInterface = {
     const voiceId = params.voiceId || DEFAULT_VOICE_ID
     const model = params.model || DEFAULT_MODEL
 
-    const response = await fetch(`${API_BASE}/text-to-speech/${voiceId}`, {
+    const response = await fetch(`${API_BASE}/text-to-speech/${voiceId}/with-timestamps`, {
       method: 'POST',
       headers: {
         'xi-api-key': apiKey,
         'Content-Type': 'application/json',
-        Accept: 'audio/mpeg',
+        Accept: 'application/json',
       },
       body: JSON.stringify({
         text: params.text,
@@ -46,7 +47,12 @@ export const elevenlabsTTS: TTSProviderInterface = {
       throw new Error(`ElevenLabs TTS error (${response.status}): ${errorText}`)
     }
 
-    const audioBuffer = Buffer.from(await response.arrayBuffer())
+    const payload = (await response.json()) as {
+      audio_base64: string
+      alignment?: CharAlignment
+      normalized_alignment?: CharAlignment
+    }
+    const audioBuffer = Buffer.from(payload.audio_base64, 'base64')
 
     const audioDir = path.join(process.cwd(), 'public', 'audio')
     await fs.mkdir(audioDir, { recursive: true })
@@ -58,11 +64,31 @@ export const elevenlabsTTS: TTSProviderInterface = {
     // Estimate duration from MP3 file size (128kbps bitrate assumption)
     const durationEstimate = (audioBuffer.length * 8) / (128 * 1000)
 
-    return {
+    const result: TTSResult = {
       audioUrl: `/audio/${filename}`,
       duration: Math.round(durationEstimate * 10) / 10,
       provider: 'elevenlabs',
     }
+
+    const alignment = payload.normalized_alignment ?? payload.alignment
+    if (alignment && alignment.characters.length > 0) {
+      const bundle = buildCaptionBundle(alignment)
+      const base = filename.replace(/\.mp3$/, '')
+      const srtName = `${base}.srt`
+      const vttName = `${base}.vtt`
+      await Promise.all([
+        fs.writeFile(path.join(audioDir, srtName), bundle.srt, 'utf8'),
+        fs.writeFile(path.join(audioDir, vttName), bundle.vtt, 'utf8'),
+      ])
+      result.captions = {
+        srtUrl: `/audio/${srtName}`,
+        vttUrl: `/audio/${vttName}`,
+        kind: 'aligned',
+        words: bundle.words,
+      }
+    }
+
+    return result
   },
 
   async listVoices(): Promise<Voice[]> {

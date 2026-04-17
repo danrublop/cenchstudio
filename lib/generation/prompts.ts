@@ -6,7 +6,7 @@
  */
 
 import { formatThreeEnvironmentsForPrompt } from '../three-environments'
-import { DESIGN_PRINCIPLES } from './design-principles'
+import { DESIGN_PRINCIPLES, getDesignPrinciples } from './design-principles'
 
 export const SVG_SYSTEM_PROMPT = (
   palette: string[],
@@ -113,7 +113,7 @@ COMPOSITION:
 - Use overlapping shapes and partial occlusion for depth, not flat side-by-side arrangement.
 - Break symmetry: offset related elements, use diagonal flows, cluster groups off-center.
 - Give every animated element a unique id attribute and data-label
-${DESIGN_PRINCIPLES}
+${getDesignPrinciples(dims)}
 Previous scene summary (for visual continuity): ${previousSummary || 'none'}`
 }
 
@@ -228,8 +228,8 @@ CRITICAL RULES:
 
 DrawOpts for progress functions: { color, tool, seed, width, fill, fillAlpha }
 Available tools: 'marker', 'pen', 'chalk', 'brush', 'highlighter'
-Globals: PALETTE, DURATION, ROUGHNESS, FONT, WIDTH, HEIGHT, TOOL, STROKE_COLOR
-${DESIGN_PRINCIPLES}
+Globals: PALETTE, DURATION, ROUGHNESS, FONT, WIDTH, HEIGHT, TOOL, STROKE_COLOR, BG_COLOR
+${getDesignPrinciples(dims)}
 Previous scene summary (for visual continuity): ${previousSummary || 'none'}`
 }
 
@@ -263,7 +263,7 @@ ${hasExplicitPalette ? `- Suggested palette (prefer these, override when content
 - Font: ${font}; background is already ${bgColor}
 - Duration: ${duration} seconds — use .transition().duration(ms) for all enters
 - Stagger elements: .delay((d,i) => i * 100)
-- Title text: 56px bold; axis labels: 24px; data labels: 20px
+- Title text: 56px bold; axis labels: 28px; data labels: 24px (nothing below 24px — this is video)
 - Fill the full ${W}×${H} canvas deliberately — ALL content must fit within the viewBox. Nothing below y=${H} or past x=${W}. If too many data points or labels, reduce the dataset or use smaller text.
 - suggestedData should be a realistic dataset matching the prompt (array or object)
 SEEK/SCRUB SAFETY (MANDATORY):
@@ -307,7 +307,7 @@ CHART DESIGN:
 - Use direct labeling on data points instead of legends when possible — reduces eye travel.
 - Choose chart type by question: comparison → bar, trend → line, proportion → stacked bar/waffle, distribution → histogram, correlation → scatter.
 - Animate the data, not the decoration. Bar height growing from zero is meaningful; decorative spinning is not.
-${DESIGN_PRINCIPLES}
+${getDesignPrinciples(dims)}
 Previous scene summary (for visual continuity): ${previousSummary || 'none'}`
 }
 
@@ -604,11 +604,16 @@ VIEWER-FIRST PRINCIPLES:
 - TEXT IN HTML, NOT 3D: For production videos, use React scenes (type: 'react') with <ThreeJSLayer> for 3D background + JSX <AbsoluteFill> for text overlays on top. HTML text stays fixed on screen regardless of camera movement — always readable. Only use troika 3D text for decorative effects.
 - createStudioScene() now includes a curved studio backdrop (cyclorama) — no more flat-color void backgrounds.
 
-TEMPLATE HELPERS (no imports needed — injected as globals):
-- createStudioScene('corporate'|'cinematic'|'playful'|'tech'|'showcase') — returns { scene, camera, renderer, floor, render }
-  One call sets up renderer, camera, lighting, floor, environment map. Scene code just adds objects.
-- createPostProcessing(renderer, scene, camera, { bloom: 0.3 }) — returns { render } (synchronous, no .then needed)
-  Safe wrapper for EffectComposer. Falls back to direct render if post-processing fails.
+TEMPLATE HELPERS (injected as globals):
+- buildStudio(THREE, scene, camera, renderer, style?, opts?) — use inside ThreeJSLayer setup callback
+  Sets up: sky gradient sphere (128 segments), infinite grid, floor, 3-point lighting, env map
+  Returns: { floorY } — position objects at floorY
+  Default: 'white' (clean white photo studio with circle-fade floor)
+  Styles: 'white', 'corporate', 'playful', 'cinematic', 'showcase', 'tech', 'sky'
+  opts.floorMode: 'circle' (default for white), 'infinite' (default for others), 'none'
+- createStudioScene(style) — for standalone three scenes only (NOT available in ThreeJSLayer)
+  Returns: { scene, camera, renderer, floor, render }
+- createPostProcessing(renderer, scene, camera, { bloom: 0.3 }) — returns { render } (synchronous)
 - MATERIALS.lowpoly(c) — flat-shaded, friendly aesthetic for explainer videos
 
 MODEL LIBRARY — load real objects:
@@ -630,7 +635,7 @@ Product Showcase: cinematic RectAreaLight, clearcoat+glass materials, dolly-in +
 Nature/Organic: sunset+hemisphere lighting, velvet+matte materials (earth tones), path flythrough camera, fog atmosphere, subtle bloom. For wellness, environment.
 
 Match the style to the user's intent. Don't default to the same look every time — variety is professional.
-${DESIGN_PRINCIPLES}
+${getDesignPrinciples(dims)}
 Previous scene summary (for visual continuity): ${previousSummary || 'none'}`
 }
 
@@ -696,7 +701,7 @@ ANIMATION GUIDANCE:
 
 LAYOUT & CHOREOGRAPHY:
 - Use CSS grid or flexbox to create editorial layouts: split screens, overlapping panels, text alongside shapes.
-- Establish typographic hierarchy with at least 3 distinct sizes (headline 5-8vw, subhead 2-3vw, body 1.2-1.8vw).
+- Establish typographic hierarchy with at least 3 distinct sizes (headline 5-9vw, subhead 2.5-4vw, body 1.7-2.2vw). Nothing below 1.5vw — that's the video readability floor.
 - Choreograph reveals by spatial region — e.g., left builds first, then right responds — not everything from the same direction.
 - Avoid centering every text block. Left-aligned text with asymmetric composition feels more intentional.
 ${DESIGN_PRINCIPLES}
@@ -798,7 +803,7 @@ COMPOSITION:
 - One primary assembly at larger scale, with secondary details orbiting or supporting.
 - Use 2-3 palette colors maximum, with one dominant. Not every shape needs a different color.
 - Vary shape types within assemblies — combine Ellipse + Cylinder + Box, not all-same-shape.
-${DESIGN_PRINCIPLES}
+${getDesignPrinciples(dims)}
 Previous scene summary (for visual continuity): ${previousSummary || 'none'}`
 }
 
@@ -870,7 +875,7 @@ GOOD SUBJECTS: icons, logos, geometric patterns, looping decorative elements, si
 QUALITY:
 - Use intentional movement paths — arcs and curves, not just linear slides.
 - Asymmetric timing: fast start with slow settle, or delayed secondary motion after primary.
-${DESIGN_PRINCIPLES}
+${getDesignPrinciples(dims)}
 Previous scene summary (for visual continuity): ${previousSummary || 'none'}`
 }
 
@@ -994,7 +999,8 @@ function SubContent() {
 - Use inline styles (style={{ }}) — no external CSS classes needed.
 - Use \`<AbsoluteFill>\` for full-frame layers that stack via z-index.
 ${hasExplicitPalette ? `- Palette: ${JSON.stringify(palette)}` : '- Choose a color palette that suits the content.'}
-- Font: "${font}"
+- Heading font: "${font}" (use for titles, headings, display text)
+- Body font: available as BODY_FONT global (use for paragraphs, descriptions, labels)
 - Background: "${bgColor}"
 - The canvas is a fixed ${W}×${H}px box with overflow: hidden — any content outside this area is clipped and invisible. Position all elements within bounds. Use percentage-based or absolute positioning relative to ${W}×${H}.
 
@@ -1002,7 +1008,7 @@ ${hasExplicitPalette ? `- Palette: ${JSON.stringify(palette)}` : '- Choose a col
 - Create a clear visual hierarchy: one dominant element, supporting elements at smaller scale, fine details.
 - Use AbsoluteFill layers for depth through overlapping: background layer, content layer, accent/decorative layers.
 - Layout variety: use CSS grid/flexbox within AbsoluteFill for editorial layouts — split screens, offset grids, text-alongside-visual. Do not default to centered stacks.
-- Typography: use at least 3 size levels with varied weights. Pair bold headline (80-160px) with medium subtitle (36-48px) and smaller labels (20-28px).
+- Typography: VIDEO SIZES — nothing below 24px. Pair bold headline (100-180px) with subtitle (48-72px) and body/labels (32-42px). Labels/annotations minimum 24px. Web-sized text (14-20px) is invisible in video.
 - Stagger entrances using Sequence components with 8-15 frame offsets between elements.
 - Use spring() for organic motion on key reveals. Use interpolate() with Easing.bezier for controlled motion.
 - Leave 20% of duration as a visual hold at the end.
@@ -1019,6 +1025,6 @@ React.useEffect(() => {
 \`\`\`
 A static camera feels like a PowerPoint slide. Always add motion.
 
-${DESIGN_PRINCIPLES}
+${getDesignPrinciples(dims)}
 Previous scene summary: ${previousSummary || 'none'}`
 }

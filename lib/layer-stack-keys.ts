@@ -9,6 +9,7 @@ export type LayerStackKey =
   | `scene:${string}`
   | `interaction:${string}`
   | `bg:${string}`
+  | `rx:${string}`
   | 'video'
   | 'audio'
 

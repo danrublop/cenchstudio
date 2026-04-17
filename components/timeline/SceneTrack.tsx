@@ -53,24 +53,31 @@ export default function SceneTrack({ pps, scrollX, containerWidth, trackHeight, 
         if (left + width < scrollX || left > scrollX + containerWidth) return null
 
         const isSelected = scene.id === selectedSceneId
+        const isBuilding = (scene as any)._building === true
         const type = scene.sceneType ?? 'svg'
-        const showThumbnail = width > 60 && !!scene.thumbnail
+        const showThumbnail = width > 60 && !!scene.thumbnail && !isBuilding
         const bg = index % 2 === 0 ? 'var(--tl-track-bg)' : 'var(--tl-track-alt)'
 
         return (
           <div
             key={scene.id}
-            className="absolute top-0 bottom-0 overflow-hidden cursor-pointer"
+            className={`absolute top-0 bottom-0 overflow-hidden ${isBuilding ? 'pointer-events-none' : 'cursor-pointer'}`}
             style={{
               left,
               width,
               background: bg,
               borderRight: '1px solid var(--tl-border)',
-              border: isSelected ? '2px solid var(--tl-playhead)' : undefined,
+              border: isSelected
+                ? '2px solid var(--tl-playhead)'
+                : isBuilding
+                  ? `1px solid ${(scene as any)._buildPhase === 'rendered' ? 'rgba(74, 222, 128, 0.3)' : 'rgba(232, 69, 69, 0.3)'}`
+                  : undefined,
               boxSizing: 'border-box',
+              opacity: isBuilding ? 0.7 : 1,
+              animation: isBuilding ? 'pulse 1.5s ease-in-out infinite' : undefined,
             }}
-            onClick={() => selectScene(scene.id)}
-            onDoubleClick={() => handleDoubleClick(index)}
+            onClick={() => !isBuilding && selectScene(scene.id)}
+            onDoubleClick={() => !isBuilding && handleDoubleClick(index)}
           >
             {showThumbnail && (
               <div
@@ -82,6 +89,40 @@ export default function SceneTrack({ pps, scrollX, containerWidth, trackHeight, 
                 }}
               />
             )}
+            {/* Building overlay — shows current build phase */}
+            {isBuilding &&
+              (() => {
+                const phase = (scene as any)._buildPhase as string | undefined
+                const label =
+                  phase === 'created'
+                    ? 'Queued'
+                    : phase === 'generating'
+                      ? 'Generating'
+                      : phase === 'rendered'
+                        ? 'Rendering'
+                        : 'Building'
+                const color = phase === 'rendered' ? '#4ade80' : '#e84545'
+                return (
+                  <div
+                    className="absolute inset-0 z-20 flex items-center justify-center"
+                    style={{ background: `${color}11` }}
+                  >
+                    {width > 50 && (
+                      <span
+                        style={{
+                          fontSize: 9,
+                          fontWeight: 600,
+                          color,
+                          letterSpacing: '0.5px',
+                          textTransform: 'uppercase',
+                        }}
+                      >
+                        {label}
+                      </span>
+                    )}
+                  </div>
+                )
+              })()}
             {/* Scene number */}
             <span
               className="absolute z-10"

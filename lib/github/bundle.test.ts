@@ -13,10 +13,11 @@ function createTestBundle(): CenchBundle {
       name: 'Test Project',
       outputMode: 'mp4',
       globalStyle: {
-        presetId: 'whiteboard',
+        presetId: null,
         paletteOverride: null,
         bgColorOverride: null,
         fontOverride: null,
+        bodyFontOverride: null,
         strokeColorOverride: null,
       },
       mp4Settings: { resolution: '1080p', fps: 30, format: 'mp4' },
@@ -42,6 +43,8 @@ function createTestBundle(): CenchBundle {
         geminiTTSModel: 'gemini-2.5-flash-preview-tts',
         geminiVoice: null,
         edgeTTSUrl: null,
+        pocketTTSUrl: null,
+        voxcpmUrl: null,
         globalMusicDucking: true,
         globalMusicDuckLevel: 0.2,
       },
@@ -234,11 +237,14 @@ describe('bundleToFiles / filesToBundle round-trip', () => {
 
   it('handles empty assets gracefully', () => {
     const files = new Map<string, string>()
-    files.set('cench/project.json', JSON.stringify({
-      formatVersion: 1,
-      exportedAt: new Date().toISOString(),
-      project: { name: 'Test' },
-    }))
+    files.set(
+      'cench/project.json',
+      JSON.stringify({
+        formatVersion: 1,
+        exportedAt: new Date().toISOString(),
+        project: { name: 'Test' },
+      }),
+    )
     files.set('cench/scenes.json', '[]')
     files.set('cench/scene-graph.json', JSON.stringify({ nodes: [], edges: [], startSceneId: '' }))
     // No assets.json

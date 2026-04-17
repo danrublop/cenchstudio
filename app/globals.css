@@ -333,7 +333,6 @@ button:not(.context-menu-item):not(.no-style):not(.kbd):disabled {
 
 /* Storyboard “Create” — constant subtle outer halo; inner glow only “beats” */
 @keyframes storyboard-create-inner-beat {
-
   0%,
   100% {
     box-shadow:
@@ -756,7 +755,6 @@ button:not(.context-menu-item):not(.no-style):not(.kbd):disabled {
 
 /* Pen cursor animation */
 @keyframes penBlink {
-
   0%,
   100% {
     opacity: 1;
@@ -773,7 +771,6 @@ button:not(.context-menu-item):not(.no-style):not(.kbd):disabled {
 
 /* Thinking block animations */
 @keyframes thinkingPulse {
-
   0%,
   100% {
     opacity: 1;
@@ -785,7 +782,6 @@ button:not(.context-menu-item):not(.no-style):not(.kbd):disabled {
 }
 
 @keyframes thinkingBounce {
-
   0%,
   100% {
     transform: translateY(0);
@@ -807,11 +803,23 @@ button:not(.context-menu-item):not(.no-style):not(.kbd):disabled {
   }
 }
 
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
 .shimmer-text {
-  background: linear-gradient(90deg,
-      var(--color-text-muted) 25%,
-      var(--color-text-primary) 50%,
-      var(--color-text-muted) 75%);
+  background: linear-gradient(
+    90deg,
+    var(--color-text-muted) 25%,
+    var(--color-text-primary) 50%,
+    var(--color-text-muted) 75%
+  );
   background-size: 200% 100%;
   -webkit-background-clip: text;
   background-clip: text;
@@ -820,7 +828,6 @@ button:not(.context-menu-item):not(.no-style):not(.kbd):disabled {
 }
 
 @keyframes cursorPulse {
-
   0%,
   100% {
     opacity: 1;
@@ -871,7 +878,6 @@ button:not(.context-menu-item):not(.no-style):not(.kbd):disabled {
 }
 
 @keyframes buildPulse {
-
   0%,
   100% {
     border-left-color: rgb(59 130 246);
@@ -976,11 +982,11 @@ input[type='range']:focus {
 .tgl *,
 .tgl *:after,
 .tgl *:before,
-.tgl+.tgl-btn {
+.tgl + .tgl-btn {
   box-sizing: border-box;
 }
 
-.tgl+.tgl-btn {
+.tgl + .tgl-btn {
   outline: 0;
   display: block;
   width: 28px;
@@ -996,11 +1002,11 @@ input[type='range']:focus {
   box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
-.dark-theme .tgl+.tgl-btn {
+.dark-theme .tgl + .tgl-btn {
   box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5);
 }
 
-.tgl+.tgl-btn:after {
+.tgl + .tgl-btn:after {
   position: absolute;
   display: block;
   content: '';
@@ -1014,12 +1020,12 @@ input[type='range']:focus {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
-.tgl:checked+.tgl-btn {
+.tgl:checked + .tgl-btn {
   background: var(--color-accent);
   border-color: var(--color-accent);
 }
 
-.tgl:checked+.tgl-btn:after {
+.tgl:checked + .tgl-btn:after {
   left: 13.5px;
   background: #fff;
 }
@@ -1104,7 +1110,6 @@ input[type='range']:focus {
 
 /* Agent chat — voice input meter (animated waveform bars) */
 @keyframes cenchVoiceWave {
-
   0%,
   100% {
     transform: scaleY(0.14);
@@ -1124,19 +1129,19 @@ input[type='range']:focus {
   will-change: transform;
 }
 
-.cench-voice-wave--active>.cench-voice-wave-bar {
+.cench-voice-wave--active > .cench-voice-wave-bar {
   background: var(--color-accent);
   animation: cenchVoiceWave var(--cench-voice-dur, 0.42s) ease-in-out infinite alternate;
 }
 
-.cench-voice-wave--idle>.cench-voice-wave-bar {
+.cench-voice-wave--idle > .cench-voice-wave-bar {
   background: var(--color-text-muted);
   opacity: 0.75;
   animation: cenchVoiceWave var(--cench-voice-dur, 1.05s) ease-in-out infinite alternate;
 }
 
 /* Live mic levels — inline transform; disable CSS fake wave */
-.cench-voice-wave--active>.cench-voice-wave-bar--metered {
+.cench-voice-wave--active > .cench-voice-wave-bar--metered {
   animation: none;
   background: var(--color-accent);
   opacity: 0.95;
@@ -1154,7 +1159,7 @@ input[type='range']:focus {
   cursor: pointer;
 }
 
-.sb-toggle input[type="checkbox"] {
+.sb-toggle input[type='checkbox'] {
   position: absolute;
   opacity: 0;
   pointer-events: none;
@@ -1168,13 +1173,15 @@ input[type='range']:focus {
   border-radius: 6px;
   background-color: #606062;
   background-image: linear-gradient(#474749, #606062);
-  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.15), inset 0 -1px 1px rgba(0, 0, 0, 0.15);
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.15),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.15);
   transition: all 0.15s ease;
   flex-shrink: 0;
 }
 
 .sb-toggle .rdo::after {
-  content: "";
+  content: '';
   position: absolute;
   display: block;
   top: 3.5px;
@@ -1187,22 +1194,22 @@ input[type='range']:focus {
   transform: scale(0);
 }
 
-.sb-toggle input[type="checkbox"]:checked+.rdo {
+.sb-toggle input[type='checkbox']:checked + .rdo {
   background-color: #8a8a8e;
   background-image: linear-gradient(#9a9a9e, #7a7a7e);
 }
 
-.sb-toggle input[type="checkbox"]:checked+.rdo::after {
+.sb-toggle input[type='checkbox']:checked + .rdo::after {
   opacity: 1;
   transform: scale(1);
   transition: all 0.15s ease;
 }
 
-.sb-toggle input[type="checkbox"]:disabled+.rdo {
+.sb-toggle input[type='checkbox']:disabled + .rdo {
   opacity: 0.4;
 }
 
-[data-theme="light"] .sb-toggle .rdo {
+[data-theme='light'] .sb-toggle .rdo {
   background-color: #c8c8d0;
   background-image: linear-gradient(#b8b8c0, #c8c8d0);
 }

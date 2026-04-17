@@ -156,15 +156,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
     } else if (assetType === 'video') {
       // Extract duration and first frame via ffprobe/ffmpeg
       try {
-        const { stdout } = await execFileAsync('ffprobe', [
-          '-v',
-          'quiet',
-          '-print_format',
-          'json',
-          '-show_format',
-          '-show_streams',
-          storagePath,
-        ], { timeout: 15_000 })
+        const { stdout } = await execFileAsync(
+          'ffprobe',
+          ['-v', 'quiet', '-print_format', 'json', '-show_format', '-show_streams', storagePath],
+          { timeout: 15_000 },
+        )
         const info = JSON.parse(stdout)
         const videoStream = info.streams?.find((s: any) => s.codec_type === 'video')
         if (videoStream) {
@@ -180,7 +176,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
       try {
         const thumbFilename = `${assetId}_thumb.jpg`
         const thumbPath = path.join(uploadsDir, thumbFilename)
-        await execFileAsync('ffmpeg', ['-i', storagePath, '-vframes', '1', '-vf', 'scale=300:-1', '-y', thumbPath], { timeout: 30_000 })
+        await execFileAsync('ffmpeg', ['-i', storagePath, '-vframes', '1', '-vf', 'scale=300:-1', '-y', thumbPath], {
+          timeout: 30_000,
+        })
         thumbnailUrl = `/uploads/projects/${projectId}/${thumbFilename}`
       } catch (e) {
         console.warn('[asset-upload] ffmpeg thumbnail failed:', e)
@@ -225,9 +223,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ proj
     if (access.error) return access.error
 
     const typeFilter = req.nextUrl.searchParams.get('type')
+    const sourceFilter = req.nextUrl.searchParams.get('source')
     const conditions = [eq(projectAssets.projectId, projectId)]
     if (typeFilter && ['image', 'video', 'svg'].includes(typeFilter)) {
       conditions.push(eq(projectAssets.type, typeFilter))
+    }
+    if (sourceFilter === 'upload' || sourceFilter === 'generated') {
+      conditions.push(eq(projectAssets.source, sourceFilter))
     }
 
     const assets = await db

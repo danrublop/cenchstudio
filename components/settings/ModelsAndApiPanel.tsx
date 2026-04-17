@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { ToggleLeft, ToggleRight, Loader2, X, Eye, EyeOff, Search, Plus } from 'lucide-react'
+import { ToggleLeft, ToggleRight, Loader2, X, Eye, EyeOff, Search, Plus, ChevronDown } from 'lucide-react'
 import { useVideoStore } from '@/lib/store'
 import type { ModelProvider, ModelTierName } from '@/lib/agents/model-config'
 import { DEFAULT_MODELS } from '@/lib/agents/model-config'
@@ -87,10 +87,113 @@ function KeyInputRow({
   )
 }
 
+function ModelConfigDropdown({ model }: { model: import('@/lib/agents/model-config').ModelConfig }) {
+  const { modelConfigs, setModelConfigs } = useVideoStore()
+
+  const update = (field: string, value: any) => {
+    setModelConfigs(modelConfigs.map((m) => (m.id === model.id ? { ...m, [field]: value } : m)))
+  }
+
+  return (
+    <div className="px-1 pb-3 pt-1 space-y-3 border-b border-[var(--color-border)]">
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="text-[10px] text-[#6b6b7a] uppercase font-bold tracking-tight block mb-1">Provider</label>
+          <span className="text-[12px] text-[var(--color-text-secondary)] capitalize">{model.provider}</span>
+        </div>
+        <div>
+          <label className="text-[10px] text-[#6b6b7a] uppercase font-bold tracking-tight block mb-1">Model ID</label>
+          <span className="text-[12px] text-[var(--color-text-secondary)] font-mono">{model.modelId}</span>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="text-[10px] text-[#6b6b7a] uppercase font-bold tracking-tight block mb-1">Tier</label>
+          <select
+            value={model.tier}
+            onChange={(e) => update('tier', e.target.value)}
+            className="w-full text-[12px] bg-[var(--color-input-bg)] border border-[var(--color-border)] rounded px-2 py-1 text-[var(--color-text-primary)] outline-none"
+          >
+            <option value="budget">Budget</option>
+            <option value="balanced">Balanced</option>
+            <option value="performance">Performance</option>
+            <option value="custom">Custom</option>
+          </select>
+        </div>
+        <div>
+          <label className="text-[10px] text-[#6b6b7a] uppercase font-bold tracking-tight block mb-1">Max Tokens</label>
+          <input
+            type="number"
+            value={model.maxTokens}
+            onChange={(e) => update('maxTokens', parseInt(e.target.value) || 0)}
+            className="w-full text-[12px] bg-[var(--color-input-bg)] border border-[var(--color-border)] rounded px-2 py-1 text-[var(--color-text-primary)] outline-none font-mono"
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="text-[10px] text-[#6b6b7a] uppercase font-bold tracking-tight block mb-1">
+            Cost / 1M Input
+          </label>
+          <div className="flex items-center gap-1">
+            <span className="text-[11px] text-[var(--color-text-muted)]">$</span>
+            <input
+              type="number"
+              step="0.01"
+              value={model.costPer1MInput}
+              onChange={(e) => update('costPer1MInput', parseFloat(e.target.value) || 0)}
+              className="w-full text-[12px] bg-[var(--color-input-bg)] border border-[var(--color-border)] rounded px-2 py-1 text-[var(--color-text-primary)] outline-none font-mono"
+            />
+          </div>
+        </div>
+        <div>
+          <label className="text-[10px] text-[#6b6b7a] uppercase font-bold tracking-tight block mb-1">
+            Cost / 1M Output
+          </label>
+          <div className="flex items-center gap-1">
+            <span className="text-[11px] text-[var(--color-text-muted)]">$</span>
+            <input
+              type="number"
+              step="0.01"
+              value={model.costPer1MOutput}
+              onChange={(e) => update('costPer1MOutput', parseFloat(e.target.value) || 0)}
+              className="w-full text-[12px] bg-[var(--color-input-bg)] border border-[var(--color-border)] rounded px-2 py-1 text-[var(--color-text-primary)] outline-none font-mono"
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-4">
+        <label className="flex items-center gap-2 text-[11px] text-[var(--color-text-secondary)] cursor-pointer">
+          <input
+            type="checkbox"
+            checked={model.supportsTools}
+            onChange={(e) => update('supportsTools', e.target.checked)}
+            className="rounded"
+          />
+          Tool use
+        </label>
+        <label className="flex items-center gap-2 text-[11px] text-[var(--color-text-secondary)] cursor-pointer">
+          <input
+            type="checkbox"
+            checked={model.supportsStreaming}
+            onChange={(e) => update('supportsStreaming', e.target.checked)}
+            className="rounded"
+          />
+          Streaming
+        </label>
+      </div>
+    </div>
+  )
+}
+
 // ── Main Component ───────────────────────────────────────────────────────────
 
 export default function ModelsAndApiPanel() {
   const { modelConfigs, toggleModelEnabled, providerConfigs, removeCustomModel, addCustomModel } = useVideoStore()
+  const [expandedModelId, setExpandedModelId] = useState<string | null>(null)
   // Sync default models on mount: ensures DEFAULT_MODELS are always current,
   // removes stale defaults, preserves user's enabled/disabled prefs and custom models.
   useEffect(() => {
@@ -181,44 +284,52 @@ export default function ModelsAndApiPanel() {
           {modelConfigs
             .filter((m) => m.provider !== 'local')
             .map((model) => (
-              <div key={model.id} className="flex items-center justify-between gap-3 py-2 px-1">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="text-sm text-[var(--color-text-primary)] font-semibold truncate leading-none">
-                    {model.displayName}
-                  </span>
-                  <TierBadge tier={model.tier} />
+              <div key={model.id}>
+                <div className="flex items-center justify-between gap-3 py-2 px-1">
+                  <div
+                    className="flex items-center gap-2 min-w-0 cursor-pointer"
+                    onClick={() => model.enabled && setExpandedModelId(expandedModelId === model.id ? null : model.id)}
+                  >
+                    <span className="text-sm text-[var(--color-text-primary)] font-semibold truncate leading-none">
+                      {model.displayName}
+                    </span>
+                    <TierBadge tier={model.tier} />
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {model.enabled && (
+                      <span
+                        onClick={() => setExpandedModelId(expandedModelId === model.id ? null : model.id)}
+                        className="cursor-pointer p-0.5"
+                      >
+                        <ChevronDown
+                          size={14}
+                          className={`text-[var(--color-text-muted)] transition-transform ${expandedModelId === model.id ? 'rotate-180' : ''}`}
+                        />
+                      </span>
+                    )}
+                    <button
+                      onClick={() => {
+                        toggleModelEnabled(model.id)
+                        if (!model.enabled) setExpandedModelId(model.id)
+                        else if (expandedModelId === model.id) setExpandedModelId(null)
+                      }}
+                      className="no-style text-[var(--color-text-muted)] hover:text-[var(--color-accent)] transition-all"
+                    >
+                      {model.enabled ? (
+                        <ToggleRight size={22} className="text-[var(--color-accent)]" />
+                      ) : (
+                        <ToggleLeft size={22} />
+                      )}
+                    </button>
+                  </div>
                 </div>
-                <button
-                  onClick={() => toggleModelEnabled(model.id)}
-                  className="no-style text-[var(--color-text-muted)] hover:text-[var(--color-accent)] transition-all"
-                >
-                  {model.enabled ? (
-                    <ToggleRight size={22} className="text-[var(--color-accent)]" />
-                  ) : (
-                    <ToggleLeft size={22} />
-                  )}
-                </button>
+                {expandedModelId === model.id && model.enabled && <ModelConfigDropdown model={model} />}
               </div>
             ))}
         </ListContainer>
       </div>
 
-      {/* 2. API KEYS */}
-      <div>
-        <SectionLabel>API Keys</SectionLabel>
-        <p className="text-[11px] text-[#6b6b7a] px-1 mb-2 -mt-1">
-          Set in{' '}
-          <code className="text-[10px] px-1 py-0.5 rounded bg-white/5 border border-[var(--color-border)]">.env</code> —
-          shown here for reference.
-        </p>
-        <div className="grid grid-cols-1 gap-1">
-          <KeyInputRow provider="anthropic" label="Anthropic" />
-          <KeyInputRow provider="google" label="Google AI" />
-          <KeyInputRow provider="openai" label="OpenAI" />
-        </div>
-      </div>
-
-      {/* 3. LOCAL MODELS (OLLAMA) */}
+      {/* 2. LOCAL MODELS (OLLAMA) */}
       <div>
         <SectionLabel>Local Models</SectionLabel>
         <ListContainer>
@@ -297,6 +408,21 @@ export default function ModelsAndApiPanel() {
               </ListContainer>
             </div>
           )}
+        </div>
+      </div>
+
+      {/* 3. API KEYS */}
+      <div>
+        <SectionLabel>API Keys</SectionLabel>
+        <p className="text-[11px] text-[#6b6b7a] px-1 mb-2 -mt-1">
+          Set in{' '}
+          <code className="text-[10px] px-1 py-0.5 rounded bg-white/5 border border-[var(--color-border)]">.env</code> —
+          shown here for reference.
+        </p>
+        <div className="grid grid-cols-1 gap-1">
+          <KeyInputRow provider="anthropic" label="Anthropic" />
+          <KeyInputRow provider="google" label="Google AI" />
+          <KeyInputRow provider="openai" label="OpenAI" />
         </div>
       </div>
     </div>

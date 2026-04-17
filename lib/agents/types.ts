@@ -33,6 +33,7 @@ export type ModelId =
 
 /** Short display labels for model IDs */
 export const MODEL_DISPLAY_NAMES: Record<string, string> = {
+  'codex-cli': 'Codex CLI',
   'claude-haiku-4-5-20251001': 'Haiku 4.5',
   'claude-sonnet-4-6': 'Sonnet 4.6',
   'claude-opus-4-6': 'Opus 4.6',
@@ -69,12 +70,15 @@ export const MODEL_PRICING: Record<string, { inputPer1M: number; outputPer1M: nu
 export function getModelProvider(
   modelId: ModelId,
   modelConfigs?: import('./model-config').ModelConfig[],
-): 'anthropic' | 'openai' | 'google' | 'local' {
+): 'anthropic' | 'openai' | 'google' | 'local' | 'claude-code' {
   if (!modelId) return 'anthropic' // fallback for undefined/null
+  if (modelId === 'codex-cli') return 'openai'
+  if (modelId === 'claude-code') return 'claude-code'
   // Check model configs first for local models
   if (modelConfigs) {
     const config = modelConfigs.find((m) => m.id === modelId || m.modelId === modelId)
     if (config?.provider === 'local') return 'local'
+    if (config?.provider === 'claude-code') return 'claude-code'
   }
   if (modelId.startsWith('claude-')) return 'anthropic'
   if (modelId.startsWith('gpt-') || modelId.startsWith('o1') || modelId.startsWith('o3')) return 'openai'
@@ -140,9 +144,7 @@ export function messageContentToText(content: MessageContent): string {
 // ── Message Types ─────────────────────────────────────────────────────────────
 
 /** A segment of a message — either a text chunk or a tool call reference, in chronological order */
-export type MessageSegment =
-  | { type: 'text'; text: string }
-  | { type: 'tool'; toolCallId: string }
+export type MessageSegment = { type: 'text'; text: string } | { type: 'tool'; toolCallId: string }
 
 export interface ChatMessage {
   id: string
@@ -200,6 +202,8 @@ export interface UsageStats {
   costUsd: number
   /** Duration of entire agent run in ms */
   totalDurationMs: number
+  /** 'claude-code' | 'codex-cli' when run via CLI subprocess; undefined for API calls */
+  provider?: string
 }
 
 export interface ToolCallRecord {
@@ -339,12 +343,20 @@ export interface ToolResult {
   permissionNeeded?: {
     api: string
     estimatedCost: string
+    /** Scalar USD cost estimate that triggered the gate. Populated when the
+     *  cost approval gate was engaged; otherwise optional. */
+    estimatedCostUsd?: number
+    /** True when this prompt fired because the scalar estimate exceeded the
+     *  project's single-call threshold, even though the per-API mode would
+     *  normally auto-allow. Lets the UI render a distinct "Expensive call" UX. */
+    costThresholdExceeded?: boolean
     reason?: string
     details?: {
       prompt?: string
       duration?: number
       model?: string
       resolution?: string
+      textLength?: number
     }
     // Rich context for the universal generation confirmation card
     generationType?: import('../types').GenerationType
@@ -372,6 +384,10 @@ export interface ContextOpts {
   focusedSceneId?: string | null
   audioProviderEnabled?: Record<string, boolean>
   mediaGenEnabled?: Record<string, boolean>
+  /** Master switch for research tools — when off, web_search & fetch_url_content are hidden from the agent. */
+  researchEnabled?: boolean
+  /** Per-provider enabled map for research providers (brave, tavily, exa). */
+  researchProviderEnabled?: Record<string, boolean>
   projectAssets?: import('../types').ProjectAsset[]
   mp4Settings?: import('../types').MP4Settings
   brandKit?: import('../types/media').BrandKit | null
@@ -420,12 +436,18 @@ export interface AgentContext {
 
 export interface ClaudeToolDefinition {
   name: string
-  description: string
-  input_schema: {
+  /** Absent for provider-native server tools (e.g. Anthropic's web_search_20250305). */
+  description?: string
+  /** Absent for provider-native server tools. */
+  input_schema?: {
     type: 'object'
     properties: Record<string, ClaudePropertySchema>
     required?: string[]
   }
+  /** Set to Anthropic server-tool type (e.g. "web_search_20250305") to delegate execution to the provider. */
+  type?: string
+  /** Server-tool config — how many calls the model can make per turn. */
+  max_uses?: number
 }
 
 export interface ClaudePropertySchema {

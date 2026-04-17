@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { projects } from '@/lib/db/schema'
-import { desc, eq, isNull, lt, and, or } from 'drizzle-orm'
+import { desc, eq, isNull, lt, and, or, SQL } from 'drizzle-orm'
 import { getOptionalUser } from '@/lib/auth-helpers'
 
 /**
@@ -24,6 +24,7 @@ export async function GET(req: NextRequest) {
     const user = await getOptionalUser()
     const limitParam = req.nextUrl.searchParams.get('limit')
     const cursor = req.nextUrl.searchParams.get('cursor')
+    const workspaceIdParam = req.nextUrl.searchParams.get('workspaceId')
     const paginated = limitParam !== null || cursor !== null
     const limit = Math.min(Math.max(parseInt(limitParam || '50', 10) || 50, 1), 100)
 
@@ -33,7 +34,15 @@ export async function GET(req: NextRequest) {
         ? or(eq(projects.userId, user.id), isNull(projects.userId))
         : eq(projects.userId, user.id)
 
-    const conditions = [ownerFilter]
+    const conditions: (SQL | undefined)[] = [ownerFilter]
+
+    // Workspace filtering: ?workspaceId=<uuid> or ?workspaceId=none
+    if (workspaceIdParam === 'none') {
+      conditions.push(isNull(projects.workspaceId))
+    } else if (workspaceIdParam) {
+      conditions.push(eq(projects.workspaceId, workspaceIdParam))
+    }
+
     if (cursor) {
       const cursorDate = new Date(cursor)
       if (!isNaN(cursorDate.getTime())) {
@@ -48,6 +57,7 @@ export async function GET(req: NextRequest) {
         description: projects.description,
         outputMode: projects.outputMode,
         thumbnailUrl: projects.thumbnailUrl,
+        workspaceId: projects.workspaceId,
         updatedAt: projects.updatedAt,
         createdAt: projects.createdAt,
       })
@@ -89,6 +99,7 @@ export async function POST(req: NextRequest) {
       audioProviderEnabled,
       mediaGenEnabled,
       timeline,
+      workspaceId,
     } = body
 
     // Validate outputMode if provided
@@ -116,6 +127,7 @@ export async function POST(req: NextRequest) {
       .values({
         ...(id ? { id } : {}),
         userId: user?.id ?? null,
+        workspaceId: workspaceId || null,
         name: (name || 'Untitled Project').slice(0, 255),
         outputMode: outputMode || 'mp4',
         globalStyle: globalStyle || {
@@ -123,6 +135,7 @@ export async function POST(req: NextRequest) {
           paletteOverride: null,
           bgColorOverride: null,
           fontOverride: null,
+          bodyFontOverride: null,
           strokeColorOverride: null,
         },
         mp4Settings: mp4Settings || undefined,

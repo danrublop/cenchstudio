@@ -35,22 +35,33 @@ Do NOT use: Inter, Syne, Space Grotesk, DM Sans, DM Serif Display, Playfair Disp
 Outfit, Plus Jakarta Sans, Instrument Sans, Instrument Serif, Fraunces, Newsreader,
 Lora, Crimson Pro, Cormorant, IBM Plex Mono, Montserrat, Open Sans, Roboto, Lato.
 
+None of these fonts are in the curated catalog. If you see one in existing scenes,
+replace it when restyling.
+
 These are everywhere. They make every design feel generic.
 
-### Type hierarchy
+### Type hierarchy — VIDEO SIZES (not web sizes)
 
-Use **fewer sizes with more contrast**. A 5-step scale covers most scenes:
+This is video, not a webpage. Viewers watch on phones, embedded players, TVs across
+a room. Text that looks fine in a code editor is **unreadable in video**.
 
-| Role    | Size (1920×1080) | Weight  | Use                      |
-| ------- | ---------------- | ------- | ------------------------ |
-| Display | 80–160px         | 800-900 | Hero text, scene title   |
-| Heading | 36–56px          | 700     | Section headings         |
-| Body    | 22–32px          | 400-500 | Paragraphs, descriptions |
-| Label   | 14–20px          | 500-600 | Tags, metadata, captions |
-| Caption | 11–14px          | 400     | Fine print, footnotes    |
+Use a **4-step scale** — nothing below 24px:
 
-The ratio between adjacent levels should be **at least 1.25×**. If your sizes are
-48/44/40/36 — that's muddy. Use 80/48/28/16 instead.
+| Role    | Size (1920×1080) | Weight  | Use                        |
+| ------- | ---------------- | ------- | -------------------------- |
+| Display | 100–180px        | 800-900 | Hero text, scene title     |
+| Heading | 48–72px          | 600-700 | Section headings           |
+| Body    | 32–42px          | 400-500 | Paragraphs, descriptions   |
+| Label   | 24–32px          | 500-600 | Tags, list items, metadata |
+
+**The absolute minimum readable text in video is 24px at 1920×1080.**
+If you need smaller text, remove it — it won't be read.
+
+The ratio between adjacent levels should be **at least 1.5×**. If your sizes are
+48/40/36/32 — that's muddy. Use 100/56/36/26 instead.
+
+**Common mistake**: Using 14-20px for labels/annotations. That's web sizing.
+In video, 14px is literally invisible. Scale everything up.
 
 ### Text on dark backgrounds
 
@@ -209,6 +220,98 @@ These are the most recognizable AI design cliches. Match-and-refuse.
 8. **Purple-to-blue gradients** — especially on dark backgrounds
 9. **Overused fonts** — see banned list above
 10. **Same animation direction for everything** — not everything should fade-in-from-below
+
+---
+
+## Content Density (hard limits — do not exceed)
+
+- Maximum **5 text blocks** per scene (1 title + up to 4 supporting elements).
+- Maximum **4 list/bullet items** visible simultaneously. Longer lists → split across scenes.
+- Maximum **3 cards or containers** per scene. Prefer 1-2 for visual impact.
+- If a scene has more than 6 distinct visual elements, remove or combine until ≤5.
+- One **"hero element"** per scene that occupies 40-60% of viewport area.
+- Body text: maximum 3 lines per text block (~50 words). Cut ruthlessly.
+- Bullet points: maximum 8 words per bullet. If longer, rewrite.
+- These limits exist because viewers watch, not read. Less content = more retention.
+
+---
+
+## Spacing System (at 1920×1080 — scale proportionally)
+
+| Spacing                              | Minimum                   |
+| ------------------------------------ | ------------------------- |
+| Viewport edge safe area              | 80px inset from all edges |
+| Gap between content groups           | 48px                      |
+| Gap within a group                   | 16px                      |
+| Title-to-first-content               | 64-96px                   |
+| Card/container internal padding      | 32-48px                   |
+| Minimum gap between any two elements | 24px                      |
+| Between sections / conceptual groups | 120px+                    |
+
+**Whitespace target**: at least 40% of viewport should be empty space. If your layout
+feels dense, remove elements — don't shrink them.
+
+---
+
+## Element Sizing
+
+- Hero/display text: at least 100px, spanning 50%+ of viewport width.
+- Heading text: at least 48px.
+- Body text: at least 32px. This is the FLOOR for video readability.
+- Labels, list items, annotations: at least 24px. Nothing smaller, ever.
+- Heading-to-body font size ratio: at least 1.5× (e.g. 72px heading, 36px body).
+- Interactive elements (pills, badges, tags): at least 24px text, 48px height minimum.
+- Icons and illustrations: 140-400px. Below 140px they become unreadable.
+- Data visualizations: minimum 500px wide, 300px tall.
+- Decorative elements: never larger than the primary content element.
+- If text won't fit at these sizes, you have too much text. Cut content, don't shrink type.
+- **Common mistake**: Using 14-20px for secondary text. That's web sizing, not video sizing.
+
+---
+
+## Layout Patterns (choose one per scene)
+
+Do not improvise layouts from scratch. Pick the pattern that best fits your content:
+
+### HERO-SPLIT
+
+Large text left (60% width), visual/illustration right (40%). Text left-aligned.
+Visual can bleed to edge. Best for: introductions, key statements, definitions.
+
+### STACK-BREATHE
+
+Full-width text blocks stacked vertically with 80px+ gaps. No containers or cards.
+Let whitespace do the grouping. Best for: single concepts, quotes, definitions.
+
+### OFFSET-GRID
+
+2-column asymmetric grid (55/45 or 65/35 split). Items intentionally DON'T align
+horizontally — the offset creates visual interest. Best for: comparisons, before/after.
+
+### FOCAL-POINT
+
+One large central element (60%+ of viewport) with 2-3 small annotations positioned
+around it with subtle leader lines or arrows. Best for: diagrams, anatomy, features.
+
+### TIMELINE-FLOW
+
+Horizontal or vertical flow with connected nodes. Maximum 4 nodes per scene.
+Best for: processes, history, step-by-step sequences.
+
+### STAT-ANCHOR
+
+One massive number/metric (120px+) anchored to the left or top third, with supporting
+context text in smaller type beside or below. NOT centered. Best for: data points, statistics.
+
+### EDITORIAL-COLUMN
+
+Single narrow text column (max 600px wide) offset to the left third, with a full-bleed
+background color, image, or illustration filling the rest. Best for: narrative, storytelling.
+
+### SCATTER-ORGANIC
+
+Elements at intentional non-grid positions, varying in size. Connected by subtle lines,
+shared color, or proximity. Best for: mind maps, ecosystem overviews, relationships.
 
 ---
 

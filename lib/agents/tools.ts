@@ -5,7 +5,7 @@
 
 import type { ClaudeToolDefinition } from './types'
 import { ALL_TRANSITION_IDS } from '../transitions'
-import { FONT_FAMILIES } from '../fonts/catalog'
+import { FONT_FAMILIES, FONT_PAIRING_IDS } from '../fonts/catalog'
 import { CANVAS_MOTION_TEMPLATE_IDS } from '../templates/canvas-animation-templates'
 import { CENCH_STUDIO_ENV_IDS } from '../three-environments/registry'
 
@@ -589,6 +589,47 @@ Use this to unify a project's scenes under React for easier composition and edit
   },
 }
 
+export const WRITE_SCENE_CODE: ClaudeToolDefinition = {
+  name: 'write_scene_code',
+  description: `Directly set a scene's code without triggering AI generation. Use this when you already know the exact code to write — skips the extra LLM generation call that add_layer uses.
+
+Pass raw JSX as sceneCode for React scenes. For other scene types, pass the appropriate code format.
+If sceneId is omitted, creates a new scene. If provided, replaces the existing scene's code.
+
+This is faster and cheaper than add_layer when you've already reasoned about the code.`,
+  input_schema: {
+    type: 'object',
+    properties: {
+      sceneId: { type: 'string', description: 'Scene ID to update. Omit to create a new scene.' },
+      sceneCode: { type: 'string', description: 'Raw scene code (JSX for React, JS for Canvas2D, etc.)' },
+      styles: { type: 'string', description: 'Optional CSS styles (no <style> tags).' },
+      name: { type: 'string', description: 'Scene name (for new scenes).' },
+      duration: { type: 'number', description: 'Duration in seconds (default 8).' },
+      bgColor: { type: 'string', description: 'Background color hex (default "#0a0c10").' },
+      sceneType: {
+        type: 'string',
+        enum: ['react', 'svg', 'canvas2d', 'd3', 'three', 'motion', 'lottie', 'zdog', 'physics'],
+        description: 'Scene type (default "react").',
+      },
+    },
+    required: ['sceneCode'],
+  },
+}
+
+export const READ_SCENE_CODE: ClaudeToolDefinition = {
+  name: 'read_scene_code',
+  description: `Read the full source code of a scene's layers. Use this before making surgical edits with patch_layer_code — the world state preview is truncated, but this returns complete code.
+
+Returns all code fields for the scene: reactCode, svgContent, canvasCode, sceneCode, lottieSource, plus SVG objects and AI layers with their full code.`,
+  input_schema: {
+    type: 'object',
+    properties: {
+      sceneId: { type: 'string', description: 'Scene ID to read' },
+    },
+    required: ['sceneId'],
+  },
+}
+
 // ── Element Tools ─────────────────────────────────────────────────────────────
 
 export const ADD_ELEMENT: ClaudeToolDefinition = {
@@ -599,8 +640,8 @@ export const ADD_ELEMENT: ClaudeToolDefinition = {
     properties: {
       sceneId: { type: 'string', description: 'Scene ID' },
       content: { type: 'string', description: 'Text content to display' },
-      font: { type: 'string', description: 'Font family, e.g. "Caveat", "Inter", "Playfair Display"' },
-      size: { type: 'number', description: 'Font size in pixels (16–120)' },
+      font: { type: 'string', description: 'Font family, e.g. "Caveat", "Sora", "Bitter"' },
+      size: { type: 'number', description: 'Font size in pixels (24–180). Nothing below 24px in video.' },
       color: { type: 'string', description: 'Text hex color' },
       x: { type: 'number', description: 'Horizontal position as % of canvas width (0–100)' },
       y: { type: 'number', description: 'Vertical position as % of canvas height (0–100)' },
@@ -706,6 +747,94 @@ export const ADJUST_ELEMENT_TIMING: ClaudeToolDefinition = {
     required: ['sceneId', 'elementId'],
   },
 }
+
+// ── Research Tools (web search, URL reader) ──────────────────────────────────
+// Only available when Research mode is ON (user toggle in chat input).
+
+export const WEB_SEARCH: ClaudeToolDefinition = {
+  name: 'web_search',
+  description: `Search the web for information. Use this when the scene needs real-world facts,
+current events, product specs, brand details, or any topic outside your training data.
+Returns titles, URLs, snippets, and source domains. Follow up with fetch_url_content
+on the most promising results to get full article text before writing scene copy.`,
+  input_schema: {
+    type: 'object',
+    properties: {
+      query: {
+        type: 'string',
+        description: 'Search query. Be specific: "Tesla Model Y 0-60 specs 2026" not just "tesla"',
+      },
+      count: { type: 'number', description: 'Number of results (1–10). Default: 5' },
+      recency: {
+        type: 'string',
+        enum: ['day', 'week', 'month', 'year', 'any'],
+        description: 'Freshness filter. Use "week" or "month" for current events. Default: "any"',
+      },
+      site: { type: 'string', description: 'Optional: restrict to a single domain, e.g. "wikipedia.org"' },
+    },
+    required: ['query'],
+  },
+}
+
+export const FETCH_URL_CONTENT: ClaudeToolDefinition = {
+  name: 'fetch_url_content',
+  description: `Fetch and extract readable content from a URL. Returns title, description,
+publish date, author, cleaned body text, images, and embedded videos (YouTube, Vimeo, inline <video>).
+Use after web_search to get full article text, or directly on a URL the user provides.
+Use extract="metadata" for a fast metadata-only fetch when you just need title + og:image + videos.`,
+  input_schema: {
+    type: 'object',
+    properties: {
+      url: { type: 'string', description: 'Absolute URL to fetch' },
+      extract: {
+        type: 'string',
+        enum: ['article', 'full', 'metadata'],
+        description:
+          '"article" = readable body text (default). "metadata" = title + og tags only. "full" = full cleaned HTML text.',
+      },
+    },
+    required: ['url'],
+  },
+}
+
+export const FIND_STOCK_VIDEOS: ClaudeToolDefinition = {
+  name: 'find_stock_videos',
+  description: `Search royalty-free stock video libraries (Pexels, Pixabay) for clips matching a keyword.
+Returns direct MP4 URLs in multiple resolutions, thumbnails, durations, and attribution.
+Use this to ground scenes in real footage (e.g. "drone shot city skyline", "stock market ticker", "rain on window").
+After picking a clip, pass the highest-resolution MP4 URL to set_video_layer to drop it into a scene.
+Results are CC-ish licensed (free with attribution appreciated) — safe for commercial use per each provider's license.`,
+  input_schema: {
+    type: 'object',
+    properties: {
+      query: {
+        type: 'string',
+        description:
+          'Visual keyword. Be concrete: "ocean waves sunset", "office meeting laptop", "neural network visualization".',
+      },
+      count: { type: 'number', description: 'Number of results (1–30). Default: 10' },
+      orientation: {
+        type: 'string',
+        enum: ['landscape', 'portrait', 'square'],
+        description: 'Filter by orientation. Default: landscape for 16:9 projects, portrait for 9:16.',
+      },
+      minDurationSec: { type: 'number', description: 'Minimum clip duration in seconds' },
+      maxDurationSec: {
+        type: 'number',
+        description: 'Maximum clip duration in seconds. Keep short (under 15s) for scene-length clips.',
+      },
+      minWidth: { type: 'number', description: 'Minimum width in pixels. Pass 1920 for HD, 1280 for 720p.' },
+      source: {
+        type: 'string',
+        enum: ['pexels', 'pixabay'],
+        description: 'Override provider selection. Omit to use configured preference (Pexels first).',
+      },
+    },
+    required: ['query'],
+  },
+}
+
+export const RESEARCH_TOOLS: ClaudeToolDefinition[] = [WEB_SEARCH, FETCH_URL_CONTENT, FIND_STOCK_VIDEOS]
 
 // ── Asset / Media Tools ───────────────────────────────────────────────────────
 
@@ -933,7 +1062,18 @@ export const SET_GLOBAL_STYLE: ClaudeToolDefinition = {
       font: {
         type: 'string',
         enum: FONT_FAMILIES,
-        description: 'Font family from the curated catalog. Pick one that matches the content tone.',
+        description: 'Heading/display font family from the curated catalog. Pick one that matches the content tone.',
+      },
+      bodyFont: {
+        type: 'string',
+        enum: FONT_FAMILIES,
+        description:
+          'Body text font family. Use a different font from the heading for typographic contrast. Optional — defaults to the heading font.',
+      },
+      fontPairing: {
+        type: 'string',
+        enum: FONT_PAIRING_IDS,
+        description: 'Curated font pairing ID (sets both heading + body font). Overrides font/bodyFont if provided.',
       },
       strokeWidth: {
         type: 'number',
@@ -974,7 +1114,17 @@ Or specify custom palette/bgColor/font/roughness directly. Pass null values to i
         description: 'Array of exactly 4 hex colors',
       },
       bgColor: { type: 'string', description: 'Background hex color' },
-      font: { type: 'string', enum: FONT_FAMILIES, description: 'Font family from the curated catalog' },
+      font: { type: 'string', enum: FONT_FAMILIES, description: 'Heading font family from the curated catalog' },
+      bodyFont: {
+        type: 'string',
+        enum: FONT_FAMILIES,
+        description: 'Body text font. Optional — defaults to heading font.',
+      },
+      fontPairing: {
+        type: 'string',
+        enum: FONT_PAIRING_IDS,
+        description: 'Curated font pairing ID (sets both heading + body).',
+      },
       roughnessLevel: { type: 'number', description: 'Roughness 0–3' },
       defaultTool: { type: 'string', description: 'Drawing tool: marker, pen, chalk, brush' },
     },
@@ -995,7 +1145,9 @@ Use when: a scene needs a different mood, you're blending preset elements, or th
       palette: { type: 'array', items: { type: 'string' }, description: '4 hex colors' },
       bgColor: { type: 'string', description: 'Background color' },
       bgStyle: { type: 'string', enum: ['plain', 'paper', 'grid', 'dots', 'chalkboard', 'kraft'] },
-      font: { type: 'string', enum: FONT_FAMILIES },
+      font: { type: 'string', enum: FONT_FAMILIES, description: 'Heading font' },
+      bodyFont: { type: 'string', enum: FONT_FAMILIES, description: 'Body text font. Optional.' },
+      fontPairing: { type: 'string', enum: FONT_PAIRING_IDS, description: 'Curated font pairing ID.' },
       roughnessLevel: { type: 'number', description: '0-3' },
       defaultTool: { type: 'string', enum: ['marker', 'pen', 'chalk', 'brush', 'highlighter'] },
       strokeColorOverride: { type: 'string', description: 'Primary stroke color override' },
@@ -1244,7 +1396,10 @@ multiple labeled hotspots, or assessment scenes with quiz + gate combination.`,
         items: {
           type: 'object',
           properties: {
-            type: { type: 'string', enum: ['hotspot', 'choice', 'quiz', 'gate', 'tooltip', 'form', 'slider', 'toggle'] },
+            type: {
+              type: 'string',
+              enum: ['hotspot', 'choice', 'quiz', 'gate', 'tooltip', 'form', 'slider', 'toggle'],
+            },
             style: {
               type: 'string',
               enum: ['professional', 'glassmorphic', 'minimal', 'terminal', 'chalk', 'edu', 'auto'],
@@ -1320,7 +1475,8 @@ export const CONNECT_SCENES: ClaudeToolDefinition = {
       conditionType: {
         type: 'string',
         enum: ['auto', 'hotspot', 'choice', 'quiz', 'gate', 'variable', 'slider', 'toggle'],
-        description: '"auto" = plays automatically after duration. "variable" = jumps when a variable condition is met.',
+        description:
+          '"auto" = plays automatically after duration. "variable" = jumps when a variable condition is met.',
       },
       variableCondition: {
         type: 'object',
@@ -1706,6 +1862,8 @@ export const LAYER_TOOLS: ClaudeToolDefinition[] = [
   SET_LAYER_TIMING,
   REGENERATE_LAYER,
   PATCH_LAYER_CODE,
+  WRITE_SCENE_CODE,
+  READ_SCENE_CODE,
   MIGRATE_TO_REACT,
 ]
 
@@ -1733,7 +1891,16 @@ export const ADD_NARRATION: ClaudeToolDefinition = {
       voiceId: { type: 'string', description: 'Voice ID (optional, uses project default)' },
       provider: {
         type: 'string',
-        enum: ['auto', 'elevenlabs', 'openai-tts', 'gemini-tts', 'google-tts', 'openai-edge-tts'],
+        enum: [
+          'auto',
+          'elevenlabs',
+          'openai-tts',
+          'gemini-tts',
+          'google-tts',
+          'openai-edge-tts',
+          'pocket-tts',
+          'voxcpm',
+        ],
         description: 'TTS provider (optional, default: auto)',
       },
       instructions: {
@@ -1845,7 +2012,116 @@ export const ADD_WATERMARK: ClaudeToolDefinition = {
   },
 }
 
-export const MEDIA_LIBRARY_TOOLS: ClaudeToolDefinition[] = [USE_ASSET_IN_SCENE, ADD_WATERMARK]
+export const QUERY_MEDIA_LIBRARY: ClaudeToolDefinition = {
+  name: 'query_media_library',
+  description: `Search the project's media library (uploaded + AI-generated assets) BEFORE generating something new. Filters by type, source, prompt substring, or tag. Prefer this over generate_image when the user asks for "the fox image we made" or anything that might already exist. Returns up to 50 matching assets with id, thumbnailUrl, prompt, provider.`,
+  input_schema: {
+    type: 'object',
+    properties: {
+      type: { type: 'string', enum: ['image', 'video', 'svg'], description: 'Optional: restrict to one asset type' },
+      source: {
+        type: 'string',
+        enum: ['upload', 'generated'],
+        description: 'Optional: only user uploads or only AI-generated',
+      },
+      promptContains: {
+        type: 'string',
+        description: 'Optional: case-insensitive substring match against the stored generation prompt',
+      },
+      tag: { type: 'string', description: 'Optional: filter by a user tag (e.g. "logo", "broll")' },
+      limit: { type: 'number', description: '1-50 (default: 10)' },
+    },
+    required: [],
+  },
+}
+
+export const REUSE_ASSET: ClaudeToolDefinition = {
+  name: 'reuse_asset',
+  description: `Place an existing asset from the media library into a scene. Preferred over generate_image when query_media_library returns a match. Does NOT re-run generation — cheap + instant.`,
+  input_schema: {
+    type: 'object',
+    properties: {
+      assetId: { type: 'string', description: 'Asset id from query_media_library' },
+      sceneId: { type: 'string', description: 'Target scene id' },
+      x: { type: 'number', description: 'Center X in scene pixels (default: 960)' },
+      y: { type: 'number', description: 'Center Y in scene pixels (default: 540)' },
+      width: { type: 'number', description: 'Display width in pixels (default: asset native width)' },
+      height: { type: 'number', description: 'Display height in pixels (default: asset native height)' },
+      opacity: { type: 'number', description: '0-1 (default: 1)' },
+      zIndex: { type: 'number', description: 'Stacking order (default: 10)' },
+    },
+    required: ['assetId', 'sceneId'],
+  },
+}
+
+export const REGENERATE_ASSET: ClaudeToolDefinition = {
+  name: 'regenerate_asset',
+  description: `Retry generation of a prior AI-generated asset with optional overrides. The new asset records parentAssetId so the library can show lineage. Use when the user says "try again", "make it sharper", or to compare providers on the same prompt.`,
+  input_schema: {
+    type: 'object',
+    properties: {
+      assetId: { type: 'string', description: 'Parent asset id' },
+      promptOverride: { type: 'string', description: 'Optional: replace the original prompt' },
+      model: {
+        type: 'string',
+        description: 'Optional: force a different image model (e.g. "flux-1.1-pro", "dall-e-3")',
+      },
+      aspectRatio: { type: 'string', description: 'Optional: "1:1" | "16:9" | "9:16" | "4:3" | "3:4"' },
+      enhanceTags: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Optional: enhancement tags to apply (quality, lighting, mood, style, medium, camera)',
+      },
+    },
+    required: ['assetId'],
+  },
+}
+
+export const GENERATE_IMAGE_FROM_REFERENCE: ClaudeToolDefinition = {
+  name: 'generate_image_from_reference',
+  description: `Generate a new image conditioned on a reference image already in the media library (image-to-image). Use when the user uploads a mood board or says "in the style of [image X]". The reference is recorded in provenance for auditability.`,
+  input_schema: {
+    type: 'object',
+    properties: {
+      referenceAssetId: { type: 'string', description: 'Asset id of the reference image' },
+      prompt: {
+        type: 'string',
+        description: 'What the new image should depict, in addition to matching the reference style',
+      },
+      model: { type: 'string', description: 'Optional: force a specific model' },
+      aspectRatio: { type: 'string', description: 'Optional aspect ratio' },
+      enhanceTags: { type: 'array', items: { type: 'string' }, description: 'Optional enhancement tags' },
+    },
+    required: ['referenceAssetId', 'prompt'],
+  },
+}
+
+export const GENERATE_VARIATION: ClaudeToolDefinition = {
+  name: 'generate_variation',
+  description: `Produce a sibling variation of an existing AI-generated image — same prompt, different seed. Links to the original via parentAssetId. Use for "give me a few options" flows.`,
+  input_schema: {
+    type: 'object',
+    properties: {
+      assetId: { type: 'string', description: 'Parent asset id' },
+      enhanceTags: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Optional: slightly tweak with different enhancement tags',
+      },
+    },
+    required: ['assetId'],
+  },
+}
+
+export const MEDIA_LIBRARY_TOOLS: ClaudeToolDefinition[] = [
+  USE_ASSET_IN_SCENE,
+  ADD_WATERMARK,
+  QUERY_MEDIA_LIBRARY,
+  REUSE_ASSET,
+  REGENERATE_ASSET,
+  GENERATE_IMAGE_FROM_REFERENCE,
+  GENERATE_VARIATION,
+]
 
 // ── Recording Tools ──────────────────────────────────────────────────────────
 
@@ -2636,7 +2912,8 @@ Use this when the user wants to make their logo or SVG graphic 3-dimensional.`,
       materialStyle: {
         type: 'string',
         enum: ['chrome', 'matte', 'glass', 'gold'],
-        description: 'Material preset. chrome = reflective metallic, matte = diffuse, glass = translucent, gold = warm metallic',
+        description:
+          'Material preset. chrome = reflective metallic, matte = diffuse, glass = translucent, gold = warm metallic',
       },
       animate: { type: 'boolean', description: 'Whether to add slow Y-axis rotation (default: true)' },
     },
@@ -2755,12 +3032,12 @@ export function patchToolDimensions(
 ): ClaudeToolDefinition[] {
   if (W === 1920 && H === 1080) return tools
   return tools.map((tool) => {
+    // Server tools (Anthropic native) have no input_schema to patch.
+    if (!tool.input_schema) return tool
     const json = JSON.stringify(tool.input_schema)
     if (!json.includes('1920') && !json.includes('1080')) return tool
     // Match both en-dash (\u2013) and hyphen-minus (-) variants
-    const patched = json
-      .replace(/0[\u2013\-]1920/g, `0\u2013${W}`)
-      .replace(/0[\u2013\-]1080/g, `0\u2013${H}`)
+    const patched = json.replace(/0[\u2013\-]1920/g, `0\u2013${W}`).replace(/0[\u2013\-]1080/g, `0\u2013${H}`)
     return { ...tool, input_schema: JSON.parse(patched) }
   })
 }
@@ -2789,6 +3066,7 @@ export const ALL_TOOLS: ClaudeToolDefinition[] = [
   CAPTURE_FRAME,
   VERIFY_SCENE,
   ...SKILL_TOOLS,
+  ...RESEARCH_TOOLS,
 ]
 
 /** Deduplicate tools by name */
@@ -2816,8 +3094,10 @@ export const AGENT_TOOLS: Record<string, ClaudeToolDefinition[]> = {
     ...MODEL_LIBRARY_TOOLS,
     SEARCH_LOTTIE,
     ...AUDIO_TOOLS,
+    ...INTERACTION_TOOLS,
     ...PHYSICS_TOOLS,
     ...WORLD_TOOLS,
+    ...RESEARCH_TOOLS,
     STYLE_SCENE,
     CAPTURE_FRAME,
     VERIFY_SCENE,
@@ -2837,16 +3117,20 @@ export const AGENT_TOOLS: Record<string, ClaudeToolDefinition[]> = {
     ...MODEL_LIBRARY_TOOLS,
     SEARCH_LOTTIE,
     ...AUDIO_TOOLS,
+    ...INTERACTION_TOOLS,
     ...PHYSICS_TOOLS,
     ...WORLD_TOOLS,
+    ...RESEARCH_TOOLS,
     CAPTURE_FRAME,
     VERIFY_SCENE,
     ...TIMELINE_TOOLS,
   ]),
   editor: dedup([
     // Core editing tools — surgical changes only
+    READ_SCENE_CODE,
     REGENERATE_LAYER,
     PATCH_LAYER_CODE,
+    WRITE_SCENE_CODE,
     MIGRATE_TO_REACT,
     REMOVE_LAYER,
     SET_LAYER_OPACITY,
@@ -2896,10 +3180,22 @@ export const TOOL_CATEGORY_MAP: Record<string, string[]> = {
     'crop_image_layer',
     'get_brand_kit',
     'apply_brand_kit',
+    'query_media_library',
+    'reuse_asset',
+    'regenerate_asset',
+    'generate_image_from_reference',
+    'generate_variation',
   ],
   audio: ['set_audio_layer', 'add_narration', 'add_sound_effect', 'add_background_music'],
   video: ['set_video_layer'],
   avatars: ['generate_avatar_narration', 'generate_avatar_scene'],
-  interactions: ['add_interaction', 'add_multiple_interactions', 'edit_interaction', 'connect_scenes', 'define_scene_variable'],
+  interactions: [
+    'add_interaction',
+    'add_multiple_interactions',
+    'edit_interaction',
+    'connect_scenes',
+    'define_scene_variable',
+  ],
   physics: ['generate_physics_scene', 'explain_physics_concept', 'annotate_simulation', 'set_simulation_params'],
+  research: ['web_search', 'fetch_url_content', 'find_stock_videos'],
 }

@@ -49,6 +49,22 @@ export const AUDIO_PROVIDERS: AudioProviderDef[] = [
     requiresKey: null,
     defaultEnabled: true,
   },
+  {
+    id: 'pocket-tts',
+    name: 'Pocket TTS (Local)',
+    category: 'tts',
+    type: 'local',
+    requiresKey: null,
+    defaultEnabled: true,
+  },
+  {
+    id: 'voxcpm',
+    name: 'VoxCPM2 (Local GPU)',
+    category: 'tts',
+    type: 'local',
+    requiresKey: null,
+    defaultEnabled: true,
+  },
   { id: 'puter', name: 'Puter.js (Browser)', category: 'tts', type: 'client', requiresKey: null, defaultEnabled: true },
   {
     id: 'web-speech',
@@ -102,8 +118,23 @@ export const AUDIO_PROVIDERS: AudioProviderDef[] = [
   },
 ]
 
+/** Local server URL env vars for providers that need a running service */
+const LOCAL_URL_VARS: Record<string, string> = {
+  'openai-edge-tts': 'EDGE_TTS_URL',
+  'pocket-tts': 'POCKET_TTS_URL',
+  voxcpm: 'VOXCPM_URL',
+}
+
+/** Check if an audio provider is configured (API key set, server URL set, or platform-native) */
+export function isAudioProviderReady(p: AudioProviderDef): boolean {
+  if (p.requiresKey) return !!process.env[p.requiresKey]
+  if (p.type === 'local') return !!(LOCAL_URL_VARS[p.id] && process.env[LOCAL_URL_VARS[p.id]])
+  if (p.id === 'native-tts') return process.platform === 'darwin' || process.platform === 'win32'
+  return true // client-side (puter, web-speech) always available
+}
+
 export const DEFAULT_AUDIO_PROVIDER_ENABLED: Record<string, boolean> = Object.fromEntries(
-  AUDIO_PROVIDERS.map((p) => [p.id, p.defaultEnabled]),
+  AUDIO_PROVIDERS.map((p) => [p.id, p.defaultEnabled && isAudioProviderReady(p)]),
 )
 
 /** Unique API keys needed for audio providers */

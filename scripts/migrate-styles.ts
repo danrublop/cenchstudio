@@ -74,6 +74,7 @@ async function migrate() {
       paletteOverride: null,
       bgColorOverride: null,
       fontOverride: null,
+      bodyFontOverride: null,
       strokeColorOverride: null,
       // Keep legacy fields for safety
       palette: gs.palette,

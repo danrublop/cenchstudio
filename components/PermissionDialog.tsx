@@ -3,11 +3,12 @@
 import { useVideoStore } from '@/lib/store'
 import { API_DISPLAY_NAMES } from '@/lib/permissions'
 import type { PermissionRequest, PermissionResponse } from '@/lib/types'
-import { ShieldCheck, X } from 'lucide-react'
+import { ShieldCheck, X, AlertTriangle } from 'lucide-react'
 import { useState } from 'react'
 
 export default function PermissionDialog() {
-  const { pendingPermissionRequest, setPendingPermissionRequest, setSessionPermission, updateAPIPermissions, project } = useVideoStore()
+  const { pendingPermissionRequest, setPendingPermissionRequest, setSessionPermission, updateAPIPermissions, project } =
+    useVideoStore()
   const [dontAskAgain, setDontAskAgain] = useState(false)
 
   if (!pendingPermissionRequest) return null
@@ -64,12 +65,15 @@ export default function PermissionDialog() {
           className="flex items-center gap-2 px-4 py-3 border-b"
           style={{ borderColor: 'var(--color-border, #2a2a3a)' }}
         >
-          <ShieldCheck size={18} className="text-amber-400" />
-          <span className="font-medium text-sm">Agent requesting API access</span>
-          <button
-            onClick={() => respond('deny')}
-            className="ml-auto p-1 rounded hover:bg-white/10 transition-colors"
-          >
+          {req.costThresholdExceeded ? (
+            <AlertTriangle size={18} className="text-amber-500" />
+          ) : (
+            <ShieldCheck size={18} className="text-amber-400" />
+          )}
+          <span className="font-medium text-sm">
+            {req.costThresholdExceeded ? 'Expensive call — approval required' : 'Agent requesting API access'}
+          </span>
+          <button onClick={() => respond('deny')} className="ml-auto p-1 rounded hover:bg-white/10 transition-colors">
             <X size={14} />
           </button>
         </div>
@@ -86,7 +90,11 @@ export default function PermissionDialog() {
           </div>
           <div className="flex gap-2">
             <span className="text-[#6b6b7a] min-w-[60px]">Cost:</span>
-            <span className="font-medium text-amber-400">{req.estimatedCost}</span>
+            <span className="font-medium text-amber-400">
+              {req.estimatedCostUsd !== undefined
+                ? `~$${req.estimatedCostUsd.toFixed(2)} (${req.estimatedCost})`
+                : req.estimatedCost}
+            </span>
           </div>
           {req.details.prompt && (
             <div className="flex gap-2">
@@ -109,10 +117,7 @@ export default function PermissionDialog() {
         </div>
 
         {/* Actions */}
-        <div
-          className="px-4 py-3 border-t space-y-3"
-          style={{ borderColor: 'var(--color-border, #2a2a3a)' }}
-        >
+        <div className="px-4 py-3 border-t space-y-3" style={{ borderColor: 'var(--color-border, #2a2a3a)' }}>
           {/* Don't ask again checkbox */}
           <label className="flex items-center gap-2 text-sm text-[#6b6b7a] cursor-pointer">
             <input

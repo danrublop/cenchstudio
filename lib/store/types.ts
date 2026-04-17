@@ -46,6 +46,7 @@ import type {
 import type { ModelConfig, ProviderConfig } from '../agents/model-config'
 import type { AgentConfig } from '../agents/agent-config'
 import type { LayersTabSectionId } from '../layers-tab-header'
+import type { LayersStripTabId } from '../layers-strip-dock'
 
 // ── Undo/Redo ─────────────────────────────────────────────────────────────────
 
@@ -68,6 +69,14 @@ export interface AuthUser {
   name: string | null
   image: string | null
 }
+
+/** Built-in center tabs (Electron). */
+export type CoreCenterTabId = 'preview' | 'settings' | 'workspace' | 'customize'
+
+/** Layers strip sub-tab opened as its own center tab (drag from left Layers). */
+export type LayersDockCenterTabId = `layers:${LayersStripTabId}`
+
+export type CenterTabId = CoreCenterTabId | LayersDockCenterTabId
 
 export interface VideoStore {
   scenes: Scene[]
@@ -110,6 +119,8 @@ export interface VideoStore {
   setRecordingAttachSceneId: (sceneId: string | null) => void
   timelineHeight: number
   graphExpandedScenes: string[]
+  timelineView: 'track' | 'graph'
+  timelineTransport: { globalTime: number; totalDuration: number; isPlaying: boolean }
   isPreviewFullscreen: boolean
   /** When true, preview uses the Pixi compositor instead of per-scene iframes (Electron continuous mode) */
   compositorPreview: boolean
@@ -160,6 +171,12 @@ export interface VideoStore {
   chatMessages: ChatMessage[]
   isChatOpen: boolean
   isAgentRunning: boolean
+  /** Monotonically increasing nonce — increment to signal abort to AgentChat SSE stream */
+  _abortNonce: number
+  /** Abort any in-flight agent SSE stream (increments _abortNonce) */
+  abortAgentRun: () => void
+  /** True when another browser tab has an agent run in progress (via BroadcastChannel) */
+  isAgentRunningRemote: boolean
   /** Timestamp when the current agent run started — used to detect user edits during a run */
   _agentRunStartedAt: number
   agentType: AgentType | null
@@ -172,6 +189,8 @@ export interface VideoStore {
   thinkingMode: ThinkingMode
   /** When true, all LLM calls route through Ollama and TTS uses free providers */
   localMode: boolean
+  /** When true, agent uses mock SSE stream (no API credits spent) */
+  mockMode: boolean
   /** Selected local model ID (e.g. Ollama model) when localMode is on */
   localModelId: string | null
   sceneContext: 'all' | 'selected' | 'auto' | string
@@ -179,6 +198,15 @@ export interface VideoStore {
   chatInputValue: string
   settingsTab: 'models' | 'agents' | 'general' | null
   setSettingsTab: (tab: 'models' | 'agents' | 'general' | null) => void
+  /** Which center tabs are open (Electron center strip). */
+  centerOpenTabs: CenterTabId[]
+  /** Active center tab content; null when all tabs are closed. */
+  centerTab: CenterTabId | null
+  setCenterTab: (tab: CenterTabId | null) => void
+  closeCenterTab: (tab: CenterTabId) => void
+  /** Set while dragging a Layers strip tab — center UI shows a drop catcher above the preview iframe. */
+  layersStripDragTabId: LayersStripTabId | null
+  setLayersStripDragTabId: (id: LayersStripTabId | null) => void
   rightPanelTab: 'prompt' | 'layers' | 'media' | null
   setRightPanelTab: (tab: 'prompt' | 'layers' | 'media' | null) => void
   /** Unified text editor: slot key from lib/text-slots (overlay:…, svg:…, ix:…, phys:…) */
@@ -271,6 +299,8 @@ export interface VideoStore {
   // Actions
   setTimelineHeight: (height: number) => void
   toggleGraphSceneExpanded: (sceneId: string) => void
+  setTimelineView: (view: 'track' | 'graph') => void
+  setTimelineTransport: (transport: Partial<{ globalTime: number; totalDuration: number; isPlaying: boolean }>) => void
   setPreviewFullscreen: (full: boolean) => void
   setTimelineZoom: (zoom: number) => void
   setTimelineScrollX: (x: number) => void
@@ -417,6 +447,14 @@ export interface VideoStore {
   // Media Gen
   mediaGenEnabled: Record<string, boolean>
   toggleMediaGen: (id: string) => void
+
+  // Research (web search + URL reader)
+  /** Master switch — when on, agent gets web_search / fetch_url_content tools. Model-agnostic. */
+  researchEnabled: boolean
+  setResearchEnabled: (enabled: boolean) => void
+  /** Per-provider enabled map for research providers (brave, tavily, exa). */
+  researchProviderEnabled: Record<string, boolean>
+  toggleResearchProvider: (id: string) => void
   generateNarration: (
     sceneId: string,
     text: string,
@@ -428,8 +466,27 @@ export interface VideoStore {
   removeSFXFromScene: (sceneId: string, sfxId: string) => void
   setSceneMusic: (sceneId: string, music: MusicTrack | null) => void
 
+  // Workspace management
+  workspaces: import('../types').WorkspaceListItem[]
+  activeWorkspaceId: string | null
+  isLoadingWorkspaces: boolean
+  fetchWorkspaces: () => Promise<void>
+  createWorkspace: (name: string, opts?: { color?: string; icon?: string }) => Promise<string>
+  updateWorkspace: (id: string, updates: Partial<import('../types').Workspace>) => Promise<void>
+  deleteWorkspace: (id: string) => Promise<void>
+  setActiveWorkspace: (id: string | null) => void
+  moveProjectToWorkspace: (projectId: string, workspaceId: string | null) => Promise<void>
+
   // Project management
-  projectList: { id: string; name: string; updatedAt: string; thumbnailUrl?: string; outputMode?: string; createdAt?: string }[]
+  projectList: {
+    id: string
+    name: string
+    updatedAt: string
+    thumbnailUrl?: string
+    outputMode?: string
+    createdAt?: string
+    workspaceId?: string | null
+  }[]
   isLoadingProjects: boolean
   fetchProjectList: () => Promise<void>
   createNewProject: (name?: string) => Promise<void>

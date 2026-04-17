@@ -63,11 +63,11 @@ export function createTimelineActions(set: Set, get: Get) {
         }
         tracks[0].clips.push(sceneClip)
 
-        // A1: TTS and file audio
+        // A1 (tracks[2]): TTS and file audio
         const al = scene.audioLayer
         if (al?.enabled && al.src?.trim()) {
           const off = Math.max(0, Math.min(scene.duration, al.startOffset ?? 0))
-          tracks[1].clips.push(
+          tracks[2].clips.push(
             makeClip(a1Id, 'audio', `aud-${scene.id}`, 'Audio', acc + off, Math.max(0.1, scene.duration - off)),
           )
         }
@@ -78,13 +78,13 @@ export function createTimelineActions(set: Set, get: Get) {
             tts.duration != null && tts.duration > 0
               ? Math.min(tts.duration, scene.duration - off)
               : Math.max(0.2, scene.duration - off)
-          tracks[1].clips.push(makeClip(a1Id, 'audio', `tts-${scene.id}`, 'TTS', acc + off, d))
+          tracks[2].clips.push(makeClip(a1Id, 'audio', `tts-${scene.id}`, 'TTS', acc + off, d))
         }
 
-        // A2: Music and SFX
+        // A2 (tracks[3]): Music and SFX
         if (al?.music?.src?.trim()) {
           const off = Math.max(0, Math.min(scene.duration, al.startOffset ?? 0))
-          tracks[2].clips.push(
+          tracks[3].clips.push(
             makeClip(
               a2Id,
               'audio',
@@ -98,16 +98,14 @@ export function createTimelineActions(set: Set, get: Get) {
         al?.sfx?.forEach((sfx) => {
           const at = Math.max(0, Math.min(scene.duration, sfx.triggerAt))
           const d = Math.max(0.05, Math.min(sfx.duration ?? 0.2, scene.duration - at))
-          tracks[2].clips.push(makeClip(a2Id, 'audio', sfx.id, sfx.name || 'SFX', acc + at, d))
+          tracks[3].clips.push(makeClip(a2Id, 'audio', sfx.id, sfx.name || 'SFX', acc + at, d))
         })
 
         acc += scene.duration
       }
 
       // Remove empty audio tracks (but keep all default tracks when no scenes exist)
-      const finalTracks = scenes.length === 0
-        ? tracks
-        : tracks.filter((t) => t.type === 'video' || t.clips.length > 0)
+      const finalTracks = scenes.length === 0 ? tracks : tracks.filter((t) => t.type === 'video' || t.clips.length > 0)
       // Ensure at least one audio track exists
       if (!finalTracks.some((t) => t.type === 'audio')) {
         finalTracks.push({ id: a1Id, name: 'A1', type: 'audio', clips: [], muted: false, locked: false, position: 1 })
@@ -135,9 +133,45 @@ export function createTimelineActions(set: Set, get: Get) {
       const v1 = tl.tracks.find((t) => t.type === 'video')
       if (!v1) return
 
+      // Find or create audio tracks
+      let a1 = tl.tracks.find((t) => t.type === 'audio')
+      let a2 = tl.tracks.find((t) => t.type === 'audio' && t.id !== a1?.id)
+      const a1Id = a1?.id ?? uuidv4()
+      const a2Id = a2?.id ?? uuidv4()
+
+      const makeClip = (
+        trackId: string,
+        sourceType: 'scene' | 'audio' | 'video' | 'title',
+        sourceId: string,
+        label: string,
+        startTime: number,
+        duration: number,
+      ): Clip => ({
+        id: uuidv4(),
+        trackId,
+        sourceType,
+        sourceId,
+        label,
+        startTime,
+        duration,
+        trimStart: 0,
+        trimEnd: null,
+        speed: 1,
+        opacity: 1,
+        position: { x: 0, y: 0 },
+        scale: { x: 1, y: 1 },
+        rotation: 0,
+        filters: [],
+        keyframes: [],
+      })
+
       let acc = 0
       const newSceneClips: Clip[] = []
+      const newA1Clips: Clip[] = []
+      const newA2Clips: Clip[] = []
+
       for (const scene of state.scenes) {
+        // V1: scene clips
         const existing = v1.clips.find((c) => c.sourceId === scene.id && c.sourceType === 'scene')
         if (existing) {
           // Preserve user edits but update position
@@ -147,37 +181,98 @@ export function createTimelineActions(set: Set, get: Get) {
             newSceneClips[newSceneClips.length - 1].duration = scene.duration
           }
         } else {
-          newSceneClips.push({
-            id: uuidv4(),
-            trackId: v1.id,
-            sourceType: 'scene',
-            sourceId: scene.id,
-            label: scene.name || 'Untitled',
-            startTime: acc,
-            duration: scene.duration,
-            trimStart: 0,
-            trimEnd: null,
-            speed: 1,
-            opacity: 1,
-            position: { x: 0, y: 0 },
-            scale: { x: 1, y: 1 },
-            rotation: 0,
-            filters: [],
-            keyframes: [],
-          })
+          newSceneClips.push(makeClip(v1.id, 'scene', scene.id, scene.name || 'Untitled', acc, scene.duration))
         }
+
+        // A1: TTS and file audio
+        const al = scene.audioLayer
+        if (al?.enabled && al.src?.trim()) {
+          const off = Math.max(0, Math.min(scene.duration, al.startOffset ?? 0))
+          newA1Clips.push(
+            makeClip(a1Id, 'audio', `aud-${scene.id}`, 'Audio', acc + off, Math.max(0.1, scene.duration - off)),
+          )
+        }
+        const tts = al?.tts
+        if (tts && (tts.text?.trim() || tts.src?.trim())) {
+          const existingTts = a1 ? a1.clips.find((c) => c.sourceId === `tts-${scene.id}`) : null
+          if (existingTts) {
+            newA1Clips.push({
+              ...existingTts,
+              startTime: acc + Math.max(0, Math.min(scene.duration, al!.startOffset ?? 0)),
+            })
+          } else {
+            const off = Math.max(0, Math.min(scene.duration, al!.startOffset ?? 0))
+            const d =
+              tts.duration != null && tts.duration > 0
+                ? Math.min(tts.duration, scene.duration - off)
+                : Math.max(0.2, scene.duration - off)
+            newA1Clips.push(makeClip(a1Id, 'audio', `tts-${scene.id}`, 'TTS', acc + off, d))
+          }
+        }
+
+        // A2: Music and SFX
+        if (al?.music?.src?.trim()) {
+          const off = Math.max(0, Math.min(scene.duration, al.startOffset ?? 0))
+          newA2Clips.push(
+            makeClip(
+              a2Id,
+              'audio',
+              `mus-${scene.id}`,
+              al.music!.name || 'Music',
+              acc + off,
+              Math.max(0.1, scene.duration - off),
+            ),
+          )
+        }
+        al?.sfx?.forEach((sfx) => {
+          const at = Math.max(0, Math.min(scene.duration, sfx.triggerAt))
+          const d = Math.max(0.05, Math.min(sfx.duration ?? 0.2, scene.duration - at))
+          newA2Clips.push(makeClip(a2Id, 'audio', sfx.id, sfx.name || 'SFX', acc + at, d))
+        })
+
         acc += scene.duration
       }
 
       // Keep non-scene clips on V1 (user-added video/image clips)
       const nonSceneClips = v1.clips.filter((c) => c.sourceType !== 'scene')
 
+      // Build updated tracks
+      let updatedTracks = tl.tracks.map((t) => {
+        if (t.id === v1.id) return { ...t, clips: [...newSceneClips, ...nonSceneClips] }
+        if (t.id === a1Id) return { ...t, clips: newA1Clips }
+        if (t.id === a2Id) return { ...t, clips: newA2Clips }
+        return t
+      })
+
+      // If A1 didn't exist, add it
+      if (!a1 && newA1Clips.length > 0) {
+        updatedTracks.push({
+          id: a1Id,
+          name: 'A1',
+          type: 'audio' as const,
+          clips: newA1Clips,
+          muted: false,
+          locked: false,
+          position: updatedTracks.length,
+        })
+      }
+      // If A2 didn't exist, add it
+      if (!a2 && newA2Clips.length > 0) {
+        updatedTracks.push({
+          id: a2Id,
+          name: 'A2',
+          type: 'audio' as const,
+          clips: newA2Clips,
+          muted: false,
+          locked: false,
+          position: updatedTracks.length,
+        })
+      }
+
       set((s) => ({
         project: {
           ...s.project,
-          timeline: {
-            tracks: tl.tracks.map((t) => (t.id === v1.id ? { ...t, clips: [...newSceneClips, ...nonSceneClips] } : t)),
-          },
+          timeline: { tracks: updatedTracks },
           updatedAt: new Date().toISOString(),
         },
       }))

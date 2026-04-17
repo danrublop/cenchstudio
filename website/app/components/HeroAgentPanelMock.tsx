@@ -13,7 +13,7 @@ import {
   CheckCircle2,
   Check,
 } from 'lucide-react'
-import { CenchLogo as AgentAutoIcon } from '../../../components/icons/CenchLogo'
+import { CenchLogo as AgentAutoIcon } from '../../components/icons/CenchLogo'
 
 /** `AgentChat` attach-image control (same paths as app). */
 function AttachImageIcon() {

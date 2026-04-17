@@ -5,7 +5,16 @@
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-export type ModelProvider = 'anthropic' | 'openai' | 'google' | 'local' | 'heygen' | 'elevenlabs' | 'fal'
+export type ModelProvider =
+  | 'anthropic'
+  | 'openai'
+  | 'google'
+  | 'local'
+  | 'claude-code'
+  | 'codex-cli'
+  | 'heygen'
+  | 'elevenlabs'
+  | 'fal'
 export type ModelTierName = 'budget' | 'balanced' | 'performance' | 'custom'
 
 /**
@@ -309,6 +318,8 @@ export function getModelsByProvider(models: ModelConfig[] = DEFAULT_MODELS): Rec
     openai: [],
     google: [],
     local: [],
+    'claude-code': [],
+    'codex-cli': [],
     heygen: [],
     elevenlabs: [],
     fal: [],
@@ -341,6 +352,14 @@ export function resolveAgentModelDisplayName(
   }
 
   const r = String(raw)
+
+  // CLI provider model IDs: "claude-code:sonnet" → "Claude Code (Sonnet)"
+  if (r.startsWith('claude-code:')) {
+    const tier = r.split(':')[1] ?? ''
+    const tierName = tier.charAt(0).toUpperCase() + tier.slice(1)
+    return `Claude Code (${tierName})`
+  }
+
   const direct = lookup(r)
   if (direct) return direct
 
