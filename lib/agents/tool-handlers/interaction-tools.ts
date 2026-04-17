@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid'
-import type { SceneEdge } from '@/lib/types'
+import type { SceneEdge, SceneVariable } from '@/lib/types'
 import type { WorldStateMutable } from '@/lib/agents/tool-executor'
 import { ok, err, findScene, updateScene, type ToolResult } from './_shared'
 
@@ -53,10 +53,13 @@ export function createInteractionToolHandler() {
           const varName = config.setsVariable as string
           const existingVars = scene.variables || []
           if (!existingVars.some((v: any) => v.name === varName)) {
-            const newVar = {
+            const newVar: SceneVariable = {
               name: varName,
-              type: type === 'slider' ? 'number' as const : 'boolean' as const,
-              defaultValue: type === 'slider' ? (config.defaultValue ?? 0) : (config.defaultValue ?? false),
+              type: type === 'slider' ? 'number' : 'boolean',
+              defaultValue:
+                type === 'slider'
+                  ? ((config.defaultValue as number | undefined) ?? 0)
+                  : ((config.defaultValue as boolean | undefined) ?? false),
             }
             updateScene(world, sceneId, { variables: [...existingVars, newVar] })
           }
@@ -111,11 +114,15 @@ export function createInteractionToolHandler() {
           if ((item.type === 'slider' || item.type === 'toggle') && item.config.setsVariable) {
             const varName = item.config.setsVariable as string
             if (!newVars.some((v: any) => v.name === varName)) {
-              newVars.push({
+              const pushed: SceneVariable = {
                 name: varName,
-                type: item.type === 'slider' ? 'number' as const : 'boolean' as const,
-                defaultValue: item.type === 'slider' ? (item.config.defaultValue ?? 0) : (item.config.defaultValue ?? false),
-              })
+                type: item.type === 'slider' ? 'number' : 'boolean',
+                defaultValue:
+                  item.type === 'slider'
+                    ? ((item.config.defaultValue as number | undefined) ?? 0)
+                    : ((item.config.defaultValue as boolean | undefined) ?? false),
+              }
+              newVars.push(pushed)
             }
           }
         }
@@ -198,9 +205,7 @@ export function createInteractionToolHandler() {
         if (existingVars.some((v: any) => v.name === name)) {
           // Update existing variable's type and default
           updateScene(world, sceneId, {
-            variables: existingVars.map((v: any) =>
-              v.name === name ? { ...v, type, defaultValue } : v,
-            ),
+            variables: existingVars.map((v: any) => (v.name === name ? { ...v, type, defaultValue } : v)),
           })
           return ok(sceneId, `Updated variable "${name}" (${type}, default: ${defaultValue})`)
         }

@@ -13,6 +13,20 @@ import type {
 import { messageContentToText } from '../agents/types'
 import type { ModelConfig, ProviderConfig } from '../agents/model-config'
 import type { AgentConfig } from '../agents/agent-config'
+import type { PermissionRule } from '../types/permissions'
+
+type WirePermissionRule = Omit<PermissionRule, 'createdAt' | 'expiresAt'> & {
+  createdAt: string
+  expiresAt: string | null
+}
+
+function hydrateWireRule(r: WirePermissionRule): PermissionRule {
+  return {
+    ...r,
+    createdAt: new Date(r.createdAt),
+    expiresAt: r.expiresAt ? new Date(r.expiresAt) : null,
+  }
+}
 import { DEFAULT_MODELS, DEFAULT_PROVIDER_CONFIGS } from '../agents/model-config'
 import { DEFAULT_AGENTS } from '../agents/agent-config'
 import type { Set, Get, UndoableState } from './types'
@@ -690,6 +704,57 @@ export function createAgentActions(set: Set, get: Get) {
         newMap.set(api, decision)
         return { sessionPermissions: newMap }
       })
+    },
+
+    refreshPermissionRules: async () => {
+      try {
+        const res = await fetch('/api/permissions/rules', { credentials: 'include' })
+        if (!res.ok) return
+        const json = (await res.json()) as { rules: WirePermissionRule[] }
+        set({ permissionRules: json.rules.map(hydrateWireRule) })
+      } catch (e) {
+        console.warn('[store] refreshPermissionRules failed', e)
+      }
+    },
+
+    createPermissionRule: async (
+      input: Omit<import('../types/permissions').PermissionRule, 'id' | 'userId' | 'createdAt'>,
+    ) => {
+      try {
+        const res = await fetch('/api/permissions/rules', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify(input),
+        })
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ error: 'Unknown error' }))
+          console.warn('[store] createPermissionRule failed', err)
+          return null
+        }
+        const { rule } = (await res.json()) as { rule: WirePermissionRule }
+        const hydrated = hydrateWireRule(rule)
+        set((state) => ({ permissionRules: [...state.permissionRules, hydrated] }))
+        return hydrated
+      } catch (e) {
+        console.warn('[store] createPermissionRule failed', e)
+        return null
+      }
+    },
+
+    deletePermissionRule: async (id: string) => {
+      try {
+        const res = await fetch(`/api/permissions/rules?id=${encodeURIComponent(id)}`, {
+          method: 'DELETE',
+          credentials: 'include',
+        })
+        if (!res.ok) return false
+        set((state) => ({ permissionRules: state.permissionRules.filter((r) => r.id !== id) }))
+        return true
+      } catch (e) {
+        console.warn('[store] deletePermissionRule failed', e)
+        return false
+      }
     },
 
     setGenerationOverride: (

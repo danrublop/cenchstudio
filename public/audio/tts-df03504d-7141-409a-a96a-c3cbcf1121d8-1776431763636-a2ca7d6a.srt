@@ -1,0 +1,39 @@
+1
+00:00:00,000 --> 00:00:03,044
+Myocarditis — inflammatory disease of the myocardium
+
+2
+00:00:03,044 --> 00:00:06,088
+— remains one of the most diagnostically
+
+3
+00:00:06,088 --> 00:00:09,132
+challenging and clinically underestimated conditions in cardiology.
+
+4
+00:00:09,132 --> 00:00:12,176
+With an estimated global incidence between 1
+
+5
+00:00:12,176 --> 00:00:15,220
+and 10 cases per 100,000 population annually,
+
+6
+00:00:15,220 --> 00:00:18,264
+it accounts for a significant proportion of
+
+7
+00:00:18,264 --> 00:00:21,308
+sudden cardiac deaths in patients under 35.
+
+8
+00:00:21,308 --> 00:00:24,352
+This presentation reviews the major adverse effects,
+
+9
+00:00:24,352 --> 00:00:27,395
+diagnostic criteria, and current management strategies relevant
+
+10
+00:00:27,395 --> 00:00:28,700
+to clinical practice.

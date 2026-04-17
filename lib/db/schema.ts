@@ -297,12 +297,20 @@ export const projectAssets = pgTable(
     parentAssetId: uuid('parent_asset_id'),
     referenceAssetIds: jsonb('reference_asset_ids').$type<string[]>(),
     enhanceTags: jsonb('enhance_tags').$type<string[]>(),
+    // Content-hash dedup + provenance for ingested / research-sourced media.
+    /** SHA256(file bytes), first 16 hex chars. Lets us dedupe repeat uploads and research-downloaded assets. */
+    contentHash: text('content_hash'),
+    /** Original URL when the asset was pulled from the web (Pexels, yt-dlp, Archive.org, etc). */
+    sourceUrl: text('source_url'),
+    /** Timestamp of last CLIP classification pass (Phase B). Null = not yet indexed. */
+    classificationTimestamp: timestamp('classification_timestamp'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
   },
   (t) => ({
     projectIdx: index('project_assets_project_idx').on(t.projectId),
     typeIdx: index('project_assets_type_idx').on(t.projectId, t.type),
     sourceIdx: index('project_assets_source_idx').on(t.projectId, t.source),
+    contentHashIdx: index('project_assets_content_hash_idx').on(t.contentHash),
   }),
 )
 
@@ -680,15 +688,25 @@ export const messages = pgTable(
 )
 
 // ── Media Cache (replaces SQLite media_cache) ───────────
-export const mediaCache = pgTable('media_cache', {
-  hash: text('hash').primaryKey(),
-  api: text('api').notNull(),
-  filePath: text('file_path').notNull(),
-  prompt: text('prompt'),
-  model: text('model'),
-  config: text('config'),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-})
+export const mediaCache = pgTable(
+  'media_cache',
+  {
+    hash: text('hash').primaryKey(),
+    api: text('api').notNull(),
+    filePath: text('file_path').notNull(),
+    prompt: text('prompt'),
+    model: text('model'),
+    config: text('config'),
+    /** SHA256 of file bytes (16 chars). Different from the primary `hash` which is a hash of
+     *  request params — this hashes the actual file so we can dedupe identical media fetched from
+     *  different queries or different providers. Null for legacy rows. */
+    contentHash: text('content_hash'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (t) => ({
+    contentHashIdx: index('media_cache_content_hash_idx').on(t.contentHash),
+  }),
+)
 
 // ── Permission Sessions (replaces SQLite) ───────────────
 export const permissionSessions = pgTable('permission_sessions', {
@@ -852,9 +870,53 @@ export const avatarVideos = pgTable(
   }),
 )
 
+// ── Permission Rules (Claude-Code-style layered rules) ────────────────────
+// Scope hierarchy: user → workspace → project → session (conversation).
+// Deny-wins; cost caps orthogonal to allow/deny. See lib/permissions/evaluator.ts
+export const permissionRules = pgTable(
+  'permission_rules',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    scope: text('scope').$type<'user' | 'workspace' | 'project' | 'session'>().notNull(),
+    workspaceId: uuid('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
+    projectId: uuid('project_id').references(() => projects.id, { onDelete: 'cascade' }),
+    conversationId: uuid('conversation_id').references(() => conversations.id, { onDelete: 'cascade' }),
+    decision: text('decision').$type<'allow' | 'deny' | 'ask'>().notNull(),
+    api: text('api').notNull(),
+    specifier: jsonb('specifier').$type<import('../types/permissions').RuleSpecifier | null>().default(null),
+    costCapUsd: real('cost_cap_usd'),
+    expiresAt: timestamp('expires_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    createdBy: text('created_by')
+      .$type<'user-settings' | 'dialog' | 'migration' | 'admin'>()
+      .notNull()
+      .default('user-settings'),
+    notes: text('notes'),
+  },
+  (t) => ({
+    userScopeIdx: index('permission_rules_user_scope_idx').on(t.userId, t.scope),
+    projectIdx: index('permission_rules_project_idx').on(t.projectId),
+    workspaceIdx: index('permission_rules_workspace_idx').on(t.workspaceId),
+    conversationIdx: index('permission_rules_conversation_idx').on(t.conversationId, t.expiresAt),
+  }),
+)
+
 // ── Relations ───────────────────────────────────────────
 export const userMemoryRelations = relations(userMemory, ({ one }) => ({
   user: one(users, { fields: [userMemory.userId], references: [users.id] }),
+}))
+
+export const permissionRulesRelations = relations(permissionRules, ({ one }) => ({
+  user: one(users, { fields: [permissionRules.userId], references: [users.id] }),
+  workspace: one(workspaces, { fields: [permissionRules.workspaceId], references: [workspaces.id] }),
+  project: one(projects, { fields: [permissionRules.projectId], references: [projects.id] }),
+  conversation: one(conversations, {
+    fields: [permissionRules.conversationId],
+    references: [conversations.id],
+  }),
 }))
 
 export const workspacesRelations = relations(workspaces, ({ one, many }) => ({

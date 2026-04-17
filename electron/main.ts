@@ -73,7 +73,8 @@ function createWindow() {
           accelerator: 'CmdOrCtrl+Shift+H',
           click: () => {
             const w = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
-            if (w) w.webContents.executeJavaScript(`
+            if (w)
+              w.webContents.executeJavaScript(`
               (() => {
                 const store = window.__cenchStore;
                 if (store) { store.setState({ project: { ...store.getState().project, id: '' } }); window.location.href = '/'; }
@@ -93,7 +94,8 @@ function createWindow() {
           accelerator: 'CmdOrCtrl+Z',
           click: () => {
             const w = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
-            if (w) w.webContents.executeJavaScript(`
+            if (w)
+              w.webContents.executeJavaScript(`
               (() => {
                 const el = document.activeElement;
                 if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) {
@@ -110,7 +112,8 @@ function createWindow() {
           accelerator: 'CmdOrCtrl+Shift+Z',
           click: () => {
             const w = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
-            if (w) w.webContents.executeJavaScript(`
+            if (w)
+              w.webContents.executeJavaScript(`
               (() => {
                 const el = document.activeElement;
                 if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) {
@@ -139,7 +142,8 @@ function createWindow() {
           accelerator: 'CmdOrCtrl+Shift+F',
           click: () => {
             const w = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
-            if (w) w.webContents.executeJavaScript(`
+            if (w)
+              w.webContents.executeJavaScript(`
               (() => {
                 const s = window.__cenchStore?.getState();
                 if (s) s.setPreviewFullscreen(!s.isPreviewFullscreen);
@@ -225,6 +229,21 @@ app.whenReady().then(() => {
     win.webContents.setZoomFactor(1)
     return { ok: true as const, factor: 1 }
   })
+
+  ipcMain.handle(
+    'cench:capturePage',
+    async (_evt, args?: { rect?: { x: number; y: number; width: number; height: number } }) => {
+      const win = webZoomTargetWindow()
+      if (!win) return { ok: false as const, error: 'no window' }
+      try {
+        const image = args?.rect ? await win.webContents.capturePage(args.rect) : await win.webContents.capturePage()
+        const dataUri = image.toDataURL()
+        return { ok: true as const, dataUri, mimeType: 'image/png' }
+      } catch (err) {
+        return { ok: false as const, error: (err as Error).message }
+      }
+    },
+  )
 
   ipcMain.handle('cench:saveDialog', async (_evt, suggestedName?: string) => {
     const res = await dialog.showSaveDialog({
@@ -353,10 +372,7 @@ app.whenReady().then(() => {
   // ── Save recording session (screen + optional webcam) ────────────
   ipcMain.handle(
     'cench:saveRecordingSession',
-    async (
-      _evt,
-      args: { screenBytes: ArrayBuffer; webcamBytes?: ArrayBuffer; nameHint?: string },
-    ) => {
+    async (_evt, args: { screenBytes: ArrayBuffer; webcamBytes?: ArrayBuffer; nameHint?: string }) => {
       // Validate screen recording is non-empty
       if (!args.screenBytes || args.screenBytes.byteLength === 0) {
         throw new Error('Screen recording is empty — nothing to save')
@@ -451,7 +467,10 @@ app.whenReady().then(() => {
 
     const getWin = () => {
       const win = BrowserWindow.getAllWindows()[0]
-      if (!win) { json({ error: 'No Electron window available' }, 503); return null }
+      if (!win) {
+        json({ error: 'No Electron window available' }, 503)
+        return null
+      }
       return win
     }
 
@@ -465,7 +484,8 @@ app.whenReady().then(() => {
     }
 
     if (req.method === 'GET' && req.url === '/recording/status') {
-      const win = getWin(); if (!win) return
+      const win = getWin()
+      if (!win) return
       try {
         const result = await win.webContents.executeJavaScript(`
           (() => {
@@ -495,7 +515,9 @@ app.whenReady().then(() => {
           try {
             const data = JSON.parse(await fs.readFile(path.join(dir, f), 'utf-8'))
             sessions.push(data)
-          } catch { /* skip corrupt manifests */ }
+          } catch {
+            /* skip corrupt manifests */
+          }
         }
         sessions.sort((a: any, b: any) => (b.createdAt || 0) - (a.createdAt || 0))
         return json({ sessions })
@@ -509,8 +531,13 @@ app.whenReady().then(() => {
       const chunks: Buffer[] = []
       for await (const chunk of req) chunks.push(Buffer.from(chunk))
       let body: any = {}
-      try { body = JSON.parse(Buffer.concat(chunks).toString()) } catch { /* empty body OK */ }
-      const win = getWin(); if (!win) return
+      try {
+        body = JSON.parse(Buffer.concat(chunks).toString())
+      } catch {
+        /* empty body OK */
+      }
+      const win = getWin()
+      if (!win) return
 
       const action = req.url.replace('/recording/', '')
       try {

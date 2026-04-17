@@ -1,0 +1,27 @@
+1
+00:00:00,000 --> 00:00:02,495
+Two complications change the clinical calculus.
+
+2
+00:00:02,495 --> 00:00:05,405
+Sudden cardiac death accounts for up to
+
+3
+00:00:05,405 --> 00:00:08,316
+fifteen percent of myocarditis mortality in young
+
+4
+00:00:08,316 --> 00:00:08,732
+adults.
+
+5
+00:00:08,732 --> 00:00:11,642
+Intracardiac thrombus forms in four to twelve
+
+6
+00:00:11,642 --> 00:00:12,889
+percent of cases.
+
+7
+00:00:12,889 --> 00:00:15,800
+Both can occur with preserved ejection fraction.

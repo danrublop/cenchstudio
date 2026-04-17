@@ -148,6 +148,7 @@ export const TTS_PROFILES: ProviderProfile<TTSProvider>[] = [
     costUsd: () => 0,
     taskFit: () => 35,
     reasonHint: 'Puter browser TTS (free, preview only)',
+    clientOnly: true,
   },
   {
     id: 'web-speech',
@@ -161,5 +162,6 @@ export const TTS_PROFILES: ProviderProfile<TTSProvider>[] = [
     costUsd: () => 0,
     taskFit: () => 30,
     reasonHint: 'Web Speech API (free, browser only)',
+    clientOnly: true,
   },
 ]

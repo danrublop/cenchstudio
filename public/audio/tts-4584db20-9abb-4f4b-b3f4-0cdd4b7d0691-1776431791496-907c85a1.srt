@@ -1,0 +1,59 @@
+1
+00:00:00,000 --> 00:00:02,866
+Diagnosis relies on a tiered approach.
+
+2
+00:00:02,866 --> 00:00:06,210
+Endomyocardial biopsy remains the histological gold standard
+
+3
+00:00:06,210 --> 00:00:09,553
+— Dallas criteria require lymphocytic infiltration and
+
+4
+00:00:09,553 --> 00:00:12,897
+myocyte necrosis — though sensitivity is limited
+
+5
+00:00:12,897 --> 00:00:14,330
+by sampling error.
+
+6
+00:00:14,330 --> 00:00:17,673
+Cardiac MRI with Lake Louise Criteria is
+
+7
+00:00:17,673 --> 00:00:21,017
+now the preferred non-invasive modality: T2-weighted imaging
+
+8
+00:00:21,017 --> 00:00:24,361
+identifies myocardial edema; T1 mapping and extracellular
+
+9
+00:00:24,361 --> 00:00:27,704
+volume fraction quantify inflammation; and late gadolinium
+
+10
+00:00:27,704 --> 00:00:31,048
+enhancement in a non-ischemic distribution confirms myocardial
+
+11
+00:00:31,048 --> 00:00:31,526
+injury.
+
+12
+00:00:31,526 --> 00:00:34,869
+Biomarkers including troponin I or T, CRP,
+
+13
+00:00:34,869 --> 00:00:38,213
+and BNP support diagnosis and risk stratification.
+
+14
+00:00:38,213 --> 00:00:41,556
+ESC guidelines recommend CMR in all patients
+
+15
+00:00:41,556 --> 00:00:44,900
+with suspected myocarditis when echocardiography is inconclusive.

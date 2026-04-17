@@ -217,7 +217,10 @@ export default function ViewerPage() {
     return manifest.scenes.slice(0, idx).reduce((a, s) => a + s.duration, 0)
   }, [manifest, currentSceneId])
 
-  const currentIdx = useMemo(() => manifest?.scenes.findIndex((s) => s.id === currentSceneId) ?? -1, [manifest, currentSceneId])
+  const currentIdx = useMemo(
+    () => manifest?.scenes.findIndex((s) => s.id === currentSceneId) ?? -1,
+    [manifest, currentSceneId],
+  )
 
   // ── Load scene into iframe ──
 
@@ -575,21 +578,24 @@ export default function ViewerPage() {
     touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() }
   }, [])
 
-  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
-    if (!touchStartRef.current || !manifest) return
-    const dx = e.changedTouches[0].clientX - touchStartRef.current.x
-    const dy = e.changedTouches[0].clientY - touchStartRef.current.y
-    const dt = Date.now() - touchStartRef.current.t
-    touchStartRef.current = null
+  const handleTouchEnd = useCallback(
+    (e: React.TouchEvent) => {
+      if (!touchStartRef.current || !manifest) return
+      const dx = e.changedTouches[0].clientX - touchStartRef.current.x
+      const dy = e.changedTouches[0].clientY - touchStartRef.current.y
+      const dt = Date.now() - touchStartRef.current.t
+      touchStartRef.current = null
 
-    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 2 && dt < 400) {
-      if (dx < 0 && currentIdx < (manifest?.scenes.length ?? 0) - 1) {
-        goToScene(manifest.scenes[currentIdx + 1].id, 'swipe')
-      } else if (dx > 0 && currentIdx > 0) {
-        goToScene(manifest.scenes[currentIdx - 1].id, 'swipe')
+      if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 2 && dt < 400) {
+        if (dx < 0 && currentIdx < (manifest?.scenes.length ?? 0) - 1) {
+          goToScene(manifest.scenes[currentIdx + 1].id, 'swipe')
+        } else if (dx > 0 && currentIdx > 0) {
+          goToScene(manifest.scenes[currentIdx - 1].id, 'swipe')
+        }
       }
-    }
-  }, [manifest, currentIdx, goToScene])
+    },
+    [manifest, currentIdx, goToScene],
+  )
 
   // ── Render ──
 
@@ -624,8 +630,7 @@ export default function ViewerPage() {
       {showChapters && (
         <div
           className="flex-shrink-0 w-64 bg-black/95 border-r border-white/10 overflow-y-auto"
-          style={{ zIndex: 30 }}
-          style={{ animation: 'fadeIn 0.2s ease' }}
+          style={{ zIndex: 30, animation: 'fadeIn 0.2s ease' }}
         >
           <div className="p-4 border-b border-white/10">
             <h2 className="text-sm font-semibold text-white/90 truncate">{manifest.name}</h2>
@@ -640,7 +645,9 @@ export default function ViewerPage() {
                 role="button"
                 tabIndex={0}
                 onClick={() => goToScene(s.id, 'chapter')}
-                onKeyDown={(e) => { if (e.key === 'Enter') goToScene(s.id, 'chapter') }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') goToScene(s.id, 'chapter')
+                }}
                 className="flex items-center gap-3 px-4 py-3 cursor-pointer transition-all hover:bg-white/5"
                 style={{
                   borderLeft: `3px solid ${isActive ? brandColor : 'transparent'}`,
@@ -656,7 +663,9 @@ export default function ViewerPage() {
                   }}
                 >
                   {isPast ? (
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z" /></svg>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z" />
+                    </svg>
                   ) : (
                     i + 1
                   )}
@@ -766,7 +775,9 @@ export default function ViewerPage() {
                     role="button"
                     tabIndex={0}
                     onClick={() => goToScene(s.id, 'progress')}
-                    onKeyDown={(e) => { if (e.key === 'Enter') goToScene(s.id, 'progress') }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') goToScene(s.id, 'progress')
+                    }}
                   >
                     <div
                       className="h-full rounded-full transition-all duration-150"
@@ -787,12 +798,16 @@ export default function ViewerPage() {
                   role="button"
                   tabIndex={0}
                   onClick={() => setShowChapters((p) => !p)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') setShowChapters((p) => !p) }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') setShowChapters((p) => !p)
+                  }}
                   className="text-white/50 hover:text-white transition-colors cursor-pointer"
                   title="Chapters"
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" />
+                    <line x1="3" y1="6" x2="21" y2="6" />
+                    <line x1="3" y1="12" x2="21" y2="12" />
+                    <line x1="3" y1="18" x2="21" y2="18" />
                   </svg>
                 </span>
 
@@ -801,7 +816,9 @@ export default function ViewerPage() {
                   role="button"
                   tabIndex={0}
                   onClick={togglePlay}
-                  onKeyDown={(e) => { if (e.key === 'Enter') togglePlay() }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') togglePlay()
+                  }}
                   className="text-white hover:opacity-80 transition-opacity cursor-pointer"
                 >
                   {isPlaying ? (
@@ -820,8 +837,12 @@ export default function ViewerPage() {
                 <span
                   role="button"
                   tabIndex={0}
-                  onClick={() => { if (currentIdx > 0) goToScene(manifest.scenes[currentIdx - 1].id, 'nav') }}
-                  onKeyDown={(e) => { if (e.key === 'Enter' && currentIdx > 0) goToScene(manifest.scenes[currentIdx - 1].id, 'nav') }}
+                  onClick={() => {
+                    if (currentIdx > 0) goToScene(manifest.scenes[currentIdx - 1].id, 'nav')
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && currentIdx > 0) goToScene(manifest.scenes[currentIdx - 1].id, 'nav')
+                  }}
                   className="text-white/50 hover:text-white transition-colors cursor-pointer"
                   style={{ opacity: currentIdx > 0 ? 1 : 0.3 }}
                 >
@@ -832,8 +853,13 @@ export default function ViewerPage() {
                 <span
                   role="button"
                   tabIndex={0}
-                  onClick={() => { if (currentIdx < manifest.scenes.length - 1) goToScene(manifest.scenes[currentIdx + 1].id, 'nav') }}
-                  onKeyDown={(e) => { if (e.key === 'Enter' && currentIdx < manifest.scenes.length - 1) goToScene(manifest.scenes[currentIdx + 1].id, 'nav') }}
+                  onClick={() => {
+                    if (currentIdx < manifest.scenes.length - 1) goToScene(manifest.scenes[currentIdx + 1].id, 'nav')
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && currentIdx < manifest.scenes.length - 1)
+                      goToScene(manifest.scenes[currentIdx + 1].id, 'nav')
+                  }}
                   className="text-white/50 hover:text-white transition-colors cursor-pointer"
                   style={{ opacity: currentIdx < manifest.scenes.length - 1 ? 1 : 0.3 }}
                 >
@@ -857,7 +883,9 @@ export default function ViewerPage() {
                         role="button"
                         tabIndex={0}
                         onClick={() => goToScene(s.id, 'nav')}
-                        onKeyDown={(e) => { if (e.key === 'Enter') goToScene(s.id, 'nav') }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') goToScene(s.id, 'nav')
+                        }}
                         className="w-2 h-2 rounded-full transition-all cursor-pointer"
                         style={{
                           background: s.id === currentSceneId ? brandColor : 'rgba(255,255,255,0.2)',

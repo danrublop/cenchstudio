@@ -14,7 +14,11 @@ import type {
 } from './types'
 import { type ProjectDimensions, DEFAULT_DIMENSIONS } from './dimensions'
 import { getBestTTSProvider } from './audio/resolve-best-tts-provider'
-import { THREE_ENVIRONMENT_RUNTIME_SCRIPT, THREE_SCATTER_RUNTIME_SCRIPT } from './three-environments/inlined-runtimes'
+import {
+  THREE_ENVIRONMENT_RUNTIME_SCRIPT,
+  THREE_HELPERS_RUNTIME_SCRIPT,
+  THREE_SCATTER_RUNTIME_SCRIPT,
+} from './three-environments/inlined-runtimes'
 import { CANVAS_RENDERER_CODE } from './canvas-renderer/inlined'
 import { resolveStyle, type ResolvedStyle } from './styles/presets'
 import { resolveSceneStyle } from './styles/scene-presets'
@@ -1370,7 +1374,15 @@ function generateThreeHTML(
     import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
     import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
     import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+    import { BokehPass } from 'three/addons/postprocessing/BokehPass.js';
+    import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js';
+    import { OutlinePass } from 'three/addons/postprocessing/OutlinePass.js';
+    import { FilmPass } from 'three/addons/postprocessing/FilmPass.js';
+    import { GlitchPass } from 'three/addons/postprocessing/GlitchPass.js';
+    import { AfterimagePass } from 'three/addons/postprocessing/AfterimagePass.js';
+    import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
     import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+    import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
     window.THREE = THREE;
 
     // Procedural studio environment map — makes all PBR materials look professional.
@@ -1567,6 +1579,7 @@ function generateThreeHTML(
 
     ${THREE_ENVIRONMENT_RUNTIME_SCRIPT}
     ${THREE_SCATTER_RUNTIME_SCRIPT}
+    ${THREE_HELPERS_RUNTIME_SCRIPT}
   </script>
 
   <!-- Scene code: separate module so it can have its own imports at the top -->

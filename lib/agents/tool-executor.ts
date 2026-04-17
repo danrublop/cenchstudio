@@ -22,6 +22,7 @@ import { generateSceneHTML } from '../sceneTemplate'
 import { resolveProjectDimensions } from '../dimensions'
 import { resolveStyle } from '../styles/presets'
 import { API_COST_ESTIMATES, API_DISPLAY_NAMES, checkPermission, estimateApiCostUsd } from '../permissions'
+import { evaluatePermission } from '../permissions/evaluator'
 import { generateCode } from '../generation/generate'
 import { ALL_TOOLS } from './tools'
 import { SCENE_ID_RE } from '../api/constants'
@@ -202,6 +203,17 @@ export interface WorldStateMutable {
   projectAssets?: import('../types/media').ProjectAsset[]
   /** Brand kit data for branding tools */
   brandKit?: import('../types/media').BrandKit | null
+  /** Layered permission rules (user/workspace/project/session) resolved at
+   *  request start. Supersedes the legacy apiPermissions enum modes for the
+   *  allow/deny decision; apiPermissions still carries spend caps. */
+  permissionRules?: import('../types/permissions').PermissionRule[]
+  /** Authenticated userId (trusted, set server-side from session). Needed to
+   *  author new session-scope rules from the dialog's "This session" button. */
+  authUserId?: string | null
+  /** Conversation id for session-scope rule authoring. */
+  conversationId?: string | null
+  /** Workspace id plumbed for evaluator context. */
+  workspaceId?: string | null
 }
 
 // ── Tool Hook Pipeline ───────────────────────────────────────────────────────
@@ -413,6 +425,62 @@ function checkApiPermission(
   // Compute the scalar cost estimate up front — we need it both to evaluate
   // the threshold AND to keep an "approved but expensive" call honest.
   const estimatedCostUsd = estimateApiCostUsd(api, context?.details)
+
+  // ── Rule-based evaluation (layered: user/workspace/project/session) ──────
+  // If rules are plumbed in, they supersede the enum-mode path for the
+  // allow/deny decision. Spend caps are still enforced via the legacy gate
+  // below so the existing sessionSpend/monthlySpend tracking keeps working.
+  if (world.permissionRules && world.authUserId) {
+    const ruleResult = evaluatePermission(
+      {
+        userId: world.authUserId,
+        workspaceId: world.workspaceId ?? null,
+        projectId: world.projectId ?? null,
+        conversationId: world.conversationId ?? null,
+        api,
+        call: {
+          prompt: context?.details?.prompt,
+          duration: context?.details?.duration,
+          model: context?.details?.model,
+          resolution: context?.details?.resolution,
+          estimatedCostUsd,
+        },
+      },
+      world.permissionRules,
+      {
+        sessionSpend: config.sessionSpend,
+        sessionLimit: config.sessionLimit,
+        monthlySpend: config.monthlySpend,
+        monthlyLimit: config.monthlyLimit,
+      },
+    )
+
+    if (ruleResult.action === 'deny') return err(ruleResult.reason)
+    if (ruleResult.action === 'allow') {
+      // Rule-based allow wins — still honor the per-API single-call threshold
+      // as an orthogonal cost guard.
+      const threshold =
+        config.singleCallCostThreshold ?? (api === 'freesound' || api === 'pixabay' || api === 'unsplash' ? null : 0.5)
+      if (threshold === null || estimatedCostUsd <= threshold) return null
+      // Fall through to the legacy cost-gate flow to produce the permissionNeeded
+      // response with costThresholdExceeded=true.
+    } else if (ruleResult.action === 'ask') {
+      return {
+        success: false,
+        error: ruleResult.costTriggered
+          ? `Cost approval required: ${api} call estimated at $${estimatedCostUsd.toFixed(2)} exceeds the rule cap.`
+          : `Permission required: ${api} usage needs approval.`,
+        permissionNeeded: {
+          api,
+          estimatedCost: API_COST_ESTIMATES[api] ?? 'unknown',
+          estimatedCostUsd,
+          costThresholdExceeded: ruleResult.costTriggered,
+          reason: ruleResult.reason,
+          details: context?.details ?? {},
+        },
+      }
+    }
+  }
 
   // Preserve current UX: once approved in session, skip repeated prompts —
   // UNLESS this particular call is above the single-call threshold, in which
@@ -931,6 +999,10 @@ function ensureAllHandlersRegistered(): void {
       success: allPassed,
       affectedSceneId: sceneId,
       data: {
+        // Trigger client frame capture so verify includes visual feedback alongside structural report
+        clientAction: 'capture_frame',
+        sceneId,
+        time: t,
         report,
         checks,
         issues,

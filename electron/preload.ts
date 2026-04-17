@@ -18,11 +18,10 @@ export type ElectronAPI = {
   webZoomIn: () => Promise<{ ok: boolean; factor: number }>
   webZoomOut: () => Promise<{ ok: boolean; factor: number }>
   webZoomReset: () => Promise<{ ok: boolean; factor: number }>
-  saveRecordingSession: (args: {
-    screenBytes: ArrayBuffer
-    webcamBytes?: ArrayBuffer
-    nameHint?: string
-  }) => Promise<{
+  capturePage: (args?: {
+    rect?: { x: number; y: number; width: number; height: number }
+  }) => Promise<{ ok: true; dataUri: string; mimeType: string } | { ok: false; error: string }>
+  saveRecordingSession: (args: { screenBytes: ArrayBuffer; webcamBytes?: ArrayBuffer; nameHint?: string }) => Promise<{
     screenVideoPath: string
     screenVideoUrl: string
     webcamVideoPath?: string
@@ -42,6 +41,7 @@ const api: ElectronAPI = {
   webZoomIn: () => ipcRenderer.invoke('cench:webZoomIn'),
   webZoomOut: () => ipcRenderer.invoke('cench:webZoomOut'),
   webZoomReset: () => ipcRenderer.invoke('cench:webZoomReset'),
+  capturePage: (args) => ipcRenderer.invoke('cench:capturePage', args),
   saveRecordingSession: (args) => ipcRenderer.invoke('cench:saveRecordingSession', args),
   startCursorTelemetry: () => ipcRenderer.invoke('cench:startCursorTelemetry'),
   stopCursorTelemetry: () => ipcRenderer.invoke('cench:stopCursorTelemetry'),

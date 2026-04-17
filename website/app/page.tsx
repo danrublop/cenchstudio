@@ -1,101 +1,12 @@
-'use client'
-
-import { useState, useCallback } from 'react'
 import Image from 'next/image'
-import { Box, ChevronDown, Image as ImageIcon, MousePointerClick, Sparkles, Volume2 } from 'lucide-react'
-import { HomeScrollAnimations } from './components/HomeScrollAnimations'
-import { ebGaramond, sairaStencil } from './fonts'
-import { CenchLogo } from '../components/icons/CenchLogo'
-
-/* Shared toast state — single toast for all ComingSoon triggers */
-let toastTimer: ReturnType<typeof setTimeout> | null = null
-let setGlobalToast: ((v: boolean) => void) | null = null
-
-function ComingSoonToast() {
-  const [show, setShow] = useState(false)
-  setGlobalToast = setShow
-  return show ? (
-    <div className="fixed bottom-6 left-1/2 z-[999] -translate-x-1/2 animate-[fadeInOut_1.8s_ease] rounded-lg bg-[#0a0a0b] px-5 py-3 text-[13px] font-medium text-white shadow-2xl">
-      Coming soon
-    </div>
-  ) : null
-}
-
-function ComingSoon({ children, className }: { children: React.ReactNode; className?: string }) {
-  const handleClick = useCallback((e: React.MouseEvent) => {
-    e.preventDefault()
-    if (toastTimer) clearTimeout(toastTimer)
-    setGlobalToast?.(true)
-    toastTimer = setTimeout(() => setGlobalToast?.(false), 1800)
-  }, [])
-  return (
-    <span className={`inline-block ${className ?? ''}`} onClick={handleClick} style={{ cursor: 'pointer' }}>
-      {children}
-    </span>
-  )
-}
-
-const agents = [
-  {
-    name: 'Main agent',
-    desc: 'One agent builds the whole project, backed by a massive library of skills.',
-    color: '#a855f7',
-  },
-  {
-    name: 'Explainer',
-    desc: 'Specialized for explainer videos—motion, type, cards, and step-by-step story.',
-    color: '#3b82f6',
-  },
-  {
-    name: '3D',
-    desc: 'Specialized for 3D videos—depth, cameras, and Three.js-style scenes.',
-    color: '#f97316',
-  },
-]
-
-const heroLogos = [
-  { src: '/logos/elevenlabs.svg', alt: 'ElevenLabs' },
-  { src: '/logos/heygen.svg', alt: 'HeyGen' },
-  { src: '/logos/openai.svg', alt: 'OpenAI', size: 'lg' as const },
-  { src: '/logos/gemini.png', alt: 'Google Gemini', size: 'xl' as const },
-  { src: '/logos/fal.svg', alt: 'Fal' },
-  { src: '/logos/claude.png', alt: 'Anthropic Claude', size: 'xl' as const },
-  { src: '/logos/kling.svg', alt: 'Kling AI' },
-] as const
-
-const trustLogos = [
-  { src: '/logos/openai.svg', alt: 'OpenAI' },
-  { src: '/logos/gemini.png', alt: 'Google Gemini' },
-  { src: '/logos/claude.png', alt: 'Anthropic Claude' },
-  { src: '/logos/elevenlabs.svg', alt: 'ElevenLabs' },
-  { src: '/logos/heygen.svg', alt: 'HeyGen' },
-  { src: '/logos/kling.svg', alt: 'Kling' },
-  { src: '/logos/fal.svg', alt: 'Fal' },
-] as const
-
-function HeroLogoImg({
-  src,
-  alt,
-  size,
-}: {
-  src: string
-  alt: string
-  size?: 'lg' | 'xl'
-}) {
-  const cls =
-    size === 'xl'
-      ? 'hero-logo-img h-11 w-auto max-h-11 max-w-[min(14rem,48vw)] object-contain object-center sm:h-[3.25rem] sm:max-h-[3.25rem] sm:max-w-[min(15rem,42vw)]'
-      : size === 'lg'
-        ? 'hero-logo-img h-9 w-auto max-h-9 max-w-[min(11.5rem,40vw)] object-contain object-center sm:h-10 sm:max-h-10 sm:max-w-[min(12.5rem,38vw)]'
-        : 'hero-logo-img h-5 w-auto max-h-5 max-w-[min(5.5rem,22vw)] object-contain object-center sm:h-5 sm:max-h-5 sm:max-w-[min(6rem,20vw)]'
-  return <img src={src} alt={alt} className={cls} loading="lazy" />
-}
+import { Send } from 'lucide-react'
+import { sairaStencil } from './fonts'
 
 function AttachImageIcon() {
   return (
     <svg
-      width={17}
-      height={17}
+      width={16}
+      height={16}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -113,607 +24,135 @@ function AttachImageIcon() {
   )
 }
 
-function ReactAtomIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
-      <circle cx="12" cy="12" r="1.8" fill="currentColor" stroke="none" />
-      <ellipse cx="12" cy="12" rx="9" ry="3.8" />
-      <ellipse cx="12" cy="12" rx="9" ry="3.8" transform="rotate(60 12 12)" />
-      <ellipse cx="12" cy="12" rx="9" ry="3.8" transform="rotate(120 12 12)" />
-    </svg>
-  )
-}
-
-const animationTypeItems = [
-  { title: 'Charts', line: 'Animated axes, series, and chart storytelling beats', ratio: '16:9' },
-  { title: 'Data', line: 'KPIs, tables, and live numbers on the canvas', ratio: '9:16' },
-  { title: 'Avatar', line: 'Talking presenters, hosts, and lip-sync takes', ratio: '4:3' },
-  { title: 'SFX', line: 'Hits, whooshes, UI ticks, and scene punctuation', ratio: '1:1' },
-  { title: 'Music', line: 'Beds, stingers, and scored mood under the edit', ratio: '4:5' },
-  { title: 'TTS', line: 'Voiceover from script with pacing and emphasis', ratio: '21:9' },
-  { title: 'Media Gen', line: 'AI images, clips, and generated b-roll in the flow', ratio: '3:2' },
-  { title: 'Tutoring', line: 'Lesson steps, hints, and guided practice beats', ratio: '2:3' },
-  { title: 'Research', line: 'Citations, quotes, and source-forward callouts', ratio: '5:4' },
-  { title: 'Docs', line: 'Specs, references, and slide-friendly structured copy', ratio: '16:10' },
-  { title: 'Text', line: 'Titles, bullets, captions, and on-screen typography', ratio: '3:4' },
-] as const
-
-function AnimationTypeMarqueeTrack({ reverse }: { reverse?: boolean }) {
-  const rowId = reverse ? 'b' : 'a'
-  return (
-    <div
-      className={`animation-type-marquee__track${reverse ? ' animation-type-marquee__track--reverse' : ''}`}
-    >
-      {([0, 1] as const).map((dup) => (
-        <div
-          key={`${rowId}-${dup}`}
-          className="animation-type-marquee__segment shrink-0"
-          {...(dup === 1 ? { 'aria-hidden': true as const } : {})}
-        >
-          {animationTypeItems.map((item) => (
-            <article
-              key={`${item.title}-${rowId}-${dup}`}
-              className="group w-[6.5rem] shrink-0 overflow-hidden border border-[#e6e4df] bg-white shadow-[0_1px_0_rgba(10,10,11,0.04)] transition-[border-color,box-shadow] sm:w-28 md:w-[7.25rem] hover:border-[#0a0a0b]/14 hover:shadow-[0_6px_24px_-8px_rgba(10,10,11,0.1)]"
-            >
-              <div className="relative aspect-square min-h-0 bg-white">
-                <div
-                  className="absolute inset-1.5 border border-dashed border-[#0a0a0b]/14 bg-[#f0eeea]/95"
-                  aria-hidden
-                />
-                <div className="relative flex h-full items-center justify-center text-[#0a0a0b]/22">
-                  <ImageIcon className="h-7 w-7 sm:h-8 sm:w-8" strokeWidth={1.2} aria-hidden />
-                </div>
-                <span className="pointer-events-none absolute bottom-0.5 left-0.5 text-[7px] font-medium tabular-nums tracking-wide text-[#0a0a0b]/45 sm:bottom-1 sm:left-1 sm:text-[8px]">
-                  {item.ratio}
-                </span>
-              </div>
-              <div className="flex h-[2.25rem] min-h-[2.25rem] items-center border-t border-[#e0dcd4] bg-[#f0eeea] px-1.5 text-left sm:h-9 sm:min-h-9 sm:px-2">
-                <p className="min-w-0 truncate text-[9px] leading-tight text-[#0a0a0b]/65 sm:text-[10px]">
-                  <span className="font-semibold text-[#0a0a0b]">{item.title}</span>
-                  <span className="text-[#0a0a0b]/35"> · </span>
-                  {item.line}
-                </p>
-              </div>
-            </article>
-          ))}
-          <span className="h-0 w-0 shrink-0 overflow-hidden" aria-hidden />
-        </div>
-      ))}
-    </div>
-  )
-}
-
-const makeItYoursStyleFrames = [
-  {
-    id: 'clean-cinematic',
-    logo: 'brightness(0) saturate(100%) invert(17%) sepia(92%) saturate(1976%) hue-rotate(210deg) brightness(95%) contrast(98%)',
-    bg: 'linear-gradient(145deg,#e6eefb,#c8dbfb)',
-    title: 'Cench Studio',
-    line: 'From prompt to polished MP4',
-    titleClass: `${ebGaramond.className} text-[18px] font-semibold tracking-tight text-[#173f7a]`,
-    lineClass: 'text-[11px] font-semibold uppercase tracking-[0.08em] text-[#2458a6]',
-  },
-  {
-    id: 'neon',
-    logo: 'brightness(0) saturate(100%) invert(37%) sepia(81%) saturate(1189%) hue-rotate(123deg) brightness(95%) contrast(95%)',
-    bg: 'linear-gradient(145deg,#dcf8ee,#bfead8)',
-    title: 'Cench Neon',
-    line: 'Fast cuts. Bold motion. Clear story.',
-    titleClass: `${sairaStencil.className} text-[16px] font-semibold uppercase tracking-wide text-[#0e6a48]`,
-    lineClass: 'text-[11px] font-semibold text-[#1f7f59]',
-    multiLogo: true,
-  },
-  {
-    id: 'editorial',
-    logo: 'brightness(0) saturate(100%) invert(16%) sepia(11%) saturate(603%) hue-rotate(335deg) brightness(91%) contrast(86%)',
-    bg: 'linear-gradient(145deg,#ebe9e4,#d5d2c9)',
-    title: 'Cench Editorial',
-    line: 'Designed for sharp brand explainers',
-    titleClass: `${ebGaramond.className} text-[17px] font-semibold tracking-tight text-[#3f3c35]`,
-    lineClass: 'text-[11px] font-semibold uppercase tracking-[0.06em] text-[#5e584d]',
-  },
-  {
-    id: 'pastel',
-    logo: 'brightness(0) saturate(100%) invert(37%) sepia(66%) saturate(805%) hue-rotate(306deg) brightness(95%) contrast(98%)',
-    bg: 'linear-gradient(145deg,#f8e3ed,#f3cddf)',
-    title: 'Cench Creators',
-    line: 'Your vision. Your voice. Your style.',
-    titleClass: `${ebGaramond.className} text-[17px] font-semibold tracking-tight text-[#8a2e62]`,
-    lineClass: 'text-[11px] font-semibold text-[#a24178]',
-  },
-] as const
-
-function MarketingAppWindow({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="mt-8 max-w-3xl overflow-hidden rounded-xl border border-[#d9d4c4] bg-[#f4f1de] shadow-[0_20px_50px_-12px_rgba(10,10,11,0.12)]">
-      <div className="flex items-center gap-2 border-b border-[#d9d4c4]/80 bg-[#ece8dc] px-4 py-2.5">
-        <span className="flex gap-1.5" aria-hidden>
-          <span className="h-2.5 w-2.5 rounded-full bg-[#ff6157]" />
-          <span className="h-2.5 w-2.5 rounded-full bg-[#ffc130]" />
-          <span className="h-2.5 w-2.5 rounded-full bg-[#2acb42]" />
-        </span>
-        <span className="flex-1 text-center font-sans text-[11px] font-medium text-[#0a0a0b]/45">Cench Studio</span>
-      </div>
-      <div className="p-5 sm:p-6">{children}</div>
-    </div>
-  )
-}
-
-function HeroPromptInputMock() {
-  const [promptText, setPromptText] = useState('')
-  return (
-    <div className="mx-auto mt-5 w-full max-w-3xl px-2 sm:mt-6" data-sr-hero>
-      <div className="hero-prompt-input">
-        <div className="hero-prompt-content">
-          <textarea
-            className="hero-prompt-typed"
-            value={promptText}
-            onChange={(e) => setPromptText(e.target.value)}
-            rows={2}
-            placeholder="Create a 45-second launch video for Cench Studio: bold intro, 3 feature beats, clean 3D motion, and a final CTA to start free."
-          />
-        </div>
-        <div className="hero-prompt-toolbar" aria-hidden>
-          <div className="hero-prompt-toolbar-left">
-            <button type="button" className="hero-pill-btn">
-              <CenchLogo size={15} />
-              <span>Agent</span>
-              <ChevronDown size={12} />
-            </button>
-            <button type="button" className="hero-pill-btn hero-pill-btn--ghost">
-              <span>Auto</span>
-              <ChevronDown size={12} />
-            </button>
-          </div>
-          <div className="hero-prompt-toolbar-right">
-            <span className="hero-media-attach" aria-label="Attach media">
-              <AttachImageIcon />
-            </span>
-            <button type="button" className="hero-send-btn" aria-label="Create for free">
-              Create for free
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function HeroWordFlowLoop() {
-  const terminalBlock = [
-    "console.log('final_video.mp4', out.path)",
-    '  _____  ______ _   _  _____ _    _ ',
-    ' / ____||  ____| \\ | |/ ____| |  | |',
-    "| |     | |__  |  \\| | |    | |__| |",
-    "| |     |  __| | . ` | |    |  __  |",
-    '| |____ | |____| |\\  | |____| |  | |',
-    ' \\_____||______|_| \\_|\\_____|_|  |_|',
-    '[====================] 100%',
-    '✓ export complete: final_video.mp4',
-  ] as const
-  const renderStaticLine = (line: string) => {
-    if (line.startsWith('console.log')) {
-      const parts = line.match(/'[^']*'|\bconsole\b|\blog\b|[A-Za-z_]\w*(?=\()|./g) ?? [line]
-      return parts.map((token, i) => {
-        if (/^'[^']*'$/.test(token)) {
-          return (
-            <span key={`${token}-${i}`} className="hero-code-str">
-              {token}
-            </span>
-          )
-        }
-        if (/^(console|log)$/.test(token)) {
-          return (
-            <span key={`${token}-${i}`} className="hero-code-fn">
-              {token}
-            </span>
-          )
-        }
-        return (
-          <span key={`${token}-${i}`} className="hero-code-dim">
-            {token}
-          </span>
-        )
-      })
-    }
-    if (line.startsWith('✓')) return <span className="hero-code-accent">{line}</span>
-    if (line.startsWith('[')) return <span className="hero-code-accent">{line}</span>
-    if (/^[\s_|/\\-]+$/.test(line)) return <span className="hero-code-accent">{line}</span>
-    return <span className="hero-code-terminal">{line}</span>
-  }
-
-  return (
-    <div className="relative z-20 mt-8 w-full sm:mt-10" data-sr-hero>
-      <HeroPromptInputMock />
-      <div className="hero-build-seq mx-auto w-full max-w-3xl px-2">
-        <div className="hero-scene-row" aria-hidden>
-          {[
-            { label: 'React', icon: <ReactAtomIcon /> },
-            { label: '3D', icon: <Box size={14} strokeWidth={1.9} /> },
-            { label: 'Interactive', icon: <MousePointerClick size={14} strokeWidth={1.9} /> },
-            { label: 'Animations', icon: <Sparkles size={14} strokeWidth={1.9} /> },
-            { label: 'Audio', icon: <Volume2 size={14} strokeWidth={1.9} /> },
-          ].map((item) => (
-            <div key={item.label} className="hero-scene-card hero-scene-card--visible">
-              <div className="hero-scene-thumb" />
-              <div className="hero-scene-title">
-                <span>{item.label}</span>
-                <span className="hero-scene-title-icon">{item.icon}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-        <div className="hero-build-script hero-build-script--visible">
-          <div className="hero-code-stage">
-            <pre className="hero-code-pre hero-code-pre--viewport">
-              <code className="hero-code-scroll">
-                {terminalBlock.map((line, i) => (
-                  <span className="hero-code-line" key={`${i}-${line}`}>
-                    {renderStaticLine(line)}
-                  </span>
-                ))}
-              </code>
-            </pre>
-          </div>
-          <span className="hero-build-fade" aria-hidden />
-        </div>
-      </div>
-    </div>
-  )
-}
-
-/** Centered column + horizontal inset that grows on large viewports */
-const homePageShellClass =
-  'mx-auto w-full max-w-screen-2xl px-12 sm:px-16 md:px-20 lg:px-28 xl:px-36 2xl:px-44'
-
-/** Header: same max-width and right inset as shell; slightly tighter left so logo sits closer to edge */
-const homeHeaderShellClass =
-  'mx-auto w-full max-w-screen-2xl pl-12 pr-12 sm:pl-14 sm:pr-16 md:pl-18 md:pr-20 lg:pl-28 lg:pr-28 xl:pl-32 xl:pr-36 2xl:pl-40 2xl:pr-44'
-
-function FlowingCodeBackground() {
-  const lines = [
-    'const scene = generateScene({ style: "clean", pace: "fast" })',
-    'await refine({ note: "tighten transitions, boost contrast" })',
-    'const media = upload(["brand.mp4", "voiceover.wav"])',
-    'exportMp4({ timeline, audio: mix, fps: 30 })',
-  ] as const
-  return (
-    <div className="code-flow-bg" aria-hidden>
-      <svg viewBox="0 0 1920 1080" preserveAspectRatio="none" className="h-full w-full">
-        <defs>
-          <path id="flow-path-1" d="M -320 210 C 120 40, 420 90, 760 260 S 1380 430, 1760 230 S 2460 120, 2920 260" />
-          <path id="flow-path-2" d="M -340 560 C 80 640, 420 500, 760 560 S 1380 660, 1760 540 S 2460 430, 3000 520" />
-          <path id="flow-path-3" d="M -300 880 C 180 700, 560 980, 920 860 S 1520 700, 1960 900 S 2580 1040, 3040 820" />
-        </defs>
-
-        {[0, 1, 2].map((row) => {
-          const segment = `${lines[row]} · ${lines[(row + 1) % lines.length]} · ${lines[(row + 2) % lines.length]}`
-          const repeated = Array.from({ length: 8 }, () => segment).join(' · ')
-          const dur = `${30 + row * 4}s`
-          return (
-            <text key={row} className={`code-flow-text code-flow-text--${row + 1}`}>
-              <textPath href={`#flow-path-${row + 1}`} startOffset="0%" method="align" spacing="auto">
-                {repeated}
-                <animate
-                  attributeName="startOffset"
-                  from="0"
-                  by="-2200"
-                  dur={dur}
-                  calcMode="linear"
-                  begin={`${-row * 3}s`}
-                  additive="sum"
-                  accumulate="sum"
-                  repeatCount="indefinite"
-                />
-              </textPath>
-            </text>
-          )
-        })}
-      </svg>
-    </div>
-  )
-}
-
 export default function Home() {
-
   return (
-    <div className="min-h-screen w-full bg-bone">
-      <HomeScrollAnimations />
-      <ComingSoonToast />
-      <header className="sticky top-0 z-50 border-b border-[#0a0a0b]/10 bg-bone">
-        <div className={`relative flex items-center justify-between py-2.5 ${homeHeaderShellClass}`}>
-          <span className="pointer-events-none absolute inset-y-0 left-10 w-px bg-[#0a0a0b]/10 sm:left-14 md:left-18 lg:left-24 xl:left-32 2xl:left-40" />
-          <span className="pointer-events-none absolute inset-y-0 right-10 w-px bg-[#0a0a0b]/10 sm:right-14 md:right-18 lg:right-24 xl:right-32 2xl:right-40" />
-          <a
-            href="/"
-            className="relative z-10 flex shrink-0 items-center gap-0 transition-opacity hover:opacity-70 group"
-          >
-            <Image src="/cench2.0.svg" alt="Cench" width={46} height={46} className="shrink-0" />
-            <span
-              className={`${sairaStencil.className} text-[24px] font-semibold tracking-tight text-[#0a0a0b] uppercase ml-[-4px] leading-none`}
-            >
-              Cench
-            </span>
+    <div className="relative min-h-screen overflow-hidden bg-bone text-[#0a0a0b]">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(10,10,11,0.08),transparent_35%),radial-gradient(circle_at_78%_22%,rgba(80,72,230,0.13),transparent_45%),radial-gradient(circle_at_50%_85%,rgba(10,10,11,0.11),transparent_42%)]" />
+
+      <header className="relative z-10 border-b border-[#0a0a0b]/10 bg-[#ffffeb]/80 backdrop-blur-sm">
+        <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-6">
+          <a href="/" className="flex items-center gap-2">
+            <Image src="/cench2.0.svg" alt="Cench" width={34} height={34} />
+            <span className={`${sairaStencil.className} text-base tracking-[0.08em] uppercase`}>Cench Studio</span>
           </a>
-          <nav
-            className="absolute left-1/2 top-1/2 z-10 hidden -translate-x-1/2 -translate-y-1/2 items-center gap-7 md:flex"
-            aria-label="Primary"
-          >
-            <a
-              href="#animations"
-              className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 hover:text-[#0a0a0b] transition-colors"
-            >
-              Animations
-            </a>
-            <a
-              href="#agents"
-              className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 hover:text-[#0a0a0b] transition-colors"
-            >
-              Agents
-            </a>
-            <a
-              href="/docs"
-              className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 hover:text-[#0a0a0b] transition-colors"
-            >
-              Docs
-            </a>
-          </nav>
-          <div className="relative z-10 flex shrink-0 items-center gap-2.5 sm:gap-3">
-            <ComingSoon>
-              <span
-                className="inline-flex h-7 cursor-pointer select-none items-center justify-center rounded-full border border-[#0a0a0b]/22 bg-transparent px-4 text-[11px] font-semibold leading-none text-[#0a0a0b] transition-[border-color,background-color] hover:border-[#0a0a0b]/40 hover:bg-[#0a0a0b]/[0.04] sm:px-5 sm:text-[12px]"
-              >
-                Book a demo
-              </span>
-            </ComingSoon>
-            <ComingSoon>
-              <span className="inline-flex h-7 cursor-pointer select-none items-center justify-center rounded-full border border-[#0a0a0b] bg-[#0a0a0b] px-4 text-[11px] font-semibold leading-none text-white transition-colors hover:bg-[#252528] sm:px-5 sm:text-[12px]">
-                Waitlist
-              </span>
-            </ComingSoon>
-          </div>
+          <span className="rounded-full border border-[#0a0a0b]/15 bg-[#0a0a0b] px-4 py-1.5 text-xs font-semibold text-white">
+            Book demo
+          </span>
         </div>
       </header>
 
-      <main className={`relative ${homePageShellClass}`}>
-        <span className="pointer-events-none absolute inset-y-0 left-10 w-px bg-[#0a0a0b]/10 sm:left-14 md:left-18 lg:left-24 xl:left-32 2xl:left-40" />
-        <span className="pointer-events-none absolute inset-y-0 right-10 w-px bg-[#0a0a0b]/10 sm:right-14 md:right-18 lg:right-24 xl:right-32 2xl:right-40" />
-        {/* Hero */}
-        <section
-          className="relative pt-10 pb-16 sm:pt-12 sm:pb-20"
-          data-sr-hero-section
-        >
-          <div className="relative overflow-hidden">
-            <FlowingCodeBackground />
-            <div className="relative z-10" data-sr-hero>
-              <h1
-                className={`${ebGaramond.className} text-center text-[3rem] font-semibold leading-[1.05] tracking-tight text-[#0a0a0b] sm:text-[3.9rem] lg:text-[5rem]`}
-              >
-                From prompt <span className="text-[#7b7b78]">to MP4.</span>
-              </h1>
-            </div>
-            <div className="relative z-10">
-              <HeroWordFlowLoop />
-            </div>
+      <main className="relative z-10 flex min-h-[calc(100vh-4rem)] flex-col items-center justify-center px-6 pb-48 pt-10 text-center">
+        <h1 className="max-w-5xl text-balance text-4xl font-semibold leading-tight tracking-tight sm:text-6xl lg:text-7xl">
+          Create any Video you can imagine
+        </h1>
+        <p className="mt-5 max-w-4xl text-balance text-sm font-medium leading-relaxed text-[#0a0a0b]/70 sm:text-base">
+          Agent driven video creation and editing. Bringing together top diffusion models, react driven animtions, 3D,
+          vectors, interactive, audio, LUTs, data, avatars, and more +
+        </p>
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+          <button
+            type="button"
+            className="inline-flex items-center gap-2 rounded-full border border-[#0a0a0b] bg-[#0a0a0b] px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#2a2a2d]"
+          >
+            Waitlist
+            <Send size={16} strokeWidth={2} className="opacity-90" aria-hidden />
+          </button>
+          <a
+            href="/gallery"
+            className="inline-flex items-center gap-2 rounded-full border border-[#0a0a0b]/30 bg-white/65 px-5 py-2 text-sm font-semibold text-[#0a0a0b] transition-colors hover:bg-white"
+          >
+            View gallery
+            <AttachImageIcon />
+          </a>
+        </div>
+        <section className="pointer-events-none absolute inset-x-0 bottom-2 z-0 mx-auto flex w-full max-w-5xl items-end justify-center px-6">
+          <div className="relative flex w-full max-w-3xl flex-wrap items-center justify-center gap-3">
+          <div className="relative flex h-14 w-14 rotate-[-15deg] items-center justify-center rounded-[18px] border border-white/45 bg-[linear-gradient(160deg,rgba(255,255,255,0.65),rgba(255,255,255,0.24))] shadow-[0_16px_32px_-12px_rgba(10,10,11,0.4),inset_0_1px_0_rgba(255,255,255,0.75)] backdrop-blur-xl">
+            <img src="/logos/openai-black-monoblossom.svg" alt="OpenAI" className="h-9 w-9 object-contain" />
           </div>
-          {/* Spans main’s vertical guide insets (left-10 … / right-10 …), not the padded content box */}
-          <div
-            className="pointer-events-none absolute bottom-0 -inset-x-2 h-px bg-[#0a0a0b]/10 lg:-inset-x-4"
-            aria-hidden
-          />
-        </section>
-
-        <section className="pb-14 pt-4 sm:pb-18 sm:pt-6" data-sr>
-          <div className="mx-auto max-w-6xl text-left">
-            <h2 className={`${ebGaramond.className} mb-2 text-[2rem] leading-tight text-[#0a0a0b] sm:text-[2.4rem]`}>
-              Describe it. Get it.
-            </h2>
-            <p className="max-w-xl text-sm leading-relaxed text-[#0a0a0b]/62 sm:text-[15px]">
-              Write your idea in plain language and Cench turns it into a full first cut.
-            </p>
-            <MarketingAppWindow>
-              <div className="rounded-xl border border-[#d5d0bf] bg-[#ffffeb] p-4">
-                <div className="mb-3 flex items-center justify-between">
-                  <span className="rounded-md bg-[#fff4ad] px-2 py-1 text-[11px] font-semibold text-[#3b351b]">Idea board</span>
-                  <span className="text-[11px] text-[#0a0a0b]/45">v1 notes</span>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-lg bg-[#fff4ad] p-2.5 text-[11px] leading-snug text-[#3b351b]">
-                    Hook: “From prompt to MP4”
-                  </div>
-                  <div className="rounded-lg bg-[#ffd9c2] p-2.5 text-[11px] leading-snug text-[#4a2b1f]">
-                    Keep pacing under 45s
-                  </div>
-                  <div className="h-16 rounded-lg border border-[#cdc8b8] bg-[linear-gradient(135deg,#ece8d8,#d7d1bf)]" />
-                  <div className="rounded-lg border border-dashed border-[#b7b09d] p-2.5 text-[11px] leading-snug text-[#5d5645]">
-                    Sketch: scene flow + transition arrows
-                  </div>
-                </div>
-              </div>
-            </MarketingAppWindow>
+          <div className="relative flex h-14 w-14 rotate-[-6deg] items-center justify-center rounded-[18px] border border-white/45 bg-[linear-gradient(160deg,rgba(255,255,255,0.65),rgba(255,255,255,0.24))] shadow-[0_16px_32px_-12px_rgba(10,10,11,0.4),inset_0_1px_0_rgba(255,255,255,0.75)] backdrop-blur-xl">
+            <img src="/logos/claude-ai-symbol.svg" alt="Claude" className="h-7 w-7 object-contain" />
           </div>
-        </section>
-
-        <section className="pb-14 sm:pb-18" data-sr>
-          <div className="mx-auto max-w-6xl text-right">
-            <h2 className={`${ebGaramond.className} mb-2 text-[2rem] leading-tight text-[#0a0a0b] sm:text-[2.4rem]`}>
-              Make it yours.
-            </h2>
-            <p className="mb-8 ml-auto max-w-xl text-sm leading-relaxed text-[#0a0a0b]/62 sm:text-[15px]">
-              Refine pacing, visuals, copy, and media until it matches your style and brand.
-            </p>
-            <div className="ml-auto max-w-3xl rounded-[1.75rem] border border-[#d9d4c4] bg-[#f4f1de] px-6 py-6 text-left sm:px-8 sm:py-7">
-              <div className="grid grid-cols-2 gap-3">
-                {makeItYoursStyleFrames.map((frame) => (
-                  <div key={frame.id} className="rounded-lg border border-[#d5d0bf] bg-[#ffffeb] p-2">
-                    <div
-                      className="flex aspect-video flex-col items-center justify-center rounded-md border border-[#cec9b9] px-3 py-2.5 text-center"
-                      style={{ background: frame.bg }}
-                    >
-                      {'multiLogo' in frame && frame.multiLogo ? (
-                        <>
-                          <p className={`leading-none ${frame.titleClass}`}>{frame.title}</p>
-                          <div className="mt-2 flex items-center justify-center gap-2">
-                            {[0, 1, 2].map((logoIdx) => (
-                              <img
-                                key={logoIdx}
-                                src="/cench2.0.svg"
-                                alt="Cench logo"
-                                className="h-9 w-auto"
-                                style={{ filter: frame.logo }}
-                                loading="lazy"
-                              />
-                            ))}
-                          </div>
-                          <p className={`mt-2 leading-tight ${frame.lineClass}`}>{frame.line}</p>
-                        </>
-                      ) : (
-                        <>
-                          <img
-                            src="/cench2.0.svg"
-                            alt="Cench logo"
-                            className="h-12 w-auto"
-                            style={{ filter: frame.logo }}
-                            loading="lazy"
-                          />
-                          <p className={`mt-2 leading-none ${frame.titleClass}`}>{frame.title}</p>
-                          <p className={`mt-1 leading-tight ${frame.lineClass}`}>{frame.line}</p>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+          <div className="relative flex h-16 w-16 items-center justify-center rounded-[20px] border border-white/50 bg-[linear-gradient(160deg,rgba(255,255,255,0.72),rgba(255,255,255,0.26))] shadow-[0_18px_36px_-12px_rgba(10,10,11,0.45),inset_0_1px_0_rgba(255,255,255,0.82)] backdrop-blur-xl">
+            <img src="/logos/google-gemini-icon-new.svg" alt="Gemini" className="h-9 w-9 object-contain" />
           </div>
-        </section>
-
-        <section id="animations" className="scroll-mt-24 pb-14 sm:pb-18" data-sr>
-          <div className="mx-auto max-w-6xl">
-            <div className="text-right">
-              <h2
-                className={`${ebGaramond.className} text-[2.5rem] font-semibold leading-[1.08] tracking-tight text-[#0a0a0b] sm:text-[3rem] lg:text-[3.35rem]`}
-              >
-                See what you can create
-              </h2>
-              <p className="mb-0 ml-auto mt-3 max-w-xl text-sm leading-relaxed text-[#0a0a0b]/62 sm:mt-4 sm:text-[15px]">
-                Every renderer in one timeline—mix scenes without juggling tools or exports.
-              </p>
-            </div>
-            <div className="animation-type-marquee mt-6 flex flex-col gap-2 sm:mt-8 sm:gap-2.5">
-              <span className="animation-type-marquee__fade animation-type-marquee__fade--left" aria-hidden />
-              <span className="animation-type-marquee__fade animation-type-marquee__fade--right" aria-hidden />
-              <AnimationTypeMarqueeTrack />
-              <AnimationTypeMarqueeTrack reverse />
-            </div>
+          <div className="relative flex h-14 w-14 rotate-[7deg] items-center justify-center rounded-[18px] border border-white/45 bg-[linear-gradient(160deg,rgba(255,255,255,0.65),rgba(255,255,255,0.24))] shadow-[0_16px_32px_-12px_rgba(10,10,11,0.4),inset_0_1px_0_rgba(255,255,255,0.75)] backdrop-blur-xl">
+            <img src="/logos/heygen-symbol-blue-logo.svg" alt="HeyGen" className="h-9 w-9 object-contain" />
           </div>
-        </section>
-
-        <section id="agents" className="scroll-mt-24 pb-14 sm:pb-18" data-sr>
-          <div className="mx-auto max-w-6xl">
-            <div className="grid grid-cols-1 gap-8 md:grid-cols-2 md:items-start md:gap-10 lg:gap-14">
-              <div className="text-left">
-                <h2
-                  className={`${ebGaramond.className} text-[2.25rem] font-semibold leading-[1.08] tracking-tight text-[#0a0a0b] sm:text-[2.65rem]`}
-                >
-                  Agents
-                </h2>
-                <p className="mt-3 max-w-md text-sm leading-relaxed text-[#0a0a0b]/62 sm:mt-4 sm:text-[15px]">
-                  One agent can build the whole project, with focused specialists when you want a tighter workflow.
-                </p>
-              </div>
-              <div className="rounded-[1.75rem] border border-[#d9d4c4] bg-[#f4f1de] px-7 py-8 sm:px-9 sm:py-10">
-                <div className="flex flex-col">
-                  {agents.map((a) => (
-                    <div key={a.name} className="flex items-start gap-3 border-b border-[#d5d0bf]/80 py-3 first:pt-0">
-                      <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: a.color }} />
-                      <div>
-                        <span className="text-sm font-semibold text-[#0a0a0b]">{a.name}</span>
-                        <span className="ml-2 text-sm text-neutral-500">{a.desc}</span>
-                      </div>
-                    </div>
-                  ))}
-                  <div className="flex items-start gap-3 py-3">
-                    <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-neutral-300" />
-                    <div>
-                      <span className="text-sm font-semibold text-neutral-400">Custom agents</span>
-                      <span className="ml-2 text-sm text-neutral-400">
-                        Create your own agents for the style, brand voice, and workflow you want.
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
+          <div className="relative flex h-14 w-14 rotate-[14deg] items-center justify-center rounded-[18px] border border-white/45 bg-[linear-gradient(160deg,rgba(255,255,255,0.65),rgba(255,255,255,0.24))] shadow-[0_16px_32px_-12px_rgba(10,10,11,0.4),inset_0_1px_0_rgba(255,255,255,0.75)] backdrop-blur-xl">
+            <img src="/logos/kling.png" alt="Kling" className="h-7 w-7 object-contain [filter:brightness(0)_saturate(100%)]" />
+          </div>
+          <div className="relative flex h-14 w-14 rotate-[2deg] items-center justify-center rounded-[18px] border border-white/45 bg-[linear-gradient(160deg,rgba(255,255,255,0.65),rgba(255,255,255,0.24))] shadow-[0_16px_32px_-12px_rgba(10,10,11,0.4),inset_0_1px_0_rgba(255,255,255,0.75)] backdrop-blur-xl">
+            <img src="/logos/fal-favicon.svg" alt="Fal" className="h-7 w-7 object-contain" />
+          </div>
+          <div className="relative flex h-12 w-12 rotate-[-7deg] items-center justify-center rounded-2xl border border-white/45 bg-[linear-gradient(160deg,rgba(255,255,255,0.65),rgba(255,255,255,0.24))] shadow-[0_16px_32px_-12px_rgba(10,10,11,0.4),inset_0_1px_0_rgba(255,255,255,0.75)] backdrop-blur-xl text-[#38bdf8]">
+            <svg viewBox="0 0 24 24" className="h-7 w-7" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
+              <circle cx="12" cy="12" r="1.8" fill="currentColor" stroke="none" />
+              <ellipse cx="12" cy="12" rx="9" ry="3.8" />
+              <ellipse cx="12" cy="12" rx="9" ry="3.8" transform="rotate(60 12 12)" />
+              <ellipse cx="12" cy="12" rx="9" ry="3.8" transform="rotate(120 12 12)" />
+            </svg>
+          </div>
+          <div className="relative flex h-12 w-12 rotate-[-10deg] items-center justify-center rounded-2xl border border-white/45 bg-[linear-gradient(160deg,rgba(255,255,255,0.65),rgba(255,255,255,0.24))] shadow-[0_16px_32px_-12px_rgba(10,10,11,0.4),inset_0_1px_0_rgba(255,255,255,0.75)] backdrop-blur-xl">
+            <img src="/logos/elevenlabs-symbol-download.svg" alt="ElevenLabs" className="h-8 w-8 object-contain" />
+          </div>
+          <div className="relative flex h-12 w-12 rotate-[8deg] items-center justify-center rounded-2xl border border-white/45 bg-[linear-gradient(160deg,rgba(255,255,255,0.65),rgba(255,255,255,0.24))] shadow-[0_16px_32px_-12px_rgba(10,10,11,0.4),inset_0_1px_0_rgba(255,255,255,0.75)] backdrop-blur-xl">
+            <img src="/logos/threejs-logo.svg" alt="Three.js" className="h-7 w-7 object-contain" />
+          </div>
+          <div className="relative flex h-12 w-12 rotate-[3deg] items-center justify-center rounded-2xl border border-white/45 bg-[linear-gradient(160deg,rgba(255,255,255,0.65),rgba(255,255,255,0.24))] shadow-[0_16px_32px_-12px_rgba(10,10,11,0.4),inset_0_1px_0_rgba(255,255,255,0.75)] backdrop-blur-xl">
+            <img src="/logos/lf-secondary-logomark-full-color.svg" alt="LottieFiles" className="h-7 w-7 object-contain" />
+          </div>
+          <div className="relative flex h-12 w-12 rotate-[-4deg] items-center justify-center rounded-2xl border border-white/45 bg-[linear-gradient(160deg,rgba(255,255,255,0.65),rgba(255,255,255,0.24))] shadow-[0_16px_32px_-12px_rgba(10,10,11,0.4),inset_0_1px_0_rgba(255,255,255,0.75)] backdrop-blur-xl">
+            <img src="/logos/google-g-logo.svg" alt="Google" className="h-7 w-7 object-contain" />
+          </div>
+          <div className="relative flex h-12 w-12 rotate-[12deg] items-center justify-center rounded-2xl border border-white/45 bg-[linear-gradient(160deg,rgba(255,255,255,0.65),rgba(255,255,255,0.24))] shadow-[0_16px_32px_-12px_rgba(10,10,11,0.4),inset_0_1px_0_rgba(255,255,255,0.75)] backdrop-blur-xl">
+            <img src="/logos/ollama.svg" alt="Ollama" className="h-7 w-7 object-contain" />
+          </div>
           </div>
         </section>
       </main>
 
-      {/* Footer */}
-      <div className="relative bg-bone text-[#0a0a0b]">
-        <span className="pointer-events-none absolute inset-y-0 left-10 w-px bg-[#0a0a0b]/10 sm:left-14 md:left-18 lg:left-24 xl:left-32 2xl:left-40" />
-        <span className="pointer-events-none absolute inset-y-0 right-10 w-px bg-[#0a0a0b]/10 sm:right-14 md:right-18 lg:right-24 xl:right-32 2xl:right-40" />
-
-        <footer className="text-[#0a0a0b]">
-          <div className={`${homePageShellClass} pt-10 pb-6 sm:pt-14`}>
-          {/* Top tier */}
-          <div className="grid grid-cols-1 items-center gap-8 sm:grid-cols-3 sm:gap-6" data-sr>
-            <div className="flex items-center justify-center gap-2.5 sm:justify-start">
-              <Image src="/cench2.0.svg" alt="Cench" width={32} height={32} />
-              <span className="text-lg font-semibold tracking-tight">Cench</span>
-            </div>
-            <nav
-              className="flex flex-wrap items-center justify-center gap-x-8 gap-y-3 text-[11px] font-medium uppercase tracking-[0.14em] text-[#0a0a0b]/75 sm:gap-x-10"
-              aria-label="Footer"
-            >
-              <a href="/docs" className="hover:text-[#0a0a0b] transition-colors">
-                Docs
-              </a>
-              <ComingSoon>
-                <span className="hover:text-[#0a0a0b] transition-colors">GitHub</span>
-              </ComingSoon>
-              <ComingSoon>
-                <span className="hover:text-[#0a0a0b] transition-colors">Email us</span>
-              </ComingSoon>
-            </nav>
-            <div className="flex items-center justify-center gap-5 sm:justify-end">
-              <ComingSoon>
-                <span className="text-[#0a0a0b]/70 hover:text-[#0a0a0b] transition-colors">
-                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor" aria-hidden>
-                    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-                  </svg>
-                </span>
-              </ComingSoon>
-              <ComingSoon>
-                <span className="text-[#0a0a0b]/70 hover:text-[#0a0a0b] transition-colors">
-                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor" aria-hidden>
-                    <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
-                  </svg>
-                </span>
-              </ComingSoon>
-            </div>
+      <footer className="relative z-10 border-t border-[#0a0a0b]/10 bg-[#ffffeb]/70 backdrop-blur-sm">
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-6 py-5 text-[#0a0a0b]/75 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2">
+            <Image src="/cench2.0.svg" alt="Cench" width={20} height={20} />
+            <span className={`${sairaStencil.className} text-sm tracking-[0.08em] uppercase text-[#0a0a0b]`}>
+              Cench Studio
+            </span>
           </div>
-
-          <div className="my-8 h-px bg-[#0a0a0b]/10" aria-hidden />
-
-          {/* Bottom tier */}
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between" data-sr>
-            <p className="text-sm text-[#0a0a0b]/55">Copyright &copy; 2026 Cench</p>
-            <div className="flex flex-wrap items-center gap-x-8 gap-y-2 text-sm text-[#0a0a0b]/55">
-              <ComingSoon>
-                <span className="hover:text-[#0a0a0b] transition-colors">Status</span>
-              </ComingSoon>
-              <ComingSoon>
-                <span className="hover:text-[#0a0a0b] transition-colors">Terms of Use</span>
-              </ComingSoon>
-              <ComingSoon>
-                <span className="hover:text-[#0a0a0b] transition-colors">Privacy Policy</span>
-              </ComingSoon>
-            </div>
+          <nav className="flex items-center gap-5 text-sm font-medium">
+            <a href="/docs" className="transition-colors hover:text-[#0a0a0b]">
+              Docs
+            </a>
+            <a href="#" className="transition-colors hover:text-[#0a0a0b]">
+              Privacy
+            </a>
+            <a href="#" className="transition-colors hover:text-[#0a0a0b]">
+              Terms
+            </a>
+          </nav>
+          <div className="flex items-center gap-4">
+            <p className="text-xs font-medium text-[#0a0a0b]/55">Copyright &copy; 2026 Cench Studio</p>
+            <a href="#" aria-label="Instagram" className="text-[#0a0a0b]/70 transition-colors hover:text-[#0a0a0b]">
+              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor" aria-hidden>
+                <path d="M7.75 2h8.5A5.75 5.75 0 0 1 22 7.75v8.5A5.75 5.75 0 0 1 16.25 22h-8.5A5.75 5.75 0 0 1 2 16.25v-8.5A5.75 5.75 0 0 1 7.75 2zm8.5 1.5h-8.5A4.25 4.25 0 0 0 3.5 7.75v8.5A4.25 4.25 0 0 0 7.75 20.5h8.5a4.25 4.25 0 0 0 4.25-4.25v-8.5A4.25 4.25 0 0 0 16.25 3.5z" />
+                <path d="M12 7a5 5 0 1 1 0 10 5 5 0 0 1 0-10zm0 1.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z" />
+                <circle cx="17.35" cy="6.65" r="1.15" />
+              </svg>
+            </a>
+            <a href="#" aria-label="X" className="text-[#0a0a0b]/70 transition-colors hover:text-[#0a0a0b]">
+              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor" aria-hidden>
+                <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+              </svg>
+            </a>
+            <a href="#" aria-label="LinkedIn" className="text-[#0a0a0b]/70 transition-colors hover:text-[#0a0a0b]">
+              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor" aria-hidden>
+                <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
+              </svg>
+            </a>
           </div>
-          </div>
-        </footer>
-      </div>
+        </div>
+      </footer>
     </div>
   )
 }

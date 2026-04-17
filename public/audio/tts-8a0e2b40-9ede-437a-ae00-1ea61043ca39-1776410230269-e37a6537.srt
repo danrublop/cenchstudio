@@ -1,0 +1,23 @@
+1
+00:00:00,000 --> 00:00:03,315
+Myocarditis — inflammation of the myocardium —
+
+2
+00:00:03,315 --> 00:00:06,629
+presents a spectrum from subclinical disease to
+
+3
+00:00:06,629 --> 00:00:08,050
+fulminant hemodynamic collapse.
+
+4
+00:00:08,050 --> 00:00:11,365
+This clinical review focuses on adverse effects,
+
+5
+00:00:11,365 --> 00:00:14,679
+prognostic risk factors, and evidence-based management for
+
+6
+00:00:14,679 --> 00:00:16,100
+the practicing physician.

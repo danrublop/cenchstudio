@@ -9,6 +9,7 @@ import fs from 'fs/promises'
 import path from 'path'
 
 import './zzfx-node-polyfill'
+// @ts-expect-error - no type declarations available for zzfx
 import { ZZFX } from 'zzfx/ZzFX.js'
 import { ZZFX_SFX_CATEGORIES } from '../lib/audio/sfx-zzfx-presets'
 import { encodeMonoWavPcm16 } from '../lib/audio/encode-mono-wav-pcm16'

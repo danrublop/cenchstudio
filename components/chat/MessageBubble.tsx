@@ -23,6 +23,7 @@ const AGENT_BORDER_COLORS: Record<AgentType, string> = {
   'scene-maker': '#3b82f6',
   editor: '#22c55e',
   dop: '#f97316',
+  tutor: '#8b5cf6',
 }
 
 export type AgentPhase = 'idle' | 'routing' | 'thinking' | 'generating' | 'tool'

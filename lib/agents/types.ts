@@ -6,7 +6,7 @@ import type { Scene, GlobalStyle, SceneGraph } from '../types'
 
 // ── Agent Types ───────────────────────────────────────────────────────────────
 
-export type AgentType = 'router' | 'director' | 'scene-maker' | 'editor' | 'dop' | 'planner'
+export type AgentType = 'router' | 'director' | 'scene-maker' | 'editor' | 'dop' | 'planner' | 'tutor'
 
 /** Extended thinking mode for Claude API */
 export type ThinkingMode = 'off' | 'adaptive' | 'deep'
@@ -169,6 +169,18 @@ export interface ChatMessage {
   timestamp: number
   /** Permission requests that need user approval (from tool results with permissionNeeded) */
   pendingPermissions?: PendingPermission[]
+  /** Native-search citations accumulated across the message's tool calls. */
+  sources?: ResearchSource[]
+  /** Routing decision metadata, carried from the agent_routed SSE event. */
+  routeMethod?: 'override' | 'default' | 'heuristic' | 'llm' | 'fallback'
+  /** True when router was unavailable and a heuristic fallback was used. */
+  routingFallback?: boolean
+  /** True when the agent run was checkpointed (cost/tool/iteration cap hit). */
+  hasCheckpoint?: boolean
+  /** Why the checkpoint was taken. */
+  checkpointReason?: 'cost_cap' | 'tool_limit' | 'iteration_limit'
+  /** Scenes successfully built before the checkpoint. */
+  checkpointScenesBuilt?: number
 }
 
 export interface PendingPermission {
@@ -265,6 +277,8 @@ export type SSEEventType =
   | 'run_progress' // live progress update (tool count, cost, iteration)
   | 'error' // error occurred
   | 'warning' // non-fatal warning (e.g. checkpoint load failure)
+  | 'sources' // native-search citations from Anthropic / OpenAI / Gemini grounding
+  | 'capture_request' // server asking client to render + return a frame screenshot
   | 'heartbeat' // keepalive ping during long operations
   | 'done' // stream complete
 
@@ -322,6 +336,12 @@ export interface SSEEvent {
     costMax: number
     iteration: number
     iterationMax: number
+    /** Coarse build phase derived from the current tool name */
+    phase?: 'plan' | 'style' | 'build' | 'polish' | 'unknown'
+    scenesCreated?: number
+    scenesVerified?: number
+    errors?: number
+    budgetAlert?: string
   }
   /** For 'sub_agent_start' / 'sub_agent_complete' events */
   subAgentId?: string
@@ -329,6 +349,30 @@ export interface SSEEvent {
   subAgentTotal?: number
   subAgentSceneName?: string
   subAgentSuccess?: boolean
+  /** For 'sources' events — normalised citations from native-search providers */
+  sources?: ResearchSource[]
+  /** Which provider produced the citations in a 'sources' event */
+  sourceProvider?: 'anthropic' | 'openai' | 'google'
+  /** For 'capture_request' events — correlation ID the client POSTs back with the image */
+  captureId?: string
+  /** For 'capture_request' events — time (seconds) within the scene to capture */
+  captureTime?: number
+}
+
+/**
+ * Normalised citation shape for native-search results. Each provider (Anthropic
+ * `web_search_tool_result`, OpenAI `url_citation` annotations, Gemini `groundingMetadata`)
+ * gets adapted into this before hitting the SSE stream, so the UI renders a single shape.
+ */
+export interface ResearchSource {
+  url: string
+  title?: string
+  /** Optional excerpt — may be the quoted text the model cited. */
+  snippet?: string
+  /** Which native-search provider produced this source. */
+  provider: 'anthropic' | 'openai' | 'google'
+  /** Which iteration / tool call emitted it, for grouping. */
+  toolUseId?: string
 }
 
 // ── Tool Execution ────────────────────────────────────────────────────────────
@@ -391,6 +435,12 @@ export interface ContextOpts {
   projectAssets?: import('../types').ProjectAsset[]
   mp4Settings?: import('../types').MP4Settings
   brandKit?: import('../types/media').BrandKit | null
+  /** When true, the scorer drops client-only providers (web-speech, puter)
+   *  so MP4 exports don't end up silent. Mirrors `world.localMode`. */
+  localMode?: boolean
+  /** Most-recent user message in the conversation. Used by the context
+   *  builder to match a pipeline playbook and inject its guidance. */
+  latestUserMessage?: string
 }
 
 export interface WorldState {
@@ -451,7 +501,8 @@ export interface ClaudeToolDefinition {
 }
 
 export interface ClaudePropertySchema {
-  type: 'string' | 'number' | 'boolean' | 'array' | 'object' | 'null'
+  /** Optional so "any type" fields (e.g. a default value matching a caller-specified type) can omit it. */
+  type?: 'string' | 'number' | 'boolean' | 'array' | 'object' | 'null'
   description?: string
   enum?: string[]
   items?: ClaudePropertySchema

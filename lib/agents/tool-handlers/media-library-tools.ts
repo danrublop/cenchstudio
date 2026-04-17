@@ -32,6 +32,8 @@ export const MEDIA_LIBRARY_EXT_TOOL_NAMES = [
   'regenerate_asset',
   'generate_image_from_reference',
   'generate_variation',
+  'upload_media_from_url',
+  'tag_asset',
 ] as const
 
 export function createMediaLibraryExtHandler(deps: {
@@ -78,6 +80,10 @@ export function createMediaLibraryExtHandler(deps: {
         return await generateImageFromReference(args, world, deps, logger)
       case 'generate_variation':
         return await generateVariation(args, world, deps, logger)
+      case 'upload_media_from_url':
+        return await uploadMediaFromUrl(args, world)
+      case 'tag_asset':
+        return await tagAsset(args, world)
       default:
         return err(`Unknown media-library tool: ${toolName}`)
     }
@@ -407,6 +413,83 @@ async function generateVariation(
   // A variation is a regenerate with a fresh seed — we expose it as a separate tool
   // so the agent can pick the right verb ("make another version" vs "redo because it was bad").
   return await regenerateAsset({ ...args, promptOverride: (args as any).promptOverride ?? null }, world, deps)
+}
+
+// ── upload_media_from_url ────────────────────────────────────────────────────
+
+async function uploadMediaFromUrl(args: Record<string, unknown>, world: WorldStateMutable): Promise<ToolResult> {
+  const { url, name, tags } = args as { url?: string; name?: string; tags?: string[] }
+  const projectId = world.projectId
+  if (!projectId) return err('Project id is not available in the agent world')
+  if (!url || typeof url !== 'string') return err('url is required')
+  try {
+    new URL(url)
+  } catch {
+    return err(`Invalid URL: ${url}`)
+  }
+
+  try {
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+    const response = await fetch(`${baseUrl}/api/ingest-direct`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, projectId, name, tags }),
+    })
+    const data = await response.json()
+    if (!response.ok) return err(`Media ingest failed: ${data?.error ?? response.statusText}`)
+    const asset = data.asset
+    const summary = data.deduped
+      ? `Deduped — "${asset.name}" already in library (contentHash: ${data.contentHash.slice(0, 8)}…)`
+      : `Ingested ${asset.type} "${asset.name}" → asset ${asset.id}`
+    return ok(null, summary, data)
+  } catch (e: any) {
+    return err(`Media ingest failed: ${e?.message ?? String(e)}`)
+  }
+}
+
+// ── tag_asset ────────────────────────────────────────────────────────────────
+
+async function tagAsset(args: Record<string, unknown>, world: WorldStateMutable): Promise<ToolResult> {
+  const { assetId, tags, mode } = args as {
+    assetId?: string
+    tags?: string[]
+    mode?: 'replace' | 'append'
+  }
+  const projectId = world.projectId
+  if (!projectId) return err('Project id is not available in the agent world')
+  if (!assetId) return err('assetId is required')
+  if (!Array.isArray(tags)) return err('tags must be an array of strings')
+  const cleanTags = tags
+    .filter((t) => typeof t === 'string' && t.trim().length > 0)
+    .map((t) => t.trim())
+    .slice(0, 30)
+  const effectiveMode = mode === 'append' ? 'append' : 'replace'
+
+  const [asset] = await db
+    .select()
+    .from(projectAssets)
+    .where(and(eq(projectAssets.id, assetId), eq(projectAssets.projectId, projectId)))
+    .limit(1)
+  if (!asset) return err(`Asset ${assetId} not found`)
+
+  const existing = asset.tags ?? []
+  const nextTags = effectiveMode === 'replace' ? cleanTags : Array.from(new Set([...existing, ...cleanTags]))
+
+  const [updated] = await db
+    .update(projectAssets)
+    .set({ tags: nextTags })
+    .where(eq(projectAssets.id, assetId))
+    .returning()
+
+  return ok(
+    null,
+    `${effectiveMode === 'replace' ? 'Replaced' : 'Appended'} tags on "${updated.name}" — now [${nextTags.join(', ')}]`,
+    {
+      assetId,
+      tags: nextTags,
+      previousTags: existing,
+    },
+  )
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────

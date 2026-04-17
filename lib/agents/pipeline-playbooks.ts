@@ -52,7 +52,8 @@ function parsePlaybook(absPath: string): Playbook | null {
         line
           .slice(4)
           .trim()
-          .replace(/^"(.*)"$/, '$1'),
+          .replace(/^"(.*)"$/, '$1')
+          .replace(/^'(.*)'$/, '$1'),
       )
       continue
     }
@@ -100,12 +101,29 @@ function parsePlaybook(absPath: string): Playbook | null {
 
 export function loadPlaybooks(options?: { fresh?: boolean }): Playbook[] {
   if (!options?.fresh && cache) return cache
-  if (!fs.existsSync(PLAYBOOK_DIR)) {
-    cache = []
-    return cache
+  // On-disk first (local dev, self-hosted). On Vercel the `.claude/` dir is
+  // not in the build output — fall back to the inline TS definitions so the
+  // feature works in every deployment target.
+  let loaded: Playbook[] = []
+  try {
+    if (fs.existsSync(PLAYBOOK_DIR)) {
+      const files = fs.readdirSync(PLAYBOOK_DIR).filter((f) => f.endsWith('.md') && f !== 'README.md')
+      loaded = files.map((f) => parsePlaybook(path.join(PLAYBOOK_DIR, f))).filter((p): p is Playbook => p !== null)
+    }
+  } catch {
+    // fs access failed (read-only, sandboxed, etc.) — use inline fallback.
+    loaded = []
   }
-  const files = fs.readdirSync(PLAYBOOK_DIR).filter((f) => f.endsWith('.md') && f !== 'README.md')
-  cache = files.map((f) => parsePlaybook(path.join(PLAYBOOK_DIR, f))).filter((p): p is Playbook => p !== null)
+  if (loaded.length === 0) {
+    // Require lazily so this module works in edge runtimes that don't support
+    // static import of the inline file.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { INLINE_PLAYBOOKS } = require('./pipeline-playbooks-inline') as {
+      INLINE_PLAYBOOKS: Playbook[]
+    }
+    loaded = INLINE_PLAYBOOKS
+  }
+  cache = loaded
   return cache
 }
 

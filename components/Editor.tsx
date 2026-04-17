@@ -67,7 +67,6 @@ function ChatIcon({ size = 20 }: { size?: number }) {
 }
 import { resolveUIFontStack } from '@/lib/ui-font'
 import type { LayersStripTabId } from '@/lib/layers-strip-dock'
-import type { LayersStripTabId } from '@/lib/layers-strip-dock'
 import {
   LAYERS_TAB_DRAG_TYPE,
   LAYERS_STRIP_TAB_LABELS,

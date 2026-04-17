@@ -1,0 +1,23 @@
+1
+00:00:00,000 --> 00:00:02,820
+To lower the loss, take a small
+
+2
+00:00:02,820 --> 00:00:05,640
+step in the direction of the slope.
+
+3
+00:00:05,640 --> 00:00:08,460
+Then check the loss, and step again.
+
+4
+00:00:08,460 --> 00:00:10,877
+This repeating motion is gradient descent.
+
+5
+00:00:10,877 --> 00:00:13,697
+So, gradient descent is repeated small steps
+
+6
+00:00:13,697 --> 00:00:14,100
+downhill.

@@ -80,3 +80,68 @@ export async function downloadToBuffer(url: string): Promise<Buffer> {
   const arrayBuffer = await response.arrayBuffer()
   return Buffer.from(arrayBuffer)
 }
+
+/** SHA256 of file bytes, sliced to 16 hex chars. Used to dedupe identical files regardless of source URL. */
+export function computeContentHash(buffer: Buffer): string {
+  return crypto.createHash('sha256').update(buffer).digest('hex').slice(0, 16)
+}
+
+/**
+ * Check if a buffer's content hash already exists in media_cache.
+ * Returns the existing publicPath if found (and the underlying file still exists on disk).
+ * Use this to dedupe research downloads — e.g. two search queries return the same Pexels
+ * MP4, we only want to store it once.
+ */
+export async function checkContentCache(buffer: Buffer): Promise<{ filePath: string; contentHash: string } | null> {
+  const contentHash = computeContentHash(buffer)
+  const cached = await getCachedMedia(contentHash)
+  if (!cached) return null
+  const absPath = path.join(process.cwd(), 'public', cached.filePath)
+  try {
+    await fs.access(absPath)
+  } catch {
+    return null
+  }
+  return { filePath: cached.filePath, contentHash }
+}
+
+/**
+ * Save a download-from-web buffer into the media cache, keyed on content hash.
+ * Returns existing path if the same bytes were already cached.
+ *
+ * subdir layout: `public/generated/research/{api}/{contentHash}.{ext}` so
+ * different providers (unsplash, archive-org, yt-dlp, etc.) are separated on disk.
+ */
+export async function saveDownloadedMedia(opts: {
+  api: string
+  sourceUrl: string
+  buffer: Buffer
+  ext: string
+  subdir?: string
+  metadata?: CacheMetadata
+}): Promise<{ publicPath: string; contentHash: string; alreadyCached: boolean }> {
+  const { api, sourceUrl, buffer, ext, subdir, metadata } = opts
+  const contentHash = computeContentHash(buffer)
+  const cached = await getCachedMedia(contentHash)
+  if (cached) {
+    const absPath = path.join(process.cwd(), 'public', cached.filePath)
+    try {
+      await fs.access(absPath)
+      return { publicPath: cached.filePath, contentHash, alreadyCached: true }
+    } catch {
+      /* fall through and re-save */
+    }
+  }
+
+  const subPath = subdir ? `research/${subdir}` : `research/${api}`
+  const dir = path.join(GENERATED_DIR, subPath)
+  await fs.mkdir(dir, { recursive: true })
+  const filename = `${contentHash}.${ext}`
+  const filePath = path.join(dir, filename)
+  await fs.writeFile(filePath, buffer)
+
+  const publicPath = `/generated/${subPath}/${filename}`
+  const configObj = { sourceUrl, _metadata: metadata ?? {} }
+  await setCachedMedia(contentHash, api, publicPath, '', '', JSON.stringify(configObj))
+  return { publicPath, contentHash, alreadyCached: false }
+}

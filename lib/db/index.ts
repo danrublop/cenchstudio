@@ -3,39 +3,65 @@ import { Pool } from 'pg'
 import * as schema from './schema'
 import { eq, sql } from 'drizzle-orm'
 
-if (!process.env.DATABASE_URL) {
-  throw new Error(
-    'DATABASE_URL is not set.\n' +
-      'For local mode: copy .env.example to .env.local and run npm run db:start\n' +
-      'For cloud mode: add your Neon/Supabase connection string to .env.local',
-  )
+type DrizzleDB = ReturnType<typeof drizzle<typeof schema>>
+
+let _pool: Pool | null = null
+let _db: DrizzleDB | null = null
+
+function initDb(): DrizzleDB {
+  if (_db) return _db
+  const url = process.env.DATABASE_URL
+  if (!url) {
+    throw new Error(
+      'DATABASE_URL is not set.\n' +
+        'For local mode: copy .env.example to .env.local and run npm run db:start\n' +
+        'For cloud mode: add your Neon/Supabase connection string to .env.local',
+    )
+  }
+  _pool = new Pool({
+    connectionString: url,
+    max: process.env.STORAGE_MODE === 'cloud' ? 10 : 5,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 5000,
+    ssl: url.includes('localhost') || url.includes('127.0.0.1') ? false : { rejectUnauthorized: true },
+  })
+  _pool.on('error', (err) => {
+    console.error('Unexpected Postgres pool error:', err)
+  })
+  _db = drizzle(_pool, {
+    schema,
+    logger: process.env.NODE_ENV === 'development',
+  })
+  return _db
 }
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  max: process.env.STORAGE_MODE === 'cloud' ? 10 : 5,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 5000,
-  ssl:
-    process.env.DATABASE_URL.includes('localhost') || process.env.DATABASE_URL.includes('127.0.0.1')
-      ? false
-      : { rejectUnauthorized: true },
+/**
+ * Drizzle database handle. The pool and client are created lazily on first
+ * property access so importing modules that reference `db` does not require
+ * DATABASE_URL at startup (matters for tests and for CI tooling that parses
+ * types without connecting).
+ */
+export const db = new Proxy({} as DrizzleDB, {
+  get(_target, prop, receiver) {
+    return Reflect.get(initDb() as object, prop, receiver)
+  },
+  // Required so Auth.js Drizzle adapter's `is(db, PgDatabase)` check — which
+  // walks the prototype chain via Object.getPrototypeOf — sees the real
+  // PgDatabase prototype instead of the empty Proxy target's Object.prototype.
+  getPrototypeOf() {
+    return Reflect.getPrototypeOf(initDb() as object)
+  },
+  has(_target, prop) {
+    return Reflect.has(initDb() as object, prop)
+  },
 })
 
-pool.on('error', (err) => {
-  console.error('Unexpected Postgres pool error:', err)
-})
-
-export const db = drizzle(pool, {
-  schema,
-  logger: process.env.NODE_ENV === 'development',
-})
-
-export type DB = typeof db
+export type DB = DrizzleDB
 
 export async function checkDbConnection(): Promise<boolean> {
   try {
-    await pool.query('SELECT 1')
+    initDb()
+    await _pool!.query('SELECT 1')
     return true
   } catch {
     return false
@@ -43,7 +69,11 @@ export async function checkDbConnection(): Promise<boolean> {
 }
 
 export async function closeDb(): Promise<void> {
-  await pool.end()
+  if (_pool) {
+    await _pool.end()
+    _pool = null
+    _db = null
+  }
 }
 
 // ── Spend tracking (async replacements for old SQLite functions) ─────────────
@@ -73,8 +103,10 @@ export async function logSpend(
     } else {
       tracker.recordActualSpend(projectId, costUsd)
     }
-  } catch {
-    // Tracker is best-effort — never block the DB write on it.
+  } catch (trackerErr) {
+    // Tracker is best-effort — never block the DB write on it, but do log so
+    // we don't silently diverge from the in-memory snapshot in production.
+    console.warn(`[logSpend] budget tracker update failed for project=${projectId} api=${api}`, trackerErr)
   }
 }
 

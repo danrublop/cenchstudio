@@ -1,0 +1,43 @@
+1
+00:00:00,000 --> 00:00:01,920
+Risk stratification is essential.
+
+2
+00:00:01,920 --> 00:00:05,280
+Poor prognostic markers include biventricular dysfunction, late
+
+3
+00:00:05,280 --> 00:00:08,640
+gadolinium enhancement on cardiac MRI — indicating
+
+4
+00:00:08,640 --> 00:00:12,000
+irreversible fibrosis — Stage D heart failure
+
+5
+00:00:12,000 --> 00:00:15,360
+presentation, and giant cell histology on endomyocardial
+
+6
+00:00:15,360 --> 00:00:15,840
+biopsy.
+
+7
+00:00:15,840 --> 00:00:19,200
+Lymphocytic myocarditis carries the best prognosis, with
+
+8
+00:00:19,200 --> 00:00:22,560
+approximately 50 percent of patients achieving full
+
+9
+00:00:22,560 --> 00:00:25,440
+recovery within 2 to 4 weeks.
+
+10
+00:00:25,440 --> 00:00:28,800
+Giant cell myocarditis, without transplant, has median
+
+11
+00:00:28,800 --> 00:00:31,200
+survival of under 6 months.

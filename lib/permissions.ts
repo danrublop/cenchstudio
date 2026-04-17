@@ -26,6 +26,7 @@ export function createDefaultAPIPermissions(): APIPermissions {
     kling: createDefaultPermissionConfig(),
     runway: createDefaultPermissionConfig(),
     imageGen: createDefaultPermissionConfig(),
+    imageEnhance: createDefaultPermissionConfig(),
     backgroundRemoval: createDefaultPermissionConfig(),
     elevenLabs: createDefaultPermissionConfig(),
     unsplash: createDefaultPermissionConfig(),
@@ -52,6 +53,7 @@ export const API_COST_ESTIMATES: Record<string, string> = {
   'imageGen:recraft-v3': '~$0.04',
   'imageGen:stable-diffusion-3': '~$0.03',
   'imageGen:dall-e-3': '~$0.04',
+  imageEnhance: '~$0.02–$0.03 per image',
   backgroundRemoval: '~$0.01',
   elevenLabs: '~$0.01–$0.10 per segment',
   googleTts: '~$0.004 per 100 chars',
@@ -85,6 +87,7 @@ export const API_COST_SCALARS: Record<APIName, CostScalar> = {
   kling: { perCall: 0.45, perSecond: 0.09 },
   runway: { perCall: 0.9, perSecond: 0.18 },
   imageGen: { perCall: 0.04 },
+  imageEnhance: { perCall: 0.03 },
   backgroundRemoval: { perCall: 0.01 },
   elevenLabs: { perCall: 0.06, per1KChars: 0.3 },
   unsplash: { perCall: 0 },
@@ -135,6 +138,7 @@ export const API_DISPLAY_NAMES: Record<APIName, string> = {
   kling: 'Kling 2.1 Video',
   runway: 'Runway Gen-4 Video',
   imageGen: 'Image Generation (FAL)',
+  imageEnhance: 'Image Enhancement (Upscale / Face Restore)',
   backgroundRemoval: 'Background Removal',
   elevenLabs: 'ElevenLabs TTS',
   unsplash: 'Unsplash Images',
@@ -171,7 +175,11 @@ export function checkPermission(
   sessionPermissions: Map<string, string>,
   extras?: CheckPermissionExtras,
 ): PermissionCheckResult {
-  const config = permissions[api]
+  // Backfill: projects written before a new APIName was added (e.g. kling,
+  // runway, imageEnhance) have `permissions[api] === undefined`. Treat those
+  // as always_ask defaults so the call goes through a user prompt rather
+  // than crashing with `config.mode` on undefined.
+  const config = permissions[api] ?? createDefaultPermissionConfig()
 
   // Check spend limits
   if (config.sessionLimit !== null && config.sessionSpend >= config.sessionLimit) {

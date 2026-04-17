@@ -1,0 +1,27 @@
+1
+00:00:00,000 --> 00:00:03,137
+At its core, myocarditis is an
+
+2
+00:00:03,137 --> 00:00:05,751
+inflammatory injury to the myocardium.
+
+3
+00:00:05,751 --> 00:00:08,889
+A precipitating insult — typically viral,
+
+4
+00:00:08,889 --> 00:00:12,026
+autoimmune, or toxic — triggers lymphocytic
+
+5
+00:00:12,026 --> 00:00:12,549
+infiltration.
+
+6
+00:00:12,549 --> 00:00:15,686
+A cytokine cascade then drives myocyte
+
+7
+00:00:15,686 --> 00:00:18,300
+necrosis and progressive fibrotic remodeling.

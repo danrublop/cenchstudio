@@ -1,7 +1,7 @@
 export interface ResearchProviderDef {
   id: string
   name: string
-  category: 'search' | 'url-fetch' | 'stock-video'
+  category: 'search' | 'url-fetch' | 'stock-video' | 'stock-image' | 'archival'
   requiresKey: string | null
   defaultEnabled: boolean
   /** When false, router skips this provider (registered for UI / future, no code path yet). */
@@ -50,6 +50,38 @@ export const RESEARCH_PROVIDERS: ResearchProviderDef[] = [
     defaultEnabled: true,
     implemented: true,
   },
+  {
+    id: 'unsplash',
+    name: 'Unsplash',
+    category: 'stock-image',
+    requiresKey: 'UNSPLASH_ACCESS_KEY',
+    defaultEnabled: true,
+    implemented: true,
+  },
+  {
+    id: 'archive-org',
+    name: 'Internet Archive',
+    category: 'archival',
+    requiresKey: null,
+    defaultEnabled: true,
+    implemented: true,
+  },
+  {
+    id: 'nasa',
+    name: 'NASA Image & Video Library',
+    category: 'archival',
+    requiresKey: null,
+    defaultEnabled: true,
+    implemented: true,
+  },
+  {
+    id: 'wikimedia',
+    name: 'Wikimedia Commons',
+    category: 'archival',
+    requiresKey: null,
+    defaultEnabled: true,
+    implemented: true,
+  },
 ]
 
 /** Check if a research provider is configured (API key set or no key needed) AND implemented. */
@@ -68,4 +100,5 @@ export const RESEARCH_API_KEYS: { provider: string; label: string; envVar: strin
   { provider: 'brave', label: 'Brave Search', envVar: 'BRAVE_SEARCH_API_KEY' },
   { provider: 'pexels', label: 'Pexels (Video + Images)', envVar: 'PEXELS_API_KEY' },
   { provider: 'pixabay', label: 'Pixabay (Video + Images + SFX)', envVar: 'PIXABAY_API_KEY' },
+  { provider: 'unsplash', label: 'Unsplash Images', envVar: 'UNSPLASH_ACCESS_KEY' },
 ]

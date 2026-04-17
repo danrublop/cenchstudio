@@ -1,0 +1,31 @@
+1
+00:00:00,000 --> 00:00:03,204
+Myocarditis — inflammation of the myocardium —
+
+2
+00:00:03,204 --> 00:00:06,409
+represents one of cardiology's most clinically challenging
+
+3
+00:00:06,409 --> 00:00:06,867
+diagnoses.
+
+4
+00:00:06,867 --> 00:00:10,071
+Its adverse effects range from self-limited chest
+
+5
+00:00:10,071 --> 00:00:13,276
+pain to fulminant cardiogenic shock and sudden
+
+6
+00:00:13,276 --> 00:00:14,191
+cardiac death.
+
+7
+00:00:14,191 --> 00:00:17,396
+This presentation reviews the pathophysiology, clinical consequences,
+
+8
+00:00:17,396 --> 00:00:20,600
+and risk stratification essential for practicing physicians.

@@ -78,30 +78,19 @@ export function createAudioToolHandler(deps: {
         if (explicitProvider && !isProviderEnabled(explicitProvider)) {
           return err(`TTS provider "${explicitProvider}" is disabled in audio settings`)
         }
-        const effectiveProvider =
-          explicitProvider ??
-          (() => {
-            // In local mode, only use free TTS providers
-            if (world.localMode) {
-              if (process.platform === 'darwin' && isProviderEnabled('native-tts')) return 'native-tts'
-              if (process.env.EDGE_TTS_URL && isProviderEnabled('openai-edge-tts')) return 'openai-edge-tts'
-              if (process.env.POCKET_TTS_URL && isProviderEnabled('pocket-tts')) return 'pocket-tts'
-              if (process.platform === 'win32' && isProviderEnabled('native-tts')) return 'native-tts'
-              if (isProviderEnabled('web-speech')) return 'web-speech'
-              return null
-            }
-            if (process.env.ELEVENLABS_API_KEY && isProviderEnabled('elevenlabs')) return 'elevenlabs'
-            if (process.env.OPENAI_API_KEY && isProviderEnabled('openai-tts')) return 'openai-tts'
-            if (process.env.GEMINI_API_KEY && isProviderEnabled('gemini-tts')) return 'gemini-tts'
-            if (process.env.GOOGLE_TTS_API_KEY && isProviderEnabled('google-tts')) return 'google-tts'
-            if (process.env.EDGE_TTS_URL && isProviderEnabled('openai-edge-tts')) return 'openai-edge-tts'
-            if (process.env.POCKET_TTS_URL && isProviderEnabled('pocket-tts')) return 'pocket-tts'
-            if ((process.platform === 'darwin' || process.platform === 'win32') && isProviderEnabled('native-tts'))
-              return 'native-tts'
-            if (isProviderEnabled('puter')) return 'puter'
-            if (isProviderEnabled('web-speech')) return 'web-speech'
-            return null
-          })()
+        // Delegate to the scorer-backed resolver. It reads the per-project
+        // enabled map, localMode, platform, and env vars, and returns the
+        // single best provider for this call — replacing the old inline
+        // cascade. Explicit user picks still short-circuit.
+        const { resolveTTSForNarration } = await import('@/lib/audio/resolve-best-tts-provider')
+        const resolved = explicitProvider
+          ? { provider: explicitProvider as any, reason: `user-picked (${explicitProvider})`, ranking: [] }
+          : resolveTTSForNarration({
+              localMode: world.localMode,
+              audioProviderEnabled: world.audioProviderEnabled,
+              textLength: typeof text === 'string' ? text.length : undefined,
+            })
+        const effectiveProvider = resolved.provider
         if (effectiveProvider && ttsApiMap[effectiveProvider]) {
           const ttsProviderOptions: import('@/lib/types').GenerationProviderOption[] = [
             { id: 'elevenlabs', name: 'ElevenLabs', cost: '~$0.01–0.10', isFree: false },

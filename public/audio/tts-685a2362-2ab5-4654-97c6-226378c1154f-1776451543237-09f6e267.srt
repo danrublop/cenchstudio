@@ -1,0 +1,35 @@
+1
+00:00:00,000 --> 00:00:02,195
+Management is largely supportive.
+
+2
+00:00:02,195 --> 00:00:05,488
+Guideline-directed heart failure therapy anchors treatment.
+
+3
+00:00:05,488 --> 00:00:08,781
+Fulminant presentations require early mechanical circulatory
+
+4
+00:00:08,781 --> 00:00:09,330
+support.
+
+5
+00:00:09,330 --> 00:00:12,623
+Immunosuppression is reserved for giant cell,
+
+6
+00:00:12,623 --> 00:00:14,819
+sarcoid, and immune-checkpoint myocarditis.
+
+7
+00:00:14,819 --> 00:00:18,112
+Most patients recover fully; exercise restriction
+
+8
+00:00:18,112 --> 00:00:21,405
+for three to six months reduces
+
+9
+00:00:21,405 --> 00:00:23,600
+arrhythmic risk during recovery.

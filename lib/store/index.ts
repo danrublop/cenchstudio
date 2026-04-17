@@ -144,6 +144,9 @@ export const useVideoStore = create<VideoStore>()(
       researchEnabled: false,
       researchProviderEnabled: { ...DEFAULT_RESEARCH_PROVIDER_ENABLED },
 
+      // yt-dlp consent — populated as the user acknowledges the legal disclaimer per project.
+      ytDlpConsentedProjectIds: [],
+
       // Conversation initial state
       conversations: [],
       activeConversationId: null,
@@ -399,6 +402,7 @@ export const useVideoStore = create<VideoStore>()(
       // ── Permission state ────────────────────────────────────────────────────
       pendingPermissionRequest: null,
       sessionPermissions: new Map<string, string>(),
+      permissionRules: [],
       generationOverrides: {},
       autoChooseDefaults: {},
 
@@ -590,6 +594,7 @@ export const useVideoStore = create<VideoStore>()(
         mediaGenEnabled: state.mediaGenEnabled,
         researchEnabled: state.researchEnabled,
         researchProviderEnabled: state.researchProviderEnabled,
+        ytDlpConsentedProjectIds: state.ytDlpConsentedProjectIds,
         favoriteFonts: state.favoriteFonts,
       }),
     },

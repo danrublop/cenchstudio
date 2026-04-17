@@ -37,6 +37,7 @@ import {
   Send,
   Square,
   Globe,
+  BookOpen,
 } from 'lucide-react'
 
 /** Attach / voice / send — align with secondary text; circle uses a light mix on the panel background */
@@ -74,6 +75,7 @@ import { syncSceneGraphWithScenes } from '@/lib/scene-graph-sync'
 import { resolveAgentModelDisplayName } from '@/lib/agents/model-config'
 import { initTabSync, broadcastAgentStart, broadcastAgentEnd } from '@/lib/store/tab-sync'
 import { ToolCallSummary } from './chat/ToolCallSummary'
+import { SourcesBlock } from './chat/SourcesBlock'
 
 type BrowserSpeechRecognition = {
   continuous: boolean
@@ -359,7 +361,7 @@ function VoiceWaveformVisual({ active }: { active: boolean }) {
           if (cancelled) return
           const { analyser: an, data: buf } = meterRef.current
           if (!an || !buf) return
-          an.getByteFrequencyData(buf)
+          an.getByteFrequencyData(buf as Uint8Array<ArrayBuffer>)
           frame += 1
           if (frame % 2 !== 0) {
             rafRef.current = requestAnimationFrame(tick)
@@ -775,6 +777,13 @@ const AGENT_OPTIONS: {
     icon: Film,
     color: '#f59e0b',
     directorTemplate: 'product-demo',
+  },
+  {
+    id: 'tutor',
+    label: 'Tutor',
+    desc: 'Teach a concept — 3–5 scenes, verified pedagogy per scene',
+    icon: BookOpen,
+    color: AGENT_COLORS['tutor'],
   },
   { id: 'editor', label: 'Editor', desc: 'Surgical edits', icon: Scissors, color: AGENT_COLORS['editor'] },
   { id: 'dop', label: 'DoP', desc: 'Global style & transitions', icon: Palette, color: AGENT_COLORS['dop'] },
@@ -1291,6 +1300,8 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
       let finalGenerationLogId: string | undefined
       let finalSyncReceived = false
       const toolCalls: ToolCallRecord[] = []
+      const accumulatedSources: import('@/lib/agents/types').ResearchSource[] = []
+      const seenSourceUrls = new Set<string>()
       const segments: import('@/lib/agents/types').MessageSegment[] = []
       const pendingPermissions: import('@/lib/agents/types').PendingPermission[] = []
       let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
@@ -1357,6 +1368,7 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
           mediaGenEnabled: st.mediaGenEnabled,
           researchEnabled: st.researchEnabled,
           researchProviderEnabled: st.researchProviderEnabled,
+          ytDlpConsentedProjectIds: st.ytDlpConsentedProjectIds,
           enabledModelIds: st.modelConfigs
             .filter((m) => m.enabled)
             .flatMap((m) => (m.id !== m.modelId ? [m.modelId, m.id] : [m.modelId])),
@@ -1491,6 +1503,45 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                 setActiveToolName(event.toolName ?? null)
                 break
 
+              case 'capture_request': {
+                // Server is asking us to render the scene and POST the image
+                // back so it can be attached to the capture_frame tool_result.
+                const capId = event.captureId
+                const capSceneId = event.sceneId
+                const capTime = typeof event.captureTime === 'number' ? event.captureTime : 0
+                if (!capId || !capSceneId) break
+                void (async () => {
+                  try {
+                    const dataUrl = await useVideoStore.getState().captureSceneFrame(capSceneId, capTime)
+                    if (!dataUrl) {
+                      await fetch('/api/agent/capture-response', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ captureId: capId, error: 'no capturer registered' }),
+                      })
+                      return
+                    }
+                    const mimeMatch = dataUrl.match(/^data:([^;,]+)/)
+                    const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg'
+                    await fetch('/api/agent/capture-response', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ captureId: capId, dataUri: dataUrl, mimeType }),
+                    })
+                  } catch (err) {
+                    await fetch('/api/agent/capture-response', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        captureId: capId,
+                        error: (err as Error).message || 'capture failed',
+                      }),
+                    }).catch(() => {})
+                  }
+                })()
+                break
+              }
+
               case 'tool_complete':
                 if (event.toolResult) {
                   const callRecord: ToolCallRecord = {
@@ -1536,35 +1587,6 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                         useVideoStore.getState().setPlanFirstMode(false)
                       }
                     }
-                  }
-                  // Client-side frame capture for agent visual feedback
-                  if (
-                    event.toolName === 'capture_frame' &&
-                    event.toolResult.success &&
-                    event.toolResult.data &&
-                    typeof event.toolResult.data === 'object' &&
-                    (event.toolResult.data as any).clientAction === 'capture_frame'
-                  ) {
-                    const { sceneId: capSceneId, time: capTime } = event.toolResult.data as {
-                      sceneId: string
-                      time: number
-                    }
-                    // Fire async capture — store result for next agent turn
-                    useVideoStore
-                      .getState()
-                      .captureSceneFrame(capSceneId, capTime)
-                      .then((dataUrl) => {
-                        if (dataUrl) {
-                          // Store the captured frame so it can be referenced
-                          ;(useVideoStore as any)._lastCapturedFrame = {
-                            sceneId: capSceneId,
-                            time: capTime,
-                            dataUrl,
-                            timestamp: Date.now(),
-                          }
-                        }
-                      })
-                      .catch(() => {})
                   }
                   if (event.toolResult.permissionNeeded) {
                     const pn = event.toolResult.permissionNeeded
@@ -1663,6 +1685,16 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                 }
                 break
 
+              case 'sources':
+                if (Array.isArray(event.sources)) {
+                  for (const s of event.sources) {
+                    if (!s?.url || seenSourceUrls.has(s.url)) continue
+                    seenSourceUrls.add(s.url)
+                    accumulatedSources.push(s)
+                  }
+                }
+                break
+
               case 'error':
                 accumulatedText = `Error: ${event.error ?? 'Something went wrong'}`
                 break
@@ -1719,52 +1751,53 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
         // Phase 1: If conversation switched during stream, skip final persist
         // to avoid polluting the new conversation's state
         const currentConvId = useVideoStore.getState().activeConversationId
-        if (streamConversationId && currentConvId !== streamConversationId) {
+        const conversationSwitched = Boolean(streamConversationId && currentConvId !== streamConversationId)
+        if (conversationSwitched) {
           // Mark the orphaned message as aborted (best-effort)
           persistChatMessage(pendingAssistantMsg.id, { status: 'aborted' }).catch(() => {})
-          return
-        }
-
-        // Capture any trailing text after the last tool call as a final segment
-        if (segments.length > 0) {
-          const trailingText = accumulatedText.slice(lastSegmentSnapshotText.length).trim()
-          if (trailingText) {
-            segments.push({ type: 'text', text: trailingText })
+        } else {
+          // Capture any trailing text after the last tool call as a final segment
+          if (segments.length > 0) {
+            const trailingText = accumulatedText.slice(lastSegmentSnapshotText.length).trim()
+            if (trailingText) {
+              segments.push({ type: 'text', text: trailingText })
+            }
           }
-        }
 
-        console.log(
-          `[AgentChat] Finalizing message: textLen=${accumulatedText.length} tools=${toolCalls.length} segments=${segments.length} thinking=${!!thinkingAccumulated}`,
-        )
-        updateChatMessage(pendingAssistantMsg.id, {
-          content: accumulatedText || (toolCalls.length > 0 || thinkingAccumulated ? '' : 'Done.'),
-          generationLogId: finalGenerationLogId,
-          usage: finalUsage,
-          agentType: finalAgentType,
-          modelId: finalModelId as any,
-          ...(toolCalls.length > 0 ? { toolCalls } : {}),
-          ...(segments.length > 0 ? { contentSegments: segments } : {}),
-          ...(pendingPermissions.length > 0 ? { pendingPermissions } : {}),
-          ...(thinkingAccumulated ? { thinking: thinkingAccumulated } : {}),
-        })
-        // Final persist — awaited to ensure it completes before any page navigation
-        // The persistChatMessage function already has retry logic built in
-        try {
-          await persistChatMessage(pendingAssistantMsg.id, { status: 'complete' })
-        } catch {
-          // Last resort retry
-          await new Promise((r) => setTimeout(r, 500))
-          await persistChatMessage(pendingAssistantMsg.id, { status: 'complete' }).catch(() => {})
-        }
-        void useVideoStore
-          .getState()
-          .refreshProjectFromServer()
-          .catch(() => {
-            // Retry once after a delay if the first refresh fails
-            setTimeout(() => {
-              void useVideoStore.getState().refreshProjectFromServer()
-            }, 2500)
+          console.log(
+            `[AgentChat] Finalizing message: textLen=${accumulatedText.length} tools=${toolCalls.length} segments=${segments.length} thinking=${!!thinkingAccumulated}`,
+          )
+          updateChatMessage(pendingAssistantMsg.id, {
+            content: accumulatedText || (toolCalls.length > 0 || thinkingAccumulated ? '' : 'Done.'),
+            generationLogId: finalGenerationLogId,
+            usage: finalUsage,
+            agentType: finalAgentType,
+            modelId: finalModelId as any,
+            ...(toolCalls.length > 0 ? { toolCalls } : {}),
+            ...(segments.length > 0 ? { contentSegments: segments } : {}),
+            ...(pendingPermissions.length > 0 ? { pendingPermissions } : {}),
+            ...(thinkingAccumulated ? { thinking: thinkingAccumulated } : {}),
+            ...(accumulatedSources.length > 0 ? { sources: accumulatedSources } : {}),
           })
+          // Final persist — awaited to ensure it completes before any page navigation
+          // The persistChatMessage function already has retry logic built in
+          try {
+            await persistChatMessage(pendingAssistantMsg.id, { status: 'complete' })
+          } catch {
+            // Last resort retry
+            await new Promise((r) => setTimeout(r, 500))
+            await persistChatMessage(pendingAssistantMsg.id, { status: 'complete' }).catch(() => {})
+          }
+          void useVideoStore
+            .getState()
+            .refreshProjectFromServer()
+            .catch(() => {
+              // Retry once after a delay if the first refresh fails
+              setTimeout(() => {
+                void useVideoStore.getState().refreshProjectFromServer()
+              }, 2500)
+            })
+        }
       }
     },
     [scene?.id, updateChatMessage, persistChatMessage, persistPausedAgentRun],
@@ -2112,9 +2145,24 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
   const currentAgent = AGENT_OPTIONS.find((a) => a.id === agentOverride) ?? AGENT_OPTIONS[0]
   const AgentIcon = currentAgent.icon
 
+  // Which model will actually handle research on this turn?  We prefer the override
+  // (a specific picked model), fall back to the resolved default for the active tier.
+  const activeResearchModelId = localMode
+    ? localModel?.modelId
+    : (overrideModel?.modelId ?? modelConfigs.find((m) => m.enabled && m.tier === modelTier)?.modelId)
+  const activeModelHasNativeSearch = Boolean(
+    activeResearchModelId &&
+    modelConfigs.find((m) => m.modelId === activeResearchModelId || m.id === activeResearchModelId)?.nativeWebSearch,
+  )
+  const researchTooltip = researchEnabled
+    ? activeModelHasNativeSearch
+      ? 'Research: on — native web search'
+      : 'Research: on — requires Brave/Tavily/Exa key for this model'
+    : 'Research: off — enable web search'
+
   // Separate core agents from specialized ones
-  const coreAgents = AGENT_OPTIONS.slice(0, 6)
-  const specializedAgents = AGENT_OPTIONS.slice(6)
+  const coreAgents = AGENT_OPTIONS.slice(0, 7)
+  const specializedAgents = AGENT_OPTIONS.slice(7)
 
   const canSend = !!input.trim() || pendingImages.length > 0
 
@@ -2723,6 +2771,7 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                             const toolCall = msg.toolCalls?.find((tc) => tc.id === seg.toolCallId)
                             return toolCall ? <ToolCallItem key={toolCall.id} call={toolCall} /> : null
                           })}
+                          {msg.sources && msg.sources.length > 0 ? <SourcesBlock sources={msg.sources} /> : null}
                         </div>
                       ) : (
                         <>
@@ -2750,6 +2799,7 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                                 ))}
                               </div>
                             ))}
+                          {msg.sources && msg.sources.length > 0 ? <SourcesBlock sources={msg.sources} /> : null}
                         </>
                       )}
 
@@ -3563,6 +3613,7 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                                               style={{ fontSize: 10, color: 'var(--color-text-muted)', marginTop: 1 }}
                                             >
                                               {m.tier}
+                                              {m.nativeWebSearch ? ' · native web search' : ''}
                                             </div>
                                           </div>
                                           {modelOverride === m.modelId && (
@@ -3784,11 +3835,7 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                           : 'bg-transparent border border-transparent hover:border-[var(--color-border)]'
                       }`}
                       style={{ color: researchEnabled ? 'var(--color-accent)' : 'var(--color-text-muted)' }}
-                      data-tooltip={
-                        researchEnabled
-                          ? 'Research: on — agent can search the web'
-                          : 'Research: off — enable web search'
-                      }
+                      data-tooltip={researchTooltip}
                       data-tooltip-pos="top"
                       aria-label={researchEnabled ? 'Research: on' : 'Research: off'}
                       aria-pressed={researchEnabled}

@@ -230,8 +230,13 @@ export async function exportSolidSceneMp4(config: Export2Config): Promise<ArrayB
   async function loadTextureFromSvgMarkup(svgContent: string): Promise<Texture | null> {
     try {
       const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgContent)}`
-      const tx = await Texture.fromURL(dataUrl)
-      return tx
+      const img = new Image()
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve()
+        img.onerror = () => reject()
+        img.src = dataUrl
+      })
+      return Texture.from({ resource: img })
     } catch {
       return null
     }
@@ -239,7 +244,14 @@ export async function exportSolidSceneMp4(config: Export2Config): Promise<ArrayB
 
   async function loadTextureFromUrl(url: string): Promise<Texture | null> {
     try {
-      return await Texture.fromURL(url)
+      const img = new Image()
+      img.crossOrigin = 'anonymous'
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve()
+        img.onerror = () => reject()
+        img.src = url
+      })
+      return Texture.from({ resource: img })
     } catch {
       return null
     }
@@ -275,7 +287,7 @@ export async function exportSolidSceneMp4(config: Export2Config): Promise<ArrayB
         v.addEventListener('loadedmetadata', onReady, { once: true })
         v.addEventListener('error', onErr, { once: true })
       })
-      const tx = Texture.from(v as unknown as CanvasImageSource)
+      const tx = Texture.from({ resource: v as unknown as HTMLVideoElement })
       return { texture: tx, videoEl: v, durationSec: Number(v.duration || 0) }
     } catch {
       return null
@@ -353,7 +365,7 @@ export async function exportSolidSceneMp4(config: Export2Config): Promise<ArrayB
       sceneBridgeCtx = sceneBridgeCanvas.getContext('2d', { willReadFrequently: true })
       if (!sceneBridgeCtx) return null
 
-      baseCanvasTexture = Texture.from(sceneBridgeCanvas as unknown as CanvasImageSource)
+      baseCanvasTexture = Texture.from({ resource: sceneBridgeCanvas })
       baseCanvasSprite = new Sprite(baseCanvasTexture)
       baseCanvasSprite.x = 0
       baseCanvasSprite.y = 0
@@ -1107,7 +1119,7 @@ export async function exportSolidSceneMp4(config: Export2Config): Promise<ArrayB
       }
 
       // Music ducking during TTS.
-      if (musicTrack && ttsTrack && (music?.duckDuringTTS ?? false)) {
+      if (musicTrack && ttsTrack && music && music.duckDuringTTS) {
         const mVol = Math.max(0, Math.min(1, music.volume ?? 0.12))
         const duckVol = mVol * Math.max(0, Math.min(1, music.duckLevel ?? 0.2))
         ttsTrack.el.addEventListener('play', () => {
@@ -1233,14 +1245,14 @@ export async function exportSolidSceneMp4(config: Export2Config): Promise<ArrayB
         const trimStart = Math.max(0, config.trimStart ?? 0)
         const trimEnd = config.trimEnd == null ? null : Math.max(trimStart, config.trimEnd)
         const clipT = trimEnd == null ? trimStart + tSec : Math.min(trimStart + tSec, trimEnd)
-        const vf = i % decodeStride === 0 || !lastFrame ? await decodeFrameAt(clipT) : null
+        const vf: VideoFrame | null = i % decodeStride === 0 || !lastFrame ? await decodeFrameAt(clipT) : null
         if (vf) {
           if (lastFrame) lastFrame.close()
           lastFrame = vf
         }
         if (lastFrame) {
           if (!videoSprite) {
-            const tx = Texture.from(lastFrame as unknown as CanvasImageSource)
+            const tx = Texture.from({ resource: lastFrame as unknown as HTMLCanvasElement })
             videoSprite = new Sprite(tx)
             videoSprite.width = config.width
             videoSprite.height = config.height
@@ -1251,7 +1263,7 @@ export async function exportSolidSceneMp4(config: Export2Config): Promise<ArrayB
             cameraContainer.addChildAt(videoSprite, 0)
           } else {
             const old = videoSprite.texture
-            videoSprite.texture = Texture.from(lastFrame as unknown as CanvasImageSource)
+            videoSprite.texture = Texture.from({ resource: lastFrame as unknown as HTMLCanvasElement })
             old.destroy(true)
           }
         }
@@ -1359,9 +1371,9 @@ export async function exportSolidSceneMp4(config: Export2Config): Promise<ArrayB
     if (buf instanceof ArrayBuffer) return buf
     if (ArrayBuffer.isView(buf)) {
       const view = buf as Uint8Array
-      return view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength)
+      return view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength) as ArrayBuffer
     }
-    return new Uint8Array(buf as ArrayBufferLike).buffer
+    return new Uint8Array(buf as ArrayBufferLike).buffer as ArrayBuffer
   } finally {
     if (lastFrame) lastFrame.close()
     if (decoder) {

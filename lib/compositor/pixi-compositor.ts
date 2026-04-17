@@ -96,7 +96,7 @@ export async function createSceneBridge(
   const bridgeCtx = bridgeCanvas.getContext('2d')
   if (!bridgeCtx) return { bridge: null, sprite: null, texture: null }
 
-  const texture = Texture.from(bridgeCanvas as unknown as CanvasImageSource)
+  const texture = Texture.from({ resource: bridgeCanvas })
   const sprite = new Sprite(texture)
   sprite.x = 0
   sprite.y = 0
@@ -439,7 +439,13 @@ export function applyAiLayerAnimation(
 
 // ── Text overlay animation ───────────────────────────────────────────────────
 
-export function applyTextAnimation(sprite: Text, overlay: TextOverlayConfig, tSec: number, fullContent: string, canvasHeight = 1080) {
+export function applyTextAnimation(
+  sprite: Text,
+  overlay: TextOverlayConfig,
+  tSec: number,
+  fullContent: string,
+  canvasHeight = 1080,
+) {
   const start = Math.max(0, Number(overlay.delay || 0))
   const end = start + Math.max(0.01, Number(overlay.duration || 1))
   if (tSec < start) {

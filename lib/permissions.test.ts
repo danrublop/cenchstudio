@@ -122,4 +122,26 @@ describe('checkPermission cost gate', () => {
     const r = checkPermission(perms, 'veo3', '~$1.25', reason, details, sess, { estimatedCostUsd: 1.25 })
     expect(r.action).toBe('deny')
   })
+
+  it('backfills missing API config from defaults (old DB projects)', () => {
+    const perms = baseline()
+    // Simulate an old DB row loaded before `kling` existed in the type.
+    delete (perms as Partial<typeof perms>).kling
+    const r = checkPermission(perms as typeof perms, 'kling', '~$0.45', reason, details, sess, {
+      estimatedCostUsd: 0.45,
+    })
+    // Default mode is always_ask → ask regardless of cost
+    expect(r.action).toBe('ask')
+  })
+
+  it('handles missing singleCallCostThreshold on old configs', () => {
+    const perms = baseline()
+    const cfgWithoutThreshold: Omit<(typeof perms)['veo3'], 'singleCallCostThreshold'> = { ...perms.veo3 }
+    // Strip the field as if it came from an old DB record.
+    perms.veo3 = cfgWithoutThreshold as (typeof perms)['veo3']
+    const r = checkPermission(perms, 'veo3', '~$1.25', reason, details, sess, { estimatedCostUsd: 1.25 })
+    // Falls back to project default (0.50) → 1.25 > 0.50 → ask.
+    expect(r.action).toBe('ask')
+    if (r.action === 'ask') expect(r.request.costThresholdExceeded).toBe(true)
+  })
 })

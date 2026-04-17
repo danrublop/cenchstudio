@@ -3,6 +3,7 @@
 import dynamic from 'next/dynamic'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Layers, SquareDashedMousePointer } from 'lucide-react'
+import { toast } from 'sonner'
 import { useVideoStore } from '@/lib/store'
 import { resolveProjectDimensions } from '@/lib/dimensions'
 import StudioRecordPreview from './recording/StudioRecordPreview'
@@ -17,6 +18,7 @@ import type { Scene, InteractionElement } from '@/lib/types'
 import type { InteractionCallbacks } from '@/components/interactions/InteractionRenderer'
 
 const PixiPreviewCanvas = dynamic(() => import('./PixiPreviewCanvas'), { ssr: false })
+import type { PixiPreview } from '@/lib/compositor/pixi-preview'
 
 const ZOOM_MIN = 0.25
 const ZOOM_MAX = 4
@@ -76,6 +78,7 @@ export default function PreviewPlayer() {
   const isAutoAdvancing = useRef(false) // set true when onEnded auto-advances to next scene
   const isSeeking = useRef(false) // set true when handleSeek/stepFrame changes scenes
   const pendingPlayRef = useRef<string | null>(null) // queued play for unloaded scene
+  const pixiPreviewRef = useRef<PixiPreview | null>(null) // live Pixi compositor instance (when compositor mode on)
 
   // ── State ─────────────────────────────────────────────────────────────────
   const [isPlaying, setIsPlaying] = useState(false)
@@ -153,15 +156,46 @@ export default function PreviewPlayer() {
   }, [currentTime])
 
   // ── Register frame capturer for agent visual feedback ──────────────────────
+  // Priority: Pixi compositor extract (pixel-perfect, covers every renderer) →
+  // Electron webContents.capturePage (works for iframe canvas/WebGL) →
+  // html2canvas fallback (web build, DOM only — misses live canvas).
   useEffect(() => {
-    const capturer = async (sceneId: string, time: number): Promise<string | null> => {
+    const tryPixiCapture = async (sceneId: string, time: number): Promise<string | null> => {
+      const preview = pixiPreviewRef.current
+      if (!preview) return null
+      const sceneList = scenesRef.current
+      let acc = 0
+      let globalTime = 0
+      for (const s of sceneList) {
+        if (s.id === sceneId) {
+          globalTime = acc + Math.max(0, Math.min(time, s.duration))
+          break
+        }
+        acc += s.duration
+      }
+      return preview.captureFrameAt(globalTime)
+    }
+
+    const tryElectronCapture = async (): Promise<string | null> => {
+      const api = (
+        window as unknown as {
+          electronAPI?: { capturePage?: () => Promise<{ ok: boolean; dataUri?: string }> }
+        }
+      ).electronAPI
+      if (!api?.capturePage) return null
+      try {
+        const res = (await api.capturePage()) as { ok: boolean; dataUri?: string }
+        return res?.ok && res.dataUri ? res.dataUri : null
+      } catch {
+        return null
+      }
+    }
+
+    const tryHtml2Canvas = async (sceneId: string, time: number): Promise<string | null> => {
       const iframe = iframeMapRef.current[sceneId]
       if (!iframe?.contentWindow || !iframe.contentDocument) return null
 
-      // Seek the scene to the requested time
       iframe.contentWindow.postMessage({ target: 'cench-scene', sceneId, type: 'seek', time }, '*')
-
-      // Wait for seeked ack, then one more frame for render
       await new Promise<void>((resolve) => {
         const onAck = (ev: MessageEvent) => {
           const d = ev.data
@@ -171,14 +205,12 @@ export default function PreviewPlayer() {
           requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
         }
         window.addEventListener('message', onAck)
-        // Fallback if seeked never fires
         setTimeout(() => {
           window.removeEventListener('message', onAck)
           resolve()
         }, 500)
       })
 
-      // Capture via html2canvas
       try {
         const { default: html2canvas } = await import('html2canvas')
         const scene = scenesRef.current.find((s) => s.id === sceneId)
@@ -193,6 +225,12 @@ export default function PreviewPlayer() {
       } catch {
         return null
       }
+    }
+
+    const capturer = async (sceneId: string, time: number): Promise<string | null> => {
+      return (
+        (await tryPixiCapture(sceneId, time)) ?? (await tryElectronCapture()) ?? (await tryHtml2Canvas(sceneId, time))
+      )
     }
 
     useVideoStore.getState().registerFrameCapturer(capturer)
@@ -781,7 +819,9 @@ export default function PreviewPlayer() {
       // Audio error from scene iframe — surface to user
       if (e.data.type === 'cench:audio-error') {
         console.warn('[PreviewPlayer] Audio playback error:', e.data.error, e.data.track)
-        // TODO: wire to toast notification system when available
+        toast.error('Audio playback error', {
+          description: e.data.error ? String(e.data.error) : 'Check the audio layer and try again.',
+        })
         return
       }
 
@@ -1082,6 +1122,9 @@ export default function PreviewPlayer() {
               onEnded={() => {
                 pauseAllScenes()
                 setIsPlaying(false)
+              }}
+              onReady={(p) => {
+                pixiPreviewRef.current = p
               }}
             />
           </div>

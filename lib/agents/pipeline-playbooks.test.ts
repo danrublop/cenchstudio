@@ -7,7 +7,7 @@ describe('pipeline-playbooks loader', () => {
   it('loads every playbook markdown file in the pipelines dir', () => {
     const playbooks = loadPlaybooks({ fresh: true })
     const ids = playbooks.map((p) => p.id).sort()
-    expect(ids).toEqual(['animated-explainer', 'podcast-repurpose', 'talking-head'])
+    expect(ids).toEqual(['animated-explainer', 'podcast-repurpose', 'talking-head', 'tutoring'])
   })
 
   it('parses YAML front-matter with ranges and lists', () => {
@@ -53,5 +53,11 @@ describe('matchPlaybook', () => {
   it('returns the top playbook when a hint matches', () => {
     const p = matchPlaybook('Turn this podcast into a reel')
     expect(p?.id).toBe('podcast-repurpose')
+  })
+
+  it('matches tutoring framing phrases to the tutoring playbook', () => {
+    expect(matchPlaybook('teach me how gradient descent works')?.id).toBe('tutoring')
+    expect(matchPlaybook('walk me through photosynthesis for a beginner')?.id).toBe('tutoring')
+    expect(matchPlaybook('help me understand OAuth')?.id).toBe('tutoring')
   })
 })

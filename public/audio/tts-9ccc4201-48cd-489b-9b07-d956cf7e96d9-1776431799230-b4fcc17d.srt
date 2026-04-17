@@ -1,0 +1,79 @@
+1
+00:00:00,000 --> 00:00:02,572
+Management is stratified by disease severity.
+
+2
+00:00:02,572 --> 00:00:05,573
+For hemodynamically stable patients, standard heart failure
+
+3
+00:00:05,573 --> 00:00:08,574
+therapy — ACE inhibitors, beta-blockers, and diuretics
+
+4
+00:00:08,574 --> 00:00:10,289
+— is the cornerstone.
+
+5
+00:00:10,289 --> 00:00:13,290
+Competitive athletic activity must be restricted for
+
+6
+00:00:13,290 --> 00:00:16,290
+a minimum of 3 to 6 months,
+
+7
+00:00:16,290 --> 00:00:19,291
+given the risk of arrhythmic death during
+
+8
+00:00:19,291 --> 00:00:20,149
+myocardial inflammation.
+
+9
+00:00:20,149 --> 00:00:23,150
+In fulminant myocarditis with cardiogenic shock, early
+
+10
+00:00:23,150 --> 00:00:26,150
+mechanical circulatory support — intra-aortic balloon pump,
+
+11
+00:00:26,150 --> 00:00:29,151
+Impella, or veno-arterial ECMO — is critical
+
+12
+00:00:29,151 --> 00:00:32,152
+and has been shown to bridge patients
+
+13
+00:00:32,152 --> 00:00:33,010
+to recovery.
+
+14
+00:00:33,010 --> 00:00:36,010
+Immunosuppressive therapy with corticosteroids is indicated for
+
+15
+00:00:36,010 --> 00:00:38,583
+giant cell myocarditis and cardiac sarcoidosis.
+
+16
+00:00:38,583 --> 00:00:41,583
+IVIG may be considered in viral etiologies
+
+17
+00:00:41,583 --> 00:00:42,870
+in pediatric patients.
+
+18
+00:00:42,870 --> 00:00:45,870
+ICD implantation should be deferred until myocardial
+
+19
+00:00:45,870 --> 00:00:48,871
+recovery is assessed at 3 to 6
+
+20
+00:00:48,871 --> 00:00:49,300
+months.

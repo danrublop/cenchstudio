@@ -33,6 +33,8 @@ interface Props {
   onTimeUpdate: (globalTime: number) => void
   onSceneChange?: (sceneIndex: number) => void
   onEnded?: () => void
+  /** Receives the live PixiPreview instance — for frame capture integration */
+  onReady?: (preview: PixiPreview | null) => void
 }
 
 function sceneToConfig(scene: Scene): SceneCompositorConfig {
@@ -79,11 +81,14 @@ export default function PixiPreviewCanvas({
   onTimeUpdate,
   onSceneChange,
   onEnded,
+  onReady,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const previewRef = useRef<PixiPreview | null>(null)
   const scenesRef = useRef(scenes)
   scenesRef.current = scenes
+  const onReadyRef = useRef(onReady)
+  onReadyRef.current = onReady
 
   // Initialize Pixi preview
   useEffect(() => {
@@ -105,9 +110,13 @@ export default function PixiPreviewCanvas({
     })
 
     previewRef.current = preview
-    preview.init().catch(console.error)
+    preview
+      .init()
+      .then(() => onReadyRef.current?.(preview))
+      .catch(console.error)
 
     return () => {
+      onReadyRef.current?.(null)
       preview.dispose()
       previewRef.current = null
     }

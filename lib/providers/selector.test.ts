@@ -110,6 +110,29 @@ describe('selectBestProvider', () => {
     expect(withPrior.chosen?.id).toBe('b')
   })
 
+  it('drops client-only providers when requiresServerOutput is set (MP4 export path)', () => {
+    const out = selectBestProvider(
+      TTS_PROFILES,
+      { env: envWith({}), platform: 'linux', requiresServerOutput: true },
+      DEFAULT_WEIGHTS,
+    )
+    // web-speech + puter are clientOnly; with no keys + requiresServerOutput,
+    // there's nothing server-side to return.
+    expect(out.chosen).toBe(null)
+  })
+
+  it('excludeIds filters specific providers out of the ranking', () => {
+    const out = selectBestProvider(
+      TTS_PROFILES,
+      {
+        env: envWith({ ELEVENLABS_API_KEY: 'x', OPENAI_API_KEY: 'y' }),
+        excludeIds: ['elevenlabs'],
+      },
+      DEFAULT_WEIGHTS,
+    )
+    expect(out.chosen?.id).not.toBe('elevenlabs')
+  })
+
   it('throws-safe: provider that errors in available() is dropped', () => {
     const profiles: ProviderProfile<'good' | 'bad'>[] = [
       {

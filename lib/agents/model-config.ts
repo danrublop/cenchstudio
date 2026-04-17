@@ -42,6 +42,18 @@ export interface ModelConfig {
   maxTokens: number
   supportsTools: boolean
   supportsStreaming: boolean
+  /**
+   * Whether this model has a provider-hosted web search tool (Anthropic web_search_20250305,
+   * OpenAI web_search_preview, Gemini googleSearch grounding). When true, the agent uses
+   * native search and no third-party provider key (Brave/Tavily/Exa) is required.
+   */
+  nativeWebSearch?: boolean
+  /**
+   * OpenAI only: whether the model supports the Responses API. When true, native search
+   * runs through `responses.create` with `web_search_preview`. When false, the runner
+   * falls back to a search-preview Chat Completions model.
+   */
+  supportsResponsesApi?: boolean
   // Local model fields
   /** HTTP endpoint for local models, e.g. "http://localhost:11434" */
   endpoint?: string
@@ -78,6 +90,7 @@ export const DEFAULT_MODELS: ModelConfig[] = [
     maxTokens: 200000,
     supportsTools: true,
     supportsStreaming: true,
+    nativeWebSearch: true,
   },
   {
     id: 'claude-sonnet-4-6',
@@ -92,6 +105,7 @@ export const DEFAULT_MODELS: ModelConfig[] = [
     maxTokens: 200000,
     supportsTools: true,
     supportsStreaming: true,
+    nativeWebSearch: true,
   },
   {
     id: 'claude-opus-4-6',
@@ -106,6 +120,7 @@ export const DEFAULT_MODELS: ModelConfig[] = [
     maxTokens: 200000,
     supportsTools: true,
     supportsStreaming: true,
+    nativeWebSearch: true,
   },
   {
     id: 'claude-sonnet-3-5-v2',
@@ -120,6 +135,7 @@ export const DEFAULT_MODELS: ModelConfig[] = [
     maxTokens: 200000,
     supportsTools: true,
     supportsStreaming: true,
+    nativeWebSearch: true,
   },
 
   // ── OpenAI ─────────────────────────────────────────────────────────────────
@@ -136,6 +152,8 @@ export const DEFAULT_MODELS: ModelConfig[] = [
     maxTokens: 128000,
     supportsTools: true,
     supportsStreaming: true,
+    nativeWebSearch: true,
+    supportsResponsesApi: true,
   },
   {
     id: 'gpt-4o',
@@ -150,6 +168,8 @@ export const DEFAULT_MODELS: ModelConfig[] = [
     maxTokens: 128000,
     supportsTools: true,
     supportsStreaming: true,
+    nativeWebSearch: true,
+    supportsResponsesApi: true,
   },
   {
     id: 'gpt-4.1-nano',
@@ -164,6 +184,8 @@ export const DEFAULT_MODELS: ModelConfig[] = [
     maxTokens: 1047576,
     supportsTools: true,
     supportsStreaming: true,
+    nativeWebSearch: true,
+    supportsResponsesApi: true,
   },
   {
     id: 'gpt-4.1-mini',
@@ -178,6 +200,8 @@ export const DEFAULT_MODELS: ModelConfig[] = [
     maxTokens: 1047576,
     supportsTools: true,
     supportsStreaming: true,
+    nativeWebSearch: true,
+    supportsResponsesApi: true,
   },
   {
     id: 'gpt-4.1',
@@ -192,6 +216,8 @@ export const DEFAULT_MODELS: ModelConfig[] = [
     maxTokens: 1047576,
     supportsTools: true,
     supportsStreaming: true,
+    nativeWebSearch: true,
+    supportsResponsesApi: true,
   },
   {
     id: 'o1',
@@ -220,6 +246,7 @@ export const DEFAULT_MODELS: ModelConfig[] = [
     maxTokens: 200000,
     supportsTools: true,
     supportsStreaming: true,
+    supportsResponsesApi: true,
   },
 
   // ── Google Gemini ────────────────────────────────────────────────────────────
@@ -236,6 +263,7 @@ export const DEFAULT_MODELS: ModelConfig[] = [
     maxTokens: 1000000,
     supportsTools: true,
     supportsStreaming: true,
+    nativeWebSearch: true,
   },
   {
     id: 'gemini-2.5-pro',
@@ -250,6 +278,7 @@ export const DEFAULT_MODELS: ModelConfig[] = [
     maxTokens: 1000000,
     supportsTools: true,
     supportsStreaming: true,
+    nativeWebSearch: true,
   },
 
   // ── Local / Ollama placeholder ─────────────────────────────────────────────
@@ -328,6 +357,49 @@ export function getModelsByProvider(models: ModelConfig[] = DEFAULT_MODELS): Rec
     result[model.provider].push(model)
   }
   return result
+}
+
+/**
+ * Look up a model by its API id or our internal id (or Ollama local name), checking
+ * user-configured models first and falling back to DEFAULT_MODELS.
+ */
+export function findModelConfig(
+  modelId: string | undefined | null,
+  configs?: readonly ModelConfig[] | null,
+): ModelConfig | undefined {
+  if (modelId == null || String(modelId).trim() === '') return undefined
+  const match = (m: ModelConfig, id: string) =>
+    m.modelId === id || m.id === id || (m.localModelName != null && m.localModelName === id)
+  const id = String(modelId)
+  if (configs?.length) {
+    const fromStore = configs.find((m) => match(m, id))
+    if (fromStore) return fromStore
+  }
+  return DEFAULT_MODELS.find((m) => match(m, id))
+}
+
+/**
+ * Whether the given model has a provider-hosted web search tool. Used by the context
+ * builder and runner to decide whether to inject a native-search tool or fall back to
+ * the custom (third-party) web_search handler.
+ */
+export function modelHasNativeWebSearch(
+  modelId: string | undefined | null,
+  configs?: readonly ModelConfig[] | null,
+): boolean {
+  return Boolean(findModelConfig(modelId, configs)?.nativeWebSearch)
+}
+
+/**
+ * OpenAI only: whether the given model supports the Responses API. Governs whether
+ * native search runs through `responses.create` (preferred) or a search-preview
+ * Chat Completions model fallback.
+ */
+export function modelSupportsResponsesApi(
+  modelId: string | undefined | null,
+  configs?: readonly ModelConfig[] | null,
+): boolean {
+  return Boolean(findModelConfig(modelId, configs)?.supportsResponsesApi)
 }
 
 /**

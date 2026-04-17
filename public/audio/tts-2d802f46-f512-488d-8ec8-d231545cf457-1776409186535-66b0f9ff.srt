@@ -1,0 +1,43 @@
+1
+00:00:00,000 --> 00:00:02,647
+Clinical presentation spans a broad spectrum.
+
+2
+00:00:02,647 --> 00:00:05,734
+Chest pain — mimicking ACS — occurs
+
+3
+00:00:05,734 --> 00:00:08,822
+in 82 to 95 percent of patients.
+
+4
+00:00:08,822 --> 00:00:11,468
+Dyspnea affects 19 to 49 percent.
+
+5
+00:00:11,468 --> 00:00:14,556
+In 75 percent of cases, the course
+
+6
+00:00:14,556 --> 00:00:17,203
+is uncomplicated with near-zero in-hospital mortality.
+
+7
+00:00:17,203 --> 00:00:20,290
+However, the remaining 25 percent present with
+
+8
+00:00:20,290 --> 00:00:23,378
+LVEF below 50 percent, ventricular arrhythmias, or
+
+9
+00:00:23,378 --> 00:00:26,466
+acute heart failure — carrying in-hospital mortality
+
+10
+00:00:26,466 --> 00:00:29,553
+up to 12 percent and 15 percent
+
+11
+00:00:29,553 --> 00:00:32,200
+mortality or transplant at five years.

@@ -1,0 +1,19 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:02.056
+One number tells us how wrong a
+
+00:00:02.056 --> 00:00:02.644
+guess is.
+
+00:00:02.644 --> 00:00:04.112
+We call it the loss.
+
+00:00:04.112 --> 00:00:05.875
+Smaller loss means a better guess.
+
+00:00:05.875 --> 00:00:07.931
+So, loss is one number that tells
+
+00:00:07.931 --> 00:00:09.400
+us how wrong we are.

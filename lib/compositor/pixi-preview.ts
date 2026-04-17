@@ -172,6 +172,36 @@ export class PixiPreview {
     return last.endTime
   }
 
+  /**
+   * Seek to `globalTime`, render one frame, and return a base64 PNG data URI.
+   * Used by the agent's capture_frame tool so the model can see pixel-accurate
+   * compositor output — including canvas2d, three, and video clips that
+   * html2canvas can't read.
+   */
+  async captureFrameAt(globalTime: number): Promise<string | null> {
+    if (!this.app || this.disposed) return null
+    const wasPlaying = this.playing
+    if (wasPlaying) this.pause()
+    try {
+      await this.seek(globalTime)
+      // Give one more RAF so any async bridge draws land before extract
+      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+      this.app.renderer.render(this.app.stage)
+      const extract = this.app.renderer.extract as unknown as {
+        base64?: (target: unknown) => Promise<string>
+        image?: (target: unknown) => Promise<HTMLImageElement>
+      }
+      if (typeof extract.base64 === 'function') {
+        return await extract.base64(this.app.stage)
+      }
+      return null
+    } catch {
+      return null
+    } finally {
+      if (wasPlaying) this.play()
+    }
+  }
+
   // ── Scene management ─────────────────────────────────────────────────────
 
   updateScenes(scenes: PreviewScene[]): void {
@@ -498,7 +528,7 @@ export class PixiPreview {
       canvas.height = this.opts.height
       const ctx = canvas.getContext('2d')
       if (!ctx) return
-      const texture = Texture.from(canvas as unknown as CanvasImageSource)
+      const texture = Texture.from({ resource: canvas })
       const sprite = new Sprite(texture)
       sprite.width = this.opts.width * clip.scale.x
       sprite.height = this.opts.height * clip.scale.y
@@ -605,7 +635,7 @@ export class PixiPreview {
         img.src = url
       })
       URL.revokeObjectURL(url)
-      return Texture.from(img as unknown as CanvasImageSource)
+      return Texture.from({ resource: img })
     } catch {
       return null
     }
@@ -620,7 +650,7 @@ export class PixiPreview {
         img.onerror = () => reject()
         img.src = url
       })
-      return Texture.from(img as unknown as CanvasImageSource)
+      return Texture.from({ resource: img })
     } catch {
       return null
     }

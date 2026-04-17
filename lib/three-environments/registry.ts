@@ -1,6 +1,6 @@
 /**
  * Named Three.js stage environments — runtime is bundled in `inlined-runtimes.ts` and injected in generateThreeHTML.
- * Use these IDs with applyCenchThreeEnvironment.
+ * Use these IDs with applyCenchThreeEnvironment(envId, scene, renderer, camera).
  */
 export interface CenchThreeEnvironmentMeta {
   id: string
@@ -9,18 +9,60 @@ export interface CenchThreeEnvironmentMeta {
   tags: string[]
 }
 
-/** Scatter tool / legacy alias — only `track_rolling_topdown` is available */
-export const CENCH_STUDIO_ENV_IDS = ['track_rolling_topdown'] as const
+export const CENCH_STUDIO_ENV_IDS = [
+  'track_rolling_topdown',
+  'studio_white',
+  'cinematic_fog',
+  'iso_playful',
+  'tech_grid',
+  'nature_sunset',
+  'data_lab',
+] as const
 
 export type CenchStudioEnvId = (typeof CENCH_STUDIO_ENV_IDS)[number]
 
 export const CENCH_THREE_ENVIRONMENTS: CenchThreeEnvironmentMeta[] = [
   {
+    id: 'studio_white',
+    name: 'Studio white',
+    description: 'White cyclorama + circular floor + soft hemisphere key/fill. Product, SaaS, corporate.',
+    tags: ['studio', 'white', 'cyclorama', 'product', 'corporate'],
+  },
+  {
+    id: 'cinematic_fog',
+    name: 'Cinematic fog',
+    description: 'Dark fogged backdrop, reflective floor, warm spot key + cool rim. Premium reveals, film.',
+    tags: ['dark', 'cinematic', 'fog', 'dramatic', 'premium'],
+  },
+  {
+    id: 'iso_playful',
+    name: 'Playful pastel',
+    description: 'Warm pastel background + hemisphere + sun-warm key. Tutorials, kids, casual.',
+    tags: ['pastel', 'playful', 'tutorial', 'kids'],
+  },
+  {
+    id: 'tech_grid',
+    name: 'Tech grid',
+    description: 'Cyan shader grid floor + magenta rim + starfield on deep blue. Cyberpunk, AI, data.',
+    tags: ['cyberpunk', 'neon', 'grid', 'tech', 'data', 'ai'],
+  },
+  {
+    id: 'nature_sunset',
+    name: 'Nature sunset',
+    description: 'Gradient sunset sky, green ground, warm sun. Wellness, environment.',
+    tags: ['nature', 'sunset', 'outdoor', 'wellness'],
+  },
+  {
+    id: 'data_lab',
+    name: 'Data lab',
+    description: 'White void + transparent shadow-catcher floor. Charts, infographics, minimal.',
+    tags: ['data', 'white', 'shadow-catcher', 'chart', 'minimal'],
+  },
+  {
     id: 'track_rolling_topdown',
-    name: 'Rolling track lanes (top-down)',
-    description:
-      'White surface, four horizontal lane dividers, patterned marbles rolling alternately left/right per track; top-down camera and studio lighting.',
-    tags: ['top-down', 'tracks', 'marbles', 'lanes', 'white', 'diagram', 'rolling'],
+    name: 'Rolling track lanes',
+    description: 'Top-down white surface, 4 lanes of rolling marbles. Diagrams, races.',
+    tags: ['top-down', 'tracks', 'marbles', 'diagram'],
   },
 ]
 

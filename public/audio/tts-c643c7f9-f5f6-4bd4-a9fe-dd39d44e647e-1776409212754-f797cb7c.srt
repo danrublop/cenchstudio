@@ -1,0 +1,39 @@
+1
+00:00:00,000 --> 00:00:01,440
+Etiology defines prognosis.
+
+2
+00:00:01,440 --> 00:00:04,800
+Giant cell myocarditis carries the worst outcomes
+
+3
+00:00:04,800 --> 00:00:08,160
+— up to 62.5 percent death or
+
+4
+00:00:08,160 --> 00:00:11,520
+transplant within 60 days — driven by
+
+5
+00:00:11,520 --> 00:00:14,880
+aggressive macrophage and multinucleated giant cell infiltration.
+
+6
+00:00:14,880 --> 00:00:18,240
+Eosinophilic myocarditis, often hypersensitivity-mediated, shows 26.3 percent
+
+7
+00:00:18,240 --> 00:00:21,600
+cardiac death or transplant at 60 days.
+
+8
+00:00:21,600 --> 00:00:24,960
+Lymphocytic myocarditis — the most common subtype
+
+9
+00:00:24,960 --> 00:00:28,320
+— reports 21 percent at 60 days
+
+10
+00:00:28,320 --> 00:00:31,200
+but a more variable long-term course.

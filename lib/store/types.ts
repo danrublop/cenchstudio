@@ -408,6 +408,20 @@ export interface VideoStore {
   setPendingPermissionRequest: (req: PermissionRequest | null) => void
   sessionPermissions: Map<string, string>
   setSessionPermission: (api: string, decision: string) => void
+  /** Layered permission rules (user/workspace/project/session) — DB-backed
+   *  source of truth for allow/deny evaluation. `sessionPermissions` above is
+   *  kept as a compat read-through for callers that still consult the Map. */
+  permissionRules: import('../types/permissions').PermissionRule[]
+  /** Fetch rules from /api/permissions/rules into the store. Call on login,
+   *  project switch, and after the dialog writes a new rule. */
+  refreshPermissionRules: () => Promise<void>
+  /** Persist a new rule via the API and splice it into the store. Used by
+   *  the permission dialog (Session/Always) and Settings → Permissions. */
+  createPermissionRule: (
+    input: Omit<import('../types/permissions').PermissionRule, 'id' | 'userId' | 'createdAt'>,
+  ) => Promise<import('../types/permissions').PermissionRule | null>
+  /** Delete a rule by id through the API. */
+  deletePermissionRule: (id: string) => Promise<boolean>
 
   // Generation overrides — set from the universal confirmation card
   generationOverrides: Record<string, { provider?: string; prompt?: string; config?: Record<string, any> }>
@@ -455,6 +469,11 @@ export interface VideoStore {
   /** Per-provider enabled map for research providers (brave, tavily, exa). */
   researchProviderEnabled: Record<string, boolean>
   toggleResearchProvider: (id: string) => void
+  /** Per-project consent for yt-dlp downloads. Persisted to localStorage so the one-time
+   *  legal disclaimer modal doesn't keep reappearing. */
+  ytDlpConsentedProjectIds: string[]
+  grantYtDlpConsent: (projectId: string) => void
+  revokeYtDlpConsent: (projectId: string) => void
   generateNarration: (
     sceneId: string,
     text: string,

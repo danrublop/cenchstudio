@@ -30,8 +30,17 @@ import type {
   ContentBlock,
   Storyboard,
   RunProgress,
+  ResearchSource,
 } from './types'
 import { getModelPricing, getModelProvider, messageContentToText, serializeRunProgress } from './types'
+import { isNativeSearchMarker } from './context-builder'
+import { modelSupportsResponsesApi } from './model-config'
+import {
+  adaptAnthropicCitations,
+  adaptOpenAICitations,
+  adaptGeminiCitations,
+  dedupeSources,
+} from './research-citations'
 import { THINKING_BUDGETS } from './context-builder'
 import { getAgentPrompt } from './prompts'
 import { AGENT_TOOLS, ALL_TOOLS } from './tools'
@@ -48,6 +57,7 @@ import { executeTool, resetToolStats, getToolStats, type WorldStateMutable } fro
 import { logSpend, logAgentUsage } from '../db'
 import { persistRunCheckpoint } from '../db/queries/projects'
 import { AgentLogger } from './logger'
+import { createPendingCapture, rejectPendingCapture } from './pending-captures'
 
 const anthropicClient = new Anthropic()
 
@@ -124,6 +134,17 @@ const schemaValidatorCache = new Map<string, ValidateFunction>()
 
 function getToolTimeout(toolName: string): number {
   return GENERATION_TOOLS.has(toolName) ? GENERATION_TOOL_TIMEOUT_MS : TOOL_TIMEOUT_MS
+}
+
+/** Emit a deduplicated `sources` event for a given provider. No-op if empty. */
+function emitSources(
+  emit: (e: SSEEvent) => void,
+  provider: 'anthropic' | 'openai' | 'google',
+  items: ResearchSource[],
+): void {
+  const deduped = dedupeSources(items)
+  if (deduped.length === 0) return
+  emit({ type: 'sources', sourceProvider: provider, sources: deduped })
 }
 
 /** Race a promise against a timeout. Rejects with a descriptive error if the timeout fires. */
@@ -307,6 +328,58 @@ function summarizeToolResult(result: ToolResult): Record<string, unknown> {
   return summary
 }
 
+type AnthropicImageMediaType = 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp'
+
+/**
+ * Parse a data URI ("data:image/jpeg;base64,AAA...") into the media type
+ * and raw base64 payload expected by the Anthropic image content block.
+ */
+export function parseDataUri(dataUri: string): { mediaType: AnthropicImageMediaType; base64: string } | null {
+  const m = dataUri.match(/^data:([^;,]+)(?:;base64)?,(.+)$/)
+  if (!m) return null
+  const base64 = m[2]
+  const mediaType = m[1]
+  if (
+    mediaType !== 'image/png' &&
+    mediaType !== 'image/jpeg' &&
+    mediaType !== 'image/gif' &&
+    mediaType !== 'image/webp'
+  )
+    return null
+  return { mediaType, base64 }
+}
+
+/**
+ * Build the `content` field for an Anthropic `tool_result` block.
+ * When the tool attached a `capturedImage` data URI (via the capture_frame
+ * coordination), return a multi-block array with text summary + image so
+ * the model sees the rendered pixels. Otherwise, stringified JSON as before.
+ */
+export function buildToolResultContent(
+  result: ToolResult,
+):
+  | string
+  | Array<
+      | { type: 'text'; text: string }
+      | { type: 'image'; source: { type: 'base64'; media_type: AnthropicImageMediaType; data: string } }
+    > {
+  const summary = JSON.stringify(summarizeToolResult(result))
+  const data = result.data as { capturedImage?: { dataUri: string; mimeType: string } } | undefined
+  const img = data?.capturedImage
+  if (!img) return summary
+
+  const parsed = parseDataUri(img.dataUri)
+  if (!parsed) return summary
+
+  return [
+    { type: 'text', text: summary },
+    {
+      type: 'image',
+      source: { type: 'base64', media_type: parsed.mediaType, data: parsed.base64 },
+    },
+  ]
+}
+
 /**
  * Lightweight runtime validation for Claude tool inputs.
  * Purpose: catch malformed JSON / missing required keys early so we
@@ -381,7 +454,16 @@ export interface RunnerOptions {
   researchEnabled?: boolean
   /** Per-provider enabled map for research providers (brave, tavily, exa). */
   researchProviderEnabled?: Record<string, boolean>
+  /** Project IDs for which the user has consented to yt-dlp downloads. */
+  ytDlpConsentedProjectIds?: string[]
   sessionPermissions?: Record<string, string>
+  /** Layered rule set (user/workspace/project/session) — consulted by the
+   *  evaluator in tool-executor. Fetched server-side; client does not send. */
+  permissionRules?: import('../types/permissions').PermissionRule[]
+  /** Workspace id for the active project — needed to scope evaluator context. */
+  workspaceId?: string | null
+  /** Conversation id for session-scope rule authoring. */
+  conversationId?: string | null
   generationOverrides?: Record<string, { provider?: string; prompt?: string; config?: Record<string, any> }>
   autoChooseDefaults?: Record<string, { provider: string; config: Record<string, any> }>
   /** When set (e.g. after user approves storyboard), Director implements this plan from the first turn */
@@ -414,6 +496,8 @@ export interface RunnerOptions {
   planFirstMode?: boolean
   /** Director template variant (explainer, onboarding, product-demo) */
   directorTemplate?: string
+  /** When true, prefer free/local providers; drop client-only TTS for MP4. */
+  localMode?: boolean
   /** MP4/export settings including aspect ratio — threaded to scene HTML generation */
   mp4Settings?: import('../types').MP4Settings
   /** Project assets for brand kit and SVG extrusion tools */
@@ -475,7 +559,7 @@ function deriveBuildPhase(
   scene: { svgContent?: string; canvasCode?: string; sceneCode?: string; reactCode?: string; lottieSource?: string },
 ): 'created' | 'generating' | 'rendered' | 'verified' | 'done' | 'deleted' {
   if (toolName === 'delete_scene') return 'deleted'
-  if (toolName === 'verify_scene') return 'verified'
+  if (toolName === 'verify_scene' || toolName === 'verify_scene_pedagogy') return 'verified'
   // Polish/metadata tools — scene is functionally done
   if (
     /^(set_transition|add_narration|set_scene_background|set_scene_duration|set_scene_style|set_camera_motion|add_sound_effect|add_background_music|add_interaction|edit_interaction|add_multiple_interactions|connect_scenes)$/.test(
@@ -567,6 +651,7 @@ export async function runAgent(opts: RunnerOptions): Promise<{
     mediaGenEnabled,
     researchEnabled,
     researchProviderEnabled,
+    ytDlpConsentedProjectIds,
     sessionPermissions,
     abortSignal,
     emit,
@@ -783,7 +868,17 @@ export async function runAgent(opts: RunnerOptions): Promise<{
         : ''
 
       // Design principles are now injected via getAgentPrompt() in prompts.ts
-      // (applies to both in-app and CLI agents for code-writing agent types)
+      // (applies to both in-app and CLI agents for code-writing agent types).
+      //
+      // NOTE: Earlier in development I added an "actionForcingPreamble" and a
+      // "nativeToolsBlock" here hoping they'd stop CC from writing long prose
+      // plans without invoking tools. Every addition made it worse (output-token
+      // counts went 18k → 22k → 30k with zero tool calls each time). Root cause:
+      // negative framing ("DON'T narrate") triggers recursive meta-thinking, and
+      // re-describing CC's own native tools dilutes its internal calibration.
+      // Those blocks have been reverted — see plan file virtual-prancing-graham.md
+      // for the evidence trail. Keep the prompt flat and let CC's own system
+      // prompt govern the narrate-vs-act decision.
 
       const systemPrompt = [
         agentBasePrompt,
@@ -832,16 +927,20 @@ export async function runAgent(opts: RunnerOptions): Promise<{
       const agentToolDefs = AGENT_TOOLS[cliAgentType] ?? ALL_TOOLS
       const agentToolNames = agentToolDefs.map((t) => t.name)
       const allAllowed = [...new Set([...cliUtilityTools, ...agentToolNames])]
-      const allowedToolsFlag = allAllowed.map((t) => `mcp__cench-studio__${t}`).join(',')
+      const mcpFlags = allAllowed.map((t) => `mcp__cench-studio__${t}`)
+      // When running Claude Code, also permit its NATIVE read/research tools so it can
+      // explore the repo, hit WebSearch, fetch URLs. CC's own internal system prompt
+      // already describes these — we just need to permit them via --allowedTools.
+      // Mutations (Bash, Write, Edit) stay blocked so all scene/project changes still
+      // route through MCP → REST → DB (keeping DB + public/scenes/*.html in sync).
+      const nativeFlags = isClaudeCode ? ['Read', 'Glob', 'Grep', 'WebSearch', 'WebFetch'] : []
+      const allowedToolsFlag = [...mcpFlags, ...nativeFlags].join(',')
 
       // Extract images from message content for CLI providers
       const cliImages =
         typeof message !== 'string'
           ? message
-              .filter(
-                (b): b is { type: 'image'; image: { dataUri: string; mimeType: string; fileName?: string } } =>
-                  b.type === 'image',
-              )
+              .filter((b): b is Extract<ContentBlock, { type: 'image' }> => b.type === 'image')
               .map((b) => ({ dataUri: b.image.dataUri, mimeType: b.image.mimeType, fileName: b.image.fileName }))
           : []
 
@@ -853,24 +952,101 @@ export async function runAgent(opts: RunnerOptions): Promise<{
           }))
         : undefined
 
-      const cliResult = await runCli({
-        message: typeof message === 'string' ? message : messageContentToText(message),
-        images: cliImages.length > 0 ? cliImages : undefined,
-        systemPrompt,
-        projectId: opts.projectId ?? '',
-        agentType: cliAgentType,
-        allowedTools: allowedToolsFlag,
-        history: cliHistory,
-        model: isClaudeCode
-          ? opts.modelTier === 'premium'
-            ? 'opus'
-            : opts.modelTier === 'budget'
-              ? 'haiku'
-              : 'sonnet'
-          : undefined,
-        emit,
-        abortSignal: opts.abortSignal,
-      })
+      // Map tier → model. Auto-upgrade Haiku → Sonnet when the request looks
+      // complex. Haiku on a multi-scene / research task silently fails (writes
+      // prose with zero tool_use blocks), even with the action-forcing preamble.
+      // Sonnet completes reliably. This mirrors what standalone Claude Code does
+      // when you `/model` switch mid-session once you realize Haiku can't handle it.
+      const cliMessageText = typeof message === 'string' ? message : messageContentToText(message)
+      const tierModel: 'opus' | 'sonnet' | 'haiku' =
+        opts.modelTier === 'premium' ? 'opus' : opts.modelTier === 'budget' ? 'haiku' : 'sonnet'
+      const looksComplex =
+        cliMessageText.length > 150 ||
+        /\b(video|scenes?|explain|explainer|walkthrough|tutorial|demo|professional|narrate|narration|research|review|clinical|medical|physician|chapter|deck|slides?)\b/i.test(
+          cliMessageText,
+        ) ||
+        (opts.history?.length ?? 0) > 3 ||
+        cliAgentType === 'director' ||
+        cliAgentType === 'planner'
+      const effectiveCliModel: 'opus' | 'sonnet' | 'haiku' =
+        isClaudeCode && tierModel === 'haiku' && looksComplex ? 'sonnet' : tierModel
+
+      if (isClaudeCode && effectiveCliModel !== tierModel) {
+        logger.log(
+          'run',
+          `CC auto-upgraded model: ${tierModel} → ${effectiveCliModel} (request looks complex, Haiku would likely stall)`,
+        )
+        emit({
+          type: 'token',
+          token: `_Auto-upgraded to Sonnet for this request. Haiku tends to write plans as prose without taking actions on multi-scene tasks._\n\n`,
+        })
+      }
+
+      // Multi-turn retry for the CC path — triggers ONLY when CC wrote substantial
+      // text but invoked zero tools. This catches the pathological "wrote a plan as
+      // prose, never acted" failure. Partial builds (agent stopped at M tool calls
+      // when we might have hoped for more) are treated as the agent's own judgment
+      // about when the task is done — same as Master Builder, which has no scene
+      // counting in its runner loop and trusts `end_turn`.
+      // Carries prior reasoning forward as history so CC doesn't re-plan from scratch.
+      // Codex CLI handles retries differently, so scope this to Claude Code.
+      const MAX_CC_ATTEMPTS = isClaudeCode ? 3 : 1
+      let cliResult: Awaited<ReturnType<typeof runCli>>
+      let ccHistory = [...(cliHistory ?? [])]
+      let ccMessage = cliMessageText
+      let ccAttempt = 0
+
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        ccAttempt += 1
+        const thisResult = await runCli({
+          message: ccMessage,
+          images: cliImages.length > 0 ? cliImages : undefined,
+          systemPrompt,
+          projectId: opts.projectId ?? '',
+          agentType: cliAgentType,
+          allowedTools: allowedToolsFlag,
+          history: ccHistory,
+          model: isClaudeCode ? effectiveCliModel : undefined,
+          emit,
+          abortSignal: opts.abortSignal,
+        })
+
+        const hadActions = thisResult.toolCalls.length > 0
+        const hadAnyOutput = thisResult.fullText.trim().length > 0
+        const atAttemptCap = ccAttempt >= MAX_CC_ATTEMPTS
+
+        // Stop on:
+        //   - any tool calls at all (agent acted — trust its judgment on "done")
+        //   - no output at all (real failure, not retry territory)
+        //   - retries exhausted
+        if (hadActions || !hadAnyOutput || atAttemptCap) {
+          cliResult = thisResult
+          if (!hadActions && isClaudeCode && atAttemptCap) {
+            logger.log('run', `CC retry exhausted: ${ccAttempt} attempts, all produced prose without tool calls.`)
+          }
+          break
+        }
+
+        logger.log(
+          'run',
+          `CC attempt ${ccAttempt}/${MAX_CC_ATTEMPTS} emitted ${thisResult.fullText.length} chars text, 0 tool calls. Retrying with nudge.`,
+        )
+        emit({
+          type: 'token',
+          token: `\n\n_CC wrote a plan but didn't invoke tools. Retrying as attempt ${ccAttempt + 1}/${MAX_CC_ATTEMPTS}._\n\n`,
+        })
+
+        // Append prior turn to history so CC sees its own reasoning + the nudge.
+        ccHistory = [
+          ...ccHistory,
+          { role: 'user', content: ccMessage },
+          { role: 'assistant', content: thisResult.fullText },
+        ]
+        ccMessage =
+          'Your plan above is good. Now implement it by calling tools. ' +
+          'Every step is a tool call — no more prose. The timeline is still empty.'
+      }
 
       // Read updated state from DB — Claude Code wrote scenes via MCP → REST API → DB,
       // so the input scenes/globalStyle/sceneGraph are stale.
@@ -947,9 +1123,41 @@ export async function runAgent(opts: RunnerOptions): Promise<{
             ? 'haiku'
             : 'sonnet'
         : 'default'
+      const cliModelId = `${modelOverride}:${cliModelTier}` as ModelId
+
+      // Persist CC runs to the analytics tables so the project usage dashboard
+      // picks them up alongside in-app agent runs. Matches the in-app path
+      // (logSpend + logAgentUsage at the end of runAgent). Fire-and-forget;
+      // logging failures don't abort the client stream.
+      if (opts.projectId) {
+        try {
+          const ccCost = cliResult.usage.costUsd ?? 0
+          const ccDurationMs = cliResult.usage.totalDurationMs ?? 0
+          const ccDescription =
+            `Agent ${cliAgentType} via ${modelOverride}:${cliModelTier}: ` +
+            `${cliResult.usage.inputTokens ?? 0} in / ${cliResult.usage.outputTokens ?? 0} out, ` +
+            `${cliResult.toolCalls.length} tool call(s)` +
+            (ccAttempt > 1 ? `, ${ccAttempt} attempts` : '')
+          await logSpend(opts.projectId, `agent:${cliAgentType}:cli`, ccCost, ccDescription)
+          await logAgentUsage(
+            opts.projectId,
+            cliAgentType,
+            cliModelId,
+            cliResult.usage.inputTokens ?? 0,
+            cliResult.usage.outputTokens ?? 0,
+            cliResult.usage.apiCalls ?? 0,
+            cliResult.toolCalls.length,
+            ccCost,
+            ccDurationMs,
+          )
+        } catch (e) {
+          console.error('[Agent CLI] Failed to log spend:', e)
+        }
+      }
+
       return {
         agentType: 'scene-maker',
-        modelId: `${modelOverride}:${cliModelTier}` as ModelId,
+        modelId: cliModelId,
         fullText: cliResult.fullText,
         toolCalls: cliResult.toolCalls,
         usage: cliResult.usage,
@@ -1006,6 +1214,8 @@ export async function runAgent(opts: RunnerOptions): Promise<{
       projectAssets: opts.projectAssets,
       mp4Settings: opts.mp4Settings,
       brandKit: opts.brandKit,
+      localMode: opts.localMode,
+      latestUserMessage: messageText,
     }
 
     logger.startPhase('context')
@@ -1088,7 +1298,14 @@ export async function runAgent(opts: RunnerOptions): Promise<{
       ...(mediaGenEnabled ? { mediaGenEnabled } : {}),
       ...(researchEnabled !== undefined ? { researchEnabled } : {}),
       ...(researchProviderEnabled ? { researchProviderEnabled } : {}),
+      ...(ytDlpConsentedProjectIds && ytDlpConsentedProjectIds.length > 0
+        ? { ytDlpConsentedProjects: new Set(ytDlpConsentedProjectIds) }
+        : {}),
       ...(sessionPermissions ? { sessionPermissions } : {}),
+      ...(opts.permissionRules ? { permissionRules: opts.permissionRules } : {}),
+      ...(opts.userId ? { authUserId: opts.userId } : {}),
+      ...(opts.workspaceId !== undefined ? { workspaceId: opts.workspaceId } : {}),
+      ...(opts.conversationId !== undefined ? { conversationId: opts.conversationId } : {}),
       ...(opts.generationOverrides ? { generationOverrides: opts.generationOverrides } : {}),
       ...(opts.autoChooseDefaults ? { autoChooseDefaults: opts.autoChooseDefaults } : {}),
       ...(opts.modelConfigs ? { modelConfigs: opts.modelConfigs, localMode: true } : {}),
@@ -1431,20 +1648,30 @@ export async function runAgent(opts: RunnerOptions): Promise<{
           }
         }
 
+        // Native-search markers (google_search) are provider-hosted tools — not
+        // function declarations — so they're stripped from the functionDeclarations
+        // list and added as a separate tool entry when building the tools array.
+        const hasGoogleSearchMarker = ctx.tools.some((t) => t.type === 'google_search')
+        const geminiFunctionTools = ctx.tools.filter((t) => !isNativeSearchMarker(t))
+
         // Convert tools to Gemini function declarations
         // Cast parameters since Gemini SDK expects enum Type instead of string type
-        const geminiTools =
-          ctx.tools.length > 0
-            ? [
-                {
-                  functionDeclarations: ctx.tools.map((t) => ({
-                    name: t.name,
-                    description: t.description,
-                    parameters: t.input_schema as any,
-                  })),
-                },
-              ]
-            : undefined
+        const geminiToolsEntries: any[] = []
+        if (geminiFunctionTools.length > 0) {
+          geminiToolsEntries.push({
+            functionDeclarations: geminiFunctionTools.map((t) => ({
+              name: t.name,
+              description: t.description,
+              parameters: t.input_schema as any,
+            })),
+          })
+        }
+        if (hasGoogleSearchMarker) {
+          // Gemini 2.x uses googleSearch; 1.5 uses googleSearchRetrieval.
+          const isGemini15 = /gemini-1\.5/i.test(String(modelId))
+          geminiToolsEntries.push(isGemini15 ? { googleSearchRetrieval: {} } : { googleSearch: {} })
+        }
+        const geminiTools = geminiToolsEntries.length > 0 ? geminiToolsEntries : undefined
 
         const response = await google.models.generateContentStream({
           model: modelId,
@@ -1461,6 +1688,7 @@ export async function runAgent(opts: RunnerOptions): Promise<{
         // Per-iteration accumulators — Gemini reports cumulative counts per stream call
         let iterInputTokens = 0
         let iterOutputTokens = 0
+        const geminiCitations: ResearchSource[] = []
 
         for await (const chunk of response) {
           if (chunk.text) {
@@ -1482,6 +1710,11 @@ export async function runAgent(opts: RunnerOptions): Promise<{
               }
             }
           }
+          // Extract grounding citations when native search was active.
+          const grounding = (chunk.candidates?.[0] as any)?.groundingMetadata
+          if (grounding) {
+            geminiCitations.push(...adaptGeminiCitations(grounding))
+          }
           // Track usage — Gemini reports cumulative per-call, so use = within the stream
           if (chunk.usageMetadata) {
             iterInputTokens = chunk.usageMetadata.promptTokenCount ?? iterInputTokens
@@ -1492,6 +1725,8 @@ export async function runAgent(opts: RunnerOptions): Promise<{
         // Accumulate across iterations with +=
         totalInputTokens += iterInputTokens
         totalOutputTokens += iterOutputTokens
+
+        emitSources(emit, 'google', geminiCitations)
 
         // Execute tools
         logger.log('iteration', `Gemini: ${toolCallBlocks.length} tool calls to execute`, {
@@ -1738,7 +1973,13 @@ export async function runAgent(opts: RunnerOptions): Promise<{
           }),
         ]
 
-        const openaiTools: OpenAI.ChatCompletionTool[] = ctx.tools.map((t) => ({
+        // Native-search markers (openai_web_search) are NOT function tools; they signal
+        // that the runner should attach OpenAI's hosted web_search_preview tool at send
+        // time. Strip them from the function-tools array so we don't ship a bogus
+        // function definition to the model.
+        const hasOpenAiWebSearchMarker = ctx.tools.some((t) => t.type === 'openai_web_search')
+        const openaiFunctionTools = ctx.tools.filter((t) => !isNativeSearchMarker(t))
+        const openaiTools: OpenAI.ChatCompletionTool[] = openaiFunctionTools.map((t) => ({
           type: 'function',
           function: { name: t.name, description: t.description, parameters: t.input_schema as any },
         }))
@@ -1761,17 +2002,56 @@ export async function runAgent(opts: RunnerOptions): Promise<{
           provider === 'local' ? opts.modelConfigs?.find((m) => m.id === modelId || m.modelId === modelId) : null
         const supportsTools = localConfig ? localConfig.supportsTools !== false : true
 
+        // Decide whether this request routes through the OpenAI Responses API
+        // (preferred when the model supports it and Research is on) or stays on
+        // Chat Completions with a search-preview model fallback.
+        const useResponsesApi =
+          provider === 'openai' && hasOpenAiWebSearchMarker && modelSupportsResponsesApi(modelId, opts.modelConfigs)
+
+        // Chat Completions fallback: if the user picked a GPT model that doesn't
+        // support Responses but native search was requested, reroute the model to a
+        // search-preview variant and send `web_search_options`. We only do this on
+        // OpenAI cloud — not local endpoints, not models without the marker.
+        const useSearchPreviewFallback = provider === 'openai' && hasOpenAiWebSearchMarker && !useResponsesApi
+        if (useSearchPreviewFallback) {
+          // Pick a search-preview sibling for the active model. Gpt-4o family maps
+          // naturally; anything else falls back to gpt-4o-mini-search-preview.
+          const isMini = /mini|nano/i.test(String(oaiModelId))
+          oaiModelId = (isMini ? 'gpt-4o-mini-search-preview' : 'gpt-4o-search-preview') as any
+          logger.log('iteration', `OpenAI native search fallback: routing to ${oaiModelId}`)
+        }
+
         let stream: any
         try {
-          stream = await oaiClient.chat.completions.create({
-            model: oaiModelId as string,
-            max_tokens: ctx.maxTokens,
-            messages: openaiMessages,
-            tools: supportsTools && openaiTools.length > 0 ? openaiTools : undefined,
-            stream: true,
-            // Ollama may not support stream_options — only send for OpenAI cloud
-            ...(provider !== 'local' ? { stream_options: { include_usage: true } } : {}),
-          })
+          if (useResponsesApi) {
+            stream = await oaiClient.responses.create({
+              model: oaiModelId as string,
+              max_output_tokens: ctx.maxTokens,
+              input: openaiMessages as any,
+              tools: [
+                { type: 'web_search_preview' } as any,
+                ...openaiFunctionTools.map((t) => ({
+                  type: 'function' as const,
+                  name: t.name,
+                  description: t.description,
+                  parameters: t.input_schema as any,
+                })),
+              ],
+              stream: true,
+            } as any)
+          } else {
+            stream = await oaiClient.chat.completions.create({
+              model: oaiModelId as string,
+              max_tokens: ctx.maxTokens,
+              messages: openaiMessages,
+              tools: supportsTools && openaiTools.length > 0 ? openaiTools : undefined,
+              stream: true,
+              // Ollama may not support stream_options — only send for OpenAI cloud
+              ...(provider !== 'local' ? { stream_options: { include_usage: true } } : {}),
+              // Activate native web search on search-preview models.
+              ...(useSearchPreviewFallback ? { web_search_options: {} as any } : {}),
+            })
+          }
         } catch (connectErr) {
           const errMsg = (connectErr as Error).message ?? 'Unknown error'
           logger.error('iteration', `Failed to connect to ${provider === 'local' ? 'Ollama' : 'OpenAI'}: ${errMsg}`)
@@ -1789,45 +2069,155 @@ export async function runAgent(opts: RunnerOptions): Promise<{
         let finishReason: string | null = null
         let oaiIterInputTokens = 0
         let oaiIterOutputTokens = 0
+        const openaiCitations: ResearchSource[] = []
 
-        for await (const chunk of withInactivityTimeout<any>(
-          stream,
-          STREAM_INACTIVITY_TIMEOUT_MS,
-          'OpenAI/local stream',
-        )) {
-          const delta = chunk.choices[0]?.delta
-          if (chunk.usage) {
-            const inTok = chunk.usage.prompt_tokens ?? 0
-            const outTok = chunk.usage.completion_tokens ?? 0
-            totalInputTokens += inTok
-            totalOutputTokens += outTok
-            oaiIterInputTokens += inTok
-            oaiIterOutputTokens += outTok
-          }
-          if (!delta) continue
-
-          if (delta.content) {
-            chunkText += delta.content
-            fullText += delta.content
-            emit({ type: 'token', token: delta.content })
-          }
-
-          if (delta.tool_calls) {
-            for (const tc of delta.tool_calls) {
-              if (!toolCallAccum[tc.index]) {
-                toolCallAccum[tc.index] = { id: tc.id ?? '', name: tc.function?.name ?? '', args: '' }
-                if (tc.function?.name) emit({ type: 'tool_start', toolName: tc.function.name, toolInput: {} })
+        if (useResponsesApi) {
+          // Responses API streaming. Events have type-tagged payloads; we adapt them
+          // into the same toolCallAccum/chunkText accumulators the Chat Completions
+          // path uses so the rest of the iteration (tool execution, history append)
+          // stays shared.
+          const fnCallAccum: Record<string, { id: string; name: string; args: string; index: number }> = {}
+          let nextToolIndex = 0
+          let sawWebSearchCall = false
+          for await (const event of withInactivityTimeout<any>(
+            stream,
+            STREAM_INACTIVITY_TIMEOUT_MS,
+            'OpenAI Responses stream',
+          )) {
+            const et = event?.type as string | undefined
+            if (!et) continue
+            if (et === 'response.output_text.delta') {
+              const delta = event.delta as string | undefined
+              if (delta) {
+                chunkText += delta
+                fullText += delta
+                emit({ type: 'token', token: delta })
               }
-              if (tc.function?.arguments) {
-                toolCallAccum[tc.index].args += tc.function.arguments
+            } else if (et === 'response.output_item.added') {
+              const item = event.item as { type?: string; id?: string; name?: string; call_id?: string } | undefined
+              if (item?.type === 'function_call' && item.name) {
+                const key = item.id ?? item.call_id ?? uuidv4()
+                fnCallAccum[key] = {
+                  id: item.call_id ?? item.id ?? key,
+                  name: item.name,
+                  args: '',
+                  index: nextToolIndex++,
+                }
+                emit({ type: 'tool_start', toolName: item.name, toolInput: {} })
+              } else if (item?.type === 'web_search_call') {
+                if (!sawWebSearchCall) {
+                  sawWebSearchCall = true
+                  emit({ type: 'tool_start', toolName: 'web_search', toolInput: {} })
+                }
               }
+            } else if (et === 'response.function_call_arguments.delta') {
+              const key = (event.item_id ?? event.id) as string | undefined
+              const delta = event.delta as string | undefined
+              if (key && delta && fnCallAccum[key]) fnCallAccum[key].args += delta
+            } else if (et === 'response.output_item.done') {
+              const item = event.item as any
+              if (item?.type === 'web_search_call') {
+                emit({
+                  type: 'tool_complete',
+                  toolName: 'web_search',
+                  toolInput: {},
+                  toolResult: {
+                    success: true,
+                    affectedSceneId: null,
+                    changes: [{ type: 'global_updated', description: 'web_search completed' }],
+                  },
+                })
+              }
+              // Extract url_citation annotations from completed message items.
+              if (item?.type === 'message' && Array.isArray(item.content)) {
+                for (const c of item.content) {
+                  if (Array.isArray(c?.annotations)) {
+                    openaiCitations.push(...adaptOpenAICitations(c.annotations))
+                  }
+                }
+              }
+            } else if (et === 'response.completed') {
+              const usage = event.response?.usage
+              if (usage) {
+                const inTok = usage.input_tokens ?? 0
+                const outTok = usage.output_tokens ?? 0
+                totalInputTokens += inTok
+                totalOutputTokens += outTok
+                oaiIterInputTokens += inTok
+                oaiIterOutputTokens += outTok
+              }
+              const output = event.response?.output
+              if (Array.isArray(output)) {
+                for (const it of output) {
+                  if (it?.type === 'message' && Array.isArray(it.content)) {
+                    for (const c of it.content) {
+                      if (Array.isArray(c?.annotations)) {
+                        openaiCitations.push(...adaptOpenAICitations(c.annotations))
+                      }
+                    }
+                  }
+                }
+              }
+              finishReason = 'stop'
             }
           }
+          // Slot the accumulated function calls back into the shared accumulator.
+          for (const v of Object.values(fnCallAccum)) {
+            toolCallAccum[v.index] = { id: v.id, name: v.name, args: v.args }
+          }
+        } else {
+          for await (const chunk of withInactivityTimeout<any>(
+            stream,
+            STREAM_INACTIVITY_TIMEOUT_MS,
+            'OpenAI/local stream',
+          )) {
+            const delta = chunk.choices[0]?.delta
+            if (chunk.usage) {
+              const inTok = chunk.usage.prompt_tokens ?? 0
+              const outTok = chunk.usage.completion_tokens ?? 0
+              totalInputTokens += inTok
+              totalOutputTokens += outTok
+              oaiIterInputTokens += inTok
+              oaiIterOutputTokens += outTok
+            }
+            if (!delta) continue
 
-          if (chunk.choices[0]?.finish_reason) {
-            finishReason = chunk.choices[0].finish_reason
+            if (delta.content) {
+              chunkText += delta.content
+              fullText += delta.content
+              emit({ type: 'token', token: delta.content })
+            }
+
+            if (delta.tool_calls) {
+              for (const tc of delta.tool_calls) {
+                if (!toolCallAccum[tc.index]) {
+                  toolCallAccum[tc.index] = { id: tc.id ?? '', name: tc.function?.name ?? '', args: '' }
+                  if (tc.function?.name) emit({ type: 'tool_start', toolName: tc.function.name, toolInput: {} })
+                }
+                if (tc.function?.arguments) {
+                  toolCallAccum[tc.index].args += tc.function.arguments
+                }
+              }
+            }
+
+            // Chat Completions search-preview fallback: citations arrive as
+            // url_citation annotations on the message delta.
+            const deltaAnnotations = (delta as any)?.annotations
+            if (Array.isArray(deltaAnnotations)) {
+              openaiCitations.push(...adaptOpenAICitations(deltaAnnotations))
+            }
+            const finalMsg = chunk.choices[0]?.message as any
+            if (finalMsg?.annotations) {
+              openaiCitations.push(...adaptOpenAICitations(finalMsg.annotations))
+            }
+
+            if (chunk.choices[0]?.finish_reason) {
+              finishReason = chunk.choices[0].finish_reason
+            }
           }
         }
+
+        emitSources(emit, 'openai', openaiCitations)
 
         const toolUseBlocks = Object.values(toolCallAccum)
 
@@ -2241,7 +2631,8 @@ export async function runAgent(opts: RunnerOptions): Promise<{
                 emit({ type: 'tool_start', toolName: tb.name, toolInput: (tb.input as Record<string, unknown>) ?? {} })
               } else if (blockType === 'web_search_tool_result') {
                 // Results for the native web_search server tool. No handler runs;
-                // emit a completion event so the chat UI can render the result pill.
+                // emit a completion event so the chat UI can render the result pill,
+                // plus a normalised `sources` event for the citations UI.
                 const tb = event.content_block as {
                   tool_use_id?: string
                   content?: Array<{ type: string; title?: string; url?: string }>
@@ -2263,6 +2654,7 @@ export async function runAgent(opts: RunnerOptions): Promise<{
                     data: { results: tb.content ?? [] },
                   },
                 })
+                emitSources(emit, 'anthropic', adaptAnthropicCitations(tb.content, tb.tool_use_id))
               }
               break
             }
@@ -2467,6 +2859,28 @@ export async function runAgent(opts: RunnerOptions): Promise<{
             emitPermissionPause(result.permissionNeeded.api)
           }
 
+          // Client round-trip for capture_frame: ask the browser to render the
+          // scene and post a data URI back. On success, splice the image into
+          // result.data.capturedImage so the Anthropic tool_result carries it.
+          if (result.success && (result.data as any)?.clientAction === 'capture_frame') {
+            const d = result.data as { sceneId: string; time: number }
+            const pending = createPendingCapture(8000)
+            emit({
+              type: 'capture_request',
+              captureId: pending.captureId,
+              sceneId: d.sceneId,
+              captureTime: d.time,
+            })
+            try {
+              const img = await pending.promise
+              ;(result.data as any).capturedImage = { dataUri: img.dataUri, mimeType: img.mimeType }
+            } catch (err) {
+              logger.warn('tool', `capture_frame client capture failed: ${(err as Error).message}`)
+              rejectPendingCapture(pending.captureId, 'superseded')
+              ;(result.data as any).captureError = (err as Error).message
+            }
+          }
+
           const durationMs = Date.now() - startTime
           logger.log('tool', `Complete ${block.name}`, {
             toolName: block.name,
@@ -2500,7 +2914,7 @@ export async function runAgent(opts: RunnerOptions): Promise<{
           toolResults.push({
             type: 'tool_result',
             tool_use_id: block.id,
-            content: JSON.stringify(summarizeToolResult(result)),
+            content: buildToolResultContent(result),
           })
           updateRunProgress(block.name, result)
         }

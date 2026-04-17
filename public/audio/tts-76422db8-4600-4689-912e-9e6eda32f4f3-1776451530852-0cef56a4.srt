@@ -1,0 +1,35 @@
+1
+00:00:00,000 --> 00:00:03,316
+The pathologic cascade proceeds in four
+
+2
+00:00:03,316 --> 00:00:03,868
+steps.
+
+3
+00:00:03,868 --> 00:00:07,184
+Direct viral injury or immune-mediated attack
+
+4
+00:00:07,184 --> 00:00:10,500
+triggers T-cell infiltration and a cytokine
+
+5
+00:00:10,500 --> 00:00:11,053
+surge.
+
+6
+00:00:11,053 --> 00:00:13,263
+Myocyte necrosis releases troponin.
+
+7
+00:00:13,263 --> 00:00:16,579
+Edema, fibrosis, and impaired contractility produce
+
+8
+00:00:16,579 --> 00:00:19,895
+the ventricular dysfunction that underlies every
+
+9
+00:00:19,895 --> 00:00:21,000
+downstream complication.

@@ -389,7 +389,7 @@ STRICT RULES:
 - Three.js r183 via ES modules. Your code runs in its own <script type="module">.
 - You MUST import THREE yourself: import * as THREE from 'three';
 - You MUST read globals from window: const WIDTH = window.WIDTH, etc.
-- Available window globals: WIDTH, HEIGHT, PALETTE, DURATION, MATERIALS, mulberry32, setupEnvironment, THREE, applyCenchThreeEnvironment, updateCenchThreeEnvironment, CENCH_THREE_ENV_IDS, createCenchDataScatterplot, updateCenchDataScatterplot
+- Available window globals: WIDTH, HEIGHT, PALETTE, DURATION, MATERIALS, mulberry32, setupEnvironment, THREE, applyCenchThreeEnvironment, updateCenchThreeEnvironment, CENCH_THREE_ENV_IDS, createCenchDataScatterplot, updateCenchDataScatterplot, createCenchPostFX, createCenchPostFXPreset, CENCH_POSTFX_PRESETS, CENCH_TONE_MAPS, addCinematicLighting, addGroundPlane, loadPBRSet, loadHDREnvironment, createInstancedField, createPositionalAudio
 - Background is already set to ${bgColor} via CSS; set renderer.setClearColor to match.
 ${hasExplicitPalette ? `- Suggested palette (convert hex to THREE.Color, override when content demands): ${palette.join(', ')}` : '- Choose colors that suit the 3D content. PALETTE global is available but you may use any colors.'}
 - WebGLRenderer MUST include preserveDrawingBuffer: true
@@ -414,73 +414,32 @@ import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUnifo
 import { Text } from 'troika-three-text';  // SDF 3D text — any font URL
 import { SUBTRACTION, ADDITION, INTERSECTION, Brush, Evaluator } from 'three-bvh-csg'; // Boolean ops on meshes
 
-SVG-TO-3D EXTRUSION PATTERN (for extruding uploaded SVG logos/icons into 3D):
-NOTE: SVGLoader CANNOT resolve gradient fills (url(#...)). Always use PALETTE colors explicitly.
-Use a pivot/inner group pattern for correct centering with Y-flip.
-
-const pivot = new THREE.Group();
-scene.add(pivot);
-const svgText = await fetch(svgUrl).then(r => r.text());
-const svgData = new SVGLoader().parse(svgText);
-const inner = new THREE.Group();
-let i = 0;
-for (const path of svgData.paths) {
-  const shapes = SVGLoader.createShapes(path);
-  for (const shape of shapes) {
-    const geo = new THREE.ExtrudeGeometry(shape, {
-      depth: 20, bevelEnabled: true, bevelThickness: 2, bevelSize: 1.5,
-      bevelSegments: 8, curveSegments: 24
-    });
-    const mat = new THREE.MeshStandardMaterial({
-      color: PALETTE[i % PALETTE.length], metalness: 0.6, roughness: 0.25
-    });
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.castShadow = true;
-    inner.add(mesh);
-    i++;
-  }
+SVG-TO-3D EXTRUSION (SVGLoader cannot resolve url(#...) gradients — always use PALETTE):
+const pivot = new THREE.Group(); scene.add(pivot);
+const data = new SVGLoader().parse(await fetch(svgUrl).then(r => r.text()));
+const inner = new THREE.Group(); let i = 0;
+for (const p of data.paths) for (const sh of SVGLoader.createShapes(p)) {
+  const g = new THREE.ExtrudeGeometry(sh, { depth: 20, bevelEnabled: true, bevelThickness: 2, bevelSize: 1.5, bevelSegments: 8, curveSegments: 24 });
+  const m = new THREE.MeshStandardMaterial({ color: PALETTE[i++ % PALETTE.length], metalness: 0.6, roughness: 0.25 });
+  const mesh = new THREE.Mesh(g, m); mesh.castShadow = true; inner.add(mesh);
 }
-// Center inner at origin, scale+flip via pivot
-const box = new THREE.Box3().setFromObject(inner);
-const center = box.getCenter(new THREE.Vector3());
-const size = box.getSize(new THREE.Vector3());
-inner.position.set(-center.x, -center.y, -center.z);
-const maxDim = Math.max(size.x, size.y, size.z);
-const s = 4 / maxDim;
-pivot.scale.set(s, -s, s); // flip Y for SVG coordinate system
-pivot.add(inner);
+// center + Y-flip via pivot:
+const box = new THREE.Box3().setFromObject(inner), c = box.getCenter(new THREE.Vector3()), sz = box.getSize(new THREE.Vector3());
+inner.position.set(-c.x, -c.y, -c.z); pivot.scale.set(4/Math.max(sz.x,sz.y,sz.z), -4/Math.max(sz.x,sz.y,sz.z), 4/Math.max(sz.x,sz.y,sz.z)); pivot.add(inner);
 
-DREI-VANILLA HELPERS (import from '@pmndrs/vanilla'):
-import { Sparkles, Grid, Stars } from '@pmndrs/vanilla';
-- Sparkles: shader-based sparkle particles — new Sparkles(scene, { count: 50, size: 2, color: PALETTE[1] })
-- Grid: shader-based infinite grid — new Grid(scene, { cellSize: 1, sectionSize: 5, fadeDistance: 30 })
-- Stars: starfield background — new Stars(scene, { count: 1000, radius: 50 })
-These are production-quality effects. Use them instead of manually coding particles/grids.
+DREI-VANILLA (import { Sparkles, Grid, Stars } from '@pmndrs/vanilla'):
+- new Sparkles(scene, { count, size, color }) | new Grid(scene, { cellSize, sectionSize, fadeDistance }) | new Stars(scene, { count, radius })
 
-3D TEXT (troika-three-text — SDF text, any font):
+3D TEXT (troika SDF — decorative only; prefer HTML overlays for readable captions):
 import { Text } from 'troika-three-text';
-const text = new Text();
-text.text = 'Your Text Here';
-text.fontSize = 0.8;
-text.color = PALETTE[0];
-text.anchorX = 'center';
-text.anchorY = 'middle';
-text.font = 'https://fonts.gstatic.com/s/inter/v18/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuLyfAZ9hjQ.woff2';
-text.sync();
-scene.add(text);
-// Props: maxWidth (word wrap), textAlign, outlineWidth, outlineColor, curveRadius, letterSpacing
-// Material override for PBR: text.material = new THREE.MeshStandardMaterial({...})
+const t = new Text(); t.text = 'hi'; t.fontSize = 0.8; t.color = PALETTE[0]; t.anchorX='center'; t.anchorY='middle'; t.font = 'https://fonts.gstatic.com/s/inter/v18/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuLyfAZ9hjQ.woff2'; t.sync(); scene.add(t);
+// Props: maxWidth, textAlign, outlineWidth, outlineColor, curveRadius, letterSpacing.
 
-CSG BOOLEAN OPERATIONS (three-bvh-csg — combine/subtract/intersect meshes):
+CSG BOOLEANS (three-bvh-csg — cutouts, mechanical parts):
 import { SUBTRACTION, ADDITION, INTERSECTION, Brush, Evaluator } from 'three-bvh-csg';
-const brushA = new Brush(new THREE.SphereGeometry(1.5, 32, 32), MATERIALS.metal(PALETTE[0]));
-const brushB = new Brush(new THREE.BoxGeometry(1.2, 1.2, 1.2), MATERIALS.plastic(PALETTE[1]));
-brushB.position.set(0.5, 0.5, 0);
-brushB.updateMatrixWorld();
-const result = new Evaluator().evaluate(brushA, brushB, SUBTRACTION);
-result.castShadow = true;
-scene.add(result);
-// Great for: holes, cutouts, mechanical parts, abstract sculptures
+const a = new Brush(new THREE.SphereGeometry(1.5,32,32), MATERIALS.metal(PALETTE[0]));
+const b = new Brush(new THREE.BoxGeometry(1.2,1.2,1.2), MATERIALS.plastic(PALETTE[1])); b.position.set(0.5,0.5,0); b.updateMatrixWorld();
+const result = new Evaluator().evaluate(a, b, SUBTRACTION); result.castShadow = true; scene.add(result);
 
 ANIMATED GLTF MODELS (AnimationMixer for Mixamo / animated .glb):
 const gltf = await new GLTFLoader().loadAsync(modelUrl);
@@ -489,13 +448,68 @@ const mixer = new THREE.AnimationMixer(gltf.scene);
 if (gltf.animations.length > 0) mixer.clipAction(gltf.animations[0]).play();
 // In onUpdate: mixer.update(deltaTime)
 
-POST-PROCESSING PIPELINE (cinematic quality):
-const composer = new EffectComposer(renderer);
-composer.addPass(new RenderPass(scene, camera));
-composer.addPass(new UnrealBloomPass(new THREE.Vector2(WIDTH, HEIGHT), 0.3, 0.4, 0.85)); // glow
-// composer.addPass(new BokehPass(scene, camera, { focus: 10, aperture: 0.002, maxblur: 0.01 })); // DOF
-composer.addPass(new OutputPass()); // always last
-// In render loop: composer.render() instead of renderer.render(scene, camera)
+POST-FX COOKBOOK (prefer createCenchPostFX over hand-wiring passes):
+// One call builds the whole composer. Call render() in onUpdate instead of renderer.render.
+const fx = createCenchPostFX(renderer, scene, camera, {
+  bloom: { strength: 0.4, radius: 0.45, threshold: 0.85 },
+  dof:   { focus: 10, aperture: 0.002, maxblur: 0.01 },
+  ssao:  { kernelRadius: 8, minDistance: 0.005, maxDistance: 0.1 },
+  outline: { edgeStrength: 3.0, visibleEdgeColor: 0xffffff, selectedObjects: [myMesh] },
+  afterimage: { damp: 0.92 },               // motion-blur trails
+  chromaticAberration: { amount: 0.0035 },
+  filmGrain: { intensity: 0.35 },
+  glitch: false,
+  pixelate: { pixelSize: 4 },               // retro downsample
+  scanlines: { intensity: 0.2, density: 1.8 },
+  colorGrade: { exposure: 1.05, contrast: 1.08, saturation: 1.05, tint: 0xffe8bf },
+});
+// In animation loop: fx.render() instead of renderer.render(scene, camera)
+
+POSTFX PRESETS (fastest path — createCenchPostFXPreset(renderer, scene, camera, preset)):
+- 'bloom' — soft emissive glow
+- 'cinematic' — bloom + DOF + subtle grade (hero product / reveal)
+- 'cyberpunk' — bloom + chromatic aberration + scanlines + magenta tint
+- 'vintage' — film grain + warm desaturated grade
+- 'dream' — heavy bloom + wide DOF + lifted blacks
+- 'matrix' — green tint + bloom + scanlines
+- 'retroPixel' — pixelate + saturated grade
+- 'ghibli' — soft bloom + warm pastel grade
+- 'noir' — high-contrast grayscale + film grain
+- 'sharpCorporate' — SSAO + subtle contrast (clean product)
+Overrides merge on top: createCenchPostFXPreset(renderer, scene, camera, 'cinematic', { bloom: { strength: 0.55 } }).
+
+SCENE BUILDERS (one-call helpers — ALWAYS prefer these over hand-wiring):
+// 1) Stage environment: call ONCE after scene+renderer+camera exist
+applyCenchThreeEnvironment('studio_white', scene, renderer, camera);
+// Ids: studio_white | cinematic_fog | iso_playful | tech_grid | nature_sunset | data_lab | track_rolling_topdown
+
+// 2) Lighting rig (drop-in 3-point, shadow-enabled)
+addCinematicLighting(scene, 'product'); // corporate | dramatic | playful | product | cyberpunk | nature | softbox
+
+// 3) Ground plane (shadow-catcher, infinite, circle, etc.)
+addGroundPlane(scene, { mode: 'shadow', opacity: 0.25 });      // invisible floor that only catches shadows
+addGroundPlane(scene, { mode: 'circle', radius: 18, color: '#ffffff' });
+addGroundPlane(scene, { mode: 'infinite', color: 0x0e131a, roughness: 0.3, metalness: 0.2 });
+
+// 4) PBR texture set (diffuse+normal+roughness+metalness+ao files at {prefix}_{name}.jpg)
+const mat = loadPBRSet('/textures/brick', { repeat: 3, physical: false });
+
+// 5) HDR IBL (equirect .hdr → scene.environment, photoreal reflections)
+await loadHDREnvironment('/hdr/studio_small.hdr', scene, renderer, { background: false });
+
+// 6) Instancing (>30 clones → ALWAYS use this, not individual meshes)
+const field = createInstancedField({
+  geometry: new THREE.IcosahedronGeometry(0.3, 1),
+  material: MATERIALS.metal(PALETTE[1]),
+  count: 400, layout: 'sphere', radius: 6, randomRotation: true, randomScale: true,
+  color: (i) => new THREE.Color().setHSL((i / 400), 0.6, 0.55),
+});
+scene.add(field);
+// layout: 'grid' | 'circle' | 'sphere' | 'jitter'. Optional transform(dummy, i, rng) for full control.
+
+// 7) Spatial audio (positional — pans + attenuates with distance)
+const beep = createPositionalAudio(camera, '/sfx/beep.mp3', { refDistance: 2, volume: 0.6 });
+mesh.add(beep);
 
 CAMERA ANIMATION PATTERNS:
 - Dolly: animate camera.position.z from far to near
@@ -512,7 +526,7 @@ renderer.setSize(WIDTH, HEIGHT);
 renderer.setClearColor('${bgColor}');
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMapping = CENCH_TONE_MAPS.aces; // aces (default) | agx (most neutral modern) | cineon (cinema) | reinhard (soft highlights) | neutral | linear | none
 renderer.toneMappingExposure = 1.2;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 document.body.appendChild(renderer.domElement);
@@ -580,62 +594,45 @@ HOW TO USE STAGE ENVIRONMENTS:
   (Timeline scrubbing requires __tl.time(); call updateCenchThreeEnvironment every frame so the stage animation — rolling track marbles — stays in sync.)
 - Then add your hero meshes, GLTF models, and story motion on top. Do not remove the __cenchEnvRoot group.
 
-ANIMATION GUIDANCE:
-- Create rich 3D geometry with proper materials (roughness, metalness)
-- Use 3-point lighting with shadows — never flat AmbientLight alone
-- Call setupEnvironment(scene, renderer) for pro PBR reflections
-- Animate rotation, position, scale using t (elapsed seconds)
-- Use sin/cos for smooth oscillating motion
-- Camera distance 8-15 units, objects 0.5-3 units radius
-- Set castShadow/receiveShadow on meshes for grounded look
+COMPOSITION & MOTION (compressed — prefer scene builders for the heavy lifting):
+- Frame subjects at rule-of-thirds intersections; never dead-center on an empty void.
+- Depth: foreground detail + midground hero + background environment. Use stage envs for depth.
+- Materials: roughness 0.3-0.7 for realism, metalness for contrast. Avoid default gray.
+- Camera: eye-level or slightly above. Slow motion (0.1-0.3 rad/s). Static for info-heavy.
+- Scale: camera distance 8-15u, objects 0.5-3u radius. Animate with t via window.__tl.
+- TEXT IN HTML, NOT 3D: for production video use React scenes with <ThreeJSLayer> under <AbsoluteFill> JSX text. Troika 3D text is decorative only.
+- Every object should mean something — 3D illustrates concepts, it's not a tech demo.
 
-SCENE COMPOSITION & LIGHTING:
-- Frame subjects at rule-of-thirds intersections — camera slightly off-center, subject not dead-center.
-- Use depth: foreground detail, midground subject, background environment. Empty void behind a single object looks unfinished.
-- Lighting tells the story: high-key for friendly/corporate, low-key for cinematic/serious, rim lighting for drama.
-- Material quality: use roughness 0.3-0.7 for realistic surfaces, metalness for contrast. Avoid default gray on everything.
-- Add environmental detail: ground plane with receiveShadow, subtle fog, or background gradient.
-- Camera motion: slow and intentional (0.1-0.3 rad/s orbital), not frantic spinning.
+TEMPLATE HELPERS (injected as globals — all above are preferred over hand-coded equivalents):
+- applyCenchThreeEnvironment(envId, scene, renderer, camera) — full backdrop + lights (see SCENE BUILDERS)
+- addCinematicLighting(scene, style) — tuned 3-point rig
+- addGroundPlane(scene, opts) — shadow-catcher | infinite | circle floor
+- loadHDREnvironment(url, scene, renderer, { background }) — equirect HDR → IBL
+- loadPBRSet(urlPrefix, opts) — material from {prefix}_diffuse.jpg + _normal + _roughness + _metalness + _ao
+- createInstancedField(opts) — InstancedMesh with grid|circle|sphere|jitter layout
+- createPositionalAudio(camera, url, opts) — spatial audio attached to meshes
+- createCenchPostFX(renderer, scene, camera, opts) / createCenchPostFXPreset(..., name)
+- CENCH_TONE_MAPS — { aces, cineon, reinhard, linear, agx, neutral, none }
+- buildStudio(THREE, scene, camera, renderer, style?, opts?) — ThreeJSLayer-only studio bundle
+- createStudioScene(style) — standalone all-in-one (NOT available in ThreeJSLayer)
+- createPostProcessing(renderer, scene, camera, { bloom }) — legacy minimal composer (prefer createCenchPostFX)
+- MATERIALS.lowpoly(c) — flat-shaded friendly aesthetic
 
-VIEWER-FIRST PRINCIPLES:
-- 3D illustrates concepts — it's not a tech demo. Every object should mean something to the viewer.
-- Use GLTFLoader to load real models from /models/library/ (laptop, person, building, etc.) for concrete concepts.
-- Camera should face the viewer (eye-level, slightly above). Don't orbit randomly — orbit only to reveal a product/object.
-- For info-heavy scenes, keep camera static or very slow. Fast camera = motion sickness.
-- TEXT IN HTML, NOT 3D: For production videos, use React scenes (type: 'react') with <ThreeJSLayer> for 3D background + JSX <AbsoluteFill> for text overlays on top. HTML text stays fixed on screen regardless of camera movement — always readable. Only use troika 3D text for decorative effects.
-- createStudioScene() now includes a curved studio backdrop (cyclorama) — no more flat-color void backgrounds.
+MODEL LIBRARY (/models/library/ — use GLTFLoader):
+Categories: tech (laptop, monitor, tablet, keyboard), people (person-standing), business (desk, office-chair, whiteboard, briefcase, book, coin-stack), abstract (gear, shield, target, light-bulb, arrow-3d), environment (building-office, building-skyscraper, tree), transport (car, delivery-truck).
+Pattern: new GLTFLoader().load('/models/library/tech/laptop.glb', g => scene.add(g.scene))
 
-TEMPLATE HELPERS (injected as globals):
-- buildStudio(THREE, scene, camera, renderer, style?, opts?) — use inside ThreeJSLayer setup callback
-  Sets up: sky gradient sphere (128 segments), infinite grid, floor, 3-point lighting, env map
-  Returns: { floorY } — position objects at floorY
-  Default: 'white' (clean white photo studio with circle-fade floor)
-  Styles: 'white', 'corporate', 'playful', 'cinematic', 'showcase', 'tech', 'sky'
-  opts.floorMode: 'circle' (default for white), 'infinite' (default for others), 'none'
-- createStudioScene(style) — for standalone three scenes only (NOT available in ThreeJSLayer)
-  Returns: { scene, camera, renderer, floor, render }
-- createPostProcessing(renderer, scene, camera, { bloom: 0.3 }) — returns { render } (synchronous)
-- MATERIALS.lowpoly(c) — flat-shaded, friendly aesthetic for explainer videos
+ADVANCED / OPT-IN — WebGPURenderer + TSL (Three.js Shading Language):
+Three.js ships WebGPURenderer + a node-based TSL shader system at 'three/webgpu'. Reach for it ONLY when the user explicitly asks for GPU compute, >10k particle simulations, or node shaders. Baseline scenes should stay on WebGLRenderer. If you DO switch, keep preserveDrawingBuffer: true, await renderer.init() before first render, and swap composer.render() with renderer.renderAsync().
 
-MODEL LIBRARY — load real objects:
-- Technology: laptop, monitor, tablet, keyboard → import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
-- People: person-standing → human presence in scenes
-- Business: desk, office-chair, whiteboard, briefcase, book, coin-stack
-- Abstract: gear, shield, target, light-bulb, arrow-3d
-- Environment: building-office, building-skyscraper, tree
-- Transport: car, delivery-truck
-Pattern: new GLTFLoader().load('/models/library/tech/laptop.glb', function(gltf) { scene.add(gltf.scene) })
-
-3D STYLE GUIDE — pick the style that matches the content:
-
-Corporate Clean: studio 3-point lighting, matte+clearcoat materials, slow orbit/dolly camera, grid floor or studio backdrop, subtle DOF. For SaaS, enterprise, product.
-Cinematic Dark: dramatic spot+rim light, metal+iridescent materials, crane/path camera, fog+particles environment, bloom+DOF. For film, premium, reveals.
-Playful Isometric: soft overhead lighting, plastic+velvet materials, fixed isometric camera, gradient bg, no post-processing. For education, tutorials, kids.
-Tech Wireframe: neon pulse lights, glass+glow materials + EdgesGeometry wireframes, orbit camera, grid floor+stars, bloom. For cyberpunk, data, AI, code.
-Product Showcase: cinematic RectAreaLight, clearcoat+glass materials, dolly-in + slow orbit, studio backdrop+floor, shallow DOF. For product demos, launches.
-Nature/Organic: sunset+hemisphere lighting, velvet+matte materials (earth tones), path flythrough camera, fog atmosphere, subtle bloom. For wellness, environment.
-
-Match the style to the user's intent. Don't default to the same look every time — variety is professional.
+3D STYLE MATCHUP (pick ONE combo — variety is professional):
+- Corporate/SaaS → studio_white + sharpCorporate + addCinematicLighting('corporate')
+- Premium/reveal → cinematic_fog + cinematic + addCinematicLighting('dramatic')
+- Tutorial/kids → iso_playful + ghibli + addCinematicLighting('playful')
+- Cyberpunk/data/AI → tech_grid + cyberpunk + addCinematicLighting('cyberpunk')
+- Product launch → studio_white + cinematic + addCinematicLighting('product')
+- Wellness/nature → nature_sunset + vintage + addCinematicLighting('nature')
+- Chart/infographic → data_lab + bloom + addCinematicLighting('softbox')
 ${getDesignPrinciples(dims)}
 Previous scene summary (for visual continuity): ${previousSummary || 'none'}`
 }

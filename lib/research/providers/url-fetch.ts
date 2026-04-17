@@ -287,7 +287,7 @@ export async function fetchUrlContent(opts: FetchURLOptions): Promise<FetchedURL
     try {
       assertSafeUrl(response.url)
     } catch (e) {
-      throw new Error(`Redirected to disallowed host: ${(e as Error).message}`)
+      throw new Error(`Redirected to disallowed host: ${(e as Error).message}`, { cause: e })
     }
   }
   const contentType = response.headers.get('content-type') ?? ''

@@ -43,3 +43,6 @@ reference/
 .DS_Store
 *.pem
 npm-debug.log*
+
+# Claude local runtime state
+.claude/scheduled_tasks.lock

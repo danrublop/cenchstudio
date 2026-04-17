@@ -43,6 +43,11 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   web_search: 'Searching the web',
   fetch_url_content: 'Reading article',
   find_stock_videos: 'Finding stock video',
+  find_stock_images: 'Finding stock photo',
+  find_archival_footage: 'Searching archival libraries',
+  fetch_video_from_url: 'Downloading video (yt-dlp)',
+  upload_media_from_url: 'Saving media to library',
+  tag_asset: 'Tagging asset',
   connect_scenes: 'Connecting scenes',
   define_scene_variable: 'Defining variable',
   set_video_layer: 'Setting video layer',
@@ -93,6 +98,18 @@ function summarizeOutput(call: ToolCallRecord): string | null {
     const n = data.results.length
     const prov = typeof data.provider === 'string' ? ` · ${data.provider}` : ''
     return `${n} clip${n === 1 ? '' : 's'}${prov}`
+  }
+
+  if (call.toolName === 'find_stock_images' && Array.isArray(data.results)) {
+    const n = data.results.length
+    const prov = typeof data.provider === 'string' ? ` · ${data.provider}` : ''
+    return `${n} photo${n === 1 ? '' : 's'}${prov}`
+  }
+
+  if (call.toolName === 'find_archival_footage' && Array.isArray(data.results)) {
+    const n = data.results.length
+    const prov = typeof data.provider === 'string' ? ` · ${data.provider.split('+').length} sources` : ''
+    return `${n} item${n === 1 ? '' : 's'}${prov}`
   }
 
   return null

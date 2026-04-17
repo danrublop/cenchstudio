@@ -60,3 +60,65 @@ export function resolveTTSProviderWithReason(
     ranking: out.ranking.map((r) => ({ id: r.id, score: r.score, costUsd: r.costUsd })),
   }
 }
+
+/** Full-world resolver for `add_narration`-style call sites. Takes every
+ *  bit of context the cascade used to handle inline — per-project enabled
+ *  map, localMode, text length, platform, explicit user-picked default —
+ *  and returns the single best provider plus the ranked alternatives. */
+export function resolveTTSForNarration(opts: {
+  settings?: AudioSettings | null
+  localMode?: boolean
+  audioProviderEnabled?: Record<string, boolean>
+  textLength?: number
+  /** When true (MP4 export path), drop client-only providers. Default false
+   *  — `add_narration` previews in the browser are fine with web-speech. */
+  requiresServerOutput?: boolean
+  lastProviderId?: string
+}): {
+  provider: TTSProvider | null
+  reason: string
+  ranking: Array<{ id: string; score: number; costUsd: number; reason: string }>
+} {
+  const { settings, localMode, audioProviderEnabled, textLength, requiresServerOutput, lastProviderId } = opts
+
+  // Explicit user default short-circuits the scorer — respect user intent.
+  if (settings?.defaultTTSProvider && settings.defaultTTSProvider !== 'auto') {
+    const explicit = settings.defaultTTSProvider
+    const disabled = audioProviderEnabled && audioProviderEnabled[explicit] === false
+    if (!disabled) {
+      return { provider: explicit, reason: `User-set default (${explicit})`, ranking: [] }
+    }
+  }
+
+  const env: Record<string, string | undefined> = { ...process.env }
+  if (settings?.pocketTTSUrl) env.POCKET_TTS_URL = settings.pocketTTSUrl
+  if (settings?.voxcpmUrl) env.VOXCPM_URL = settings.voxcpmUrl
+  if (settings?.edgeTTSUrl) env.EDGE_TTS_URL = settings.edgeTTSUrl
+
+  const weights = localMode ? LOCAL_MODE_WEIGHTS : DEFAULT_WEIGHTS
+  const out = selectBestProvider(
+    TTS_PROFILES,
+    {
+      localMode: !!localMode,
+      env,
+      platform: process.platform,
+      task: 'narration',
+      textLength,
+      enabled: audioProviderEnabled,
+      requiresServerOutput,
+      lastProviderId,
+    },
+    weights,
+  )
+
+  return {
+    provider: (out.chosen?.id as TTSProvider) ?? null,
+    reason: out.chosen?.reason ?? 'no provider available',
+    ranking: out.ranking.map((r) => ({
+      id: r.id,
+      score: r.score,
+      costUsd: r.costUsd,
+      reason: r.reason,
+    })),
+  }
+}

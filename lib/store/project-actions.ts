@@ -113,16 +113,14 @@ export function createProjectActions(set: Set, get: Get) {
 
       const newProject = createDefaultProject([])
 
-      // Auto-increment "Untitled Project" names
+      // Auto-increment "Untitled Project" names, starting at 1
       if (!name) {
-        const existing = state.projectList.map((p) => p.name)
+        const existing = new Set(state.projectList.map((p) => p.name))
         let n = 1
-        let candidate = 'Untitled Project'
-        while (existing.includes(candidate)) {
+        while (existing.has(`Untitled Project ${n}`)) {
           n++
-          candidate = `Untitled Project ${n}`
         }
-        newProject.name = candidate
+        newProject.name = `Untitled Project ${n}`
       } else {
         newProject.name = name
       }

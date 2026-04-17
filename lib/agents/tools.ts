@@ -2496,9 +2496,9 @@ use CenchMotion components for those instead.`,
 /** Export tools */
 export const CAPTURE_FRAME: ClaudeToolDefinition = {
   name: 'capture_frame',
-  description: `Inspect a scene's visual state at a specific time. Returns a detailed structural description of all layers, elements, positions, and content at that moment.
-Use this to verify your work — check layout completeness, element counts, text content, animation state, and layer positioning after generating or editing a scene.
-Note: this returns a text description of the scene structure, not a pixel-level screenshot.`,
+  description: `Capture a rendered frame of the scene at a specific time. Returns a PNG/JPEG screenshot of the live preview (what the user sees) alongside a structural text summary of layers, positions, text content, and code issues.
+Use this after generating or editing a scene to verify the visual result — layout, typography, colors, element positioning, and animation state at the captured time.
+The image is delivered in the tool result; inspect it like any vision input. If the client can't render the scene, the image will be omitted and the summary still returned.`,
   input_schema: {
     type: 'object',
     properties: {
@@ -3128,6 +3128,84 @@ Use this when the user wants to make their logo or SVG graphic 3-dimensional.`,
   },
 }
 
+// ── Three.js Post-FX + Stage Environment Tools ──────────────────────────────
+
+export const APPLY_THREE_POSTFX: ClaudeToolDefinition = {
+  name: 'apply_three_postfx',
+  description: `Wrap an existing Three.js scene with a post-processing pipeline (bloom, DOF, SSAO, color grade, outline, film grain, chromatic aberration, scanlines, pixelate, afterimage/motion blur).
+
+The tool patches the layer's sceneCode to:
+1. Call createCenchPostFX(renderer, scene, camera, opts) after setup
+2. Replace renderer.render(scene, camera) inside onUpdate with fx.render()
+
+Use this when the user asks to add a cinematic look (glow, depth of field, color grading, etc.) to an existing 3D scene without rebuilding it. Presets cover the common looks; use 'custom' for explicit opts.`,
+  input_schema: {
+    type: 'object',
+    properties: {
+      sceneId: { type: 'string', description: 'Target scene ID' },
+      layerId: {
+        type: 'string',
+        description:
+          'Optional: AI layer id to patch. If omitted, patches the scene-level sceneCode (classic three scenes).',
+      },
+      preset: {
+        type: 'string',
+        enum: [
+          'bloom',
+          'cinematic',
+          'cyberpunk',
+          'vintage',
+          'dream',
+          'matrix',
+          'retroPixel',
+          'ghibli',
+          'noir',
+          'sharpCorporate',
+          'custom',
+        ],
+        description: 'Named look. Use "custom" when you need explicit opts via the `custom` field.',
+      },
+      custom: {
+        type: 'object',
+        description:
+          'Optional: explicit opts for createCenchPostFX. Merged on top of the preset. Shape: { bloom, ssao, dof, outline, filmGrain, chromaticAberration, colorGrade, pixelate, scanlines, afterimage, glitch }. Each value can be `true`, `false`, or a config object.',
+      },
+    },
+    required: ['sceneId', 'preset'],
+  },
+}
+
+export const SET_THREE_STAGE_ENVIRONMENT: ClaudeToolDefinition = {
+  name: 'set_three_stage_environment',
+  description: `Apply a Cench-provided stage environment (backdrop + lighting + ground) to an existing Three.js scene. The tool inserts or replaces the applyCenchThreeEnvironment() call in the layer's sceneCode.
+
+Use this to swap the look of an existing 3D scene (studio white, cinematic fog, tech grid, etc.) without regenerating it.`,
+  input_schema: {
+    type: 'object',
+    properties: {
+      sceneId: { type: 'string', description: 'Target scene ID' },
+      layerId: {
+        type: 'string',
+        description: 'Optional: AI layer id to patch. If omitted, patches the scene-level sceneCode.',
+      },
+      envId: {
+        type: 'string',
+        enum: [
+          'studio_white',
+          'cinematic_fog',
+          'iso_playful',
+          'tech_grid',
+          'nature_sunset',
+          'data_lab',
+          'track_rolling_topdown',
+        ],
+        description: 'Stage environment ID to apply.',
+      },
+    },
+    required: ['sceneId', 'envId'],
+  },
+}
+
 // ── Brand Kit Tools ─────────────────────────────────────────────────────────
 
 export const GET_BRAND_KIT: ClaudeToolDefinition = {
@@ -3267,6 +3345,8 @@ export const ALL_TOOLS: ClaudeToolDefinition[] = [
   ...PHYSICS_TOOLS,
   ...WORLD_TOOLS,
   EXTRUDE_SVG_TO_3D,
+  APPLY_THREE_POSTFX,
+  SET_THREE_STAGE_ENVIRONMENT,
   GET_BRAND_KIT,
   APPLY_BRAND_KIT,
   ...EXPORT_TOOLS,
@@ -3393,6 +3473,8 @@ export const TOOL_CATEGORY_MAP: Record<string, string[]> = {
     'list_3d_assets',
     'three_data_scatter_scene',
     'extrude_svg_to_3d',
+    'apply_three_postfx',
+    'set_three_stage_environment',
   ],
   lottie: ['add_layer', 'search_lottie', 'choose_motion_style'],
   zdog: [

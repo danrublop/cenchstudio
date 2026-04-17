@@ -119,9 +119,47 @@ export interface MCPToolCallResult {
   data?: unknown
 }
 
+/** Tools that LLM-generate content — benefit from retry on transient failures
+ *  (empty code, API timeout, rate limit, etc.). Surgical tools (reorder, patch)
+ *  are NOT retried because a failure there likely indicates a real problem, not
+ *  a transient one. Mirrors the in-app runner's GENERATION_TOOL_SET. */
+const RETRYABLE_MCP_TOOLS = new Set([
+  'add_layer',
+  'regenerate_layer',
+  'edit_layer',
+  'write_scene_code',
+  'generate_chart',
+  'generate_physics_scene',
+  'create_world_scene',
+  'add_narration',
+  'generate_avatar_narration',
+  'generate_avatar_scene',
+  'generate_image_from_reference',
+  'generate_variation',
+  'regenerate_asset',
+])
+
+/** Patterns that indicate a transient failure worth retrying. */
+function isTransientError(errText: string): boolean {
+  const s = (errText ?? '').toLowerCase()
+  return (
+    s.includes('timeout') ||
+    s.includes('timed out') ||
+    s.includes('rate limit') ||
+    s.includes('429') ||
+    s.includes('503') ||
+    s.includes('504') ||
+    s.includes('econnreset') ||
+    s.includes('empty code') ||
+    s.includes('empty response') ||
+    s.includes('failed to parse')
+  )
+}
+
 /**
  * Execute a tool call via the HTTP API endpoint.
  * The endpoint loads world state, runs the tool handler, and persists changes.
+ * For known-flaky generation tools, retries once on transient errors.
  */
 export async function executeToolCall(
   toolName: string,
@@ -131,10 +169,27 @@ export async function executeToolCall(
   const pid = projectId ?? currentProjectId
   if (!pid) throw new Error('No project selected. Call select_project first.')
 
-  const result = await apiFetch('/api/mcp-tool', {
-    method: 'POST',
-    body: JSON.stringify({ projectId: pid, toolName, args }),
-  })
+  const maxAttempts = RETRYABLE_MCP_TOOLS.has(toolName) ? 2 : 1
+  let result: any
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    result = await apiFetch('/api/mcp-tool', {
+      method: 'POST',
+      body: JSON.stringify({ projectId: pid, toolName, args }),
+    })
+    const shouldRetry =
+      !result.success &&
+      !result.permissionNeeded &&
+      attempt < maxAttempts &&
+      typeof result.error === 'string' &&
+      isTransientError(result.error)
+    if (!shouldRetry) break
+    // Exponential-ish backoff with a small jitter.
+    const waitMs = 400 * attempt + Math.floor(Math.random() * 250)
+    console.warn(
+      `[mcp-adapter] ${toolName} attempt ${attempt} failed (transient: ${result.error?.slice(0, 120)}); retrying in ${waitMs}ms`,
+    )
+    await new Promise((r) => setTimeout(r, waitMs))
+  }
 
   // Refresh scene cache after successful mutations
   if (result.success) {

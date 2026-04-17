@@ -60,6 +60,8 @@ export interface Message {
 export interface Scene {
   id: string
   name: string
+  /** Position in the project's scenes array; surfaced for filename generation. */
+  order?: number
   prompt: string
   summary: string
   svgContent: string

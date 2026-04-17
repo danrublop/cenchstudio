@@ -1,0 +1,43 @@
+1
+00:00:00,000 --> 00:00:03,084
+In summary: myocarditis is a heterogeneous
+
+2
+00:00:03,084 --> 00:00:06,168
+disease with outcomes ranging from full
+
+3
+00:00:06,168 --> 00:00:08,739
+recovery to transplantation or death.
+
+4
+00:00:08,739 --> 00:00:11,823
+Early risk stratification using clinical presentation,
+
+5
+00:00:11,823 --> 00:00:14,907
+echocardiography, cardiac MRI, and endomyocardial biopsy
+
+6
+00:00:14,907 --> 00:00:15,935
+is critical.
+
+7
+00:00:15,935 --> 00:00:19,019
+Recognize the high-risk 25 percent —
+
+8
+00:00:19,019 --> 00:00:20,561
+and act aggressively.
+
+9
+00:00:20,561 --> 00:00:23,646
+Apply the 2024 ACC guidelines for
+
+10
+00:00:23,646 --> 00:00:26,730
+evolving management strategies, including immunosuppression in
+
+11
+00:00:26,730 --> 00:00:29,300
+giant cell and eosinophilic subtypes.

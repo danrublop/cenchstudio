@@ -28,6 +28,18 @@ export function createAudioActions(set: Set, get: Get) {
         researchProviderEnabled: { ...s.researchProviderEnabled, [id]: !s.researchProviderEnabled[id] },
       })),
 
+    grantYtDlpConsent: (projectId: string) =>
+      set((s) => ({
+        ytDlpConsentedProjectIds: s.ytDlpConsentedProjectIds.includes(projectId)
+          ? s.ytDlpConsentedProjectIds
+          : [...s.ytDlpConsentedProjectIds, projectId],
+      })),
+
+    revokeYtDlpConsent: (projectId: string) =>
+      set((s) => ({
+        ytDlpConsentedProjectIds: s.ytDlpConsentedProjectIds.filter((id) => id !== projectId),
+      })),
+
     generateNarration: async (
       sceneId: string,
       text: string,

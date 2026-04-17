@@ -1,0 +1,59 @@
+1
+00:00:00,000 --> 00:00:03,125
+The 2024 ACC Expert Consensus
+
+2
+00:00:03,125 --> 00:00:06,250
+Decision Pathway identifies five key
+
+3
+00:00:06,250 --> 00:00:07,500
+high-risk features.
+
+4
+00:00:07,500 --> 00:00:10,625
+First: hemodynamic instability or cardiogenic
+
+5
+00:00:10,625 --> 00:00:12,500
+shock on presentation.
+
+6
+00:00:12,500 --> 00:00:15,625
+Second: biventricular dysfunction on echocardiography.
+
+7
+00:00:15,625 --> 00:00:18,750
+Third: late gadolinium enhancement on
+
+8
+00:00:18,750 --> 00:00:21,875
+cardiac MRI, indicating irreversible fibrosis.
+
+9
+00:00:21,875 --> 00:00:25,000
+Fourth: endomyocardial biopsy confirming giant
+
+10
+00:00:25,000 --> 00:00:27,500
+cell or eosinophilic histology.
+
+11
+00:00:27,500 --> 00:00:30,625
+Fifth: sustained ventricular arrhythmias or
+
+12
+00:00:30,625 --> 00:00:32,500
+advanced AV block.
+
+13
+00:00:32,500 --> 00:00:35,625
+These criteria should trigger urgent
+
+14
+00:00:35,625 --> 00:00:38,750
+referral, endomyocardial biopsy, and consideration
+
+15
+00:00:38,750 --> 00:00:40,000
+of immunosuppression.

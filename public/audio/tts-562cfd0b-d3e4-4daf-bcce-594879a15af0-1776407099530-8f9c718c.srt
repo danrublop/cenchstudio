@@ -1,0 +1,51 @@
+1
+00:00:00,000 --> 00:00:03,188
+In survivors, myocarditis can progress to
+
+2
+00:00:03,188 --> 00:00:06,375
+dilated cardiomyopathy with persistent left ventricular
+
+3
+00:00:06,375 --> 00:00:06,906
+dysfunction.
+
+4
+00:00:06,906 --> 00:00:10,094
+Myocardial scar tissue impairs contractility and
+
+5
+00:00:10,094 --> 00:00:12,219
+creates an arrhythmogenic substrate.
+
+6
+00:00:12,219 --> 00:00:15,406
+Chronic heart failure, recurrent arrhythmias, and
+
+7
+00:00:15,406 --> 00:00:18,594
+thromboembolic complications including stroke are documented
+
+8
+00:00:18,594 --> 00:00:19,656
+long-term consequences.
+
+9
+00:00:19,656 --> 00:00:22,844
+However, most patients experience complete recovery
+
+10
+00:00:22,844 --> 00:00:24,438
+with appropriate management.
+
+11
+00:00:24,438 --> 00:00:27,625
+Long-term follow-up with serial imaging and
+
+12
+00:00:27,625 --> 00:00:30,813
+risk stratification is essential for those
+
+13
+00:00:30,813 --> 00:00:34,000
+with fulminant presentations or persistent dysfunction.

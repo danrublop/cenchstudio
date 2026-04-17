@@ -719,12 +719,12 @@ export default function LayersTab({
             .toLowerCase()
             .replace(/[^a-z0-9]+/g, '-')
             .replace(/^-|-$/g, '')
-          const sceneSlug = (scene.name || `scene-${scene.order + 1}`)
+          const sceneSlug = (scene.name || `scene-${(scene.order ?? 0) + 1}`)
             .trim()
             .toLowerCase()
             .replace(/[^a-z0-9]+/g, '-')
             .replace(/^-|-$/g, '')
-          const hint = `${projectSlug || 'project'}-${sceneSlug || `scene-${scene.order + 1}`}-${recordingResolution}-${recordingFps}fps`
+          const hint = `${projectSlug || 'project'}-${sceneSlug || `scene-${(scene.order ?? 0) + 1}`}-${recordingResolution}-${recordingFps}fps`
           const saved = await (window as any).electronAPI.saveRecording({ bytes, extension: ext, nameHint: hint })
           updateScene(scene.id, {
             videoLayer: {

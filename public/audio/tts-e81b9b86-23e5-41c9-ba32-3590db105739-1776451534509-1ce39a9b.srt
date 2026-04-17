@@ -1,0 +1,35 @@
+1
+00:00:00,000 --> 00:00:02,174
+The clinical stakes are high.
+
+2
+00:00:02,174 --> 00:00:05,217
+Twenty to thirty percent develop acute heart
+
+3
+00:00:05,217 --> 00:00:05,652
+failure.
+
+4
+00:00:05,652 --> 00:00:08,696
+Ventricular tachycardia, fibrillation, and complete heart block
+
+5
+00:00:08,696 --> 00:00:10,870
+drive sudden cardiac death risk.
+
+6
+00:00:10,870 --> 00:00:13,478
+Fulminant cases arrive in cardiogenic shock.
+
+7
+00:00:13,478 --> 00:00:16,522
+Up to thirty percent progress to chronic
+
+8
+00:00:16,522 --> 00:00:19,565
+dilated cardiomyopathy, and mural thrombus raises embolic
+
+9
+00:00:19,565 --> 00:00:20,000
+risk.

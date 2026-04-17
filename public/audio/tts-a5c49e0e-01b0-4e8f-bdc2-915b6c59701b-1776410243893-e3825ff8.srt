@@ -1,0 +1,59 @@
+1
+00:00:00,000 --> 00:00:02,977
+The adverse effects of myocarditis span a
+
+2
+00:00:02,977 --> 00:00:03,828
+critical spectrum.
+
+3
+00:00:03,828 --> 00:00:06,805
+Acute heart failure affects up to 25
+
+4
+00:00:06,805 --> 00:00:09,782
+percent of patients, with progression to end-stage
+
+5
+00:00:09,782 --> 00:00:12,759
+heart failure in 12 to 25 percent.
+
+6
+00:00:12,759 --> 00:00:15,736
+Ventricular arrhythmias — including sustained ventricular tachycardia
+
+7
+00:00:15,736 --> 00:00:18,287
+— carry significant sudden death risk.
+
+8
+00:00:18,287 --> 00:00:21,264
+Cardiogenic shock occurs in fulminant presentations, with
+
+9
+00:00:21,264 --> 00:00:24,241
+giant cell myocarditis carrying a 62 percent
+
+10
+00:00:24,241 --> 00:00:27,218
+rate of death or transplant at 60
+
+11
+00:00:27,218 --> 00:00:27,644
+days.
+
+12
+00:00:27,644 --> 00:00:30,621
+Chronic dilated cardiomyopathy develops in a subset
+
+13
+00:00:30,621 --> 00:00:31,897
+following apparent recovery.
+
+14
+00:00:31,897 --> 00:00:34,874
+Complete heart block requiring pacing can complicate
+
+15
+00:00:34,874 --> 00:00:37,000
+sarcoid and giant cell variants.

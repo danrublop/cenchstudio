@@ -1,0 +1,19 @@
+1
+00:00:00,000 --> 00:00:03,290
+Clinical priorities: early recognition via cardiac MRI,
+
+2
+00:00:03,290 --> 00:00:06,580
+vigilant arrhythmia surveillance at three and six
+
+3
+00:00:06,580 --> 00:00:09,870
+months, guideline-directed heart failure therapy, and staged
+
+4
+00:00:09,870 --> 00:00:11,280
+return to activity.
+
+5
+00:00:11,280 --> 00:00:14,100
+References are provided for further review.

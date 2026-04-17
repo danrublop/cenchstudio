@@ -1,0 +1,39 @@
+1
+00:00:00,000 --> 00:00:03,323
+Etiologically, viral pathogens — particularly enteroviruses
+
+2
+00:00:03,323 --> 00:00:06,646
+and adenoviruses — remain the most
+
+3
+00:00:06,646 --> 00:00:07,754
+common cause.
+
+4
+00:00:07,754 --> 00:00:11,077
+Autoimmune conditions including lupus, sarcoidosis, and
+
+5
+00:00:11,077 --> 00:00:14,400
+giant cell disease account for a
+
+6
+00:00:14,400 --> 00:00:15,508
+significant subset.
+
+7
+00:00:15,508 --> 00:00:18,831
+Emerging causes include immune checkpoint inhibitors,
+
+8
+00:00:18,831 --> 00:00:22,154
+occurring in approximately one percent of
+
+9
+00:00:22,154 --> 00:00:25,477
+treated oncology patients, and mRNA COVID-19
+
+10
+00:00:25,477 --> 00:00:28,800
+vaccine-associated myocarditis, predominantly in young males.

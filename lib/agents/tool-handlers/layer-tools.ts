@@ -719,7 +719,6 @@ export function createLayerToolHandler(deps: {
           parts.push(`\n--- AI Layers (${scene.aiLayers.length}) ---`)
           for (const layer of scene.aiLayers) {
             parts.push(`\n[${layer.id}] type:${layer.type} label:"${layer.label}"`)
-            if (layer.code) parts.push(layer.code)
           }
         }
 

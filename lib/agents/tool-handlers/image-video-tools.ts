@@ -249,11 +249,32 @@ export function createImageVideoToolHandler(deps: {
       }
 
       case 'generate_veo3_video': {
-        const mediaErr = deps.checkMediaEnabled(world, 'veo3', 'Veo3 Video')
+        // Dispatches through the video provider registry so the same tool can
+        // drive Veo 3, Kling, or Runway based on the `provider` arg. Keeps the
+        // legacy tool name ("generate_veo3_video") working; when the agent
+        // wants a different provider it can pass `provider: 'kling'` / `'runway'`.
+        const { getVideoProvider, firstConfiguredVideoProvider } = await import('@/lib/apis/video/registry')
+        const requestedProvider = (args.provider as string | undefined) || 'veo3'
+        const registryProvider =
+          requestedProvider === 'auto'
+            ? firstConfiguredVideoProvider()
+            : (getVideoProvider(requestedProvider) ?? getVideoProvider('veo3'))
+        if (!registryProvider) {
+          return err('No video provider configured. Add GOOGLE_AI_KEY, FAL_KEY, or RUNWAY_API_KEY.')
+        }
+        if (!process.env[registryProvider.envKey]) {
+          return err(`${registryProvider.name} not configured — set ${registryProvider.envKey} first.`)
+        }
+        const providerId = registryProvider.id
+        const apiName = (
+          providerId === 'veo3' || providerId === 'kling' || providerId === 'runway' ? providerId : 'veo3'
+        ) as APIName
+
+        const mediaErr = deps.checkMediaEnabled(world, providerId, registryProvider.name)
         if (mediaErr) return mediaErr
         const { sceneId, prompt } = args as Record<string, any>
-        const blocked = deps.checkApiPermission(world, 'veo3', {
-          reason: 'Generate Veo3 video clip',
+        const blocked = deps.checkApiPermission(world, apiName, {
+          reason: `Generate ${registryProvider.name} video clip`,
           details: {
             prompt: prompt as string,
             duration: (args.duration as number) ?? 5,
@@ -264,27 +285,33 @@ export function createImageVideoToolHandler(deps: {
           return deps.enrichPermission(blocked, {
             generationType: 'video',
             prompt: prompt as string,
-            provider: 'veo3',
-            availableProviders: [{ id: 'veo3', name: 'Google Veo 3', cost: '~$0.50–2.00', isFree: false }],
-            config: { aspectRatio: args.aspectRatio, duration: args.duration },
+            provider: providerId,
+            availableProviders: [
+              { id: 'veo3', name: 'Google Veo 3', cost: '~$0.50–2.00', isFree: false },
+              { id: 'kling', name: 'Kling 2.1', cost: '~$0.40–0.55', isFree: false },
+              { id: 'runway', name: 'Runway Gen-4', cost: '~$0.70–1.20', isFree: false },
+            ],
+            config: { aspectRatio: args.aspectRatio, duration: args.duration, provider: providerId },
             toolArgs: args as Record<string, any>,
           })
         if (!sceneId || !prompt) return err('sceneId and prompt are required')
         const scene = findScene(world, sceneId)
         if (!scene) return err(`Scene not found: ${sceneId}`)
         try {
-          const { generateVeo3Video } = await import('@/lib/apis/veo3')
-          const { operationName } = await generateVeo3Video({
+          const { operationId } = await registryProvider.generate({
             prompt,
             negativePrompt: args.negativePrompt as string | undefined,
             aspectRatio: ((args.aspectRatio as string) ?? '16:9') as '16:9' | '9:16' | '1:1',
-            durationSeconds: ((args.duration as number) ?? 5) as 5 | 8,
+            durationSeconds: (args.duration as number) ?? 5,
+            seed: args.seed as number | undefined,
           })
-          return ok(sceneId, `Veo3 video generation started. Operation: ${operationName}. Takes 2-10 min.`, {
-            operationName,
-          })
+          return ok(
+            sceneId,
+            `${registryProvider.name} video generation started. Operation: ${operationId}. Takes 2-10 min.`,
+            { operationName: operationId, provider: providerId },
+          )
         } catch (e: any) {
-          return err(`Veo3 generation failed: ${e.message}`)
+          return err(`${registryProvider.name} generation failed: ${e.message}`)
         }
       }
 

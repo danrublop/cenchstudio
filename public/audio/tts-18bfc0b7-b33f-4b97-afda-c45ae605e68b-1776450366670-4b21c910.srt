@@ -1,0 +1,15 @@
+1
+00:00:00,000 --> 00:00:00,563
+Myocarditis.
+
+2
+00:00:00,563 --> 00:00:02,250
+Adverse cardiovascular effects.
+
+3
+00:00:02,250 --> 00:00:05,625
+A clinical briefing for physicians, synthesizing
+
+4
+00:00:05,625 --> 00:00:09,000
+current evidence from major cardiology societies.

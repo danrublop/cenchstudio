@@ -14,6 +14,8 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, '.'),
+      // Next ships 'server-only' as a build-time import guard; stub it for vitest.
+      'server-only': path.resolve(__dirname, 'lib/test-stubs/server-only.ts'),
     },
   },
 })

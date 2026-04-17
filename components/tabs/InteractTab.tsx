@@ -125,6 +125,7 @@ function createDefaultInteraction(type: InteractionElement['type']): Interaction
         jumpsToSceneId: null,
       } as FormInputElement
   }
+  throw new Error(`Unknown interaction type: ${type as string}`)
 }
 
 // ── Shared layout rebuild (type switch) ───────────────────────────────────────

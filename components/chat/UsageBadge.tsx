@@ -41,7 +41,7 @@ export function UsageBadge({ usage, progress, live }: UsageBadgeProps) {
           {progress.toolCallsUsed}
           {progress.toolCallsMax ? `/${progress.toolCallsMax}` : ''} tools
         </span>
-        {progress.costMax > 0 && (
+        {(progress.costMax ?? 0) > 0 && (
           <>
             <span className="opacity-40">|</span>
             <span title="Estimated cost" className="text-[var(--color-accent)]">

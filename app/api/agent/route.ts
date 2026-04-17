@@ -75,6 +75,8 @@ export interface AgentAPIRequest {
   researchEnabled?: boolean
   /** Per-provider enabled map for research providers (brave, tavily, exa). */
   researchProviderEnabled?: Record<string, boolean>
+  /** Project IDs where the user has accepted the yt-dlp legal disclaimer. */
+  ytDlpConsentedProjectIds?: string[]
   sessionPermissions?: Record<string, string>
   generationOverrides?: Record<string, { provider?: string; prompt?: string; config?: Record<string, any> }>
   autoChooseDefaults?: Record<string, { provider: string; config: Record<string, any> }>
@@ -291,45 +293,69 @@ export async function POST(req: NextRequest) {
     originalSendEvent(event)
   }
 
-  // Fetch project assets for agent context
-  let fetchedAssets: any[] = []
-  if (body.projectId) {
-    try {
-      fetchedAssets = await db
-        .select()
-        .from(projectAssetsTable)
-        .where(eq(projectAssetsTable.projectId, body.projectId))
-        .orderBy(desc(projectAssetsTable.createdAt))
-    } catch (e) {
-      console.warn('[Agent API] Failed to fetch project assets:', e)
-    }
+  // Fetch project assets + brand kit + workspace id + user memories in parallel.
+  // Project row pulls brandKit + workspaceId in one round-trip since both live
+  // on the same row.
+  const [assetsResult, projectRowResult, memoriesResult] = await Promise.all([
+    body.projectId
+      ? db
+          .select()
+          .from(projectAssetsTable)
+          .where(eq(projectAssetsTable.projectId, body.projectId))
+          .orderBy(desc(projectAssetsTable.createdAt))
+          .catch((e) => {
+            console.warn('[Agent API] Failed to fetch project assets:', e)
+            return [] as any[]
+          })
+      : Promise.resolve([] as any[]),
+    body.projectId
+      ? db
+          .select({ brandKit: projectsTable.brandKit, workspaceId: projectsTable.workspaceId })
+          .from(projectsTable)
+          .where(eq(projectsTable.id, body.projectId))
+          .limit(1)
+          .catch((e) => {
+            console.warn('[Agent API] Failed to fetch project row:', e)
+            return [] as Array<{ brandKit: unknown; workspaceId: string | null }>
+          })
+      : Promise.resolve([] as Array<{ brandKit: unknown; workspaceId: string | null }>),
+    authenticatedUserId
+      ? getMemoriesForUser(authenticatedUserId, 20).catch((e) => {
+          console.warn('[Agent API] Failed to fetch user memories:', e)
+          return [] as Awaited<ReturnType<typeof getMemoriesForUser>>
+        })
+      : Promise.resolve([] as Awaited<ReturnType<typeof getMemoriesForUser>>),
+  ])
+
+  const fetchedAssets: any[] = assetsResult
+  const fetchedBrandKit = (projectRowResult[0]?.brandKit as any) ?? null
+  const runWorkspaceId: string | null = projectRowResult[0]?.workspaceId ?? null
+  const userMemories = memoriesResult.map((r) => ({
+    category: r.category,
+    key: r.key,
+    value: r.value,
+    confidence: r.confidence,
+  }))
+  if (userMemories.length > 0) {
+    logger.log('api', `Loaded ${userMemories.length} user memories`, { userId: authenticatedUserId })
   }
 
-  // Fetch brand kit for agent context
-  let fetchedBrandKit: any = null
-  if (body.projectId) {
-    try {
-      const [row] = await db
-        .select({ brandKit: projectsTable.brandKit })
-        .from(projectsTable)
-        .where(eq(projectsTable.id, body.projectId))
-      fetchedBrandKit = row?.brandKit ?? null
-    } catch (e) {
-      console.warn('[Agent API] Failed to fetch brand kit:', e)
-    }
-  }
-
-  // Fetch user memories for cross-session preference injection
-  let userMemories: Array<{ category: string; key: string; value: string; confidence: number }> = []
+  // Rule fetch depends on the workspace id resolved above.
+  let permissionRules: import('@/lib/types/permissions').PermissionRule[] = []
   if (authenticatedUserId) {
     try {
-      const rows = await getMemoriesForUser(authenticatedUserId, 20)
-      userMemories = rows.map((r) => ({ category: r.category, key: r.key, value: r.value, confidence: r.confidence }))
-      if (userMemories.length > 0) {
-        logger.log('api', `Loaded ${userMemories.length} user memories`, { userId: authenticatedUserId })
+      const { findMatchingRules } = await import('@/lib/db/queries/permission-rules')
+      permissionRules = await findMatchingRules({
+        userId: authenticatedUserId,
+        workspaceId: runWorkspaceId,
+        projectId: body.projectId ?? null,
+        conversationId: body.conversationId ?? null,
+      })
+      if (permissionRules.length > 0) {
+        logger.log('api', `Loaded ${permissionRules.length} permission rules`, { userId: authenticatedUserId })
       }
     } catch (e) {
-      console.warn('[Agent API] Failed to fetch user memories:', e)
+      console.warn('[Agent API] Failed to fetch permission rules:', e)
     }
   }
 
@@ -461,7 +487,11 @@ export async function POST(req: NextRequest) {
     mediaGenEnabled: body.mediaGenEnabled,
     researchEnabled: body.researchEnabled,
     researchProviderEnabled: body.researchProviderEnabled,
+    ytDlpConsentedProjectIds: body.ytDlpConsentedProjectIds,
     sessionPermissions: body.sessionPermissions,
+    permissionRules,
+    workspaceId: runWorkspaceId,
+    conversationId: body.conversationId ?? null,
     generationOverrides: body.generationOverrides,
     autoChooseDefaults: body.autoChooseDefaults,
     projectAssets: fetchedAssets,

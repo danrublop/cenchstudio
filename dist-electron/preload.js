@@ -10,6 +10,7 @@ const api = {
     webZoomIn: () => electron_1.ipcRenderer.invoke('cench:webZoomIn'),
     webZoomOut: () => electron_1.ipcRenderer.invoke('cench:webZoomOut'),
     webZoomReset: () => electron_1.ipcRenderer.invoke('cench:webZoomReset'),
+    capturePage: (args) => electron_1.ipcRenderer.invoke('cench:capturePage', args),
     saveRecordingSession: (args) => electron_1.ipcRenderer.invoke('cench:saveRecordingSession', args),
     startCursorTelemetry: () => electron_1.ipcRenderer.invoke('cench:startCursorTelemetry'),
     stopCursorTelemetry: () => electron_1.ipcRenderer.invoke('cench:stopCursorTelemetry'),

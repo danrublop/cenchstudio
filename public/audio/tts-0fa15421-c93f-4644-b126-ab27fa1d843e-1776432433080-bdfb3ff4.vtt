@@ -1,0 +1,28 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:02.087
+How big should each step be?
+
+00:00:02.087 --> 00:00:04.522
+That choice is called the learning rate.
+
+00:00:04.522 --> 00:00:06.957
+Small steps move slowly but reliably toward
+
+00:00:06.957 --> 00:00:07.652
+the target.
+
+00:00:07.652 --> 00:00:10.087
+Giant steps overshoot and bounce around, never
+
+00:00:10.087 --> 00:00:10.435
+settling.
+
+00:00:10.435 --> 00:00:12.870
+So, the learning rate is the key
+
+00:00:12.870 --> 00:00:15.304
+dial, small enough to land, big enough
+
+00:00:15.304 --> 00:00:16.000
+to move.

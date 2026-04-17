@@ -1,0 +1,51 @@
+1
+00:00:00,000 --> 00:00:02,834
+Myocarditis predominantly affects young adults, with a
+
+2
+00:00:02,834 --> 00:00:04,049
+3-to-1 male predominance.
+
+3
+00:00:04,049 --> 00:00:06,883
+Epidemiologic studies suggest it underlies 9 to
+
+4
+00:00:06,883 --> 00:00:09,717
+16 percent of sudden cardiac death cases
+
+5
+00:00:09,717 --> 00:00:11,337
+in individuals under 35.
+
+6
+00:00:11,337 --> 00:00:14,171
+Pathophysiology follows three phases: an initial viral
+
+7
+00:00:14,171 --> 00:00:17,005
+entry and direct myocyte injury phase lasting
+
+8
+00:00:17,005 --> 00:00:19,839
+one to three days; an innate and
+
+9
+00:00:19,839 --> 00:00:22,673
+adaptive immune activation phase from days 3
+
+10
+00:00:22,673 --> 00:00:25,507
+through 14, characterized by T-cell infiltration and
+
+11
+00:00:25,507 --> 00:00:28,341
+cytokine release; and a chronic fibrotic remodeling
+
+12
+00:00:28,341 --> 00:00:31,176
+phase if the inflammatory insult is not
+
+13
+00:00:31,176 --> 00:00:33,200
+resolved, predisposing to dilated cardiomyopathy.

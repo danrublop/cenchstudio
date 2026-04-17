@@ -1,0 +1,19 @@
+1
+00:00:00,000 --> 00:00:03,015
+Myocarditis is an inflammatory disease of the
+
+2
+00:00:03,015 --> 00:00:03,446
+myocardium.
+
+3
+00:00:03,446 --> 00:00:06,462
+This presentation reviews the adverse effects of
+
+4
+00:00:06,462 --> 00:00:09,477
+myocarditis and their clinical implications for patient
+
+5
+00:00:09,477 --> 00:00:11,200
+management and risk stratification.

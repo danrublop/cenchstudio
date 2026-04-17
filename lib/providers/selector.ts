@@ -37,6 +37,13 @@ export interface SelectionContext {
   platform?: string
   /** Prior provider used in the project, for continuity scoring. */
   lastProviderId?: string
+  /** When true, only consider providers that produce server-side artifacts
+   *  the MP4 export can ingest. Client-only providers (web-speech, puter)
+   *  are filtered out. Set for MP4 renders; leave unset for browser preview. */
+  requiresServerOutput?: boolean
+  /** Provider IDs to exclude from ranking (e.g. explicitly denied by project
+   *  permissions). Useful when the policy layer has already ruled them out. */
+  excludeIds?: string[]
 }
 
 export interface ProviderProfile<Id extends string = string> {
@@ -66,6 +73,11 @@ export interface ProviderProfile<Id extends string = string> {
 
   /** Optional short reason string surfaced when this provider wins. */
   reasonHint?: string
+
+  /** Providers that only produce output in the browser (web-speech, puter).
+   *  These are filtered out when `ctx.requiresServerOutput` is true — e.g.
+   *  for MP4 export where the renderer needs a real audio file. */
+  clientOnly?: boolean
 }
 
 export interface SelectionWeights {
@@ -143,8 +155,11 @@ export function selectBestProvider<Id extends string>(
   ctx: SelectionContext,
   weights: SelectionWeights = DEFAULT_WEIGHTS,
 ): SelectionResult<Id> {
+  const excluded = new Set(ctx.excludeIds ?? [])
   const available = profiles.filter((p) => {
+    if (excluded.has(p.id)) return false
     if (ctx.enabled && ctx.enabled[p.id] === false) return false
+    if (ctx.requiresServerOutput && p.clientOnly) return false
     try {
       return p.available(ctx)
     } catch {

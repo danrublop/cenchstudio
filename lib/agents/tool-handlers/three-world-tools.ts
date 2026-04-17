@@ -5,6 +5,7 @@ import type { AgentLogger } from '@/lib/agents/logger'
 import type { WorldStateMutable } from '@/lib/agents/tool-executor'
 import { clearStaleCodeFields } from '@/lib/agents/tool-executor'
 import { ok, err, findScene, updateScene, type ToolResult } from './_shared'
+import { applyPostFxToSceneCode, applyStageEnvToSceneCode } from './three-postfx-patch'
 
 export const THREE_WORLD_TOOL_NAMES = [
   'search_3d_models',
@@ -13,6 +14,32 @@ export const THREE_WORLD_TOOL_NAMES = [
   'create_world_scene',
   'list_3d_assets',
   'extrude_svg_to_3d',
+  'apply_three_postfx',
+  'set_three_stage_environment',
+] as const
+
+const THREE_POSTFX_PRESETS = [
+  'bloom',
+  'cinematic',
+  'cyberpunk',
+  'vintage',
+  'dream',
+  'matrix',
+  'retroPixel',
+  'ghibli',
+  'noir',
+  'sharpCorporate',
+  'custom',
+] as const
+
+const THREE_STAGE_ENV_IDS = [
+  'studio_white',
+  'cinematic_fog',
+  'iso_playful',
+  'tech_grid',
+  'nature_sunset',
+  'data_lab',
+  'track_rolling_topdown',
 ] as const
 
 // ── Handler Factory ──────────────────────────────────────────────────────────
@@ -398,6 +425,82 @@ window.__tl.to({}, {
           sceneId,
           `Extruded SVG "${asset.name}" into 3D scene with ${materialStyle} material (depth: ${depth}).`,
         )
+      }
+
+      // ── apply_three_postfx ──────────────────────────────────────────────
+      case 'apply_three_postfx': {
+        const sceneId = args.sceneId as string
+        const layerId = args.layerId as string | undefined
+        const preset = args.preset as string
+        const custom = args.custom as Record<string, unknown> | undefined
+        if (!sceneId) return err('sceneId is required')
+        if (!preset) return err('preset is required')
+        if (!THREE_POSTFX_PRESETS.includes(preset as (typeof THREE_POSTFX_PRESETS)[number])) {
+          return err(`Invalid preset "${preset}". Must be one of: ${THREE_POSTFX_PRESETS.join(', ')}`)
+        }
+        if (preset === 'custom' && (!custom || typeof custom !== 'object')) {
+          return err('preset="custom" requires a `custom` object with post-fx opts.')
+        }
+
+        const scene = findScene(world, sceneId)
+        if (!scene) return err(`Scene ${sceneId} not found`)
+
+        let summaryLines: string[] = []
+
+        if (layerId) {
+          const layer = Array.isArray(scene.aiLayers) ? scene.aiLayers.find((l: any) => l?.id === layerId) : null
+          if (!layer) return err(`Layer ${layerId} not found on scene ${sceneId}`)
+          const currentCode: string = (layer as any).generatedCode || ''
+          if (!currentCode) return err(`Layer ${layerId} has no generatedCode to patch.`)
+          const { code: nextCode, summary } = applyPostFxToSceneCode(currentCode, preset, custom)
+          ;(layer as any).generatedCode = nextCode
+          summaryLines.push(`Layer ${layerId}: ${summary}`)
+        } else {
+          const currentCode: string = scene.sceneCode || ''
+          if (!currentCode) return err(`Scene ${sceneId} has no sceneCode to patch. Generate the scene first.`)
+          const { code: nextCode, summary } = applyPostFxToSceneCode(currentCode, preset, custom)
+          updateScene(world, sceneId, { sceneCode: nextCode })
+          summaryLines.push(summary)
+        }
+
+        await deps.regenerateHTML(world, sceneId, logger)
+        return ok(sceneId, summaryLines.join(' '))
+      }
+
+      // ── set_three_stage_environment ─────────────────────────────────────
+      case 'set_three_stage_environment': {
+        const sceneId = args.sceneId as string
+        const layerId = args.layerId as string | undefined
+        const envId = args.envId as string
+        if (!sceneId) return err('sceneId is required')
+        if (!envId) return err('envId is required')
+        if (!THREE_STAGE_ENV_IDS.includes(envId as (typeof THREE_STAGE_ENV_IDS)[number])) {
+          return err(`Invalid envId "${envId}". Must be one of: ${THREE_STAGE_ENV_IDS.join(', ')}`)
+        }
+
+        const scene = findScene(world, sceneId)
+        if (!scene) return err(`Scene ${sceneId} not found`)
+
+        let summary: string
+
+        if (layerId) {
+          const layer = Array.isArray(scene.aiLayers) ? scene.aiLayers.find((l: any) => l?.id === layerId) : null
+          if (!layer) return err(`Layer ${layerId} not found on scene ${sceneId}`)
+          const currentCode: string = (layer as any).generatedCode || ''
+          if (!currentCode) return err(`Layer ${layerId} has no generatedCode to patch.`)
+          const res = applyStageEnvToSceneCode(currentCode, envId)
+          ;(layer as any).generatedCode = res.code
+          summary = `Layer ${layerId}: ${res.summary}`
+        } else {
+          const currentCode: string = scene.sceneCode || ''
+          if (!currentCode) return err(`Scene ${sceneId} has no sceneCode to patch. Generate the scene first.`)
+          const res = applyStageEnvToSceneCode(currentCode, envId)
+          updateScene(world, sceneId, { sceneCode: res.code })
+          summary = res.summary
+        }
+
+        await deps.regenerateHTML(world, sceneId, logger)
+        return ok(sceneId, summary)
       }
 
       default:

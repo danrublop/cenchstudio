@@ -225,6 +225,19 @@ electron_1.app.whenReady().then(() => {
         win.webContents.setZoomFactor(1);
         return { ok: true, factor: 1 };
     });
+    electron_1.ipcMain.handle('cench:capturePage', async (_evt, args) => {
+        const win = webZoomTargetWindow();
+        if (!win)
+            return { ok: false, error: 'no window' };
+        try {
+            const image = args?.rect ? await win.webContents.capturePage(args.rect) : await win.webContents.capturePage();
+            const dataUri = image.toDataURL();
+            return { ok: true, dataUri, mimeType: 'image/png' };
+        }
+        catch (err) {
+            return { ok: false, error: err.message };
+        }
+    });
     electron_1.ipcMain.handle('cench:saveDialog', async (_evt, suggestedName) => {
         const res = await electron_1.dialog.showSaveDialog({
             title: 'Save exported video',

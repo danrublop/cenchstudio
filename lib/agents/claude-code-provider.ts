@@ -31,6 +31,11 @@ interface ClaudeCodeOptions {
   allowedTools?: string
   model?: string
   maxBudgetUsd?: number
+  /** Claude Code's internal "effort" knob — low/medium/high/xhigh/max.
+   *  Higher effort = more turns per invocation = more scenes built in one go.
+   *  The user-observed "only 2 scenes built then stopped" is CC running out of
+   *  effort budget on a complex task. Default to 'max' for Master-Builder parity. */
+  effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
   history?: Array<{ role: string; content: string }>
   emit: (event: SSEEvent) => void
   abortSignal?: AbortSignal
@@ -79,7 +84,12 @@ export async function runWithClaudeCode(opts: ClaudeCodeOptions): Promise<Claude
     projectId,
     agentType = 'scene-maker',
     model = 'sonnet',
-    maxBudgetUsd = 2.0,
+    // Bump default budget — $2 was exhausted by 2-scene builds on Sonnet with a
+    // long system prompt. Master-Builder parity calls for bigger runway.
+    maxBudgetUsd = 10.0,
+    // Default to 'max' effort — CC's internal turn budget is what was limiting
+    // runs to 2 scenes. Callers can downshift for single-scene edits.
+    effort = 'max',
     emit,
     abortSignal,
     cwd = process.cwd(),
@@ -145,6 +155,23 @@ export async function runWithClaudeCode(opts: ClaudeCodeOptions): Promise<Claude
     promptText = `<conversation_history>\n${transcript}\n</conversation_history>\n\nUser: ${message}`
   }
 
+  // Let Claude Code use its NATIVE read/research tools in addition to MCP.
+  //   Read, Glob, Grep — explore the repo (CLAUDE.md, skills, existing scene code)
+  //   WebSearch, WebFetch — Anthropic's own server-side research (free under CC billing)
+  // Mutations stay on MCP-only (scene creation, file writes happen through /api/scene
+  // which keeps DB + public/scenes/*.html in sync). Without this, CC CLI has no way to
+  // actually BE Claude Code in the app — it can't read CLAUDE.md, can't browse its own
+  // skills, can't search the web. Just 125 MCP tools and a long system prompt, which is
+  // exactly what made it stall on your myocarditis run.
+  const defaultAllowedTools = [
+    'mcp__cench-studio__*', // all Cench MCP tools
+    'Read',
+    'Glob',
+    'Grep',
+    'WebSearch',
+    'WebFetch',
+  ].join(',')
+
   const args = [
     '-p',
     promptText,
@@ -154,6 +181,20 @@ export async function runWithClaudeCode(opts: ClaudeCodeOptions): Promise<Claude
     '--verbose',
     '--model',
     model,
+    // Effort level — controls how many internal turns CC invests. Without this
+    // (or with 'low'/'medium') CC will cut runs short, which is how we got "2
+    // scenes then stop" on a 5-scene video. 'max' gives CC enough rope to build
+    // the whole thing in one subprocess, matching the in-app Master Builder loop.
+    '--effort',
+    effort,
+    // Permission mode — in -p (print) mode CC already skips interactive prompts
+    // for approved tools, but permission-gated tools (Bash, WebFetch with private
+    // hosts, etc.) can still quietly fail. bypassPermissions lets CC run every
+    // allowed tool without its own permission layer intervening. Our --allowedTools
+    // already restricts the surface, and our MCP-level gates still enforce paid-API
+    // checks. So this is safe in-scope.
+    '--permission-mode',
+    'bypassPermissions',
     '--max-budget-usd',
     String(maxBudgetUsd),
     '--system-prompt-file',
@@ -162,7 +203,7 @@ export async function runWithClaudeCode(opts: ClaudeCodeOptions): Promise<Claude
     mcpConfigPath,
     '--strict-mcp-config',
     '--allowedTools',
-    opts.allowedTools ?? 'mcp__cench-studio__*',
+    opts.allowedTools ?? defaultAllowedTools,
     '--no-session-persistence',
   ]
 
@@ -175,6 +216,14 @@ export async function runWithClaudeCode(opts: ClaudeCodeOptions): Promise<Claude
     let proc: ChildProcess
 
     try {
+      // Surface the allowedTools flag so it's obvious in the dev-server log
+      // whether native tools (Read/Glob/Grep/WebSearch/WebFetch) are reaching CC.
+      // Logging only the flag (not full args — those include the prompt text).
+      const allowedToolsIdx = args.indexOf('--allowedTools')
+      const allowedToolsValue = allowedToolsIdx >= 0 ? args[allowedToolsIdx + 1] : '(missing)'
+      console.error(
+        `[claude-code-provider] spawning claude --model ${model} --allowedTools="${allowedToolsValue.slice(0, 300)}${allowedToolsValue.length > 300 ? '…' : ''}"`,
+      )
       proc = spawn('claude', args, {
         cwd,
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -321,10 +370,14 @@ export async function runWithClaudeCode(opts: ClaudeCodeOptions): Promise<Claude
             if (sceneTool && toolResult.success) {
               const input = currentToolInput as Record<string, any>
               // Derive build phase from the tool that just ran
-              const isVerify = currentToolName === 'verify_scene'
+              const isVerify = currentToolName === 'verify_scene' || currentToolName === 'verify_scene_pedagogy'
               const hasCode = /add_layer|write_scene_code|regenerate_layer|patch_layer/.test(currentToolName ?? '')
-              const phase = isVerify ? 'verified' : hasCode ? 'rendered' : 'generating'
-              const isStillBuilding = phase !== 'verified' && phase !== 'done'
+              const phase: 'verified' | 'rendered' | 'generating' = isVerify
+                ? 'verified'
+                : hasCode
+                  ? 'rendered'
+                  : 'generating'
+              const isStillBuilding = phase !== 'verified'
 
               // Derive sceneId: either from the tool input (add_layer, etc.)
               // or from the MCP tool response for create_scene / write_scene_code.
@@ -381,7 +434,7 @@ export async function runWithClaudeCode(opts: ClaudeCodeOptions): Promise<Claude
             // Track metrics for richer progress events
             if (toolResult.success) {
               if (currentToolName && /create_scene|write_scene_code/.test(currentToolName)) scenesCreated++
-              if (currentToolName === 'verify_scene') scenesVerified++
+              if (currentToolName === 'verify_scene' || currentToolName === 'verify_scene_pedagogy') scenesVerified++
             } else {
               errorCount++
             }
@@ -505,14 +558,35 @@ export async function runWithClaudeCode(opts: ClaudeCodeOptions): Promise<Claude
         }
       }
 
-      emit({
-        type: 'done',
-        agentType: agentType as any,
-        modelId: `claude-code:${model}` as any,
-        fullText: fullText.trim(),
-        toolCalls,
-        usage,
-      })
+      // Detect the "text-only, no-tools" failure mode.
+      // Haiku with a long system prompt will sometimes write the entire plan as prose
+      // and never invoke a tool — exiting cleanly with 10k+ output tokens but zero
+      // tool_use blocks. Without this check the UI shows the plan as a final message
+      // and the timeline stays empty, which looks like a silent success.
+      const wroteSubstantialText = fullText.trim().length > 400
+      const noActionsTaken = toolCalls.length === 0 && scenesCreated === 0
+      if (code === 0 && wroteSubstantialText && noActionsTaken) {
+        const hint =
+          model === 'haiku' || model.includes('haiku')
+            ? ' This is a known Haiku failure mode on complex multi-scene tasks — switch to Sonnet in the model picker and retry.'
+            : ' The model narrated a plan instead of invoking tools. Retry with a more direct prompt, or split into smaller requests.'
+        emit({
+          type: 'error',
+          error:
+            `Claude Code produced ${totalOutputTokens} output tokens but invoked zero tools — ` +
+            `nothing was built on the timeline.${hint}`,
+        })
+        usage.apiCalls = 0 // mark this as a no-op run for usage tracking
+      } else {
+        emit({
+          type: 'done',
+          agentType: agentType as any,
+          modelId: `claude-code:${model}` as any,
+          fullText: fullText.trim(),
+          toolCalls,
+          usage,
+        })
+      }
 
       if (code !== 0 && code !== null) {
         const errorMsg = `Claude Code exited with code ${code}`

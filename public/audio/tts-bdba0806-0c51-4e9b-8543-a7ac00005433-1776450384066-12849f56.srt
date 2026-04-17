@@ -1,0 +1,27 @@
+1
+00:00:00,000 --> 00:00:02,903
+Pathophysiology unfolds in three phases.
+
+2
+00:00:02,903 --> 00:00:06,387
+First, direct viral injury triggers cardiomyocyte
+
+3
+00:00:06,387 --> 00:00:06,968
+apoptosis.
+
+4
+00:00:06,968 --> 00:00:10,452
+Second, the immune response amplifies damage
+
+5
+00:00:10,452 --> 00:00:12,194
+through T-cell infiltration.
+
+6
+00:00:12,194 --> 00:00:15,677
+Third, chronic inflammation drives fibrosis and
+
+7
+00:00:15,677 --> 00:00:18,000
+structural remodeling over months.

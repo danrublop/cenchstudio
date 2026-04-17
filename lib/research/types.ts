@@ -107,3 +107,74 @@ export interface StockVideoSearchOptions {
   maxDurationSec?: number
   minWidth?: number
 }
+
+export interface StockImage {
+  id: string
+  source: 'unsplash' | 'pexels' | 'pixabay' | 'nasa' | 'wikimedia'
+  sourceUrl: string
+  /** Direct URL of the raw image (highest available) */
+  url: string
+  /** Smaller preview/thumbnail for UI */
+  thumbnailUrl: string
+  width: number
+  height: number
+  alt?: string
+  author?: string
+  authorUrl?: string
+  license: string
+  tags?: string[]
+}
+
+export interface StockImageSearchResponse {
+  results: StockImage[]
+  query: string
+  provider: string
+  totalFound?: number
+}
+
+export interface StockImageSearchOptions {
+  query: string
+  count?: number
+  orientation?: 'landscape' | 'portrait' | 'square'
+  minWidth?: number
+}
+
+/**
+ * Archival media — Archive.org, NASA, Wikimedia Commons.
+ * Unified shape covering both images and videos so the agent has one tool for "real-world reference material".
+ */
+export interface ArchivalItem {
+  id: string
+  source: 'archive-org' | 'nasa' | 'wikimedia'
+  sourceUrl: string
+  title: string
+  description?: string
+  mediaType: 'image' | 'video' | 'audio'
+  /** Direct URL to highest-quality media file */
+  mediaUrl: string
+  thumbnailUrl?: string
+  /** For images: dimensions. For video/audio: dimensions if known. */
+  width?: number
+  height?: number
+  durationSec?: number
+  /** ISO date or free-text date string from the provider */
+  publishedAt?: string
+  author?: string
+  license: string
+  tags?: string[]
+}
+
+export interface ArchivalSearchResponse {
+  results: ArchivalItem[]
+  query: string
+  provider: string
+  totalFound?: number
+}
+
+export interface ArchivalSearchOptions {
+  query: string
+  count?: number
+  mediaType?: 'image' | 'video' | 'audio' | 'any'
+  yearFrom?: number
+  yearTo?: number
+}

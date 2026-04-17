@@ -6,6 +6,7 @@ export type APIName =
   | 'kling'
   | 'runway'
   | 'imageGen'
+  | 'imageEnhance'
   | 'backgroundRemoval'
   | 'elevenLabs'
   | 'unsplash'
@@ -47,6 +48,7 @@ export interface APIPermissions {
   kling: PermissionConfig
   runway: PermissionConfig
   imageGen: PermissionConfig
+  imageEnhance: PermissionConfig
   backgroundRemoval: PermissionConfig
   elevenLabs: PermissionConfig
   unsplash: PermissionConfig
@@ -85,3 +87,99 @@ export interface PermissionResponse {
   decision: 'allow' | 'deny'
   remember: 'once' | 'session' | 'always'
 }
+
+// ── Rule-based permissions (Claude-Code-style) ──────────────────────────────
+
+/** Scopes stack user → workspace → project → session, plus transient per-call. */
+export const PERMISSION_SCOPES = ['user', 'workspace', 'project', 'session'] as const
+export type PermissionScope = (typeof PERMISSION_SCOPES)[number]
+
+export const PERMISSION_DECISIONS = ['allow', 'deny', 'ask'] as const
+export type PermissionDecision = (typeof PERMISSION_DECISIONS)[number]
+
+/** Rule precedence (lower = higher priority). Used by evaluator tie-breaking
+ *  when multiple rules match; deny-wins still overrides this. */
+export const SCOPE_PRECEDENCE: Record<PermissionScope, number> = {
+  session: 0,
+  project: 1,
+  workspace: 2,
+  user: 3,
+}
+
+/** Sub-target conditions. All provided fields must match; unset fields match any. */
+export interface RuleSpecifier {
+  /** Provider id within the API (e.g. `flux-schnell`, `veo3`, `elevenlabs-turbo`). */
+  provider?: string
+  /** Provider-specific model id. */
+  model?: string
+  /** Max duration in seconds (video/tts). */
+  durationMax?: number
+  /** Min duration in seconds. */
+  durationMin?: number
+  /** Max per-call cost in USD. Independent of rule decision — used by evaluator
+   *  to escalate an otherwise-allowed call back to `ask` when estimate exceeds. */
+  costMax?: number
+  /** All substrings must appear (case-insensitive) in the prompt to match. */
+  promptContains?: string[]
+  /** If any substring appears in the prompt, the rule does NOT match. */
+  promptNotContains?: string[]
+}
+
+/** Call-site context passed to the evaluator. */
+export interface PermissionCallDetails {
+  prompt?: string
+  duration?: number
+  provider?: string
+  model?: string
+  resolution?: string
+  /** Scalar estimate in USD. Required for costMax gating. */
+  estimatedCostUsd?: number
+}
+
+/** A single layered permission rule. Lives in `permission_rules` table. */
+export interface PermissionRule {
+  id: string
+  scope: PermissionScope
+  /** Always set — rules are authored by an authenticated user. */
+  userId: string
+  /** Set when scope ∈ {workspace, project, session}. */
+  workspaceId: string | null
+  /** Set when scope ∈ {project, session}. */
+  projectId: string | null
+  /** Set when scope = session. */
+  conversationId: string | null
+  decision: PermissionDecision
+  /** `*` matches any API. */
+  api: APIName | '*'
+  specifier: RuleSpecifier | null
+  /** Optional per-call cost cap. Applied even when decision is `allow`. */
+  costCapUsd: number | null
+  /** When non-null the rule is ignored after this moment. */
+  expiresAt: Date | null
+  createdAt: Date
+  createdBy: 'user-settings' | 'dialog' | 'migration' | 'admin'
+  notes: string | null
+}
+
+/** Everything needed to evaluate a single call. */
+export interface PermissionContext {
+  userId: string
+  workspaceId: string | null
+  projectId: string | null
+  conversationId: string | null
+  api: APIName
+  call: PermissionCallDetails
+}
+
+/** Spend state flows in from project-level cost tracking (unchanged). */
+export interface SpendState {
+  sessionSpend: number
+  sessionLimit: number | null
+  monthlySpend: number
+  monthlyLimit: number | null
+}
+
+export type PermissionEvalResult =
+  | { action: 'allow'; matchedRuleId: string | null }
+  | { action: 'deny'; reason: string; matchedRuleId: string | null }
+  | { action: 'ask'; reason: string; costTriggered: boolean; matchedRuleId: string | null }

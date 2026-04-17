@@ -19,6 +19,7 @@ import type {
 } from './types'
 import { getAgentPrompt } from './prompts'
 import { getModelProvider } from './types'
+import { modelHasNativeWebSearch } from './model-config'
 import { resolveStyle, getPreset, type StylePresetId } from '../styles/presets'
 import { ALL_TOOLS, AGENT_TOOLS, patchToolDimensions } from './tools'
 import { resolveProjectDimensions } from '../dimensions'
@@ -529,31 +530,54 @@ function filterToolsForAgent(
 }
 
 /**
- * Replace our custom web_search tool definition with the provider's native
- * server-tool when the active model supports it (Anthropic/OpenAI/Google run
- * search on their side — zero Brave key, single round-trip, no handler exec).
- * For local / unknown providers, keep our Brave-backed custom tool.
+ * Native-search marker types. The runner keys off these to inject the correct
+ * provider-side search tool at request time, and strips them out of the function-tool
+ * lists that get sent to OpenAI / Gemini (they aren't function tools — they're
+ * provider-hosted server tools with non-OpenAPI-shaped configs).
+ *
+ *  - `web_search_20250305` — Anthropic server tool, sent as-is on the Anthropic tools array.
+ *  - `openai_web_search`   — runner routes to Responses API `web_search_preview` (or Chat
+ *                             Completions search-preview fallback).
+ *  - `google_search`       — runner adds `{ googleSearch: {} }` to Gemini `tools`.
  */
-function swapNativeSearchTool(
+export const NATIVE_SEARCH_MARKER_TYPES = new Set<string>(['web_search_20250305', 'openai_web_search', 'google_search'])
+
+export function isNativeSearchMarker(tool: ClaudeToolDefinition): boolean {
+  return tool.type != null && NATIVE_SEARCH_MARKER_TYPES.has(tool.type)
+}
+
+/**
+ * Replace our custom web_search tool definition with the provider's native server-tool
+ * when the active model supports it (Anthropic/OpenAI/Google run search on their side —
+ * zero Brave key, single round-trip, no handler exec). For local / claude-code / models
+ * without native search, keep our custom tool so the third-party fallback path works.
+ */
+export function swapNativeSearchTool(
   tools: ClaudeToolDefinition[],
   provider: 'anthropic' | 'openai' | 'google' | 'local' | 'claude-code',
+  modelId: ModelId,
   researchEnabled: boolean,
 ): ClaudeToolDefinition[] {
   if (!researchEnabled) return tools
   const hasWebSearch = tools.some((t) => t.name === 'web_search')
   if (!hasWebSearch) return tools
 
+  // Only swap if the specific model is flagged as supporting native search.
+  // Models like OpenAI o1 advertise no web search, so we leave the custom tool in place.
+  if (!modelHasNativeWebSearch(modelId)) return tools
+
   if (provider === 'anthropic') {
-    // Anthropic's web_search_20250305 server tool — max_uses caps per-turn calls.
     return tools.map((t) =>
       t.name === 'web_search' ? { name: 'web_search', type: 'web_search_20250305', max_uses: 5 } : t,
     )
   }
-  // OpenAI Responses API has web_search_preview but our runner currently uses
-  // Chat Completions, so leave our Brave-backed handler active for OpenAI too
-  // until the runner gains a Responses-API path.
-  // Gemini has google_search grounding via a different shape — same note.
-  // Local / claude-code / unknown: use our Brave-backed custom tool as-is.
+  if (provider === 'openai') {
+    return tools.map((t) => (t.name === 'web_search' ? { name: 'web_search', type: 'openai_web_search' } : t))
+  }
+  if (provider === 'google') {
+    return tools.map((t) => (t.name === 'web_search' ? { name: 'web_search', type: 'google_search' } : t))
+  }
+  // local / claude-code: use custom web_search tool; third-party router handles fallback.
   return tools
 }
 
@@ -1000,7 +1024,7 @@ ${worldStateSerialized}
   const provider = getModelProvider(modelId)
   // Swap our custom web_search tool for the provider-native server-tool when the
   // active model supports it. Zero Brave key needed for cloud providers.
-  const tools = swapNativeSearchTool(rawTools, provider, opts.researchEnabled ?? false)
+  const tools = swapNativeSearchTool(rawTools, provider, modelId, opts.researchEnabled ?? false)
   const effectiveThinking = agentType === 'router' || provider !== 'anthropic' ? ('off' as ThinkingMode) : thinkingMode
   // Only inflate maxTokens for thinking budget on Anthropic models
   const maxTokens = resolveMaxTokensForThinking(MAX_TOKENS_BY_AGENT[agentType], effectiveThinking)
