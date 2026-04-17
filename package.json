@@ -24,6 +24,11 @@
     "mcp": "npx tsx scripts/mcp-server.ts",
     "sfx-library:fetch": "npx tsx scripts/fetch-sfx-library.ts",
     "sfx-library:zzfx": "npx tsx scripts/build-native-sfx-zzfx.ts",
+    "validate-env": "npx tsx scripts/validate-env.ts",
+    "dist": "npm run build:electron && electron-builder",
+    "dist:mac": "npm run build:electron && electron-builder --mac",
+    "dist:win": "npm run build:electron && electron-builder --win",
+    "dist:dir": "npm run build:electron && electron-builder --dir",
     "lint": "eslint .",
     "lint:strict": "eslint .",
     "lint:fix": "eslint . --fix",
@@ -123,6 +128,8 @@
     "concurrently": "^9.2.1",
     "drizzle-kit": "^0.31.10",
     "electron": "^41.1.1",
+    "electron-builder": "^26.8.1",
+    "electron-icon-builder": "^2.0.1",
     "eslint": "^10.2.0",
     "eslint-config-next": "^16.2.2",
     "eslint-config-prettier": "^10.1.8",
@@ -139,5 +146,71 @@
     "typescript-eslint": "^8.58.0",
     "vitest": "^4.1.2",
     "wait-on": "^9.0.4"
+  },
+  "main": "dist-electron/main.js",
+  "build": {
+    "appId": "com.cench.studio",
+    "productName": "Cench Studio",
+    "asar": true,
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist-electron/**/*",
+      "out/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "render-server/stitcher.js",
+        "to": "render-server/stitcher.js"
+      },
+      {
+        "from": "render-server/audio-mixer.js",
+        "to": "render-server/audio-mixer.js"
+      }
+    ],
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "category": "public.app-category.video",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "category": "AudioVideo"
+    }
   }
 }

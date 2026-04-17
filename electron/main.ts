@@ -1,8 +1,7 @@
 import path from 'path'
-import http from 'http'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
-import { app, BrowserWindow, ipcMain, dialog, Menu, screen, session, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, Menu, net, protocol, screen, session, shell } from 'electron'
 import fs from 'fs/promises'
 import { pathToFileURL } from 'url'
 
@@ -12,8 +11,87 @@ function webZoomTargetWindow() {
   return BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0] ?? null
 }
 
+// Dev-mode only. In packaged builds the renderer loads `cench://app/index.html`
+// via the protocol handler registered below — no HTTP server is ever reached.
 const DEV_URL = process.env.ELECTRON_START_URL || 'http://localhost:3000'
-const EXPORT_API_PORT = 3002
+
+// Runtime-writable scene HTML directory. In the packaged app, scenes cannot
+// be written back into the read-only `out/` bundle, so we split:
+//   cench://app/...     → Next static export (read-only bundle)
+//   cench://scenes/...  → user-data directory (writable at runtime)
+function getUserScenesDir(): string {
+  return path.join(app.getPath('userData'), 'scenes')
+}
+
+function getStaticAppDir(): string {
+  // In dev this resolves to `<repo>/out`. In the packaged app, `__dirname`
+  // is `<Resources>/app.asar/dist-electron`, so `../out` resolves to
+  // `<Resources>/app.asar/out`. Electron's fs layer reads through the asar
+  // transparently, so no separate packaged branch is needed.
+  return path.join(__dirname, '..', 'out')
+}
+
+// Privileged scheme must be registered synchronously before `app.ready`.
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'cench',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      stream: true,
+    },
+  },
+])
+
+async function registerCenchProtocol(): Promise<void> {
+  const staticDir = path.resolve(getStaticAppDir())
+  const scenesDir = path.resolve(getUserScenesDir())
+  await fs.mkdir(scenesDir, { recursive: true })
+
+  protocol.handle('cench', async (request) => {
+    try {
+      const url = new URL(request.url)
+      const host = url.hostname
+      const rawPath = decodeURIComponent(url.pathname).replace(/^\/+/, '')
+
+      let baseDir: string
+      if (host === 'scenes') {
+        baseDir = scenesDir
+      } else if (host === 'app' || host === '') {
+        baseDir = staticDir
+      } else {
+        return new Response(`Unknown cench:// host "${host}"`, { status: 404 })
+      }
+
+      let filePath = path.resolve(baseDir, rawPath || 'index.html')
+      if (!filePath.startsWith(baseDir + path.sep) && filePath !== baseDir) {
+        return new Response('Forbidden', { status: 403 })
+      }
+
+      // Fall through to index.html for directory paths
+      try {
+        const stat = await fs.stat(filePath)
+        if (stat.isDirectory()) filePath = path.join(filePath, 'index.html')
+      } catch {
+        // Next.js static export writes `foo.html` for `/foo` — try that too
+        if (!filePath.endsWith('.html')) {
+          const htmlVariant = `${filePath}.html`
+          try {
+            await fs.access(htmlVariant)
+            filePath = htmlVariant
+          } catch {}
+        }
+      }
+
+      return net.fetch(pathToFileURL(filePath).toString())
+    } catch (err) {
+      console.error('[cench-protocol] failed to serve', request.url, err)
+      return new Response('Internal error', { status: 500 })
+    }
+  })
+}
 
 function sanitizeFilename(hint: string, fallback = 'recording'): string {
   return (
@@ -43,7 +121,8 @@ function createWindow() {
     },
   })
 
-  win.loadURL(DEV_URL)
+  const appUrl = app.isPackaged ? 'cench://app/index.html' : DEV_URL
+  win.loadURL(appUrl)
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
 
   const template: Electron.MenuItemConstructorOptions[] = [
@@ -183,7 +262,7 @@ function createWindow() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   ipcMain.handle('cench:gitStatus', async () => {
     const cwd = process.cwd()
     try {
@@ -427,6 +506,8 @@ app.whenReady().then(() => {
     callback(allowed.includes(permission))
   })
 
+  await registerCenchProtocol()
+
   createWindow()
 
   // ── Allow screen/window capture via getDisplayMedia in renderer ────
@@ -445,250 +526,8 @@ app.whenReady().then(() => {
     }
   })
 
-  // ── Export API server ──────────────────────────────────────────────
-  // Allows triggering Electron-path exports via HTTP:
-  //   POST http://localhost:3002/export
-  //   { projectId, outputPath?, resolution?, fps?, profile? }
-  const exportServer = http.createServer(async (req, res) => {
-    res.setHeader('Access-Control-Allow-Origin', '*')
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
-
-    if (req.method === 'OPTIONS') {
-      res.writeHead(204)
-      res.end()
-      return
-    }
-
-    const json = (data: any, status = 200) => {
-      res.writeHead(status, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify(data))
-    }
-
-    const getWin = () => {
-      const win = BrowserWindow.getAllWindows()[0]
-      if (!win) {
-        json({ error: 'No Electron window available' }, 503)
-        return null
-      }
-      return win
-    }
-
-    if (req.method === 'GET' && req.url === '/health') {
-      return json({ status: 'ok', type: 'electron-export' })
-    }
-
-    // ── Recording endpoints ──────────────────────────────────────────
-    if (req.method === 'GET' && req.url === '/recording/sources') {
-      return json({ sources: [], note: 'Source selection now uses native OS picker via getDisplayMedia()' })
-    }
-
-    if (req.method === 'GET' && req.url === '/recording/status') {
-      const win = getWin()
-      if (!win) return
-      try {
-        const result = await win.webContents.executeJavaScript(`
-          (() => {
-            const s = window.__cenchStore.getState();
-            return {
-              state: s.recordingState,
-              elapsed: s.recordingElapsed,
-              config: s.recordingConfig,
-              error: s.recordingError,
-              result: s.recordingResult,
-            };
-          })()
-        `)
-        return json(result)
-      } catch (err: any) {
-        return json({ error: err.message }, 500)
-      }
-    }
-
-    if (req.method === 'GET' && req.url === '/recording/sessions') {
-      try {
-        const dir = path.join(app.getPath('userData'), 'recordings')
-        const files = await fs.readdir(dir).catch(() => [] as string[])
-        const sessions = []
-        for (const f of files) {
-          if (!f.endsWith('.session.json')) continue
-          try {
-            const data = JSON.parse(await fs.readFile(path.join(dir, f), 'utf-8'))
-            sessions.push(data)
-          } catch {
-            /* skip corrupt manifests */
-          }
-        }
-        sessions.sort((a: any, b: any) => (b.createdAt || 0) - (a.createdAt || 0))
-        return json({ sessions })
-      } catch (err: any) {
-        return json({ error: err.message }, 500)
-      }
-    }
-
-    // POST recording endpoints — parse body
-    if (req.method === 'POST' && req.url?.startsWith('/recording/')) {
-      const chunks: Buffer[] = []
-      for await (const chunk of req) chunks.push(Buffer.from(chunk))
-      let body: any = {}
-      try {
-        body = JSON.parse(Buffer.concat(chunks).toString())
-      } catch {
-        /* empty body OK */
-      }
-      const win = getWin()
-      if (!win) return
-
-      const action = req.url.replace('/recording/', '')
-      try {
-        if (action === 'start') {
-          const configJson = JSON.stringify(body.config || body || {})
-          const sceneId = body.sceneId ? JSON.stringify(body.sceneId) : 'null'
-          const result = await win.webContents.executeJavaScript(`
-            (() => {
-              const s = window.__cenchStore.getState();
-              if (s.recordingState !== 'idle') return { error: 'Recording already active', state: s.recordingState };
-              s.setRecordingConfig(${configJson});
-              s.setRecordingAttachSceneId(${sceneId});
-              s.setRecordingCommand('start');
-              return { ok: true };
-            })()
-          `)
-          return json(result, result.error ? 409 : 200)
-        }
-        if (action === 'stop') {
-          const sceneId = body.sceneId ? JSON.stringify(body.sceneId) : 'null'
-          const result = await win.webContents.executeJavaScript(`
-            (() => {
-              const s = window.__cenchStore.getState();
-              if (s.recordingState !== 'recording' && s.recordingState !== 'paused')
-                return { error: 'No active recording', state: s.recordingState };
-              if (${sceneId}) s.setRecordingAttachSceneId(${sceneId});
-              s.setRecordingCommand('stop');
-              return { ok: true };
-            })()
-          `)
-          return json(result, result.error ? 409 : 200)
-        }
-        if (action === 'pause') {
-          const result = await win.webContents.executeJavaScript(`
-            (() => {
-              const s = window.__cenchStore.getState();
-              if (s.recordingState !== 'recording') return { error: 'Not recording', state: s.recordingState };
-              s.setRecordingCommand('pause');
-              return { ok: true };
-            })()
-          `)
-          return json(result, result.error ? 409 : 200)
-        }
-        if (action === 'resume') {
-          const result = await win.webContents.executeJavaScript(`
-            (() => {
-              const s = window.__cenchStore.getState();
-              if (s.recordingState !== 'paused') return { error: 'Not paused', state: s.recordingState };
-              s.setRecordingCommand('resume');
-              return { ok: true };
-            })()
-          `)
-          return json(result, result.error ? 409 : 200)
-        }
-        if (action === 'cancel') {
-          const result = await win.webContents.executeJavaScript(`
-            (() => {
-              const s = window.__cenchStore.getState();
-              s.setRecordingCommand('cancel');
-              return { ok: true };
-            })()
-          `)
-          return json(result)
-        }
-        return json({ error: `Unknown recording action: ${action}` }, 404)
-      } catch (err: any) {
-        return json({ error: err.message || 'Recording command failed' }, 500)
-      }
-    }
-
-    // ── Export endpoint ───────────────────────────────────────────────
-    if (req.method !== 'POST' || !req.url?.startsWith('/export')) {
-      return json({ error: 'Not found' }, 404)
-    }
-
-    const chunks: Buffer[] = []
-    for await (const chunk of req) chunks.push(Buffer.from(chunk))
-    let body: any
-    try {
-      body = JSON.parse(Buffer.concat(chunks).toString())
-    } catch {
-      return json({ error: 'Invalid JSON' }, 400)
-    }
-
-    const { projectId, outputPath, resolution = '1080p', fps = 30, profile = 'quality' } = body
-    if (!projectId) {
-      res.writeHead(400, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ error: 'projectId is required' }))
-      return
-    }
-
-    const finalOutput = outputPath || path.join(app.getPath('temp'), `cench-export-${Date.now()}.mp4`)
-    const win = BrowserWindow.getAllWindows()[0]
-    if (!win) {
-      res.writeHead(503, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ error: 'No Electron window available' }))
-      return
-    }
-
-    try {
-      // Navigate to the project and wait for store to load scenes
-      const result = await win.webContents.executeJavaScript(`
-        (async () => {
-          const store = window.__cenchStore;
-          if (!store) throw new Error('Store not ready');
-
-          // Load project if not already active
-          if (!store.getState().project || store.getState().project.id !== '${projectId}') {
-            await store.getState().loadProject('${projectId}');
-            await new Promise(r => setTimeout(r, 1000));
-          }
-
-          const scenes = store.getState().scenes;
-          if (scenes.length === 0) throw new Error('No scenes loaded');
-
-          // Ensure all scene HTML files are written to disk
-          for (const s of scenes) {
-            await store.getState().saveSceneHTML(s.id, true);
-          }
-          await new Promise(r => setTimeout(r, 300));
-
-          // Trigger export — outputPath skips save dialog
-          await store.getState().exportVideo({
-            resolution: '${resolution}',
-            fps: ${fps},
-            format: 'mp4',
-            profile: '${profile}',
-            outputPath: ${JSON.stringify(finalOutput)},
-          });
-
-          const p = store.getState().exportProgress;
-          return {
-            success: p?.phase === 'complete',
-            phase: p?.phase,
-            error: p?.error,
-            diagnostics: p?.diagnostics?.slice(-10),
-          };
-        })()
-      `)
-
-      res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ ...result, outputPath: finalOutput }))
-    } catch (err: any) {
-      res.writeHead(500, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ error: err.message || String(err) }))
-    }
-  })
-
-  exportServer.listen(EXPORT_API_PORT, '127.0.0.1', () => {
-    console.log(`[Electron] Export API listening on http://127.0.0.1:${EXPORT_API_PORT}`)
-  })
+  // Export API server (port 3002, HTTP) removed in the True Desktop migration.
+  // See SHIP_READINESS.md and the Week 1 plan — operations re-expose as IPC later.
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

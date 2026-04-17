@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cench Studio</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        background: #0b0b0f;
+        color: rgba(255, 255, 255, 0.9);
+        font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      .wrap {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        text-align: center;
+        padding: 2rem;
+      }
+      h1 {
+        font-size: 1.25rem;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+        margin: 0 0 0.5rem;
+      }
+      p {
+        margin: 0;
+        color: rgba(255, 255, 255, 0.55);
+        font-size: 0.875rem;
+        max-width: 28rem;
+        line-height: 1.5;
+      }
+      code {
+        font-family: ui-monospace, SFMono-Regular, monospace;
+        font-size: 0.8rem;
+        color: rgba(255, 255, 255, 0.7);
+        background: rgba(255, 255, 255, 0.04);
+        padding: 0.15em 0.35em;
+        border-radius: 3px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+      }
+      .dot {
+        display: inline-block;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.4);
+        margin: 0 3px;
+        animation: pulse 1.4s ease-in-out infinite;
+      }
+      .dot:nth-child(2) {
+        animation-delay: 0.2s;
+      }
+      .dot:nth-child(3) {
+        animation-delay: 0.4s;
+      }
+      @keyframes pulse {
+        0%,
+        80%,
+        100% {
+          opacity: 0.3;
+        }
+        40% {
+          opacity: 1;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <h1>Cench Studio</h1>
+      <p style="margin-bottom: 1.25rem">
+        <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+      </p>
+      <p>
+        This is the packaging shell for the True Desktop migration. The real UI replaces this placeholder once the
+        static export ships. Served via <code>cench://app/index.html</code> — no HTTP server is bound in the packaged
+        app.
+      </p>
+    </main>
+  </body>
+</html>

@@ -4,11 +4,15 @@ render-server/node_modules
 
 # Next.js
 .next
-out
+# Ignore generated export files but track the Week 1 shell placeholder.
+out/*
+!out/index.html
 
 # Production
-build
 dist
+
+# electron-builder output (installer DMG/exe, never committed)
+release/
 
 # Env
 .env
