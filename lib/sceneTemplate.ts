@@ -2803,6 +2803,8 @@ function generateReactHTML(
   <script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js"><\/script>
   <!-- Babel standalone: in-browser JSX transpilation (bundled locally to avoid CDN failures) -->
   <script src="/sdk/babel.min.js"><\/script>
+  <!-- lottie-web: required by LottieLayer bridge and CenchMotion.lottieSync -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/bodymovin/5.12.2/lottie.min.js"><\/script>
 </head>
 <body>
   <div id="scene-camera">

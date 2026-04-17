@@ -174,10 +174,19 @@ If too many items to fit, reduce count, use smaller text, multi-column, or split
 | Ease-in-out      | State toggles    | `cubic-bezier(0.65, 0, 0.35, 1)` |
 
 For React scenes, use `Easing.bezier(0.16, 1, 0.3, 1)` as the `easing` option
-in `interpolate()`.
+in `interpolate()`. For GSAP scenes, use `CenchMotion.easing.entrance.premium` etc.
+
+**Motion personalities** (from `lib/motion/easing.ts`):
+
+- **Playful**: `Easing.bezier(0.34, 1.56, 0.64, 1)` — bouncy, 150-300ms
+- **Premium**: `Easing.bezier(0.4, 0, 0.2, 1)` — smooth, 350-600ms
+- **Corporate**: `Easing.bezier(0.42, 0, 0.58, 1)` — predictable, 200-400ms
+- **Energetic**: `Easing.bezier(0.22, 1.8, 0.36, 1)` — snappy, 100-250ms
+
+Use `choose_motion_style` to get the right personality for a scene's emotion.
 
 **NEVER use bounce or elastic.** They were trendy in 2015 and now feel amateurish.
-Real objects decelerate smoothly — they don't bounce when they stop.
+**NEVER use linear easing on position.** It looks robotic. Always curve spatial motion.
 
 ### Stagger
 
@@ -194,15 +203,23 @@ For 10+ items, reduce per-item delay rather than extending total time.
 The final element should finish animating at ~80%. The last 20% is "hold time"
 where the complete picture sits for the viewer to read and understand.
 
-### Camera motion (required)
+### Camera motion (required — but VARY per scene purpose)
 
-Every scene should have subtle camera movement. A static camera feels like a
-PowerPoint slide, not a video.
+A static camera feels like a PowerPoint slide. But so does the opposite extreme:
+stamping `kenBurns` on every scene in the sequence. Pick the motion that matches
+what THAT scene is doing:
 
-- **Default**: `CenchCamera.kenBurns({ duration: DURATION, endScale: 1.04 })` —
-  slow barely-perceptible zoom that gives the scene breath
-- **Reveals**: `CenchCamera.presetCinematicPush()` — slow forward push
-- **Emphasis**: `CenchCamera.dollyIn({ targetSelector: '#key-element' })` — zoom into
+- **Title / opening card** → `CenchCamera.presetCinematicPush({ at: 0, duration: DURATION * 0.6 })`
+- **Static data / receipt / grid** → `CenchCamera.kenBurns({ duration: DURATION, endScale: 1.02 })` (subtle)
+- **Reveal — "here's what's available"** → `CenchCamera.presetReveal({ duration: DURATION * 0.7 })`
+- **Sign-off / closing** → `CenchCamera.presetEmphasis({ at: 0.5, duration: DURATION - 0.5 })`
+- **Focus on one element** → `CenchCamera.dollyIn({ targetSelector: '#key-element', at: 1, duration: 3 })`
+- **Content already moving (video playback, 3D spin, data animating hard)** →
+  **skip CenchCamera entirely**. Stacking camera motion on top of intrinsic
+  motion causes visual nausea. A locked camera is correct here.
+
+If three scenes in a row all use the same motion, change one — mechanical
+sameness is worse than a mildly wrong motion.
 
 ---
 

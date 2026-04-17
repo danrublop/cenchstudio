@@ -24,6 +24,11 @@ import { ALL_TOOLS, AGENT_TOOLS, patchToolDimensions } from './tools'
 import { resolveProjectDimensions } from '../dimensions'
 import { AUDIO_PROVIDERS, type AudioProviderDef, isAudioProviderReady } from '../audio/provider-registry'
 import { MEDIA_PROVIDERS, type MediaProviderDef, isMediaProviderReady } from '../media/provider-registry'
+import { DEFAULT_WEIGHTS, LOCAL_MODE_WEIGHTS, selectBestProvider } from '../providers/selector'
+import { TTS_PROFILES } from '../providers/tts-profiles'
+import { IMAGE_PROFILES } from '../providers/image-profiles'
+import { VIDEO_PROFILES } from '../providers/video-profiles'
+import { matchPlaybook } from './pipeline-playbooks'
 import { DEFAULT_MODELS, type ModelConfig } from './model-config'
 
 // Token budget constants
@@ -40,6 +45,7 @@ const MODEL_DEFAULTS: Record<AgentType, ModelId> = {
   'scene-maker': 'claude-sonnet-4-6',
   editor: 'claude-haiku-4-5-20251001',
   dop: 'claude-haiku-4-5-20251001',
+  tutor: 'claude-sonnet-4-6',
 }
 
 /** Model assignments per tier */
@@ -52,6 +58,7 @@ const MODEL_TIERS: Record<ModelTier, Record<AgentType, ModelId>> = {
     'scene-maker': 'claude-opus-4-6',
     editor: 'claude-sonnet-4-6',
     dop: 'claude-sonnet-4-6',
+    tutor: 'claude-opus-4-6',
   },
   budget: {
     router: 'claude-haiku-4-5-20251001',
@@ -60,6 +67,7 @@ const MODEL_TIERS: Record<ModelTier, Record<AgentType, ModelId>> = {
     'scene-maker': 'claude-haiku-4-5-20251001',
     editor: 'claude-haiku-4-5-20251001',
     dop: 'claude-haiku-4-5-20251001',
+    tutor: 'claude-haiku-4-5-20251001',
   },
 }
 
@@ -164,6 +172,7 @@ const MAX_TOKENS_BY_AGENT: Record<AgentType, number> = {
   'scene-maker': 12288,
   editor: 4096,
   dop: 4096,
+  tutor: 16384, // plan + build + double-verify per scene needs Director-level headroom
 }
 
 /** Thinking budget tokens per mode */
@@ -250,13 +259,14 @@ function serializeGlobalStyle(style: GlobalStyle): string {
   const palette = resolved.palette
   const font = resolved.font
   const bodyFont = resolved.bodyFont
+  const motionLine = style.motionPersonality ? `\n  motionPersonality: ${style.motionPersonality}` : ''
   return `Global Style:
   preset: ${style.presetId ?? 'none (custom)'}
   palette: [${palette.join(', ')}]
   font: ${font}${bodyFont && bodyFont !== font ? `\n  bodyFont: ${bodyFont}` : ''}
   roughness: ${resolved.roughnessLevel}
   tool: ${resolved.defaultTool}
-  renderer: ${resolved.preferredRenderer}`
+  renderer: ${resolved.preferredRenderer}${motionLine}`
 }
 
 function serializeSceneSummary(s: SceneSummary, index: number): string {
@@ -574,7 +584,11 @@ export function buildAgentContext(
   // 'auto' scene context: builder/director/dop/planner get all scenes, editor gets selected
   const effectiveSceneContext =
     opts.sceneContext === 'auto'
-      ? agentType === 'director' || agentType === 'dop' || agentType === 'planner' || agentType === 'scene-maker'
+      ? agentType === 'director' ||
+        agentType === 'dop' ||
+        agentType === 'planner' ||
+        agentType === 'scene-maker' ||
+        agentType === 'tutor'
         ? 'all'
         : 'selected'
       : opts.sceneContext
@@ -598,15 +612,17 @@ export function buildAgentContext(
   // Build cascade guidance from preset
   const cascadeParts: string[] = []
 
-  if (agentType === 'director' || agentType === 'planner' || agentType === 'scene-maker') {
+  if (agentType === 'director' || agentType === 'planner' || agentType === 'scene-maker' || agentType === 'tutor') {
     const planGuidance =
       agentType === 'planner'
         ? 'You are in plan-only mode: output a storyboard via plan_scenes only — do not create scenes or layers.'
         : agentType === 'scene-maker'
           ? 'Generate scenes directly without a planning pass.'
-          : preset.agent.planFirst
-            ? 'Plan scenes before generating — lay out the narrative arc first.'
-            : 'Generate scenes directly without a planning pass.'
+          : agentType === 'tutor'
+            ? 'Plan first: 3–5 progressive scenes, one learningObjective per scene. Then build with the pedagogy rubric loop.'
+            : preset.agent.planFirst
+              ? 'Plan scenes before generating — lay out the narrative arc first.'
+              : 'Generate scenes directly without a planning pass.'
     cascadeParts.push(`## ${presetId ? 'Style Cascade Guidance' : 'Planning Guidance'}
 ${presetId ? `Preferred scene count for this style: ${preset.agent.preferredSceneCount.min}–${preset.agent.preferredSceneCount.max} scenes.` : 'Scene count is up to you — match it to the content.'}
 ${planGuidance}`)
@@ -750,6 +766,36 @@ When planning scenes, design a scene graph — not just a list:
       return `- ${r.label}: ${r.names.length} of ${r.total} enabled — ${r.names.join(', ')}`
     }
 
+    // Scorer picks — surface the top provider per category with a short
+    // reason. Gives the agent something to cite when it tells the user which
+    // provider will be used, instead of choosing silently.
+    const scorerPicks: string[] = []
+    const env: Record<string, string | undefined> = { ...process.env }
+    const localMode = !!(opts as { localMode?: boolean }).localMode
+    const weights = localMode ? LOCAL_MODE_WEIGHTS : DEFAULT_WEIGHTS
+    if (!audioGated && tts.names.length > 0) {
+      const pick = selectBestProvider(
+        TTS_PROFILES,
+        {
+          localMode,
+          env,
+          platform: process.platform,
+          task: 'narration',
+          enabled: opts.audioProviderEnabled,
+        },
+        weights,
+      )
+      if (pick.chosen) scorerPicks.push(`- Narration → ${pick.chosen.reason}`)
+    }
+    if (!imageGated && image.names.length > 0) {
+      const pick = selectBestProvider(IMAGE_PROFILES, { env, enabled: opts.mediaGenEnabled }, weights)
+      if (pick.chosen) scorerPicks.push(`- Image → ${pick.chosen.reason}`)
+    }
+    if (!videoGated && video.names.length > 0) {
+      const pick = selectBestProvider(VIDEO_PROFILES, { env, enabled: opts.mediaGenEnabled }, weights)
+      if (pick.chosen) scorerPicks.push(`- Video → ${pick.chosen.reason}`)
+    }
+
     // Sub-capability caveats that aren't a full category row.
     const subCaveats: string[] = []
     // Captions: ElevenLabs returns aligned timestamps, other providers get a
@@ -776,14 +822,43 @@ When planning scenes, design a scene graph — not just a list:
 
     const subBlock =
       subCaveats.length > 0 ? `\n\nSub-capability notes:\n${subCaveats.map((c) => `- ${c}`).join('\n')}` : ''
+    const picksBlock =
+      scorerPicks.length > 0
+        ? `\n\nPicks for this run (auto-ranked — override when a user prefers something else):\n${scorerPicks.join('\n')}`
+        : ''
 
     // Skip the whole block when every category is gated off (e.g. editor
     // runs with no media tooling) — it would read as a wall of "disabled".
     if (hasActiveRow) {
       cascadeParts.push(`## Capability Disclosure
-${rows.map(fmt).join('\n')}${subBlock}
+${rows.map(fmt).join('\n')}${picksBlock}${subBlock}
 
 ${disclosureRule}`)
+    }
+  }
+
+  // Pipeline playbook — ground the agent's choices in a pre-baked pattern
+  // when the user's request matches a known flow (talking-head, explainer,
+  // podcast-repurpose). Only applied to director/planner/scene-maker where
+  // structural guidance is actionable; editor/dop are too surgical for it.
+  const playbookAgents = new Set<AgentType>(['director', 'planner', 'scene-maker'])
+  if (playbookAgents.has(agentType) && opts.latestUserMessage) {
+    try {
+      const playbook = matchPlaybook(opts.latestUserMessage)
+      if (playbook) {
+        const [durMin, durMax] = playbook.recommendedDurationSeconds
+        const [scMin, scMax] = playbook.sceneCount
+        cascadeParts.push(`## Pipeline Playbook: ${playbook.label}
+Matched from the user's request. Use this as a starting pattern — deviate only when the user's specific content demands it, and tell them when you do.
+
+Recommended duration: ${durMin}-${durMax}s. Typical scene count: ${scMin}-${scMax}.
+Required capabilities: ${playbook.requires.length > 0 ? playbook.requires.join(', ') : 'none'}.
+
+${playbook.body}`)
+      }
+    } catch {
+      // Playbook loader errors (fs not available, malformed file) should
+      // never block prompt assembly.
     }
   }
 

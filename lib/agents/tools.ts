@@ -834,7 +834,90 @@ Results are CC-ish licensed (free with attribution appreciated) — safe for com
   },
 }
 
-export const RESEARCH_TOOLS: ClaudeToolDefinition[] = [WEB_SEARCH, FETCH_URL_CONTENT, FIND_STOCK_VIDEOS]
+export const FIND_STOCK_IMAGES: ClaudeToolDefinition = {
+  name: 'find_stock_images',
+  description: `Search royalty-free stock photo libraries (Unsplash) for real photography matching a keyword.
+Returns direct image URLs, dimensions, thumbnail, author attribution, and license.
+Use this for real-world photography — product shots, people, places, nature — instead of AI-generated imagery
+when the subject is recognizable (brand, celebrity, landmark) or photorealism matters.
+Pass the returned url to place_image / use_asset_in_scene to drop it into a scene.`,
+  input_schema: {
+    type: 'object',
+    properties: {
+      query: {
+        type: 'string',
+        description: 'Keyword. Examples: "tesla model y red", "coral reef", "new york skyline dusk".',
+      },
+      count: { type: 'number', description: 'Number of results (1–30). Default: 10' },
+      orientation: {
+        type: 'string',
+        enum: ['landscape', 'portrait', 'square'],
+        description: 'Filter orientation. Match to project aspect ratio.',
+      },
+      minWidth: { type: 'number', description: 'Minimum width in pixels. 1920 for HD hero shots.' },
+    },
+    required: ['query'],
+  },
+}
+
+export const FIND_ARCHIVAL_FOOTAGE: ClaudeToolDefinition = {
+  name: 'find_archival_footage',
+  description: `Search non-commercial archival libraries (Internet Archive, NASA Image/Video Library, Wikimedia Commons)
+for historical footage, space imagery, public-domain or CC-licensed media. Fans out across all three sources in parallel,
+returns interleaved results. Excellent for explainers needing real historical material (moon landings, Apollo missions,
+old newsreels, scientific imagery).
+Returns items with direct mediaUrl, thumbnail, license, and date. Item.mediaType is 'image' | 'video' | 'audio'.`,
+  input_schema: {
+    type: 'object',
+    properties: {
+      query: {
+        type: 'string',
+        description: 'Keyword. Be specific: "apollo 11 moon landing", "hubble deep field", "chernobyl 1986".',
+      },
+      count: { type: 'number', description: 'Number of results (1–25). Default: 12' },
+      mediaType: {
+        type: 'string',
+        enum: ['image', 'video', 'audio', 'any'],
+        description: 'Filter by media type. Default: video.',
+      },
+      yearFrom: { type: 'number', description: 'Earliest publication year. Archive.org and NASA use this.' },
+      yearTo: { type: 'number', description: 'Latest publication year.' },
+    },
+    required: ['query'],
+  },
+}
+
+export const FETCH_VIDEO_FROM_URL: ClaudeToolDefinition = {
+  name: 'fetch_video_from_url',
+  description: `Download a video from an arbitrary URL (YouTube, Vimeo, TikTok, Twitter/X, 1000+ sites supported via yt-dlp) into the project's media library.
+Two-step flow:
+  (a) Call without formatId — returns available formats/resolutions/filesizes + a recommended format. Present these to the user.
+  (b) Call again with the chosen formatId — downloads and registers the asset.
+Content is subject to the source site's terms; usage is the user's responsibility. Max duration 600s, max file 200MB.
+Returns { mode: "probe" | "download", ... }. After download, the returned asset.id is usable with set_video_layer / add_clip_to_track.
+This tool requires the user to have accepted the yt-dlp legal disclaimer once per project.`,
+  input_schema: {
+    type: 'object',
+    properties: {
+      url: { type: 'string', description: 'Absolute URL of the video page (not a direct file URL).' },
+      projectId: { type: 'string', description: 'Project UUID to attach the downloaded asset to.' },
+      formatId: {
+        type: 'string',
+        description: 'Omit to probe formats. Pass a formatId from a prior probe response to actually download.',
+      },
+    },
+    required: ['url', 'projectId'],
+  },
+}
+
+export const RESEARCH_TOOLS: ClaudeToolDefinition[] = [
+  WEB_SEARCH,
+  FETCH_URL_CONTENT,
+  FIND_STOCK_VIDEOS,
+  FIND_STOCK_IMAGES,
+  FIND_ARCHIVAL_FOOTAGE,
+  FETCH_VIDEO_FROM_URL,
+]
 
 // ── Asset / Media Tools ───────────────────────────────────────────────────────
 
@@ -1285,6 +1368,22 @@ const PLAN_SCENES_INPUT_SCHEMA: ClaudeToolDefinition['input_schema'] = {
             type: 'string',
             enum: ['meadow', 'studio_room', 'void_space'],
             description: 'For 3d_world scene type: which environment to use',
+          },
+          learningObjective: {
+            type: 'string',
+            description:
+              'Tutor-only: the single concept this scene teaches, in plain language. e.g. "Gradient descent moves parameters toward lower loss." One per scene — split if two.',
+          },
+          expectedTakeaway: {
+            type: 'string',
+            description:
+              'Tutor-only: the "So what?" sentence the viewer keeps. Appears as the closing narration line and/or final overlay.',
+          },
+          pedagogicalPattern: {
+            type: 'string',
+            enum: ['socratic', 'worked-example', 'analogy', 'narrative'],
+            description:
+              'Tutor-only: the pedagogical pattern this scene uses. Should be consistent across the lesson — mixing patterns fragments the mental model.',
           },
         },
         required: ['name', 'purpose', 'sceneType', 'duration'],
@@ -2113,6 +2212,46 @@ export const GENERATE_VARIATION: ClaudeToolDefinition = {
   },
 }
 
+export const UPLOAD_MEDIA_FROM_URL: ClaudeToolDefinition = {
+  name: 'upload_media_from_url',
+  description: `Download a direct media URL (image/video/svg file — NOT a video page like YouTube) into the project's asset library.
+Use this after find_stock_videos / find_stock_images / find_archival_footage to persist the chosen result into the library
+so the agent can later query_media_library + reuse_asset / set_video_layer without re-fetching.
+Content is deduped by SHA256 of bytes — calling with the same URL twice returns the existing asset (no duplicate row).
+For YouTube / Vimeo / TikTok pages, use fetch_video_from_url instead (that goes through yt-dlp).`,
+  input_schema: {
+    type: 'object',
+    properties: {
+      url: {
+        type: 'string',
+        description: 'Direct media URL (must end in a recognized extension or have a video/image MIME).',
+      },
+      name: { type: 'string', description: 'Optional display name for the asset. Defaults to filename from URL.' },
+      tags: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Optional tags to attach on insert (max 30).',
+      },
+    },
+    required: ['url'],
+  },
+}
+
+export const TAG_ASSET: ClaudeToolDefinition = {
+  name: 'tag_asset',
+  description: `Add or replace tags on an existing project asset. Tags enable query_media_library filtering by topic/content.
+Mode "append" (default) merges new tags with existing. Mode "replace" overwrites entirely.`,
+  input_schema: {
+    type: 'object',
+    properties: {
+      assetId: { type: 'string', description: 'Asset ID (from query_media_library or a recent ingest)' },
+      tags: { type: 'array', items: { type: 'string' }, description: 'New tags (max 30)' },
+      mode: { type: 'string', enum: ['append', 'replace'], description: 'Default: append' },
+    },
+    required: ['assetId', 'tags'],
+  },
+}
+
 export const MEDIA_LIBRARY_TOOLS: ClaudeToolDefinition[] = [
   USE_ASSET_IN_SCENE,
   ADD_WATERMARK,
@@ -2121,6 +2260,8 @@ export const MEDIA_LIBRARY_TOOLS: ClaudeToolDefinition[] = [
   REGENERATE_ASSET,
   GENERATE_IMAGE_FROM_REFERENCE,
   GENERATE_VARIATION,
+  UPLOAD_MEDIA_FROM_URL,
+  TAG_ASSET,
 ]
 
 // ── Recording Tools ──────────────────────────────────────────────────────────
@@ -2289,6 +2430,37 @@ Returns the URL and a code snippet showing how to load and place the model.`,
 export const MODEL_LIBRARY_TOOLS: ClaudeToolDefinition[] = [SEARCH_3D_MODELS, GET_3D_MODEL_URL]
 
 /** Lottie animation search */
+export const CHOOSE_MOTION_STYLE: ClaudeToolDefinition = {
+  name: 'choose_motion_style',
+  description: `Choose a motion personality and easing configuration for a scene before generating animations.
+
+Call this BEFORE add_layer (lottie or motion type) to get the right easing curves, duration ranges,
+and stagger timing. Returns a structured motion brief with CSS, GSAP, and Lottie-format easing
+values for entrance, exit, emphasis, and ambient categories.
+
+This is a deterministic lookup — no LLM call, instant response.`,
+  input_schema: {
+    type: 'object',
+    properties: {
+      sceneContext: {
+        type: 'string',
+        description: 'Brief description of the scene, e.g. "opening hook for a fintech explainer"',
+      },
+      emotion: {
+        type: 'string',
+        description:
+          'Target emotion: joy, fun, urgency, excitement, trust, professionalism, elegance, calm, growth, success, warning, error, neutral, informational, educational',
+      },
+      brand: {
+        type: 'string',
+        enum: ['playful', 'premium', 'corporate', 'energetic'],
+        description: 'Override: directly set the motion personality instead of deriving from emotion',
+      },
+    },
+    required: ['sceneContext', 'emotion'],
+  },
+}
+
 export const SEARCH_LOTTIE: ClaudeToolDefinition = {
   name: 'search_lottie',
   description: `Search for a pre-made Lottie animation from LottieFiles to embed in a scene.
@@ -2309,6 +2481,11 @@ use CenchMotion components for those instead.`,
         type: 'string',
         description:
           'Specific search terms. Examples: "checkmark success green", "rocket launch purple", "bar chart growth blue", "lock security shield", "confetti celebration"',
+      },
+      category: {
+        type: 'string',
+        enum: ['icon', 'illustration', 'transition', 'loader', 'celebration', 'data-viz', 'character', 'abstract'],
+        description: 'Filter by animation category for more targeted results',
       },
       limit: { type: 'number', description: 'Max results to return (default: 5)' },
     },
@@ -2351,6 +2528,36 @@ If issues are found, fix them with patch_layer_code or regenerate_layer before m
       },
     },
     required: ['sceneId'],
+  },
+}
+
+export const VERIFY_SCENE_PEDAGOGY: ClaudeToolDefinition = {
+  name: 'verify_scene_pedagogy',
+  description: `Pedagogical rubric check for a scene in a teaching/lesson context.
+Signature tool of the Tutor agent — MUST be called after verify_scene on every tutor scene.
+Checks: (1) the scene name or content reflects a single learningObjective, (2) narration + visuals support the claim, (3) complexity matches the audience level, (4) the scene contains a concrete takeaway the viewer walks away with.
+Returns a rubric JSON; on failure, revise once with patch_layer_code or set_scene_duration, then proceed. Do not loop more than once per scene — a slightly imperfect scene is better than an infinite verify-revise loop.`,
+  input_schema: {
+    type: 'object',
+    properties: {
+      sceneId: { type: 'string', description: 'Scene ID to verify' },
+      learningObjective: {
+        type: 'string',
+        description:
+          'The single concept this scene must teach, in plain language. e.g. "Gradient descent moves parameters in the direction that reduces loss." Required.',
+      },
+      expectedTakeaway: {
+        type: 'string',
+        description:
+          'The "So what?" sentence the viewer should keep. e.g. "Smaller learning rates converge slower but more reliably." Required.',
+      },
+      audienceLevel: {
+        type: 'string',
+        enum: ['beginner', 'intermediate', 'advanced'],
+        description: 'Audience level this scene targets. Used to check complexity match.',
+      },
+    },
+    required: ['sceneId', 'learningObjective', 'expectedTakeaway', 'audienceLevel'],
   },
 }
 
@@ -3051,6 +3258,7 @@ export const ALL_TOOLS: ClaudeToolDefinition[] = [
   ...ELEMENT_TOOLS,
   ...ASSET_TOOLS,
   ...MODEL_LIBRARY_TOOLS,
+  CHOOSE_MOTION_STYLE,
   SEARCH_LOTTIE,
   ...AUDIO_TOOLS,
   ...GLOBAL_TOOLS,
@@ -3065,6 +3273,7 @@ export const ALL_TOOLS: ClaudeToolDefinition[] = [
   ...TIMELINE_TOOLS,
   CAPTURE_FRAME,
   VERIFY_SCENE,
+  VERIFY_SCENE_PEDAGOGY,
   ...SKILL_TOOLS,
   ...RESEARCH_TOOLS,
 ]
@@ -3145,6 +3354,30 @@ export const AGENT_TOOLS: Record<string, ClaudeToolDefinition[]> = {
     VERIFY_SCENE,
   ]),
   dop: dedup([...GLOBAL_TOOLS, SET_TRANSITION, STYLE_SCENE, SET_CAMERA_MOTION, CAPTURE_FRAME]),
+  tutor: dedup([
+    // Tutor — comprehension-first specialist. Full scene toolkit + research for citations
+    // + interactions for comprehension checks + the pedagogy verifier.
+    ...SKILL_TOOLS,
+    ...SCENE_TOOLS,
+    ...GLOBAL_TOOLS,
+    ...LAYER_TOOLS,
+    ...PARENTING_TOOLS,
+    ...AI_LAYER_TOOLS,
+    ...ELEMENT_TOOLS,
+    ...TEMPLATE_TOOLS,
+    STYLE_SCENE,
+    ...MODEL_LIBRARY_TOOLS,
+    SEARCH_LOTTIE,
+    ...AUDIO_TOOLS,
+    ...INTERACTION_TOOLS,
+    ...PHYSICS_TOOLS,
+    ...WORLD_TOOLS,
+    ...RESEARCH_TOOLS,
+    CAPTURE_FRAME,
+    VERIFY_SCENE,
+    VERIFY_SCENE_PEDAGOGY,
+    ...TIMELINE_TOOLS,
+  ]),
 }
 
 /** Tool filter map: active tool category ID → which tool names it enables */
@@ -3161,7 +3394,7 @@ export const TOOL_CATEGORY_MAP: Record<string, string[]> = {
     'three_data_scatter_scene',
     'extrude_svg_to_3d',
   ],
-  lottie: ['add_layer', 'search_lottie'],
+  lottie: ['add_layer', 'search_lottie', 'choose_motion_style'],
   zdog: [
     'add_layer',
     'create_zdog_composed_scene',
@@ -3182,6 +3415,8 @@ export const TOOL_CATEGORY_MAP: Record<string, string[]> = {
     'apply_brand_kit',
     'query_media_library',
     'reuse_asset',
+    'upload_media_from_url',
+    'tag_asset',
     'regenerate_asset',
     'generate_image_from_reference',
     'generate_variation',
@@ -3197,5 +3432,12 @@ export const TOOL_CATEGORY_MAP: Record<string, string[]> = {
     'define_scene_variable',
   ],
   physics: ['generate_physics_scene', 'explain_physics_concept', 'annotate_simulation', 'set_simulation_params'],
-  research: ['web_search', 'fetch_url_content', 'find_stock_videos'],
+  research: [
+    'web_search',
+    'fetch_url_content',
+    'find_stock_videos',
+    'find_stock_images',
+    'find_archival_footage',
+    'fetch_video_from_url',
+  ],
 }

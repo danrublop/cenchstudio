@@ -30,6 +30,9 @@ export interface GlobalStyle {
   uiFontFamily?: string | null
   /** UI text size scale: 0 = compact, 1 = default, 2 = large, 3 = extra-large */
   uiTextSize?: number
+
+  /** Motion personality for consistent animation feel across scenes. */
+  motionPersonality?: 'playful' | 'premium' | 'corporate' | 'energetic' | null
 }
 
 export type ExportResolution = '720p' | '1080p' | '4k'

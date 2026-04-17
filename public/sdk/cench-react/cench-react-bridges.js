@@ -291,7 +291,7 @@
 
       animRef.current = lottie.loadAnimation({
         container: containerRef.current,
-        renderer: 'svg',
+        renderer: props.renderer || 'svg',
         loop: false,
         autoplay: false,
         animationData: animData,

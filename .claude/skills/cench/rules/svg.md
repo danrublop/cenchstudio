@@ -23,15 +23,15 @@ Always use this layer order inside the SVG:
 
 Apply via `class="..."`. Set timing via `style="--dur:1s; --delay:0.5s"`.
 
-| Class        | Effect                           | CSS vars                                      | Use for                              |
-| ------------ | -------------------------------- | --------------------------------------------- | ------------------------------------ |
-| `stroke`     | Path draw-on reveal              | `--len` (auto-calculated), `--dur`, `--delay` | Lines, paths, arrows, outlines       |
-| `fadein`     | Opacity 0→1                      | `--dur`, `--delay`                            | Filled shapes, backgrounds, icons    |
-| `scale`      | Scale 0→1 with elastic overshoot | `--dur`, `--delay`                            | Icons, callout circles, emphasis     |
-| `slide-up`   | Slide up from below + fade       | `--dur`, `--delay`                            | Labels, annotations, captions        |
-| `slide-left` | Slide from right + fade          | `--dur`, `--delay`                            | Titles entering from right           |
-| `bounce`     | Elastic pop with overshoot       | `--dur`, `--delay`                            | Key numbers, highlighted data points |
-| `rotate`     | Rotation entrance + fade         | `--dur`, `--delay`                            | Arrows, spinning decorative elements |
+| Class        | Effect                            | CSS vars                                      | Use for                              |
+| ------------ | --------------------------------- | --------------------------------------------- | ------------------------------------ |
+| `stroke`     | Path draw-on reveal               | `--len` (auto-calculated), `--dur`, `--delay` | Lines, paths, arrows, outlines       |
+| `fadein`     | Opacity 0→1                       | `--dur`, `--delay`                            | Filled shapes, backgrounds, icons    |
+| `scale`      | Scale 0→1 with elastic overshoot  | `--dur`, `--delay`                            | Icons, callout circles, emphasis     |
+| `slide-up`   | Slide up from below + fade        | `--dur`, `--delay`                            | Labels, annotations, captions        |
+| `slide-left` | Slide from right + fade           | `--dur`, `--delay`                            | Titles entering from right           |
+| `pop`        | Quick scale overshoot (no bounce) | `--dur`, `--delay`                            | Key numbers, highlighted data points |
+| `rotate`     | Rotation entrance + fade          | `--dur`, `--delay`                            | Arrows, spinning decorative elements |
 
 For `stroke` elements always add: `stroke-linecap="round" stroke-linejoin="round" fill="none"`
 

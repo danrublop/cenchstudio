@@ -92,17 +92,33 @@ COLOR:
 MOTION:
 - Exponential easing only: cubic-bezier(0.16, 1, 0.3, 1) for entrances, cubic-bezier(0.7, 0, 0.84, 0) for exits.
 - NEVER bounce or elastic. They feel dated and amateurish.
+- NEVER linear easing on spatial movement (position) — it looks robotic.
 - Stagger: 50-100ms between items. Cap total stagger under 800ms.
 - Exit at 75% of entrance duration.
 - Do not animate everything — animation fatigue is real.
 - Vary animation directions. Not everything should fade-in-from-below.
 - Scene timing: 0-20% bg appears, 20-80% content builds, 80-100% hold (everything visible, viewer absorbs).
+- Two-property sweet spot: pair position+opacity for entrances, scale+color for emphasis.
+- Stagger secondary elements 50-100ms after the primary action for depth.
 
-CAMERA:
-- Every scene should have subtle camera motion. A static camera feels like a PowerPoint slide.
-- Default: CenchCamera.kenBurns({ duration: DURATION, endScale: 1.04 }) — barely perceptible zoom.
-- For reveals: CenchCamera.presetCinematicPush() — slow forward push.
-- For emphasis: CenchCamera.dollyIn({ targetSelector: '#key-element' })
+EMOTION-TO-MOTION (match motion to the scene's emotional intent):
+- Joy / success: upward arcs, elastic settle, 150-250ms transitions, expanding scale.
+- Urgency / warning: sharp direct paths, fast 100-150ms, angular movement.
+- Trust / professionalism: smooth curves, medium 300-400ms, no overshoot, predictable.
+- Elegance / premium: slow controlled curves, 400-600ms, subtle deceleration.
+- Growth / progress: upward paths, expanding scale, sequential reveal.
+- Calm / reflection: gentle floating drift, 500-1000ms, sine easing.
+- Energy / excitement: quick snappy transitions, 100-200ms, dramatic direction changes.
+
+CAMERA (required — but VARY per scene purpose; do NOT stamp kenBurns on every scene):
+- Title / opening card → CenchCamera.presetCinematicPush({ at: 0, duration: DURATION * 0.6 })
+- Static data / receipt / grid → CenchCamera.kenBurns({ duration: DURATION, endScale: 1.02 })
+- Reveal of multiple items → CenchCamera.presetReveal({ duration: DURATION * 0.7 })
+- Sign-off / closing → CenchCamera.presetEmphasis({ at: 0.5, duration: DURATION - 0.5 })
+- Focus on one element → CenchCamera.dollyIn({ targetSelector: '#key-element', at: 1, duration: 3 })
+- Content already moves (video playback, 3D spin, fast data animation) → SKIP CenchCamera entirely.
+  Stacking camera motion on top of intrinsic motion causes visual nausea.
+- If three scenes in a row use the same motion, change one. Mechanical sameness is worse than a mildly wrong motion.
 
 ANTI-PATTERNS (instant AI tells):
 - Side-stripe borders on cards (border-left: 4px solid ...)

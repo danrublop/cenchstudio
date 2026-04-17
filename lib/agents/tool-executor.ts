@@ -43,6 +43,7 @@ import { createTemplateToolHandler, TEMPLATE_TOOL_NAMES } from './tool-handlers/
 import { createPlanningExportToolHandler, PLANNING_EXPORT_TOOL_NAMES } from './tool-handlers/planning-export-tools'
 import { createThreeWorldToolHandler, THREE_WORLD_TOOL_NAMES } from './tool-handlers/three-world-tools'
 import { createPhysicsToolHandler, PHYSICS_TOOL_NAMES } from './tool-handlers/physics-tools'
+import { createMotionToolHandler, MOTION_TOOL_NAMES } from './tool-handlers/motion-tools'
 import { createSkillToolHandler, SKILL_TOOL_NAMES } from './tool-handlers/skill-tools'
 import { createBrandToolHandler, BRAND_TOOL_NAMES } from './tool-handlers/brand-tools'
 import { createResearchToolHandler, RESEARCH_TOOL_NAMES } from './tool-handlers/research-tools'
@@ -166,6 +167,9 @@ export interface WorldStateMutable {
   researchEnabled?: boolean
   /** Per-provider enabled map for research providers (brave, tavily, exa). */
   researchProviderEnabled?: Record<string, boolean>
+  /** Project IDs where the user has acknowledged the yt-dlp legal disclaimer. Downloads
+   *  are refused for projects not in this set. Probe calls are always allowed. */
+  ytDlpConsentedProjects?: Set<string>
   sessionPermissions?: Record<string, string>
   generationOverrides?: Record<string, { provider?: string; prompt?: string; config?: Record<string, any> }>
   autoChooseDefaults?: Record<string, { provider: string; config: Record<string, any> }>
@@ -653,6 +657,12 @@ function ensureAllHandlersRegistered(): void {
     brandHandler(toolName, args, world as WorldStateMutable, logger),
   )
 
+  // ── Motion design tools ──
+  const motionHandler = createMotionToolHandler()
+  toolRegistry.registerMany([...MOTION_TOOL_NAMES], (toolName, args, _world, logger) =>
+    motionHandler(toolName, args as Record<string, unknown>, logger),
+  )
+
   // ── Physics tools ──
   const physicsHandler = createPhysicsToolHandler({ regenerateHTML })
   toolRegistry.registerMany([...PHYSICS_TOOL_NAMES], (toolName, args, world, logger) =>
@@ -929,6 +939,231 @@ function ensureAllHandlersRegistered(): void {
         hasTTS,
         sceneType: scene.sceneType,
         duration: scene.duration,
+      },
+    }
+  })
+
+  // ── Pedagogy rubric (Tutor agent signature) ──
+  toolRegistry.register('verify_scene_pedagogy', async (_toolName, args, w) => {
+    const world = w as WorldStateMutable
+    const { sceneId, learningObjective, expectedTakeaway, audienceLevel } = args as {
+      sceneId: string
+      learningObjective: string
+      expectedTakeaway: string
+      audienceLevel: 'beginner' | 'intermediate' | 'advanced'
+    }
+    const scene = world.scenes.find((s) => s.id === sceneId)
+    if (!scene) return { success: false, error: `Scene ${sceneId} not found` }
+
+    const lower = (s: string) => (s ?? '').toLowerCase()
+    const overlayText = (scene.textOverlays ?? []).map((o) => o.content ?? '').join(' ')
+    const narrationText = (scene.audioLayer as any)?.tts?.text ?? ''
+    const allText = [
+      scene.name ?? '',
+      scene.prompt ?? '',
+      overlayText,
+      narrationText,
+      scene.svgContent ?? '',
+      scene.canvasCode ?? '',
+      scene.sceneCode ?? '',
+      (scene as any).reactCode ?? '',
+      ...(scene.aiLayers ?? []).map((l) => l.label ?? ''),
+    ]
+      .join(' ')
+      .toLowerCase()
+
+    // Extract meaningful keywords from the objective and takeaway (drop stopwords)
+    const STOPWORDS = new Set([
+      'the',
+      'a',
+      'an',
+      'is',
+      'are',
+      'was',
+      'were',
+      'be',
+      'to',
+      'of',
+      'in',
+      'on',
+      'at',
+      'by',
+      'for',
+      'with',
+      'and',
+      'or',
+      'but',
+      'if',
+      'as',
+      'it',
+      'its',
+      'this',
+      'that',
+      'these',
+      'those',
+      'how',
+      'why',
+      'what',
+      'when',
+      'where',
+      'will',
+      'would',
+      'can',
+      'should',
+      'from',
+      'into',
+      'onto',
+      'we',
+      'you',
+      'your',
+      'our',
+      'their',
+      'they',
+      'he',
+      'she',
+      'them',
+      'his',
+      'her',
+      'i',
+      'me',
+      'my',
+    ])
+    const keywords = (s: string) =>
+      lower(s)
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .split(/\s+/)
+        .filter((t) => t.length > 3 && !STOPWORDS.has(t))
+    const objKeywords = keywords(learningObjective)
+    const takeKeywords = keywords(expectedTakeaway)
+
+    const coverage = (kws: string[]) => {
+      if (kws.length === 0) return 1
+      const hit = kws.filter((k) => allText.includes(k)).length
+      return hit / kws.length
+    }
+
+    const checks: Record<string, 'pass' | 'warn' | 'fail'> = {}
+    const issues: string[] = []
+    const suggestions: string[] = []
+
+    // 1) Objective clarity — scene name signals an explicit objective OR the objective is well-reflected in the content
+    const nameHasObjective = /objective\s*:/i.test(scene.name ?? '')
+    const objectiveCoverage = coverage(objKeywords)
+    const objectiveClear = nameHasObjective || objectiveCoverage >= 0.5
+    checks.objectiveClear = objectiveClear ? 'pass' : 'fail'
+    if (!objectiveClear) {
+      issues.push(
+        `OBJECTIVE: Scene name "${scene.name}" does not lead with "Objective:" and only ${Math.round(
+          objectiveCoverage * 100,
+        )}% of objective keywords appear in the scene. Rename the scene to "Objective: <concept>" or ensure the objective's core terms appear in narration/overlays.`,
+      )
+      suggestions.push(`Rename scene to: "Objective: ${learningObjective.slice(0, 60)}"`)
+    }
+
+    // 2) Visual supports the claim — scene has content AND objective keywords show up in visible/audible material
+    const hasContent = !!(
+      scene.svgContent ||
+      scene.canvasCode ||
+      scene.sceneCode ||
+      (scene as any).reactCode ||
+      scene.lottieSource ||
+      (scene.aiLayers?.length ?? 0) > 0 ||
+      (scene.svgObjects?.length ?? 0) > 0 ||
+      ((scene as any).chartLayers?.length ?? 0) > 0
+    )
+    const visualSupports = hasContent && objectiveCoverage >= 0.33
+    checks.visualSupports = visualSupports ? 'pass' : 'warn'
+    if (!visualSupports) {
+      issues.push(
+        `SUPPORT: Visuals + narration cover only ${Math.round(objectiveCoverage * 100)}% of the objective's key terms. ` +
+          (hasContent
+            ? 'Edit narration or overlays to explicitly reference the objective.'
+            : 'Scene has no visual content yet.'),
+      )
+    }
+
+    // 3) Complexity matches audience — beginner scenes flag heavy jargon, advanced scenes flag basic-only content
+    const textForComplexity = [overlayText, narrationText].join(' ').toLowerCase()
+    const longWordRatio = (() => {
+      const words = textForComplexity.split(/\s+/).filter((w) => w.length > 0)
+      if (words.length === 0) return 0
+      const long = words.filter((w) => w.replace(/[^a-z]/g, '').length >= 10).length
+      return long / words.length
+    })()
+    let complexityMatches = true
+    if (audienceLevel === 'beginner' && longWordRatio > 0.18) {
+      complexityMatches = false
+      issues.push(
+        `COMPLEXITY: ${Math.round(longWordRatio * 100)}% of words are 10+ letters — likely too jargon-heavy for beginner audience. Simplify or gloss technical terms.`,
+      )
+      suggestions.push('Replace multi-syllabic technical terms with plain-English equivalents or add a brief gloss.')
+    }
+    if (audienceLevel === 'advanced' && textForComplexity.length > 0 && longWordRatio < 0.04) {
+      complexityMatches = false
+      issues.push(
+        `COMPLEXITY: Content reads as overly introductory for advanced audience — consider adding domain terminology and skipping basics.`,
+      )
+    }
+    checks.complexityMatches = complexityMatches ? 'pass' : 'warn'
+
+    // 4) Takeaway present — expected takeaway keywords appear AND narration is long enough to include a closing thought
+    const takeawayCoverage = coverage(takeKeywords)
+    const narrationWordCount = narrationText.split(/\s+/).filter(Boolean).length
+    const hasTakeaway = takeawayCoverage >= 0.4 || /remember|so[,\s]|in short|the key|bottom line/i.test(narrationText)
+    checks.hasTakeaway = hasTakeaway ? 'pass' : 'fail'
+    if (!hasTakeaway) {
+      issues.push(
+        `TAKEAWAY: Expected takeaway keywords appear in only ${Math.round(
+          takeawayCoverage * 100,
+        )}% of content. Narration is ${narrationWordCount} words. Append a closing line like "So, ${expectedTakeaway}" to narration.`,
+      )
+      suggestions.push(`Append to narration: "So, ${expectedTakeaway}"`)
+    }
+
+    // 5) Duration sanity for teaching — tutor scenes need absorb time
+    if (scene.duration < 8) {
+      checks.duration = 'warn'
+      issues.push(
+        `DURATION: ${scene.duration}s is short for a teaching scene — learners need absorb time. Minimum recommended is 8s, ideal 10–16s.`,
+      )
+    } else {
+      checks.duration = 'pass'
+    }
+
+    const passed = objectiveClear && hasTakeaway && complexityMatches
+    const verdict = passed
+      ? 'PASS — Pedagogy rubric met. Proceed to next scene.'
+      : `ISSUES FOUND (${issues.length}) — Revise ONCE, then proceed. Do not loop more than once per scene.`
+
+    const report = [
+      `── PEDAGOGY VERIFY: "${scene.name}" (${scene.id.slice(0, 8)}…) ──`,
+      `Audience: ${audienceLevel} | Duration: ${scene.duration}s`,
+      `Objective: ${learningObjective}`,
+      `Takeaway: ${expectedTakeaway}`,
+      '',
+      `Rubric: ${Object.entries(checks)
+        .map(([k, v]) => `${k}:${v}`)
+        .join(' | ')}`,
+      '',
+      verdict,
+      ...issues.map((i) => `  ⚠ ${i}`),
+      ...(suggestions.length > 0 ? ['', 'Suggestions:', ...suggestions.map((s) => `  → ${s}`)] : []),
+    ].join('\n')
+
+    return {
+      success: passed,
+      affectedSceneId: sceneId,
+      data: {
+        report,
+        checks,
+        issues,
+        suggestions,
+        objectiveClear,
+        visualSupports,
+        complexityMatches,
+        hasTakeaway,
+        objectiveCoverage: Math.round(objectiveCoverage * 100) / 100,
+        takeawayCoverage: Math.round(takeawayCoverage * 100) / 100,
       },
     }
   })
@@ -1337,6 +1572,11 @@ export function registerToolHandler(
   )
 }
 
+// Throttle the stale-reservation sweep — once per minute is plenty, and
+// keeps us off the hot path for every single tool call.
+let lastReservationSweepMs = 0
+const RESERVATION_SWEEP_INTERVAL_MS = 60_000
+
 export async function executeTool(
   toolName: string,
   args: Record<string, unknown>,
@@ -1347,6 +1587,21 @@ export async function executeTool(
   ensureRegistryCoverage()
   if (!CANONICAL_TOOL_NAMES.has(toolName)) {
     return err(`Unknown tool: ${toolName}`)
+  }
+
+  // Housekeeping: sweep any budget reservations that never got reconciled
+  // (crashed tool handlers, network failures). Running once per minute is a
+  // good balance between leak protection and overhead.
+  const now = Date.now()
+  if (now - lastReservationSweepMs > RESERVATION_SWEEP_INTERVAL_MS) {
+    lastReservationSweepMs = now
+    try {
+      const { sweepStaleReservations } = await import('./budget-tracker')
+      const swept = sweepStaleReservations()
+      if (swept > 0) logger?.log('budget', `Swept ${swept} stale budget reservation(s)`)
+    } catch {
+      /* best-effort */
+    }
   }
 
   // Log tool inputs (truncate large string values like code/prompt)

@@ -7,6 +7,7 @@
 
 import { formatThreeEnvironmentsForPrompt } from '../three-environments'
 import { DESIGN_PRINCIPLES, getDesignPrinciples } from './design-principles'
+import { personalityPromptBlock, type MotionPersonality } from '../motion/easing'
 
 export const SVG_SYSTEM_PROMPT = (
   palette: string[],
@@ -814,14 +815,17 @@ export const LOTTIE_OVERLAY_PROMPT = (
   previousSummary: string,
   hasExplicitPalette = true,
   dims: { width: number; height: number } = { width: 1920, height: 1080 },
+  motionPersonality: MotionPersonality = 'corporate',
 ) => {
   const W = dims.width
   const H = dims.height
+  const op = duration * 30
+  const personality = personalityPromptBlock(motionPersonality)
   return `You are a Lottie animation generator. Generate a valid Lottie JSON animation.
 
 Output ONLY raw JSON — no markdown fences, no explanation, no wrapping.
 
-CANVAS: w=${W}, h=${H}, fr=30, duration=${duration}s (op = ${duration * 30} frames).
+CANVAS: w=${W}, h=${H}, fr=30, duration=${duration}s (op = ${op} frames).
 ${
   hasExplicitPalette
     ? `COLORS (as 0–1 RGBA arrays): ${palette
@@ -835,16 +839,25 @@ ${
     : 'COLORS: Choose colors that suit the animation content.'
 }
 
+${personality}
+
 CRITICAL — KEYFRAME EASING HANDLES:
-Every animated keyframe (except the final one) MUST include bezier easing:
-  "i": {"x":[0.42],"y":[0]}, "o": {"x":[0.58],"y":[1]}
+Every animated keyframe (except the final one) MUST include bezier easing handles.
+Use the easing curves from the MOTION PERSONALITY section above. Example for 1D properties:
+  "i": {"x":[0.58],"y":[1]}, "o": {"x":[0.42],"y":[0]}
 For 3D properties (position, scale, anchor) use arrays of 3:
-  "i": {"x":[0.42,0.42,0.42],"y":[0,0,0]}, "o": {"x":[0.58,0.58,0.58],"y":[1,1,1]}
+  "i": {"x":[0.58,0.58,0.58],"y":[1,1,1]}, "o": {"x":[0.42,0.42,0.42],"y":[0,0,0]}
 Without these, lottie-web throws renderFrameError and nothing renders.
+NEVER use linear easing (identical i/o values) on position — it looks robotic.
+
+NARRATIVE STRUCTURE (distribute keyframes across these phases):
+- Setup (frames 0-${Math.round(op * 0.25)}): Elements appear, establish positions. Use entrance easing.
+- Action (frames ${Math.round(op * 0.25)}-${Math.round(op * 0.65)}): Primary animation. Use emphasis/personality easing.
+- Resolution (frames ${Math.round(op * 0.65)}-${op}): Settle to final state. Hold or gentle ambient.
 
 STRUCTURE:
 {
-  "v": "5.7.1", "fr": 30, "ip": 0, "op": ${duration * 30},
+  "v": "5.7.1", "fr": 30, "ip": 0, "op": ${op},
   "w": ${W}, "h": ${H}, "nm": "Scene", "ddd": 0, "assets": [],
   "layers": [
     {
@@ -861,7 +874,7 @@ STRUCTURE:
         { "ty": "el", "d": 1, "s": { "a": 0, "k": [200, 200] }, "p": { "a": 0, "k": [0, 0] }, "nm": "E" },
         { "ty": "st", "c": { "a": 0, "k": [R,G,B,1] }, "o": { "a": 0, "k": 100 }, "w": { "a": 0, "k": 4 }, "lc": 2, "lj": 2, "nm": "S" }
       ],
-      "ip": 0, "op": ${duration * 30}, "st": 0
+      "ip": 0, "op": ${op}, "st": 0
     }
   ]
 }
@@ -870,11 +883,41 @@ SHAPE TYPES: "el" (ellipse), "rc" (rect with "r" for radius), "sr" (star/polygon
 LAYER ty: 4 = shape layer, 1 = solid.
 ANIMATED PROPERTY: set "a":1 and "k" to keyframe array. Static: "a":0, "k": value.
 
+PATTERN TEMPLATES — adapt these for your animation (all include proper easing handles):
+
+Entrance (fade + scale up, 1D opacity):
+"o": { "a": 1, "k": [
+  { "t": 0, "s": [0], "i": {"x":[0.58],"y":[1]}, "o": {"x":[0.42],"y":[0]} },
+  { "t": 20, "s": [100] }
+]}
+
+Entrance (scale up, 3D):
+"s": { "a": 1, "k": [
+  { "t": 0, "s": [80, 80, 100], "i": {"x":[0.58,0.58,0.58],"y":[1,1,1]}, "o": {"x":[0.42,0.42,0.42],"y":[0,0,0]} },
+  { "t": 20, "s": [100, 100, 100] }
+]}
+
+Exit (fade + scale down, 1D opacity):
+"o": { "a": 1, "k": [
+  { "t": ${op - 20}, "s": [100], "i": {"x":[1],"y":[1]}, "o": {"x":[0.42],"y":[0]} },
+  { "t": ${op}, "s": [0] }
+]}
+
+Pulse emphasis (scale 100 -> 110 -> 100):
+"s": { "a": 1, "k": [
+  { "t": 30, "s": [100,100,100], "i": {"x":[0.58,0.58,0.58],"y":[1,1,1]}, "o": {"x":[0.16,0.16,0.16],"y":[1,1,1]} },
+  { "t": 40, "s": [110,110,100], "i": {"x":[0.58,0.58,0.58],"y":[1,1,1]}, "o": {"x":[0.3,0.3,0.3],"y":[1,1,1]} },
+  { "t": 50, "s": [100,100,100] }
+]}
+
 GOOD SUBJECTS: icons, logos, geometric patterns, looping decorative elements, simple character animations, data viz transitions, micro-interactions.
 
 QUALITY:
 - Use intentional movement paths — arcs and curves, not just linear slides.
 - Asymmetric timing: fast start with slow settle, or delayed secondary motion after primary.
+- Two-property sweet spot: combine position+opacity for entrances, scale+color for emphasis.
+- Stagger secondary elements 50-100ms after the primary action.
+- Exit animations should be 75% of entrance duration.
 ${getDesignPrinciples(dims)}
 Previous scene summary (for visual continuity): ${previousSummary || 'none'}`
 }
@@ -1014,16 +1057,27 @@ ${hasExplicitPalette ? `- Palette: ${JSON.stringify(palette)}` : '- Choose a col
 - Leave 20% of duration as a visual hold at the end.
 - Total duration: ${duration} seconds at 30fps = ${duration * 30} total frames.
 
-## CAMERA MOTION (required — every scene)
-Add a CenchCamera call in a useEffect to give the scene cinematic motion:
+## CAMERA MOTION — required, but VARY per scene purpose (do NOT default kenBurns on every scene)
+Pick the motion that matches what THIS scene is doing. Do not mechanically stamp one motion
+across a whole sequence — that reads as lazy.
 \`\`\`jsx
 React.useEffect(() => {
-  CenchCamera.kenBurns({ duration: DURATION, endScale: 1.04 }); // subtle slow zoom (default)
-  // OR: CenchCamera.presetCinematicPush({ at: 0, duration: DURATION * 0.6 }); // for reveals
-  // OR: CenchCamera.dollyIn({ targetSelector: '#hero', at: 1, duration: 3 }); // for emphasis
-}, []);
+  // Title / opening card:
+  CenchCamera.presetCinematicPush({ at: 0, duration: DURATION * 0.6 })
+  // Static data / receipt / grid — subtle zoom only:
+  // CenchCamera.kenBurns({ duration: DURATION, endScale: 1.02 })
+  // Reveal multiple items:
+  // CenchCamera.presetReveal({ duration: DURATION * 0.7 })
+  // Sign-off / closing:
+  // CenchCamera.presetEmphasis({ at: 0.5, duration: DURATION - 0.5 })
+  // Focus on one element:
+  // CenchCamera.dollyIn({ targetSelector: '#hero', at: 1, duration: 3 })
+}, [])
 \`\`\`
-A static camera feels like a PowerPoint slide. Always add motion.
+**Skip CenchCamera entirely** when the scene's content already moves (video playback,
+a 3D spin, fast data animation). Stacking camera motion on top of intrinsic motion
+causes visual nausea — a locked camera is correct there.
+If three scenes in a row use the same motion, change one.
 
 ${getDesignPrinciples(dims)}
 Previous scene summary: ${previousSummary || 'none'}`

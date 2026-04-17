@@ -551,5 +551,44 @@
     },
   }
 
+  // ── Easing Presets ─────────────────────────────────────────────────────────
+  // Named easing presets as GSAP-compatible strings. Generated scene code can
+  // reference CenchMotion.easing.entrance.premium instead of magic strings.
+
+  CenchMotion.easing = {
+    entrance: {
+      playful:    'back.out(1.4)',
+      premium:    'power3.out',
+      corporate:  'power2.inOut',
+      energetic:  'back.out(2.0)',
+    },
+    exit: {
+      playful:    'back.in(1.4)',
+      premium:    'power2.in',
+      corporate:  'power2.in',
+      energetic:  'power3.in',
+    },
+    emphasis: {
+      playful:    'back.out(1.7)',
+      premium:    'expo.out',
+      corporate:  'expo.out',
+      energetic:  'back.out(2.5)',
+    },
+    ambient: {
+      playful:    'sine.inOut',
+      premium:    'sine.inOut',
+      corporate:  'sine.inOut',
+      energetic:  'sine.inOut',
+    },
+    // Standard curves as CSS cubic-bezier strings (for CustomEase or CSS transitions)
+    css: {
+      cenchEntrance: 'cubic-bezier(0.16, 1, 0.3, 1)',
+      cenchExit:     'cubic-bezier(0.7, 0, 0.84, 0)',
+      md3Standard:   'cubic-bezier(0.2, 0, 0, 1)',
+      md3Emphasized: 'cubic-bezier(0.05, 0.7, 0.1, 1)',
+      apple:         'cubic-bezier(0.28, 0, 0.1, 1)',
+    },
+  }
+
   global.CenchMotion = CenchMotion
 })(typeof window !== 'undefined' ? window : globalThis)

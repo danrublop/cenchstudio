@@ -125,12 +125,12 @@ loader.load('${url}', (gltf) => {
 
       // ── search_lottie ────────────────────────────────────────────────────
       case 'search_lottie': {
-        const { query, limit } = args as { query: string; limit?: number }
+        const { query, category, limit } = args as { query: string; category?: string; limit?: number }
         try {
           const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-          const response = await fetch(
-            `${baseUrl}/api/lottie/search?q=${encodeURIComponent(query)}&limit=${limit || 5}`,
-          )
+          const params = new URLSearchParams({ q: query, limit: String(limit || 5) })
+          if (category) params.set('category', category)
+          const response = await fetch(`${baseUrl}/api/lottie/search?${params}`)
           if (!response.ok) {
             return {
               success: false,
@@ -138,6 +138,15 @@ loader.load('${url}', (gltf) => {
             }
           }
           const data = await response.json()
+          // Add usage hints to each result
+          if (data.results) {
+            for (const r of data.results) {
+              r.usageHint = {
+                motionScene: `CenchMotion.lottieSync('#lottie-wrap', { src: '${r.url}', tl: window.__tl, delay: 0.3 })`,
+                reactScene: `<LottieLayer data="${r.url}" />`,
+              }
+            }
+          }
           return { success: true, affectedSceneId: null, data }
         } catch (e) {
           return {

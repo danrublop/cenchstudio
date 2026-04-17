@@ -211,9 +211,20 @@ React.useEffect(() => {
 | `presetEmphasis`      | Zoom in, hold, zoom out         | Highlighting key content     |
 | `pan`                 | Slide across scene              | Wide layouts, panoramas      |
 
-**Every scene should have camera motion.** A static camera feels lifeless.
-kenBurns with endScale 1.03-1.06 is the safe default — barely perceptible
-but gives the scene breath and cinematic quality.
+**Every scene should have camera motion — but VARY it per scene purpose.**
+Using `kenBurns` on every scene in a sequence reads as lazy and mechanical.
+Pick the motion that matches what the scene is DOING:
+
+- **Title / opening card** → `presetCinematicPush` (slow forward push feels intentional)
+- **Static data / receipt / grid** → `kenBurns` with subtle endScale 1.02–1.03
+- **Reveal / "here's what's available"** → `presetReveal` (zooms out to show everything)
+- **Sign-off / closing card** → `presetEmphasis` (zoom-in hold)
+- **Element the viewer should focus on** → `dollyIn` with `targetSelector`
+- **Already-moving content (video playback, 3D spins)** → **skip CenchCamera entirely**;
+  stacking camera motion on top of intrinsic motion causes visual nausea.
+
+kenBurns is fine as a default — but if three scenes in a row all use it,
+change one. Mechanical sameness is worse than a mildly wrong motion.
 
 ---
 
@@ -286,7 +297,33 @@ Use for: self-drawing paths, calligraphic strokes, technical diagrams with strok
 
 ### LottieLayer — micro-animations
 
-Use for: animated icons, looping decorative elements, pre-made Lottie JSON.
+Use for: animated icons, looping decorative elements, pre-made Lottie animations.
+
+lottie-web is loaded globally in all React scenes. Two approaches:
+
+**Inline JSON** (for simple generated Lotties):
+
+```jsx
+var data = { v: '5.7.1', fr: 30, ip: 0, op: 90, w: 400, h: 400, ... };
+<LottieLayer data={data} style={{ width: 200, height: 200 }} />
+```
+
+**URL loading** (for searched pre-made Lotties from `search_lottie`):
+Define a `LottieFromURL` helper that calls `window.lottie.loadAnimation({ path: url })`
+and syncs frames via `goToAndStop(lottieFrame, true)` in a `useEffect`. See `rules/motion.md`
+for the full implementation pattern.
+
+**Canvas renderer** (for performance-sensitive complex Lotties):
+
+```jsx
+<LottieLayer data={data} renderer="canvas" />
+```
+
+**When to use Lottie vs CenchMotion in React scenes:**
+
+- `LottieLayer`: Pre-made icons/illustrations from `search_lottie`, simple geometric animations
+- `interpolate()` + `spring()`: Text reveals, fades, slides, scales — most scene animation
+- No Lottie needed: counters, progress bars, staggered lists, element reveals
 
 ---
 
