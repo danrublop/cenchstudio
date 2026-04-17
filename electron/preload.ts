@@ -1,5 +1,34 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
+// ── window.cenchApi — new canonical IPC namespace (Week 2 migration) ───────
+// Every former `/api/<category>/route.ts` endpoint lands here as
+// `cenchApi.<category>.<method>()`. Channels use `cench:<category>.<method>`.
+// The older `window.electronAPI` surface below stays in place until its
+// callers are migrated; both namespaces coexist throughout Week 2.
+type ListProvidersResult = {
+  providers: {
+    tts: { id: string; name: string; available: boolean }[]
+    sfx: { id: string; name: string; available: boolean }[]
+    music: { id: string; name: string; available: boolean }[]
+  }
+  media: { id: string; name: string; category: 'video' | 'image' | 'avatar' | 'utility'; available: boolean }[]
+}
+
+export type CenchApi = {
+  settings: {
+    listProviders: () => Promise<ListProvidersResult>
+  }
+}
+
+const cenchApi: CenchApi = {
+  settings: {
+    listProviders: () => ipcRenderer.invoke('cench:settings.listProviders'),
+  },
+}
+
+contextBridge.exposeInMainWorld('cenchApi', cenchApi)
+
+// ── window.electronAPI — legacy namespace, superseded by cenchApi ──────────
 export type ElectronAPI = {
   saveDialog: (suggestedName?: string) => Promise<{ canceled: boolean; filePath: string | null }>
   writeFile: (args: { filePath: string; bytes: ArrayBuffer }) => Promise<{ ok: true }>

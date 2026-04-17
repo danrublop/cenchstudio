@@ -42,6 +42,7 @@ const util_1 = require("util");
 const electron_1 = require("electron");
 const promises_1 = __importDefault(require("fs/promises"));
 const url_1 = require("url");
+const ipc_1 = require("./ipc");
 const execFileAsync = (0, util_1.promisify)(child_process_1.execFile);
 function webZoomTargetWindow() {
     return electron_1.BrowserWindow.getFocusedWindow() ?? electron_1.BrowserWindow.getAllWindows()[0] ?? null;
@@ -525,6 +526,7 @@ electron_1.app.whenReady().then(async () => {
         callback(allowed.includes(permission));
     });
     await registerCenchProtocol();
+    (0, ipc_1.registerAllIpc)(electron_1.ipcMain);
     createWindow();
     // ── Allow screen/window capture via getDisplayMedia in renderer ────
     // Use the native macOS system picker (desktopCapturer.getSources is broken in Electron 41)

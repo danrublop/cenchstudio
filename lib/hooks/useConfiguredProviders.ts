@@ -9,8 +9,11 @@ interface ConfiguredProviders {
 let cachedResult: ConfiguredProviders | null = null
 
 /**
- * Fetches which providers are actually configured (API key set, server running)
- * from the server. Caches the result for the session.
+ * Fetches which providers are actually configured (API key set, server running).
+ * Caches the result for the session. Prefers the Electron IPC bridge
+ * (`window.cenchApi.settings.listProviders`) and falls back to the legacy
+ * web fetch path only if cenchApi is unavailable — retained so the hook
+ * keeps working in pure-web preview until app/api/audio-settings is deleted.
  */
 export function useConfiguredProviders(): ConfiguredProviders {
   const [result, setResult] = useState<ConfiguredProviders>(
@@ -23,8 +26,20 @@ export function useConfiguredProviders(): ConfiguredProviders {
       return
     }
     let cancelled = false
-    fetch('/api/audio-settings')
-      .then((r) => r.json())
+
+    const loadProviders = async () => {
+      const ipc = typeof window !== 'undefined' ? window.cenchApi : undefined
+      if (ipc?.settings?.listProviders) {
+        return ipc.settings.listProviders()
+      }
+      const res = await fetch('/api/audio-settings')
+      return res.json() as Promise<{
+        providers?: Record<'tts' | 'sfx' | 'music', { id: string; available: boolean }[]>
+        media?: { id: string; available: boolean }[]
+      }>
+    }
+
+    loadProviders()
       .then((data) => {
         if (cancelled) return
         const audioIds = new Set<string>()
@@ -33,15 +48,16 @@ export function useConfiguredProviders(): ConfiguredProviders {
             if (p.available) audioIds.add(p.id)
           }
         }
-        const mediaIds = new Set<string>((data.media ?? []).filter((p: any) => p.available).map((p: any) => p.id))
-        const res = { audio: audioIds, media: mediaIds, loaded: true }
-        cachedResult = res
-        setResult(res)
+        const mediaIds = new Set<string>((data.media ?? []).filter((p) => p.available).map((p) => p.id))
+        const next = { audio: audioIds, media: mediaIds, loaded: true }
+        cachedResult = next
+        setResult(next)
       })
       .catch(() => {
-        // On error, assume all providers are available (don't block the UI)
+        // On error, leave the UI unblocked rather than fail the whole panel.
         if (!cancelled) setResult({ audio: new Set(), media: new Set(), loaded: false })
       })
+
     return () => {
       cancelled = true
     }

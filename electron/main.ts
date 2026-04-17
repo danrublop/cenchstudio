@@ -4,6 +4,7 @@ import { promisify } from 'util'
 import { app, BrowserWindow, ipcMain, dialog, Menu, net, protocol, screen, session, shell } from 'electron'
 import fs from 'fs/promises'
 import { pathToFileURL } from 'url'
+import { registerAllIpc } from './ipc'
 
 const execFileAsync = promisify(execFile)
 
@@ -536,6 +537,7 @@ app.whenReady().then(async () => {
   })
 
   await registerCenchProtocol()
+  registerAllIpc(ipcMain)
 
   createWindow()
 

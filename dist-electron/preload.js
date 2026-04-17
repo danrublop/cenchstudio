@@ -1,6 +1,12 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const electron_1 = require("electron");
+const cenchApi = {
+    settings: {
+        listProviders: () => electron_1.ipcRenderer.invoke('cench:settings.listProviders'),
+    },
+};
+electron_1.contextBridge.exposeInMainWorld('cenchApi', cenchApi);
 const api = {
     saveDialog: (suggestedName) => electron_1.ipcRenderer.invoke('cench:saveDialog', suggestedName),
     writeFile: (args) => electron_1.ipcRenderer.invoke('cench:writeFile', args),
