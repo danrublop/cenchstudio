@@ -5,7 +5,7 @@ import fs from 'node:fs/promises'
 import fsSync from 'node:fs'
 import type { PublishedProject, PublishedScene } from '@/lib/types'
 import { normalizeTransition } from '@/lib/transitions'
-import { loadProjectOrThrow, IpcValidationError } from './_helpers'
+import { assertValidUuid, loadProjectOrThrow, IpcValidationError } from './_helpers'
 
 /**
  * Category: publish
@@ -79,8 +79,16 @@ async function publish(args: PublishArgs) {
   const srcScenesDir = scenesSourceDir()
 
   for (const scene of args.scenes) {
-    const srcPath = path.join(srcScenesDir, `${scene.id}.html`)
-    const destPath = path.join(scenesDir, `${scene.id}.html`)
+    // Block path traversal: scene.id reaches `path.join(srcScenesDir, ${scene.id}.html)`.
+    // Without a UUID check, a renderer sending scene.id = "../../etc/passwd"
+    // resolves to an arbitrary location and we'd happily `copyFile` it
+    // under the published bundle. UUID-gate + prefix-check belt-and-suspenders.
+    assertValidUuid(scene.id, 'scene.id')
+    const srcPath = path.resolve(path.join(srcScenesDir, `${scene.id}.html`))
+    const destPath = path.resolve(path.join(scenesDir, `${scene.id}.html`))
+    if (!srcPath.startsWith(srcScenesDir + path.sep) || !destPath.startsWith(scenesDir + path.sep)) {
+      throw new IpcValidationError('Invalid scene id (path escape)')
+    }
     try {
       await fs.access(srcPath)
     } catch {

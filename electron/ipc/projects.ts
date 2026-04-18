@@ -9,7 +9,7 @@ import type { BrandKit } from '@/lib/types/media'
 import { normalizeScenesForPersistence } from '@/lib/charts/normalize-scenes'
 import { readProjectSceneBlob, writeProjectSceneBlob } from '@/lib/db/project-scene-storage'
 import { readProjectScenesFromTables, writeProjectScenesToTables } from '@/lib/db/project-scene-table'
-import { assertValidUuid, loadProjectOrThrow, IpcValidationError, IpcNotFoundError } from './_helpers'
+import { assertValidUuid, loadProjectOrThrow, IpcValidationError, IpcNotFoundError, IpcConflictError } from './_helpers'
 
 /**
  * Category: projects
@@ -34,6 +34,7 @@ import { assertValidUuid, loadProjectOrThrow, IpcValidationError, IpcNotFoundErr
 
 const MAX_PROJECTS_PER_PAGE = 100
 const MAX_SCENES = 200
+const MAX_LOGO_ASSET_IDS = 32
 const MAX_GLOBAL_STYLE_SIZE = 16 * 1024
 const MAX_SETTINGS_SIZE = 16 * 1024
 const SCRYPT_HASH_RE = /^[0-9a-f]{32}:[0-9a-f]{128}$/i
@@ -111,6 +112,8 @@ type CreateArgs = {
 }
 
 async function create(args: CreateArgs) {
+  if (args.id) assertValidUuid(args.id, 'id')
+  if (args.workspaceId) assertValidUuid(args.workspaceId, 'workspaceId')
   if (args.outputMode && !['mp4', 'interactive'].includes(args.outputMode)) {
     throw new IpcValidationError(`Invalid outputMode: ${args.outputMode}`)
   }
@@ -122,6 +125,18 @@ async function create(args: CreateArgs) {
   }
   if (Array.isArray(args.sceneGraph?.nodes) && args.sceneGraph.nodes.length > MAX_SCENES) {
     throw new IpcValidationError(`sceneGraph.nodes exceeds ${MAX_SCENES} item limit`)
+  }
+  // Mirror the size caps applied in `update`. Without these, a renderer
+  // can ship 1 GB of junk here and OOM the main process before Postgres
+  // ever sees the payload.
+  if (args.globalStyle !== undefined && JSON.stringify(args.globalStyle).length > MAX_GLOBAL_STYLE_SIZE) {
+    throw new IpcValidationError('globalStyle exceeds size limit')
+  }
+  if (args.mp4Settings !== undefined && JSON.stringify(args.mp4Settings).length > MAX_SETTINGS_SIZE) {
+    throw new IpcValidationError('mp4Settings exceeds size limit')
+  }
+  if (args.interactiveSettings !== undefined && JSON.stringify(args.interactiveSettings).length > MAX_SETTINGS_SIZE) {
+    throw new IpcValidationError('interactiveSettings exceeds size limit')
   }
 
   const [project] = await db
@@ -181,6 +196,26 @@ type UpdateArgs = { projectId: string; updates: Record<string, unknown> }
 
 async function update({ projectId, updates }: UpdateArgs) {
   assertValidUuid(projectId, 'projectId')
+
+  // Cap scenes/sceneGraph BEFORE any normalization runs — otherwise a
+  // malicious caller can OOM the main process with a 10k-entry array
+  // just by virtue of `normalizeScenesForPersistence` iterating it.
+  if (updates.scenes !== undefined) {
+    if (!Array.isArray(updates.scenes)) {
+      throw new IpcValidationError('scenes must be an array')
+    }
+    if (updates.scenes.length > MAX_SCENES) {
+      throw new IpcValidationError(`scenes array exceeds ${MAX_SCENES} item limit`)
+    }
+  }
+  if (
+    updates.sceneGraph !== undefined &&
+    Array.isArray((updates.sceneGraph as { nodes?: unknown[] })?.nodes) &&
+    ((updates.sceneGraph as { nodes: unknown[] }).nodes.length ?? 0) > MAX_SCENES
+  ) {
+    throw new IpcValidationError(`sceneGraph.nodes exceeds ${MAX_SCENES} item limit`)
+  }
+
   const updateData: Record<string, unknown> = { updatedAt: new Date() }
 
   if (updates.workspaceId !== undefined) updateData.workspaceId = updates.workspaceId || null
@@ -237,15 +272,20 @@ async function update({ projectId, updates }: UpdateArgs) {
 
   const currentVersion = existing.version ?? 1
 
+  // Normalize scenes ONCE and reuse for both the blob write and the
+  // downstream table sync. The previous implementation walked the array
+  // twice, doubling CPU cost on 200-scene saves.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let normalizedScenes: any[] | null = null
   if (updates.scenes !== undefined || updates.sceneGraph !== undefined || updates.timeline !== undefined) {
-    const normalizedScenes =
+    normalizedScenes =
       updates.scenes !== undefined
         ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          normalizeScenesForPersistence(updates.scenes as any)
-        : readProjectSceneBlob(existing.description).scenes
+          (normalizeScenesForPersistence(updates.scenes as any) as any[])
+        : // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (readProjectSceneBlob(existing.description).scenes as any[])
     updateData.description = writeProjectSceneBlob(existing.description, {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      scenes: normalizedScenes as any,
+      scenes: normalizedScenes as never,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       sceneGraph: updates.sceneGraph !== undefined ? (updates.sceneGraph as any) : undefined,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -262,16 +302,14 @@ async function update({ projectId, updates }: UpdateArgs) {
     .returning()
 
   if (!project) {
-    throw new IpcValidationError('Conflict: project was modified concurrently. Please retry.')
+    // Dedicated error class so the caller's retry loop can `instanceof`
+    // check instead of string-matching "conflict" in arbitrary messages
+    // (which would catch unrelated SQL errors containing "ON CONFLICT").
+    throw new IpcConflictError('Project was modified concurrently. Please retry.')
   }
 
-  if (updates.scenes !== undefined || updates.sceneGraph !== undefined) {
+  if ((updates.scenes !== undefined || updates.sceneGraph !== undefined) && normalizedScenes) {
     try {
-      const normalizedScenes =
-        updates.scenes !== undefined
-          ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            normalizeScenesForPersistence(updates.scenes as any)
-          : readProjectSceneBlob(existing.description).scenes
       const graphToWrite =
         updates.sceneGraph !== undefined ? updates.sceneGraph : readProjectSceneBlob(existing.description).sceneGraph
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -366,6 +404,17 @@ async function updateBrandKit(args: { projectId: string; updates: Partial<BrandK
     updated.brandName = updates.brandName as string | null
   }
   if (Array.isArray(updates.logoAssetIds)) {
+    if (updates.logoAssetIds.length > MAX_LOGO_ASSET_IDS) {
+      throw new IpcValidationError(`logoAssetIds exceeds ${MAX_LOGO_ASSET_IDS} item limit`)
+    }
+    // Must be UUIDs — otherwise `inArray` could silently match nothing
+    // on coerced numeric values, and the DB parameter stream is cheaper
+    // with a known shape.
+    for (const id of updates.logoAssetIds) {
+      if (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+        throw new IpcValidationError('logoAssetIds entries must be valid UUIDs')
+      }
+    }
     if (updates.logoAssetIds.length > 0) {
       const existing = await db
         .select({ id: projectAssets.id })

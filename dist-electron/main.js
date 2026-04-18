@@ -1568,6 +1568,9 @@ var IpcValidationError = class extends Error {
 var IpcNotFoundError = class extends Error {
   code = "NOT_FOUND";
 };
+var IpcConflictError = class extends Error {
+  code = "CONFLICT";
+};
 async function loadProjectOrThrow(projectId) {
   assertValidUuid(projectId, "projectId");
   const project = await db.query.projects.findFirst({
@@ -2620,6 +2623,7 @@ async function readProjectScenesFromTables(projectId) {
 // electron/ipc/projects.ts
 var MAX_PROJECTS_PER_PAGE = 100;
 var MAX_SCENES = 200;
+var MAX_LOGO_ASSET_IDS = 32;
 var MAX_GLOBAL_STYLE_SIZE = 16 * 1024;
 var MAX_SETTINGS_SIZE = 16 * 1024;
 var SCRYPT_HASH_RE = /^[0-9a-f]{32}:[0-9a-f]{128}$/i;
@@ -2664,6 +2668,8 @@ async function list3(args = {}) {
   return { items, nextCursor };
 }
 async function create2(args) {
+  if (args.id) assertValidUuid(args.id, "id");
+  if (args.workspaceId) assertValidUuid(args.workspaceId, "workspaceId");
   if (args.outputMode && !["mp4", "interactive"].includes(args.outputMode)) {
     throw new IpcValidationError(`Invalid outputMode: ${args.outputMode}`);
   }
@@ -2675,6 +2681,15 @@ async function create2(args) {
   }
   if (Array.isArray(args.sceneGraph?.nodes) && args.sceneGraph.nodes.length > MAX_SCENES) {
     throw new IpcValidationError(`sceneGraph.nodes exceeds ${MAX_SCENES} item limit`);
+  }
+  if (args.globalStyle !== void 0 && JSON.stringify(args.globalStyle).length > MAX_GLOBAL_STYLE_SIZE) {
+    throw new IpcValidationError("globalStyle exceeds size limit");
+  }
+  if (args.mp4Settings !== void 0 && JSON.stringify(args.mp4Settings).length > MAX_SETTINGS_SIZE) {
+    throw new IpcValidationError("mp4Settings exceeds size limit");
+  }
+  if (args.interactiveSettings !== void 0 && JSON.stringify(args.interactiveSettings).length > MAX_SETTINGS_SIZE) {
+    throw new IpcValidationError("interactiveSettings exceeds size limit");
   }
   const [project] = await db.insert(projects).values({
     ...args.id ? { id: args.id } : {},
@@ -2725,6 +2740,17 @@ async function get2(projectId) {
 }
 async function update3({ projectId, updates }) {
   assertValidUuid(projectId, "projectId");
+  if (updates.scenes !== void 0) {
+    if (!Array.isArray(updates.scenes)) {
+      throw new IpcValidationError("scenes must be an array");
+    }
+    if (updates.scenes.length > MAX_SCENES) {
+      throw new IpcValidationError(`scenes array exceeds ${MAX_SCENES} item limit`);
+    }
+  }
+  if (updates.sceneGraph !== void 0 && Array.isArray(updates.sceneGraph?.nodes) && (updates.sceneGraph.nodes.length ?? 0) > MAX_SCENES) {
+    throw new IpcValidationError(`sceneGraph.nodes exceeds ${MAX_SCENES} item limit`);
+  }
   const updateData = { updatedAt: /* @__PURE__ */ new Date() };
   if (updates.workspaceId !== void 0) updateData.workspaceId = updates.workspaceId || null;
   if (updates.name !== void 0) updateData.name = updates.name;
@@ -2773,13 +2799,16 @@ async function update3({ projectId, updates }) {
   const [existing] = await db.select({ description: projects.description, version: projects.version }).from(projects).where((0, import_drizzle_orm7.eq)(projects.id, projectId));
   if (!existing) throw new IpcNotFoundError(`Project ${projectId} not found`);
   const currentVersion = existing.version ?? 1;
+  let normalizedScenes = null;
   if (updates.scenes !== void 0 || updates.sceneGraph !== void 0 || updates.timeline !== void 0) {
-    const normalizedScenes = updates.scenes !== void 0 ? (
+    normalizedScenes = updates.scenes !== void 0 ? (
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       normalizeScenesForPersistence(updates.scenes)
-    ) : readProjectSceneBlob(existing.description).scenes;
-    updateData.description = writeProjectSceneBlob(existing.description, {
+    ) : (
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      readProjectSceneBlob(existing.description).scenes
+    );
+    updateData.description = writeProjectSceneBlob(existing.description, {
       scenes: normalizedScenes,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       sceneGraph: updates.sceneGraph !== void 0 ? updates.sceneGraph : void 0,
@@ -2790,14 +2819,10 @@ async function update3({ projectId, updates }) {
   updateData.version = currentVersion + 1;
   const [project] = await db.update(projects).set(updateData).where((0, import_drizzle_orm7.and)((0, import_drizzle_orm7.eq)(projects.id, projectId), (0, import_drizzle_orm7.eq)(projects.version, currentVersion))).returning();
   if (!project) {
-    throw new IpcValidationError("Conflict: project was modified concurrently. Please retry.");
+    throw new IpcConflictError("Project was modified concurrently. Please retry.");
   }
-  if (updates.scenes !== void 0 || updates.sceneGraph !== void 0) {
+  if ((updates.scenes !== void 0 || updates.sceneGraph !== void 0) && normalizedScenes) {
     try {
-      const normalizedScenes = updates.scenes !== void 0 ? (
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        normalizeScenesForPersistence(updates.scenes)
-      ) : readProjectSceneBlob(existing.description).scenes;
       const graphToWrite = updates.sceneGraph !== void 0 ? updates.sceneGraph : readProjectSceneBlob(existing.description).sceneGraph;
       await writeProjectScenesToTables(projectId, normalizedScenes, graphToWrite);
     } catch (e) {
@@ -2823,10 +2848,8 @@ async function remove2(projectId) {
       try {
         const parsed = readProjectSceneBlob(project.description);
         const sceneIds = (parsed.scenes || []).map((s) => s.id);
-        await Promise.allSettled(
-          sceneIds.map((sid) => import_promises2.default.unlink(import_node_path2.default.join(scenesDir, `${sid}.html`)).catch(() => {
-          }))
-        );
+        await Promise.allSettled(sceneIds.map((sid) => import_promises2.default.unlink(import_node_path2.default.join(scenesDir, `${sid}.html`)).catch(() => {
+        })));
       } catch {
       }
     }
@@ -2865,6 +2888,14 @@ async function updateBrandKit(args) {
     updated.brandName = updates.brandName;
   }
   if (Array.isArray(updates.logoAssetIds)) {
+    if (updates.logoAssetIds.length > MAX_LOGO_ASSET_IDS) {
+      throw new IpcValidationError(`logoAssetIds exceeds ${MAX_LOGO_ASSET_IDS} item limit`);
+    }
+    for (const id of updates.logoAssetIds) {
+      if (typeof id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+        throw new IpcValidationError("logoAssetIds entries must be valid UUIDs");
+      }
+    }
     if (updates.logoAssetIds.length > 0) {
       const existing = await db.select({ id: projectAssets.id }).from(projectAssets).where((0, import_drizzle_orm7.and)((0, import_drizzle_orm7.eq)(projectAssets.projectId, args.projectId), (0, import_drizzle_orm7.inArray)(projectAssets.id, updates.logoAssetIds)));
       const existingIds = new Set(existing.map((a) => a.id));
@@ -2957,6 +2988,7 @@ async function removeProjectsFromWorkspace(projectIds) {
 }
 
 // electron/ipc/workspaces.ts
+var import_drizzle_orm9 = require("drizzle-orm");
 var MAX_NAME = 255;
 var MAX_PROJECTS_PER_ASSIGN = 100;
 async function list4() {
@@ -2999,24 +3031,31 @@ async function remove3(workspaceId) {
   await deleteWorkspace(workspaceId);
   return { success: true };
 }
-async function assignProjects(args) {
-  await loadWorkspaceOrThrow(args.workspaceId);
-  if (!Array.isArray(args.projectIds) || args.projectIds.length === 0) {
-    throw new IpcValidationError("projectIds must be a non-empty array");
+async function validateProjectIds(projectIds, label = "projectIds") {
+  if (!Array.isArray(projectIds) || projectIds.length === 0) {
+    throw new IpcValidationError(`${label} must be a non-empty array`);
   }
-  if (args.projectIds.length > MAX_PROJECTS_PER_ASSIGN) {
+  if (projectIds.length > MAX_PROJECTS_PER_ASSIGN) {
     throw new IpcValidationError(`Maximum ${MAX_PROJECTS_PER_ASSIGN} projects per request`);
   }
-  args.projectIds.forEach((id) => assertValidUuid(id, "projectId"));
-  await assignProjectsToWorkspace(args.workspaceId, args.projectIds);
+  const ids = projectIds.map((id) => assertValidUuid(id, "projectId"));
+  const found = await db.select({ id: projects.id }).from(projects).where((0, import_drizzle_orm9.inArray)(projects.id, ids));
+  if (found.length !== ids.length) {
+    const foundSet = new Set(found.map((r) => r.id));
+    const missing = ids.filter((id) => !foundSet.has(id));
+    throw new IpcValidationError(`Unknown projectIds: ${missing.slice(0, 3).join(", ")}`);
+  }
+  return ids;
+}
+async function assignProjects(args) {
+  await loadWorkspaceOrThrow(args.workspaceId);
+  const ids = await validateProjectIds(args.projectIds);
+  await assignProjectsToWorkspace(args.workspaceId, ids);
   return { success: true };
 }
 async function unassignProjects(args) {
-  if (!Array.isArray(args.projectIds) || args.projectIds.length === 0) {
-    throw new IpcValidationError("projectIds must be a non-empty array");
-  }
-  args.projectIds.forEach((id) => assertValidUuid(id, "projectId"));
-  await removeProjectsFromWorkspace(args.projectIds);
+  const ids = await validateProjectIds(args.projectIds);
+  await removeProjectsFromWorkspace(ids);
   return { success: true };
 }
 function register8(ipcMain2) {
@@ -3029,10 +3068,7 @@ function register8(ipcMain2) {
     "cench:workspaces.assignProjects",
     (_e, args) => assignProjects(args)
   );
-  ipcMain2.handle(
-    "cench:workspaces.unassignProjects",
-    (_e, args) => unassignProjects(args)
-  );
+  ipcMain2.handle("cench:workspaces.unassignProjects", (_e, args) => unassignProjects(args));
 }
 
 // electron/ipc/publish.ts
@@ -3063,8 +3099,12 @@ async function publish(args) {
   const missingSceneIds = [];
   const srcScenesDir = scenesSourceDir();
   for (const scene of args.scenes) {
-    const srcPath = import_node_path3.default.join(srcScenesDir, `${scene.id}.html`);
-    const destPath = import_node_path3.default.join(scenesDir, `${scene.id}.html`);
+    assertValidUuid(scene.id, "scene.id");
+    const srcPath = import_node_path3.default.resolve(import_node_path3.default.join(srcScenesDir, `${scene.id}.html`));
+    const destPath = import_node_path3.default.resolve(import_node_path3.default.join(scenesDir, `${scene.id}.html`));
+    if (!srcPath.startsWith(srcScenesDir + import_node_path3.default.sep) || !destPath.startsWith(scenesDir + import_node_path3.default.sep)) {
+      throw new IpcValidationError("Invalid scene id (path escape)");
+    }
     try {
       await import_promises3.default.access(srcPath);
     } catch {

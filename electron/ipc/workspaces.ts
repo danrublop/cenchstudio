@@ -8,6 +8,9 @@ import {
   assignProjectsToWorkspace,
   removeProjectsFromWorkspace,
 } from '@/lib/db/queries/workspaces'
+import { db } from '@/lib/db'
+import { projects } from '@/lib/db/schema'
+import { inArray } from 'drizzle-orm'
 import { assertValidUuid, loadWorkspaceOrThrow, IpcValidationError } from './_helpers'
 
 /**
@@ -97,25 +100,39 @@ async function remove(workspaceId: string) {
   return { success: true as const }
 }
 
-async function assignProjects(args: { workspaceId: string; projectIds: string[] }) {
-  await loadWorkspaceOrThrow(args.workspaceId)
-  if (!Array.isArray(args.projectIds) || args.projectIds.length === 0) {
-    throw new IpcValidationError('projectIds must be a non-empty array')
+// Shared validation for project-bulk operations. Verifies every id is a
+// well-formed UUID, caps the batch size, AND confirms all ids resolve
+// to real rows in `projects`. Without the existence check, a compromised
+// renderer (scene iframe with XSS reaching `window.cenchApi`) could
+// create phantom workspace→project links for projects it doesn't own
+// (or that don't exist), polluting the UI's workspace sidebar counts.
+async function validateProjectIds(projectIds: unknown, label = 'projectIds'): Promise<string[]> {
+  if (!Array.isArray(projectIds) || projectIds.length === 0) {
+    throw new IpcValidationError(`${label} must be a non-empty array`)
   }
-  if (args.projectIds.length > MAX_PROJECTS_PER_ASSIGN) {
+  if (projectIds.length > MAX_PROJECTS_PER_ASSIGN) {
     throw new IpcValidationError(`Maximum ${MAX_PROJECTS_PER_ASSIGN} projects per request`)
   }
-  args.projectIds.forEach((id) => assertValidUuid(id, 'projectId'))
-  await assignProjectsToWorkspace(args.workspaceId, args.projectIds)
+  const ids = projectIds.map((id) => assertValidUuid(id, 'projectId'))
+  const found = await db.select({ id: projects.id }).from(projects).where(inArray(projects.id, ids))
+  if (found.length !== ids.length) {
+    const foundSet = new Set(found.map((r) => r.id))
+    const missing = ids.filter((id) => !foundSet.has(id))
+    throw new IpcValidationError(`Unknown projectIds: ${missing.slice(0, 3).join(', ')}`)
+  }
+  return ids
+}
+
+async function assignProjects(args: { workspaceId: string; projectIds: string[] }) {
+  await loadWorkspaceOrThrow(args.workspaceId)
+  const ids = await validateProjectIds(args.projectIds)
+  await assignProjectsToWorkspace(args.workspaceId, ids)
   return { success: true as const }
 }
 
 async function unassignProjects(args: { projectIds: string[] }) {
-  if (!Array.isArray(args.projectIds) || args.projectIds.length === 0) {
-    throw new IpcValidationError('projectIds must be a non-empty array')
-  }
-  args.projectIds.forEach((id) => assertValidUuid(id, 'projectId'))
-  await removeProjectsFromWorkspace(args.projectIds)
+  const ids = await validateProjectIds(args.projectIds)
+  await removeProjectsFromWorkspace(ids)
   return { success: true as const }
 }
 

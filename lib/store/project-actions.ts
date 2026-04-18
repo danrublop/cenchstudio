@@ -616,8 +616,17 @@ export function createProjectActions(set: Set, get: Get) {
               >
               break
             } catch (err) {
+              // Narrow to OUR shaped errors via message prefix, not substring.
+              // IpcConflictError serializes as `Error: Project was modified concurrently…`;
+              // IpcNotFoundError serializes as `Error: Project <uuid> not found`.
+              // Electron's structured-clone error passthrough strips custom
+              // subclass identity but preserves the `message`, so prefix-match
+              // is the portable form. Broader substring checks (e.g. `.includes('conflict')`)
+              // catch pg errors that mention "ON CONFLICT" and trigger wrong retries.
               const msg = (err as Error).message ?? ''
-              if (msg.toLowerCase().includes('conflict') && attempt < 2) {
+              const isConflict = msg.startsWith('Project was modified concurrently')
+              const isNotFound = /^Project\s+[0-9a-f-]+\s+not found$/i.test(msg)
+              if (isConflict && attempt < 2) {
                 console.warn(`[saveProjectToDb] conflict on attempt ${attempt + 1}, retrying…`)
                 await new Promise((r) => setTimeout(r, 200 * Math.pow(2, attempt)))
                 try {
@@ -630,7 +639,7 @@ export function createProjectActions(set: Set, get: Get) {
                 }
                 continue
               }
-              if (msg.toLowerCase().includes('not found')) {
+              if (isNotFound) {
                 // Project doesn't exist yet — create it
                 await ipc.create({
                   id: project.id,

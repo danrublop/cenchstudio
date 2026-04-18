@@ -30,6 +30,18 @@ export class IpcNotFoundError extends Error {
   readonly code = 'NOT_FOUND'
 }
 
+/**
+ * Thrown by optimistic-lock'd updates (projects.update) when the row's
+ * `version` column changed between our SELECT and UPDATE. The renderer's
+ * `saveProjectToDb` retry loop uses `instanceof IpcConflictError` to
+ * decide whether to back off and retry, instead of substring-matching
+ * "conflict" in arbitrary error messages (which would swallow unrelated
+ * SQL errors that happen to mention `ON CONFLICT`).
+ */
+export class IpcConflictError extends Error {
+  readonly code = 'CONFLICT'
+}
+
 export async function loadProjectOrThrow(projectId: string) {
   assertValidUuid(projectId, 'projectId')
   const project = await db.query.projects.findFirst({
