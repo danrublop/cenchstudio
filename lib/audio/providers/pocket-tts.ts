@@ -2,6 +2,7 @@ import fs from 'fs/promises'
 import path from 'path'
 import type { TTSProviderInterface, TTSParams, TTSResult, Voice, VoiceCloneParams, VoiceCloneResult } from '../types'
 import { safeAudioFilename } from '../sanitize'
+import { getAudioDir, audioUrlFor } from '../paths'
 
 const DEFAULT_VOICE = 'alba'
 
@@ -66,7 +67,7 @@ export const pocketTTS: TTSProviderInterface = {
 
     const audioBuffer = Buffer.from(await response.arrayBuffer())
 
-    const audioDir = path.join(process.cwd(), 'public', 'audio')
+    const audioDir = getAudioDir()
     await fs.mkdir(audioDir, { recursive: true })
 
     // Pocket TTS returns WAV audio
@@ -79,7 +80,7 @@ export const pocketTTS: TTSProviderInterface = {
     const durationEstimate = Math.max(0, audioBuffer.length - headerSize) / 48000
 
     return {
-      audioUrl: `/audio/${filename}`,
+      audioUrl: audioUrlFor(filename),
       duration: Math.round(durationEstimate * 10) / 10,
       provider: 'pocket-tts',
     }
@@ -93,7 +94,7 @@ export const pocketTTS: TTSProviderInterface = {
   async cloneVoice(params: VoiceCloneParams): Promise<VoiceCloneResult> {
     // Pocket TTS supports cloning by passing voice_wav in the /tts call.
     // We store the reference audio and return a voice ID that maps to it.
-    const audioDir = path.join(process.cwd(), 'public', 'audio', 'voices')
+    const audioDir = path.join(getAudioDir(), 'voices')
     await fs.mkdir(audioDir, { recursive: true })
 
     const voiceId = `cloned-${Date.now().toString(36)}`

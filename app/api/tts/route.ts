@@ -6,6 +6,7 @@ import { getBestTTSProvider, getTTSProvider } from '@/lib/audio/router'
 import { getOptionalUser } from '@/lib/auth-helpers'
 import { validateTextLength, sanitizeErrorMessage, MAX_TTS_TEXT_LENGTH } from '@/lib/audio/sanitize'
 import { buildNaiveCaptions } from '@/lib/audio/captions'
+import { getAudioDir, audioUrlFor, isLocalAudioUrl } from '@/lib/audio/paths'
 
 export async function POST(req: NextRequest) {
   await getOptionalUser()
@@ -51,13 +52,14 @@ export async function POST(req: NextRequest) {
     // Fallback: if the provider didn't return timestamps but did give us an
     // audio duration, emit naive captions (even distribution across the
     // duration). Better than nothing for downstream export/publish surfaces.
-    if (!result.captions && result.duration && result.audioUrl.startsWith('/audio/')) {
+    if (!result.captions && result.duration && isLocalAudioUrl(result.audioUrl)) {
       const bundle = buildNaiveCaptions(text, result.duration)
       if (bundle.words.length > 0 && bundle.srt.length > 0) {
         try {
-          const audioDir = path.join(process.cwd(), 'public', 'audio')
+          const audioDir = getAudioDir()
           await fs.mkdir(audioDir, { recursive: true })
-          const base = result.audioUrl.replace(/^\/audio\//, '').replace(/\.[a-z0-9]+$/i, '')
+          // Strip the URL prefix (either `/audio/` or `cench://audio/`) and the extension.
+          const base = result.audioUrl.replace(/^(cench:\/\/audio\/|\/audio\/)/, '').replace(/\.[a-z0-9]+$/i, '')
           const srtName = `${base}.srt`
           const vttName = `${base}.vtt`
           await Promise.all([
@@ -65,8 +67,8 @@ export async function POST(req: NextRequest) {
             fs.writeFile(path.join(audioDir, vttName), bundle.vtt, 'utf8'),
           ])
           result.captions = {
-            srtUrl: `/audio/${srtName}`,
-            vttUrl: `/audio/${vttName}`,
+            srtUrl: audioUrlFor(srtName),
+            vttUrl: audioUrlFor(vttName),
             kind: 'naive',
             words: bundle.words,
           }

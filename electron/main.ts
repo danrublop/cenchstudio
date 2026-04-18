@@ -9,7 +9,7 @@ import { config as loadDotenv } from 'dotenv'
 import { registerAllIpc } from './ipc'
 // Path helpers live in `./paths.ts` so `electron/ipc/*.ts` can reuse them
 // without creating circular imports with main.ts.
-import { getUserScenesDir, getUserUploadsDir, getStaticAppDir } from './paths'
+import { getUserScenesDir, getUserUploadsDir, getUserAudioDir, getStaticAppDir } from './paths'
 
 // ── .env loading ────────────────────────────────────────────────────────────
 // The main process does not inherit the Next.js auto-dotenv behavior. Without
@@ -40,6 +40,16 @@ function loadEnvFiles(): void {
   }
 }
 loadEnvFiles()
+
+// Tell `lib/audio/paths.ts` where to write audio files and which URL
+// prefix to stamp into scene HTML. Must run before any IPC handler
+// loads an audio provider module (lazy imports via dynamic `import()`).
+//   Dev:      public/audio  +  /audio/           (Next serves these)
+//   Packaged: <userData>/audio  +  cench://audio/  (protocol handler serves these)
+if (app.isPackaged) {
+  process.env.CENCH_AUDIO_DIR = getUserAudioDir()
+  process.env.CENCH_AUDIO_URL_BASE = 'cench://audio/'
+}
 
 const execFileAsync = promisify(execFile)
 
@@ -75,8 +85,10 @@ async function registerCenchProtocol(): Promise<void> {
   const staticDir = path.resolve(getStaticAppDir())
   const scenesDir = path.resolve(getUserScenesDir())
   const uploadsDir = path.resolve(getUserUploadsDir())
+  const audioDir = path.resolve(getUserAudioDir())
   await fs.mkdir(scenesDir, { recursive: true })
   await fs.mkdir(uploadsDir, { recursive: true })
+  await fs.mkdir(audioDir, { recursive: true })
 
   protocol.handle('cench', async (request) => {
     try {
@@ -89,6 +101,8 @@ async function registerCenchProtocol(): Promise<void> {
         baseDir = scenesDir
       } else if (host === 'uploads') {
         baseDir = uploadsDir
+      } else if (host === 'audio') {
+        baseDir = audioDir
       } else if (host === 'app' || host === '') {
         baseDir = staticDir
       } else {

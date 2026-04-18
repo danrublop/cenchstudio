@@ -1,5 +1,6 @@
 import fs from 'fs/promises'
 import path from 'path'
+import { getAudioDir, audioUrlFor, isLocalAudioUrl } from './paths'
 
 /** Allowed hostnames for audio downloads (known audio providers) */
 const ALLOWED_HOSTS = new Set([
@@ -62,8 +63,9 @@ function validateDownloadUrl(remoteUrl: string): void {
 export async function downloadToLocal(remoteUrl: string, prefix: string = 'dl'): Promise<string> {
   // Already local
   if (
-    remoteUrl.startsWith('/audio/') ||
+    isLocalAudioUrl(remoteUrl) ||
     remoteUrl.startsWith('/uploads/') ||
+    remoteUrl.startsWith('cench://uploads/') ||
     remoteUrl.startsWith('/sfx-library/')
   ) {
     return remoteUrl
@@ -76,7 +78,7 @@ export async function downloadToLocal(remoteUrl: string, prefix: string = 'dl'):
 
   validateDownloadUrl(remoteUrl)
 
-  const audioDir = path.join(process.cwd(), 'public', 'audio')
+  const audioDir = getAudioDir()
   await fs.mkdir(audioDir, { recursive: true })
 
   // Determine file extension from URL or default to mp3
@@ -108,5 +110,5 @@ export async function downloadToLocal(remoteUrl: string, prefix: string = 'dl'):
 
   await fs.writeFile(filePath, buffer)
 
-  return `/audio/${filename}`
+  return audioUrlFor(filename)
 }

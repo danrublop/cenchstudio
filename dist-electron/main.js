@@ -11345,6 +11345,9 @@ function getUserScenesDir() {
 function getUserUploadsDir() {
   return import_node_path5.default.join(import_electron5.app.getPath("userData"), "uploads");
 }
+function getUserAudioDir() {
+  return import_node_path5.default.join(import_electron5.app.getPath("userData"), "audio");
+}
 function getStaticAppDir() {
   return import_node_path5.default.join(__dirname, "..", "out");
 }
@@ -11865,6 +11868,10 @@ function loadEnvFiles() {
   }
 }
 loadEnvFiles();
+if (import_electron7.app.isPackaged) {
+  process.env.CENCH_AUDIO_DIR = getUserAudioDir();
+  process.env.CENCH_AUDIO_URL_BASE = "cench://audio/";
+}
 var execFileAsync = (0, import_util.promisify)(import_child_process.execFile);
 function webZoomTargetWindow() {
   return import_electron7.BrowserWindow.getFocusedWindow() ?? import_electron7.BrowserWindow.getAllWindows()[0] ?? null;
@@ -11886,8 +11893,10 @@ async function registerCenchProtocol() {
   const staticDir = import_path.default.resolve(getStaticAppDir());
   const scenesDir = import_path.default.resolve(getUserScenesDir());
   const uploadsDir2 = import_path.default.resolve(getUserUploadsDir());
+  const audioDir = import_path.default.resolve(getUserAudioDir());
   await import_promises6.default.mkdir(scenesDir, { recursive: true });
   await import_promises6.default.mkdir(uploadsDir2, { recursive: true });
+  await import_promises6.default.mkdir(audioDir, { recursive: true });
   import_electron7.protocol.handle("cench", async (request) => {
     try {
       const url = new URL(request.url);
@@ -11898,6 +11907,8 @@ async function registerCenchProtocol() {
         baseDir = scenesDir;
       } else if (host === "uploads") {
         baseDir = uploadsDir2;
+      } else if (host === "audio") {
+        baseDir = audioDir;
       } else if (host === "app" || host === "") {
         baseDir = staticDir;
       } else {

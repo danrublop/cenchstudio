@@ -1,0 +1,35 @@
+import path from 'node:path'
+
+/**
+ * Runtime-writable audio directory resolver.
+ *
+ * Runs in three contexts:
+ *   - Next dev server process  — default: `<cwd>/public/audio`
+ *   - Electron main (dev)      — inherits default via main-set env vars
+ *   - Electron main (packaged) — `<userData>/audio` via env vars set in main.ts
+ *
+ * `CENCH_AUDIO_DIR` overrides the filesystem path.
+ * `CENCH_AUDIO_URL_BASE` overrides the URL prefix stored on scene HTML
+ * (`/audio/` in dev so Next serves it, `cench://audio/` in packaged so
+ * the protocol handler serves it).
+ *
+ * Both env vars are set by `electron/main.ts` before `app.whenReady()`,
+ * so audio providers read them uniformly.
+ */
+export function getAudioDir(): string {
+  return process.env.CENCH_AUDIO_DIR || path.join(process.cwd(), 'public', 'audio')
+}
+
+export function audioUrlFor(filename: string): string {
+  const base = process.env.CENCH_AUDIO_URL_BASE || '/audio/'
+  return `${base}${filename}`
+}
+
+/**
+ * Reverse of `audioUrlFor` — detects whether a URL is already a local
+ * audio asset under our control (either `/audio/` or `cench://audio/`).
+ * Used by `downloadToLocal` to short-circuit already-local URLs.
+ */
+export function isLocalAudioUrl(url: string): boolean {
+  return url.startsWith('/audio/') || url.startsWith('cench://audio/')
+}

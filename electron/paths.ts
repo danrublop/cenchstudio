@@ -15,6 +15,10 @@ export function getUserUploadsDir(): string {
   return path.join(app.getPath('userData'), 'uploads')
 }
 
+export function getUserAudioDir(): string {
+  return path.join(app.getPath('userData'), 'audio')
+}
+
 export function getStaticAppDir(): string {
   // `__dirname` is `<Resources>/app.asar/dist-electron` in packaged builds
   // and `<repo>/dist-electron` in dev — both resolve `../out` correctly.

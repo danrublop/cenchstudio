@@ -5,6 +5,7 @@ import path from 'path'
 import os from 'os'
 import type { TTSProviderInterface, TTSParams, TTSResult, Voice } from '../types'
 import { safeAudioFilename } from '../sanitize'
+import { getAudioDir, audioUrlFor } from '../paths'
 
 const execFileAsync = promisify(execFile)
 
@@ -135,7 +136,7 @@ export const nativeTTS: TTSProviderInterface = {
       throw new Error('Native TTS is only available on macOS and Windows')
     }
 
-    const audioDir = path.join(process.cwd(), 'public', 'audio')
+    const audioDir = getAudioDir()
     await fs.mkdir(audioDir, { recursive: true })
     const filename = safeAudioFilename('tts', params.sceneId, 'mp3')
     const outMp3 = path.join(audioDir, filename)
@@ -143,7 +144,7 @@ export const nativeTTS: TTSProviderInterface = {
     const duration = platform === 'darwin' ? await generateMac(params, outMp3) : await generateWin(params, outMp3)
 
     return {
-      audioUrl: `/audio/${filename}`,
+      audioUrl: audioUrlFor(filename),
       duration,
       provider: 'native-tts',
     }

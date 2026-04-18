@@ -2,6 +2,7 @@ import fs from 'fs/promises'
 import path from 'path'
 import type { TTSProviderInterface, TTSParams, TTSResult, Voice } from '../types'
 import { safeAudioFilename } from '../sanitize'
+import { getAudioDir, audioUrlFor } from '../paths'
 
 const DEFAULT_VOICE = 'en-US-AndrewNeural'
 
@@ -58,7 +59,7 @@ export const openaiEdgeTTS: TTSProviderInterface = {
 
     const audioBuffer = Buffer.from(await response.arrayBuffer())
 
-    const audioDir = path.join(process.cwd(), 'public', 'audio')
+    const audioDir = getAudioDir()
     await fs.mkdir(audioDir, { recursive: true })
 
     const filename = safeAudioFilename('tts', params.sceneId, 'mp3')
@@ -69,7 +70,7 @@ export const openaiEdgeTTS: TTSProviderInterface = {
     const durationEstimate = (audioBuffer.length * 8) / (128 * 1000)
 
     return {
-      audioUrl: `/audio/${filename}`,
+      audioUrl: audioUrlFor(filename),
       duration: Math.round(durationEstimate * 10) / 10,
       provider: 'openai-edge-tts',
     }
