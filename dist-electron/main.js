@@ -5,6 +5,9 @@ var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __getProtoOf = Object.getPrototypeOf;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __esm = (fn, res) => function __init() {
+  return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+};
 var __export = (target, all) => {
   for (var name in all)
     __defProp(target, name, { get: all[name], enumerable: true });
@@ -26,12 +29,120 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
+// lib/agents/budget-tracker.ts
+var budget_tracker_exports = {};
+__export(budget_tracker_exports, {
+  __resetBudgets: () => __resetBudgets,
+  getBudgetSnapshot: () => getBudgetSnapshot,
+  reconcileSpend: () => reconcileSpend,
+  recordActualSpend: () => recordActualSpend,
+  releaseSpend: () => releaseSpend,
+  reserveSpend: () => reserveSpend,
+  sweepStaleReservations: () => sweepStaleReservations
+});
+function getOrCreate(projectId) {
+  let p = projects2.get(projectId);
+  if (!p) {
+    p = new ProjectBudget();
+    projects2.set(projectId, p);
+  }
+  return p;
+}
+function reserveSpend(projectId, api, estimateUsd) {
+  return getOrCreate(projectId).reserve(api, estimateUsd);
+}
+function reconcileSpend(projectId, reservationId, actualUsd) {
+  const p = projects2.get(projectId);
+  if (!p) return null;
+  return p.reconcile(reservationId, actualUsd);
+}
+function releaseSpend(projectId, reservationId) {
+  const p = projects2.get(projectId);
+  if (!p) return null;
+  return p.release(reservationId);
+}
+function recordActualSpend(projectId, costUsd) {
+  getOrCreate(projectId).addActual(costUsd);
+}
+function getBudgetSnapshot(projectId) {
+  const p = projects2.get(projectId);
+  if (!p) {
+    return { actualUsd: 0, reservedUsd: 0, committedUsd: 0, reservationCount: 0 };
+  }
+  return p.snapshot();
+}
+function sweepStaleReservations(maxAgeMs = 10 * 60 * 1e3) {
+  let swept = 0;
+  for (const p of projects2.values()) swept += p.sweepStale(maxAgeMs);
+  return swept;
+}
+function __resetBudgets() {
+  projects2.clear();
+}
+var ProjectBudget, projects2;
+var init_budget_tracker = __esm({
+  "lib/agents/budget-tracker.ts"() {
+    "use strict";
+    ProjectBudget = class {
+      actual = 0;
+      reservations = /* @__PURE__ */ new Map();
+      counter = 0;
+      reserve(api, estimateUsd) {
+        const id = `${Date.now().toString(36)}-${(++this.counter).toString(36)}`;
+        const r = { id, api, estimateUsd: Math.max(0, estimateUsd), createdAt: Date.now() };
+        this.reservations.set(id, r);
+        return r;
+      }
+      reconcile(reservationId, actualUsd) {
+        const r = this.reservations.get(reservationId);
+        if (!r) return null;
+        this.reservations.delete(reservationId);
+        this.actual += Math.max(0, actualUsd);
+        return r;
+      }
+      release(reservationId) {
+        const r = this.reservations.get(reservationId);
+        if (!r) return null;
+        this.reservations.delete(reservationId);
+        return r;
+      }
+      addActual(costUsd) {
+        this.actual += Math.max(0, costUsd);
+      }
+      snapshot() {
+        let reserved = 0;
+        for (const r of this.reservations.values()) reserved += r.estimateUsd;
+        return {
+          actualUsd: this.actual,
+          reservedUsd: reserved,
+          committedUsd: this.actual + reserved,
+          reservationCount: this.reservations.size
+        };
+      }
+      /** Remove reservations older than `maxAgeMs` — guards against leaks when
+       *  a tool handler forgets to reconcile/release. */
+      sweepStale(maxAgeMs) {
+        const cutoff = Date.now() - maxAgeMs;
+        let swept = 0;
+        for (const [id, r] of this.reservations.entries()) {
+          if (r.createdAt < cutoff) {
+            this.reservations.delete(id);
+            swept += 1;
+          }
+        }
+        return swept;
+      }
+    };
+    projects2 = /* @__PURE__ */ new Map();
+  }
+});
+
 // electron/main.ts
 var import_path = __toESM(require("path"));
 var import_child_process = require("child_process");
 var import_util = require("util");
-var import_electron = require("electron");
-var import_promises = __toESM(require("fs/promises"));
+var import_electron2 = require("electron");
+var import_promises2 = __toESM(require("fs/promises"));
 var import_url = require("url");
 
 // electron/ipc/settings.ts
@@ -1096,6 +1207,46 @@ var db = new Proxy({}, {
     return Reflect.has(initDb(), prop);
   }
 });
+async function logSpend(projectId, api, costUsd, description, reservationId) {
+  await db.insert(apiSpend).values({
+    projectId,
+    api,
+    costUsd,
+    description
+  });
+  try {
+    const tracker = await Promise.resolve().then(() => (init_budget_tracker(), budget_tracker_exports));
+    if (reservationId) {
+      const reconciled = tracker.reconcileSpend(projectId, reservationId, costUsd);
+      if (!reconciled) tracker.recordActualSpend(projectId, costUsd);
+    } else {
+      tracker.recordActualSpend(projectId, costUsd);
+    }
+  } catch (trackerErr) {
+    console.warn(`[logSpend] budget tracker update failed for project=${projectId} api=${api}`, trackerErr);
+  }
+}
+async function getSessionSpend(api) {
+  const [row] = await db.select({ total: import_drizzle_orm2.sql`coalesce(sum(${apiSpend.costUsd}), 0)` }).from(apiSpend).where(import_drizzle_orm2.sql`${apiSpend.api} = ${api} AND ${apiSpend.createdAt} > now() - interval '1 day'`);
+  return row.total;
+}
+async function getMonthlySpend(api) {
+  const [row] = await db.select({ total: import_drizzle_orm2.sql`coalesce(sum(${apiSpend.costUsd}), 0)` }).from(apiSpend).where(import_drizzle_orm2.sql`${apiSpend.api} = ${api} AND ${apiSpend.createdAt} > date_trunc('month', now())`);
+  return row.total;
+}
+async function getSessionPermission(api) {
+  const row = await db.query.permissionSessions.findFirst({
+    where: (0, import_drizzle_orm2.eq)(permissionSessions.api, api),
+    columns: { decision: true }
+  });
+  return row?.decision ?? null;
+}
+async function setSessionPermission(api, decision) {
+  await db.insert(permissionSessions).values({ api, decision }).onConflictDoUpdate({
+    target: permissionSessions.api,
+    set: { decision }
+  });
+}
 async function getAgentUsageSummary(projectId) {
   const empty = {
     totalInputTokens: 0,
@@ -1629,13 +1780,7 @@ var VALID_USER_ACTIONS = [
   "exported",
   "published"
 ];
-var VALID_DIMENSIONS = [
-  "scene_type",
-  "model_used",
-  "thinking_mode",
-  "style_preset_id",
-  "agent_type"
-];
+var VALID_DIMENSIONS = ["scene_type", "model_used", "thinking_mode", "style_preset_id", "agent_type"];
 var MAX_QUERY_RESULTS = 500;
 async function update2(args) {
   assertValidUuid(args.logId, "logId");
@@ -1702,27 +1847,113 @@ function register4(ipcMain2) {
   );
 }
 
+// electron/ipc/permissions.ts
+var TRACKED_APIS = ["heygen", "veo3", "imageGen", "backgroundRemoval", "elevenLabs", "unsplash"];
+async function getSpend() {
+  const result = {};
+  for (const api of TRACKED_APIS) {
+    result[api] = {
+      sessionSpend: await getSessionSpend(api),
+      monthlySpend: await getMonthlySpend(api)
+    };
+  }
+  return result;
+}
+async function perform(args) {
+  if (args.action === "log_spend") {
+    if (!args.api) throw new IpcValidationError("api is required");
+    if (typeof args.costUsd !== "number" || !Number.isFinite(args.costUsd)) {
+      throw new IpcValidationError("costUsd must be a finite number");
+    }
+    if (args.projectId) assertValidUuid(args.projectId, "projectId");
+    await logSpend(args.projectId ?? "", args.api, args.costUsd, args.description ?? "");
+    return { ok: true };
+  }
+  if (args.action === "set_session_permission") {
+    if (!args.api || !args.decision) throw new IpcValidationError("api and decision required");
+    await setSessionPermission(args.api, args.decision);
+    return { ok: true };
+  }
+  if (args.action === "get_session_permission") {
+    if (!args.api) throw new IpcValidationError("api required");
+    const decision = await getSessionPermission(args.api);
+    return { decision };
+  }
+  throw new IpcValidationError(`Unknown permissions action: ${args.action}`);
+}
+function register5(ipcMain2) {
+  ipcMain2.handle("cench:permissions.getSpend", () => getSpend());
+  ipcMain2.handle("cench:permissions.perform", (_e, args) => perform(args));
+}
+
+// electron/ipc/skills.ts
+var import_electron = require("electron");
+var import_node_path = __toESM(require("node:path"));
+var import_promises = __toESM(require("node:fs/promises"));
+function getSkillRoots() {
+  if (import_electron.app.isPackaged) {
+    const base = import_node_path.default.join(process.resourcesPath, "skill-data");
+    return {
+      cench: import_node_path.default.join(base, "cench"),
+      library: import_node_path.default.join(base, "library")
+    };
+  }
+  const repoRoot = import_node_path.default.resolve(__dirname, "..");
+  return {
+    cench: import_node_path.default.join(repoRoot, ".claude/skills/cench"),
+    library: import_node_path.default.join(repoRoot, "lib/skills/library")
+  };
+}
+async function readSkillFile(args) {
+  if (!args.source || !args.file) {
+    throw new IpcValidationError("source and file are required");
+  }
+  const roots = getSkillRoots();
+  const root = roots[args.source];
+  if (!root) {
+    throw new IpcValidationError(`Unknown source: ${args.source}`);
+  }
+  const resolved = import_node_path.default.resolve(root, args.file);
+  if (!resolved.startsWith(root + import_node_path.default.sep) && resolved !== root) {
+    throw new IpcValidationError("Invalid file path (path traversal)");
+  }
+  try {
+    const content = await import_promises.default.readFile(resolved, "utf-8");
+    return { content, file: args.file, source: args.source };
+  } catch {
+    throw new IpcNotFoundError(`Skill file not found: ${args.source}/${args.file}`);
+  }
+}
+function register6(ipcMain2) {
+  ipcMain2.handle(
+    "cench:skills.readFile",
+    (_e, args) => readSkillFile(args)
+  );
+}
+
 // electron/ipc/index.ts
 function registerAllIpc(ipcMain2) {
   register(ipcMain2);
   register2(ipcMain2);
   register3(ipcMain2);
   register4(ipcMain2);
+  register5(ipcMain2);
+  register6(ipcMain2);
 }
 
 // electron/main.ts
 var execFileAsync = (0, import_util.promisify)(import_child_process.execFile);
 function webZoomTargetWindow() {
-  return import_electron.BrowserWindow.getFocusedWindow() ?? import_electron.BrowserWindow.getAllWindows()[0] ?? null;
+  return import_electron2.BrowserWindow.getFocusedWindow() ?? import_electron2.BrowserWindow.getAllWindows()[0] ?? null;
 }
 var DEV_URL = process.env.ELECTRON_START_URL || "http://localhost:3000";
 function getUserScenesDir() {
-  return import_path.default.join(import_electron.app.getPath("userData"), "scenes");
+  return import_path.default.join(import_electron2.app.getPath("userData"), "scenes");
 }
 function getStaticAppDir() {
   return import_path.default.join(__dirname, "..", "out");
 }
-import_electron.protocol.registerSchemesAsPrivileged([
+import_electron2.protocol.registerSchemesAsPrivileged([
   {
     scheme: "cench",
     privileges: {
@@ -1737,8 +1968,8 @@ import_electron.protocol.registerSchemesAsPrivileged([
 async function registerCenchProtocol() {
   const staticDir = import_path.default.resolve(getStaticAppDir());
   const scenesDir = import_path.default.resolve(getUserScenesDir());
-  await import_promises.default.mkdir(scenesDir, { recursive: true });
-  import_electron.protocol.handle("cench", async (request) => {
+  await import_promises2.default.mkdir(scenesDir, { recursive: true });
+  import_electron2.protocol.handle("cench", async (request) => {
     try {
       const url = new URL(request.url);
       const host = url.hostname;
@@ -1756,27 +1987,27 @@ async function registerCenchProtocol() {
         return new Response("Forbidden", { status: 403 });
       }
       try {
-        const stat = await import_promises.default.stat(filePath);
+        const stat = await import_promises2.default.stat(filePath);
         if (stat.isDirectory()) filePath = import_path.default.join(filePath, "index.html");
       } catch {
         if (!filePath.endsWith(".html")) {
           const htmlVariant = `${filePath}.html`;
           try {
-            await import_promises.default.access(htmlVariant);
+            await import_promises2.default.access(htmlVariant);
             filePath = htmlVariant;
           } catch {
           }
         }
       }
       try {
-        const realPath = await import_promises.default.realpath(filePath);
+        const realPath = await import_promises2.default.realpath(filePath);
         if (!realPath.startsWith(baseDir + import_path.default.sep) && realPath !== baseDir) {
           return new Response("Forbidden (symlink escape)", { status: 403 });
         }
         filePath = realPath;
       } catch {
       }
-      return import_electron.net.fetch((0, import_url.pathToFileURL)(filePath).toString());
+      return import_electron2.net.fetch((0, import_url.pathToFileURL)(filePath).toString());
     } catch (err) {
       console.error("[cench-protocol] failed to serve", request.url, err);
       return new Response("Internal error", { status: 500 });
@@ -1786,9 +2017,9 @@ async function registerCenchProtocol() {
 function sanitizeFilename(hint, fallback = "recording") {
   return (hint || fallback).toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").slice(0, 100) || fallback;
 }
-import_electron.app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
+import_electron2.app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 function createWindow() {
-  const win = new import_electron.BrowserWindow({
+  const win = new import_electron2.BrowserWindow({
     width: 1600,
     height: 960,
     backgroundColor: "#0b0b0f",
@@ -1801,13 +2032,13 @@ function createWindow() {
       autoplayPolicy: "no-user-gesture-required"
     }
   });
-  const appUrl = import_electron.app.isPackaged ? "cench://app/index.html" : DEV_URL;
+  const appUrl = import_electron2.app.isPackaged ? "cench://app/index.html" : DEV_URL;
   win.loadURL(appUrl);
   win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   const template = [
     ...process.platform === "darwin" ? [
       {
-        label: import_electron.app.name,
+        label: import_electron2.app.name,
         submenu: [
           { role: "about" },
           { type: "separator" },
@@ -1828,7 +2059,7 @@ function createWindow() {
           label: "Home",
           accelerator: "CmdOrCtrl+Shift+H",
           click: () => {
-            const w = import_electron.BrowserWindow.getFocusedWindow() ?? import_electron.BrowserWindow.getAllWindows()[0];
+            const w = import_electron2.BrowserWindow.getFocusedWindow() ?? import_electron2.BrowserWindow.getAllWindows()[0];
             if (w)
               w.webContents.executeJavaScript(`
               (() => {
@@ -1849,7 +2080,7 @@ function createWindow() {
           label: "Undo",
           accelerator: "CmdOrCtrl+Z",
           click: () => {
-            const w = import_electron.BrowserWindow.getFocusedWindow() ?? import_electron.BrowserWindow.getAllWindows()[0];
+            const w = import_electron2.BrowserWindow.getFocusedWindow() ?? import_electron2.BrowserWindow.getAllWindows()[0];
             if (w)
               w.webContents.executeJavaScript(`
               (() => {
@@ -1867,7 +2098,7 @@ function createWindow() {
           label: "Redo",
           accelerator: "CmdOrCtrl+Shift+Z",
           click: () => {
-            const w = import_electron.BrowserWindow.getFocusedWindow() ?? import_electron.BrowserWindow.getAllWindows()[0];
+            const w = import_electron2.BrowserWindow.getFocusedWindow() ?? import_electron2.BrowserWindow.getAllWindows()[0];
             if (w)
               w.webContents.executeJavaScript(`
               (() => {
@@ -1895,7 +2126,7 @@ function createWindow() {
           label: "Toggle Preview Fullscreen",
           accelerator: "CmdOrCtrl+Shift+F",
           click: () => {
-            const w = import_electron.BrowserWindow.getFocusedWindow() ?? import_electron.BrowserWindow.getAllWindows()[0];
+            const w = import_electron2.BrowserWindow.getFocusedWindow() ?? import_electron2.BrowserWindow.getAllWindows()[0];
             if (w)
               w.webContents.executeJavaScript(`
               (() => {
@@ -1920,7 +2151,7 @@ function createWindow() {
     {
       label: "Documentation",
       click: () => {
-        import_electron.shell.openExternal(`${DEV_URL.replace(/\/$/, "")}/docs`);
+        import_electron2.shell.openExternal(`${DEV_URL.replace(/\/$/, "")}/docs`);
       }
     },
     {
@@ -1932,11 +2163,11 @@ function createWindow() {
       ]
     }
   ];
-  import_electron.Menu.setApplicationMenu(import_electron.Menu.buildFromTemplate(template));
+  import_electron2.Menu.setApplicationMenu(import_electron2.Menu.buildFromTemplate(template));
 }
-import_electron.app.whenReady().then(async () => {
-  import_electron.ipcMain.handle("cench:gitStatus", async () => {
-    if (import_electron.app.isPackaged) {
+import_electron2.app.whenReady().then(async () => {
+  import_electron2.ipcMain.handle("cench:gitStatus", async () => {
+    if (import_electron2.app.isPackaged) {
       return { ok: false, branch: null, dirty: false };
     }
     const cwd = process.cwd();
@@ -1958,7 +2189,7 @@ import_electron.app.whenReady().then(async () => {
       return { ok: false, branch: null, dirty: false };
     }
   });
-  import_electron.ipcMain.handle("cench:webZoomIn", () => {
+  import_electron2.ipcMain.handle("cench:webZoomIn", () => {
     const win = webZoomTargetWindow();
     if (!win) return { ok: false, factor: 1 };
     const z = win.webContents.getZoomFactor();
@@ -1966,7 +2197,7 @@ import_electron.app.whenReady().then(async () => {
     win.webContents.setZoomFactor(next);
     return { ok: true, factor: win.webContents.getZoomFactor() };
   });
-  import_electron.ipcMain.handle("cench:webZoomOut", () => {
+  import_electron2.ipcMain.handle("cench:webZoomOut", () => {
     const win = webZoomTargetWindow();
     if (!win) return { ok: false, factor: 1 };
     const z = win.webContents.getZoomFactor();
@@ -1974,13 +2205,13 @@ import_electron.app.whenReady().then(async () => {
     win.webContents.setZoomFactor(next);
     return { ok: true, factor: win.webContents.getZoomFactor() };
   });
-  import_electron.ipcMain.handle("cench:webZoomReset", () => {
+  import_electron2.ipcMain.handle("cench:webZoomReset", () => {
     const win = webZoomTargetWindow();
     if (!win) return { ok: false, factor: 1 };
     win.webContents.setZoomFactor(1);
     return { ok: true, factor: 1 };
   });
-  import_electron.ipcMain.handle(
+  import_electron2.ipcMain.handle(
     "cench:capturePage",
     async (_evt, args) => {
       const win = webZoomTargetWindow();
@@ -1994,49 +2225,49 @@ import_electron.app.whenReady().then(async () => {
       }
     }
   );
-  import_electron.ipcMain.handle("cench:saveDialog", async (_evt, suggestedName) => {
-    const res = await import_electron.dialog.showSaveDialog({
+  import_electron2.ipcMain.handle("cench:saveDialog", async (_evt, suggestedName) => {
+    const res = await import_electron2.dialog.showSaveDialog({
       title: "Save exported video",
       defaultPath: suggestedName || `export-${Date.now()}.mp4`,
       filters: [{ name: "MP4 Video", extensions: ["mp4"] }]
     });
     return { canceled: res.canceled, filePath: res.filePath ?? null };
   });
-  import_electron.ipcMain.handle("cench:writeFile", async (_evt, args) => {
-    await import_promises.default.mkdir(import_path.default.dirname(args.filePath), { recursive: true });
-    await import_promises.default.writeFile(args.filePath, Buffer.from(args.bytes));
+  import_electron2.ipcMain.handle("cench:writeFile", async (_evt, args) => {
+    await import_promises2.default.mkdir(import_path.default.dirname(args.filePath), { recursive: true });
+    await import_promises2.default.writeFile(args.filePath, Buffer.from(args.bytes));
     return { ok: true };
   });
-  import_electron.ipcMain.handle(
+  import_electron2.ipcMain.handle(
     "cench:saveRecording",
     async (_evt, args) => {
       const extRaw = (args.extension || "webm").toLowerCase().replace(/[^a-z0-9]/g, "");
       const ext = extRaw || "webm";
-      const dir = import_path.default.join(import_electron.app.getPath("userData"), "recordings");
-      await import_promises.default.mkdir(dir, { recursive: true });
+      const dir = import_path.default.join(import_electron2.app.getPath("userData"), "recordings");
+      await import_promises2.default.mkdir(dir, { recursive: true });
       const safeBase = sanitizeFilename(args.nameHint || "");
       const filePath = import_path.default.join(dir, `${safeBase}-${Date.now()}.${ext}`);
-      await import_promises.default.writeFile(filePath, Buffer.from(args.bytes));
+      await import_promises2.default.writeFile(filePath, Buffer.from(args.bytes));
       const fileUrl = (0, import_url.pathToFileURL)(filePath).href;
       return { ok: true, filePath, fileUrl };
     }
   );
-  import_electron.ipcMain.handle(
+  import_electron2.ipcMain.handle(
     "cench:concatMp4",
     async (_evt, args) => {
       const inputs = (args.inputs ?? []).filter(Boolean);
       if (inputs.length === 0) throw new Error("concatMp4: no input files");
       if (inputs.length === 1) {
-        await import_promises.default.copyFile(inputs[0], args.output);
+        await import_promises2.default.copyFile(inputs[0], args.output);
         if (args.cleanup) {
-          await import_promises.default.unlink(inputs[0]).catch(() => {
+          await import_promises2.default.unlink(inputs[0]).catch(() => {
           });
         }
         return { ok: true };
       }
       const transitions = args.transitions ?? [];
       try {
-        const stitcherPath = import_electron.app.isPackaged ? import_path.default.join(process.resourcesPath, "render-server", "stitcher.js") : import_path.default.join(process.cwd(), "render-server", "stitcher.js");
+        const stitcherPath = import_electron2.app.isPackaged ? import_path.default.join(process.resourcesPath, "render-server", "stitcher.js") : import_path.default.join(process.cwd(), "render-server", "stitcher.js");
         const mod = await import((0, import_url.pathToFileURL)(stitcherPath).href);
         const stitchScenes = mod?.stitchScenes;
         if (typeof stitchScenes !== "function") {
@@ -2049,7 +2280,7 @@ import_electron.app.whenReady().then(async () => {
         await stitchScenes(inputs, stitchedTransitions, args.output);
       } finally {
         if (args.cleanup) {
-          await Promise.all(inputs.map((p) => import_promises.default.unlink(p).catch(() => {
+          await Promise.all(inputs.map((p) => import_promises2.default.unlink(p).catch(() => {
           })));
         }
       }
@@ -2061,18 +2292,18 @@ import_electron.app.whenReady().then(async () => {
   let cursorSamples = [];
   let cursorStartTime = 0;
   let cursorSourceDisplay = null;
-  import_electron.ipcMain.handle("cench:startCursorTelemetry", (_evt, args) => {
+  import_electron2.ipcMain.handle("cench:startCursorTelemetry", (_evt, args) => {
     cursorSamples = [];
     cursorStartTime = Date.now();
     cursorSourceDisplay = null;
     if (args?.displayId) {
       const numId = Number(args.displayId);
-      const all = import_electron.screen.getAllDisplays();
+      const all = import_electron2.screen.getAllDisplays();
       cursorSourceDisplay = all.find((d) => d.id === numId || String(d.id) === args.displayId) ?? null;
     }
     cursorInterval = setInterval(() => {
-      const point = import_electron.screen.getCursorScreenPoint();
-      const display = cursorSourceDisplay ?? import_electron.screen.getDisplayNearestPoint(point);
+      const point = import_electron2.screen.getCursorScreenPoint();
+      const display = cursorSourceDisplay ?? import_electron2.screen.getDisplayNearestPoint(point);
       const { x, y, width, height } = display.bounds;
       const nx = Math.max(0, Math.min(1, (point.x - x) / width));
       const ny = Math.max(0, Math.min(1, (point.y - y) / height));
@@ -2083,7 +2314,7 @@ import_electron.app.whenReady().then(async () => {
     }, 100);
     return { ok: true };
   });
-  import_electron.ipcMain.handle("cench:stopCursorTelemetry", () => {
+  import_electron2.ipcMain.handle("cench:stopCursorTelemetry", () => {
     if (cursorInterval) {
       clearInterval(cursorInterval);
       cursorInterval = null;
@@ -2093,20 +2324,20 @@ import_electron.app.whenReady().then(async () => {
     cursorSamples = [];
     return { samples };
   });
-  import_electron.ipcMain.handle(
+  import_electron2.ipcMain.handle(
     "cench:saveRecordingSession",
     async (_evt, args) => {
       if (!args.screenBytes || args.screenBytes.byteLength === 0) {
         throw new Error("Screen recording is empty \u2014 nothing to save");
       }
-      const dir = import_path.default.join(import_electron.app.getPath("userData"), "recordings");
-      await import_promises.default.mkdir(dir, { recursive: true });
+      const dir = import_path.default.join(import_electron2.app.getPath("userData"), "recordings");
+      await import_promises2.default.mkdir(dir, { recursive: true });
       const ts = Date.now();
       const safeBase = sanitizeFilename(args.nameHint || "");
       const writtenFiles = [];
       try {
         const screenPath = import_path.default.join(dir, `${safeBase}-${ts}.webm`);
-        await import_promises.default.writeFile(screenPath, Buffer.from(args.screenBytes));
+        await import_promises2.default.writeFile(screenPath, Buffer.from(args.screenBytes));
         writtenFiles.push(screenPath);
         const result = {
           screenVideoPath: screenPath,
@@ -2115,33 +2346,33 @@ import_electron.app.whenReady().then(async () => {
         };
         if (args.webcamBytes && args.webcamBytes.byteLength > 0) {
           const webcamPath = import_path.default.join(dir, `${safeBase}-${ts}-webcam.webm`);
-          await import_promises.default.writeFile(webcamPath, Buffer.from(args.webcamBytes));
+          await import_promises2.default.writeFile(webcamPath, Buffer.from(args.webcamBytes));
           writtenFiles.push(webcamPath);
           result.webcamVideoPath = webcamPath;
           result.webcamVideoUrl = (0, import_url.pathToFileURL)(webcamPath).href;
         }
         const manifestPath = import_path.default.join(dir, `${safeBase}-${ts}.session.json`);
-        await import_promises.default.writeFile(manifestPath, JSON.stringify(result, null, 2));
+        await import_promises2.default.writeFile(manifestPath, JSON.stringify(result, null, 2));
         return result;
       } catch (err) {
-        await Promise.all(writtenFiles.map((f) => import_promises.default.unlink(f).catch(() => {
+        await Promise.all(writtenFiles.map((f) => import_promises2.default.unlink(f).catch(() => {
         })));
         throw err;
       }
     }
   );
-  import_electron.session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {
+  import_electron2.session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {
     const allowed = ["media", "audioCapture", "microphone", "videoCapture", "camera"];
     return allowed.includes(permission);
   });
-  import_electron.session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+  import_electron2.session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
     const allowed = ["media", "audioCapture", "microphone", "videoCapture", "camera"];
     callback(allowed.includes(permission));
   });
   await registerCenchProtocol();
-  registerAllIpc(import_electron.ipcMain);
+  registerAllIpc(import_electron2.ipcMain);
   createWindow();
-  import_electron.session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
+  import_electron2.session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
     console.log("[Electron] setDisplayMediaRequestHandler called");
     console.log("[Electron]   videoRequested:", !!request.videoRequested);
     console.log("[Electron]   audioRequested:", !!request.audioRequested);
@@ -2155,11 +2386,11 @@ import_electron.app.whenReady().then(async () => {
       callback(null);
     }
   });
-  import_electron.app.on("activate", () => {
-    if (import_electron.BrowserWindow.getAllWindows().length === 0) createWindow();
+  import_electron2.app.on("activate", () => {
+    if (import_electron2.BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
-import_electron.app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") import_electron.app.quit();
+import_electron2.app.on("window-all-closed", () => {
+  if (process.platform !== "darwin") import_electron2.app.quit();
 });
 //# sourceMappingURL=main.js.map

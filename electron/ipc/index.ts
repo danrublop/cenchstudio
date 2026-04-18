@@ -3,6 +3,8 @@ import * as settings from './settings'
 import * as conversations from './conversations'
 import * as usage from './usage'
 import * as generationLog from './generation-log'
+import * as permissions from './permissions'
+import * as skills from './skills'
 
 /**
  * Central IPC registration. Each category module exports
@@ -19,4 +21,6 @@ export function registerAllIpc(ipcMain: IpcMain): void {
   conversations.register(ipcMain)
   usage.register(ipcMain)
   generationLog.register(ipcMain)
+  permissions.register(ipcMain)
+  skills.register(ipcMain)
 }

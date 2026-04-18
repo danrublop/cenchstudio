@@ -20,20 +20,34 @@ function ProviderKeyInput({ provider }: { provider: 'anthropic' | 'openai' | 'lo
   const cfg = providerConfigs.find((p) => p.provider === provider) ?? { provider, apiKey: '', baseUrl: '' }
   const [showKey, setShowKey] = useState(false)
 
-  const label = provider === 'anthropic' ? 'Anthropic API Key' : provider === 'openai' ? 'OpenAI API Key' : 'Local / Ollama Endpoint'
+  const label =
+    provider === 'anthropic'
+      ? 'Anthropic API Key'
+      : provider === 'openai'
+        ? 'OpenAI API Key'
+        : 'Local / Ollama Endpoint'
   const isLocal = provider === 'local'
 
   return (
-    <div className="p-3 rounded-lg border mb-2" style={{ backgroundColor: 'var(--color-input-bg, #161622)', borderColor: 'var(--color-border, #2a2a3a)' }}>
+    <div
+      className="p-3 rounded-lg border mb-2"
+      style={{ backgroundColor: 'var(--color-input-bg, #161622)', borderColor: 'var(--color-border, #2a2a3a)' }}
+    >
       <label className="block text-[10px] text-[#6b6b7a] uppercase tracking-wider mb-1.5">{label}</label>
       <div className="flex gap-2">
         <input
           type={isLocal || showKey ? 'text' : 'password'}
           value={isLocal ? (cfg.baseUrl ?? 'http://localhost:11434') : cfg.apiKey}
-          onChange={(e) => updateProviderConfig(provider, isLocal ? { baseUrl: e.target.value } : { apiKey: e.target.value })}
-          placeholder={isLocal ? "http://localhost:11434" : `${label}`}
+          onChange={(e) =>
+            updateProviderConfig(provider, isLocal ? { baseUrl: e.target.value } : { apiKey: e.target.value })
+          }
+          placeholder={isLocal ? 'http://localhost:11434' : `${label}`}
           className="flex-1 text-sm px-2 py-1.5 rounded border focus:outline-none"
-          style={{ backgroundColor: 'var(--color-panel-bg, #1e1e2e)', borderColor: 'var(--color-border, #2a2a3a)', color: 'var(--color-text-primary, #e0e0e0)' }}
+          style={{
+            backgroundColor: 'var(--color-panel-bg, #1e1e2e)',
+            borderColor: 'var(--color-border, #2a2a3a)',
+            color: 'var(--color-text-primary, #e0e0e0)',
+          }}
         />
         {!isLocal && (
           <button
@@ -61,9 +75,10 @@ export default function APIPermissionsSettings() {
 
   // Fetch spend data on mount
   useEffect(() => {
-    fetch('/api/permissions')
-      .then((r) => r.json())
-      .then(setSpendData)
+    const ipc = typeof window !== 'undefined' ? window.cenchApi?.permissions : undefined
+    const load = ipc ? ipc.getSpend() : fetch('/api/permissions').then((r) => r.json())
+    Promise.resolve(load)
+      .then((data) => setSpendData(data as Record<string, { sessionSpend: number; monthlySpend: number }>))
       .catch(() => {})
   }, [])
 
@@ -78,24 +93,34 @@ export default function APIPermissionsSettings() {
     <div className="space-y-4">
       <div className="flex items-center gap-2 mb-2">
         <Key size={16} className="text-blue-400" />
-        <span className="text-sm font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-secondary, #6b6b7a)' }}>
+        <span
+          className="text-sm font-semibold uppercase tracking-wider"
+          style={{ color: 'var(--color-text-secondary, #6b6b7a)' }}
+        >
           LLM Providers
         </span>
       </div>
-      
+
       <ProviderKeyInput provider="anthropic" />
       <ProviderKeyInput provider="openai" />
       <ProviderKeyInput provider="local" />
 
       <div className="flex items-center gap-2 mb-2 mt-6">
         <ShieldCheck size={16} className="text-amber-400" />
-        <span className="text-sm font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-secondary, #6b6b7a)' }}>
+        <span
+          className="text-sm font-semibold uppercase tracking-wider"
+          style={{ color: 'var(--color-text-secondary, #6b6b7a)' }}
+        >
           External API Permissions
         </span>
       </div>
 
       {API_LIST.map((api) => {
-        const config = permissions[api] ?? { mode: 'always_ask' as PermissionMode, spendLimitSession: null, spendLimitMonthly: null }
+        const config = permissions[api] ?? {
+          mode: 'always_ask' as PermissionMode,
+          spendLimitSession: null,
+          spendLimitMonthly: null,
+        }
         const spend = spendData[api]
 
         return (
@@ -114,8 +139,8 @@ export default function APIPermissionsSettings() {
                   config.mode === 'always_allow'
                     ? 'bg-green-500/20 text-green-400'
                     : config.mode === 'always_deny'
-                    ? 'bg-red-500/20 text-red-400'
-                    : 'bg-amber-500/20 text-amber-400'
+                      ? 'bg-red-500/20 text-red-400'
+                      : 'bg-amber-500/20 text-amber-400'
                 }`}
               >
                 {MODE_OPTIONS.find((m) => m.value === config.mode)?.label}

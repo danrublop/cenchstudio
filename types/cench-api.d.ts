@@ -152,6 +152,20 @@ export interface CenchApi {
     list(args: { projectId?: string; sceneId?: string; limit?: number; offset?: number }): Promise<{ logs: unknown[] }>
     listByDimension(args: { dimension: GenerationLogDimension; projectId?: string }): Promise<{ data: unknown }>
   }
+  permissions: {
+    /** Per-API session + monthly spend tracking. */
+    getSpend(): Promise<Record<string, { sessionSpend: number; monthlySpend: number }>>
+    perform(
+      args:
+        | { action: 'log_spend'; api: string; costUsd: number; description?: string; projectId?: string }
+        | { action: 'set_session_permission'; api: string; decision: string }
+        | { action: 'get_session_permission'; api: string },
+    ): Promise<{ ok?: true; decision?: string | null }>
+  }
+  skills: {
+    /** Read a markdown skill file from the bundled skill trees. */
+    readFile(args: { source: string; file: string }): Promise<{ content: string; file: string; source: string }>
+  }
 }
 
 declare global {

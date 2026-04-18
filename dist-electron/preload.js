@@ -39,6 +39,13 @@ var cenchApi = {
     update: (args) => import_electron.ipcRenderer.invoke("cench:generationLog.update", args),
     list: (args) => import_electron.ipcRenderer.invoke("cench:generationLog.list", args),
     listByDimension: (args) => import_electron.ipcRenderer.invoke("cench:generationLog.listByDimension", args)
+  },
+  permissions: {
+    getSpend: () => import_electron.ipcRenderer.invoke("cench:permissions.getSpend"),
+    perform: (args) => import_electron.ipcRenderer.invoke("cench:permissions.perform", args)
+  },
+  skills: {
+    readFile: (args) => import_electron.ipcRenderer.invoke("cench:skills.readFile", args)
   }
 };
 import_electron.contextBridge.exposeInMainWorld("cenchApi", cenchApi);

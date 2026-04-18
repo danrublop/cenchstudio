@@ -45,6 +45,24 @@ export type CenchApi = {
     }) => Promise<{ logs: unknown[] }>
     listByDimension: (args: { dimension: string; projectId?: string }) => Promise<{ data: unknown }>
   }
+  permissions: {
+    getSpend: () => Promise<Record<string, { sessionSpend: number; monthlySpend: number }>>
+    perform: (args: {
+      action: 'log_spend' | 'set_session_permission' | 'get_session_permission'
+      api: string
+      costUsd?: number
+      description?: string
+      projectId?: string
+      decision?: string
+    }) => Promise<{ ok?: true; decision?: string | null }>
+  }
+  skills: {
+    readFile: (args: { source: string; file: string }) => Promise<{
+      content: string
+      file: string
+      source: string
+    }>
+  }
 }
 
 const cenchApi: CenchApi = {
@@ -69,6 +87,13 @@ const cenchApi: CenchApi = {
     update: (args) => ipcRenderer.invoke('cench:generationLog.update', args),
     list: (args) => ipcRenderer.invoke('cench:generationLog.list', args),
     listByDimension: (args) => ipcRenderer.invoke('cench:generationLog.listByDimension', args),
+  },
+  permissions: {
+    getSpend: () => ipcRenderer.invoke('cench:permissions.getSpend'),
+    perform: (args) => ipcRenderer.invoke('cench:permissions.perform', args),
+  },
+  skills: {
+    readFile: (args) => ipcRenderer.invoke('cench:skills.readFile', args),
   },
 }
 
