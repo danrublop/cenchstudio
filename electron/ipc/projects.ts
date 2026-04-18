@@ -14,6 +14,7 @@ import {
   patchAsset as svcPatchAsset,
   deleteAsset as svcDeleteAsset,
   regenerateAsset as svcRegenerateAsset,
+  generateAsset as svcGenerateAsset,
   AssetValidationError,
   AssetNotFoundError,
 } from '@/lib/services/assets'
@@ -505,6 +506,26 @@ export function register(ipcMain: IpcMain): void {
     ) => {
       try {
         return await svcRegenerateAsset(args)
+      } catch (err) {
+        mapAssetError(err)
+      }
+    },
+  )
+  ipcMain.handle(
+    'cench:projects.generateAsset',
+    async (
+      _e,
+      args: {
+        projectId: string
+        prompt: string
+        model?: string
+        aspectRatio?: string
+        enhanceTags?: string[]
+        referenceAssetId?: string | null
+      },
+    ) => {
+      try {
+        return await svcGenerateAsset(args)
       } catch (err) {
         mapAssetError(err)
       }

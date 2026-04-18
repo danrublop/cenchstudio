@@ -93,6 +93,14 @@ export type CenchApi = {
       aspectRatio?: string
       enhanceTags?: string[]
     }) => Promise<{ asset: Record<string, unknown>; cost: number; finalPrompt: string }>
+    generateAsset: (args: {
+      projectId: string
+      prompt: string
+      model?: string
+      aspectRatio?: string
+      enhanceTags?: string[]
+      referenceAssetId?: string | null
+    }) => Promise<{ asset: Record<string, unknown>; cost: number; finalPrompt: string }>
   }
   workspaces: {
     list: () => Promise<unknown[]>
@@ -357,6 +365,7 @@ const cenchApi: CenchApi = {
     patchAsset: (args) => ipcRenderer.invoke('cench:projects.patchAsset', args),
     deleteAsset: (args) => ipcRenderer.invoke('cench:projects.deleteAsset', args),
     regenerateAsset: (args) => ipcRenderer.invoke('cench:projects.regenerateAsset', args),
+    generateAsset: (args) => ipcRenderer.invoke('cench:projects.generateAsset', args),
   },
   workspaces: {
     list: () => ipcRenderer.invoke('cench:workspaces.list'),

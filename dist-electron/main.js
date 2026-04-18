@@ -6790,6 +6790,56 @@ async function deleteAsset(input) {
   await db.delete(projectAssets).where((0, import_drizzle_orm7.and)((0, import_drizzle_orm7.eq)(projectAssets.id, input.assetId), (0, import_drizzle_orm7.eq)(projectAssets.projectId, input.projectId)));
   return { success: true };
 }
+async function generateAsset(input) {
+  assertProjectId(input.projectId);
+  const rawPrompt = String(input.prompt ?? "").trim();
+  if (!rawPrompt) throw new AssetValidationError("Prompt is required");
+  const { generateImage: generateImage2 } = await Promise.resolve().then(() => (init_image_gen(), image_gen_exports));
+  const { logSpend: logSpend2 } = await Promise.resolve().then(() => (init_db(), db_exports));
+  const { persistGeneratedAsset: persistGeneratedAsset2 } = await Promise.resolve().then(() => (init_provenance(), provenance_exports));
+  const { enrichPrompt: enrichPrompt2 } = await Promise.resolve().then(() => (init_prompt_enhancer(), prompt_enhancer_exports));
+  const model = input.model ?? "flux-schnell";
+  const aspectRatio = input.aspectRatio ?? "1:1";
+  const enhanceTags = Array.isArray(input.enhanceTags) ? input.enhanceTags : [];
+  const referenceAssetId = input.referenceAssetId ?? null;
+  let referenceImageUrl = null;
+  let referenceAssetIds = null;
+  if (referenceAssetId) {
+    const [ref] = await db.select().from(projectAssets).where((0, import_drizzle_orm7.and)((0, import_drizzle_orm7.eq)(projectAssets.id, referenceAssetId), (0, import_drizzle_orm7.eq)(projectAssets.projectId, input.projectId))).limit(1);
+    if (!ref) throw new AssetNotFoundError("Reference asset not found");
+    referenceImageUrl = ref.publicUrl;
+    referenceAssetIds = [ref.id];
+  }
+  const finalPrompt = enrichPrompt2(rawPrompt, enhanceTags, model);
+  const result = await generateImage2({
+    prompt: finalPrompt,
+    model,
+    aspectRatio,
+    style: null,
+    referenceImageUrl
+  });
+  if (result.cost > 0) {
+    await logSpend2(input.projectId, "imageGen", result.cost, `${String(model)}: ${rawPrompt.slice(0, 100)}`);
+  }
+  const persisted = await persistGeneratedAsset2({
+    projectId: input.projectId,
+    sourceUrl: result.imageUrl,
+    type: "image",
+    width: result.width,
+    height: result.height,
+    metadata: {
+      prompt: finalPrompt,
+      provider: "imageGen",
+      model,
+      costCents: Math.round((result.cost ?? 0) * 100),
+      parentAssetId: null,
+      referenceAssetIds,
+      enhanceTags: enhanceTags.length ? enhanceTags : null
+    }
+  });
+  const [row] = await db.select().from(projectAssets).where((0, import_drizzle_orm7.eq)(projectAssets.id, persisted.id)).limit(1);
+  return { asset: row, cost: result.cost, finalPrompt };
+}
 function deriveAspect(w, h) {
   if (!w || !h) return null;
   const r = w / h;
@@ -7184,21 +7234,28 @@ function register7(ipcMain2) {
       }
     }
   );
+  ipcMain2.handle("cench:projects.deleteAsset", async (_e, args) => {
+    try {
+      return await deleteAsset(args);
+    } catch (err) {
+      mapAssetError(err);
+    }
+  });
   ipcMain2.handle(
-    "cench:projects.deleteAsset",
+    "cench:projects.regenerateAsset",
     async (_e, args) => {
       try {
-        return await deleteAsset(args);
+        return await regenerateAsset(args);
       } catch (err) {
         mapAssetError(err);
       }
     }
   );
   ipcMain2.handle(
-    "cench:projects.regenerateAsset",
+    "cench:projects.generateAsset",
     async (_e, args) => {
       try {
-        return await regenerateAsset(args);
+        return await generateAsset(args);
       } catch (err) {
         mapAssetError(err);
       }

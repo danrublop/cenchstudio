@@ -116,6 +116,85 @@ export async function deleteAsset(input: DeleteAssetInput): Promise<{ success: t
   return { success: true }
 }
 
+// ── Generate (from prompt, optionally with a reference) ───────────────────
+
+export interface GenerateAssetInput {
+  projectId: string
+  prompt: string
+  model?: string
+  aspectRatio?: string
+  enhanceTags?: string[]
+  referenceAssetId?: string | null
+}
+
+export interface GenerateAssetResult {
+  asset: typeof projectAssets.$inferSelect
+  cost: number
+  finalPrompt: string
+}
+
+export async function generateAsset(input: GenerateAssetInput): Promise<GenerateAssetResult> {
+  assertProjectId(input.projectId)
+  const rawPrompt = String(input.prompt ?? '').trim()
+  if (!rawPrompt) throw new AssetValidationError('Prompt is required')
+
+  const { generateImage } = await import('@/lib/apis/image-gen')
+  const { logSpend } = await import('@/lib/db')
+  const { persistGeneratedAsset } = await import('@/lib/media/provenance')
+  const { enrichPrompt } = await import('@/lib/media/prompt-enhancer')
+
+  const model = (input.model ?? 'flux-schnell') as Parameters<typeof generateImage>[0]['model']
+  const aspectRatio = (input.aspectRatio ?? '1:1') as Parameters<typeof generateImage>[0]['aspectRatio']
+  const enhanceTags = Array.isArray(input.enhanceTags) ? input.enhanceTags : []
+  const referenceAssetId = input.referenceAssetId ?? null
+
+  let referenceImageUrl: string | null = null
+  let referenceAssetIds: string[] | null = null
+  if (referenceAssetId) {
+    const [ref] = await db
+      .select()
+      .from(projectAssets)
+      .where(and(eq(projectAssets.id, referenceAssetId), eq(projectAssets.projectId, input.projectId)))
+      .limit(1)
+    if (!ref) throw new AssetNotFoundError('Reference asset not found')
+    referenceImageUrl = ref.publicUrl
+    referenceAssetIds = [ref.id]
+  }
+
+  const finalPrompt = enrichPrompt(rawPrompt, enhanceTags, model as Parameters<typeof enrichPrompt>[2])
+
+  const result = await generateImage({
+    prompt: finalPrompt,
+    model,
+    aspectRatio,
+    style: null,
+    referenceImageUrl,
+  })
+
+  if (result.cost > 0) {
+    await logSpend(input.projectId, 'imageGen', result.cost, `${String(model)}: ${rawPrompt.slice(0, 100)}`)
+  }
+
+  const persisted = await persistGeneratedAsset({
+    projectId: input.projectId,
+    sourceUrl: result.imageUrl,
+    type: 'image',
+    width: result.width,
+    height: result.height,
+    metadata: {
+      prompt: finalPrompt,
+      provider: 'imageGen',
+      model: model as string,
+      costCents: Math.round((result.cost ?? 0) * 100),
+      parentAssetId: null,
+      referenceAssetIds,
+      enhanceTags: enhanceTags.length ? enhanceTags : null,
+    },
+  })
+  const [row] = await db.select().from(projectAssets).where(eq(projectAssets.id, persisted.id)).limit(1)
+  return { asset: row, cost: result.cost, finalPrompt }
+}
+
 // ── Regenerate (image assets only) ─────────────────────────────────────────
 
 export interface RegenerateAssetInput {

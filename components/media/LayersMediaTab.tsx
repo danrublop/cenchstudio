@@ -92,22 +92,36 @@ export default function LayersMediaTab({ scene }: Props) {
     setError(null)
     setBusy(true)
     try {
-      const res = await fetch(`/api/projects/${project.id}/assets/generate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const ipc = typeof window !== 'undefined' ? window.cenchApi?.projects : undefined
+      let asset: ProjectAsset
+      if (ipc) {
+        const result = await ipc.generateAsset({
+          projectId: project.id,
           prompt: trimmed,
           model,
           aspectRatio,
           enhanceTags: Array.from(selectedTags),
           referenceAssetId,
-        }),
-      })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        throw new Error(err?.error ?? `Generation failed (${res.status})`)
+        })
+        asset = result.asset as unknown as ProjectAsset
+      } else {
+        const res = await fetch(`/api/projects/${project.id}/assets/generate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt: trimmed,
+            model,
+            aspectRatio,
+            enhanceTags: Array.from(selectedTags),
+            referenceAssetId,
+          }),
+        })
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}))
+          throw new Error(err?.error ?? `Generation failed (${res.status})`)
+        }
+        ;({ asset } = await res.json())
       }
-      const { asset } = await res.json()
       addProjectAsset(asset)
       if (autoPlace) placeAssetOnScene(asset)
       setPrompt('')

@@ -205,6 +205,20 @@ export interface CenchApi {
       aspectRatio?: string
       enhanceTags?: string[]
     }): Promise<{ asset: Record<string, unknown>; cost: number; finalPrompt: string }>
+    /**
+     * Generate a fresh image asset from a prompt. Always persists the
+     * result into `projectAssets` with full provenance so the gallery can
+     * hydrate optimistically. `referenceAssetId` optionally grounds the
+     * generation on an existing asset from the same project.
+     */
+    generateAsset(args: {
+      projectId: string
+      prompt: string
+      model?: string
+      aspectRatio?: string
+      enhanceTags?: string[]
+      referenceAssetId?: string | null
+    }): Promise<{ asset: Record<string, unknown>; cost: number; finalPrompt: string }>
   }
   workspaces: {
     list(): Promise<Array<Record<string, unknown>>>
