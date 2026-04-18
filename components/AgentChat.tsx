@@ -54,7 +54,6 @@ import type {
   AgentType,
   ModelTier,
   ThinkingMode,
-  SSEEvent,
   ToolCallRecord,
   UsageStats,
   ChatMessage,
@@ -76,6 +75,7 @@ import { resolveAgentModelDisplayName } from '@/lib/agents/model-config'
 import { initTabSync, broadcastAgentStart, broadcastAgentEnd } from '@/lib/store/tab-sync'
 import { ToolCallSummary } from './chat/ToolCallSummary'
 import { SourcesBlock } from './chat/SourcesBlock'
+import { streamAgentSse, postAgentCaptureResponse } from '@/lib/agent-transport'
 
 type BrowserSpeechRecognition = {
   continuous: boolean
@@ -101,20 +101,6 @@ function getSpeechRecognitionCtor(): (new () => BrowserSpeechRecognition) | null
     webkitSpeechRecognition?: new () => BrowserSpeechRecognition
   }
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null
-}
-
-function parseAgentSseEvent(jsonStr: string, label: string): SSEEvent | null {
-  try {
-    return JSON.parse(jsonStr) as SSEEvent
-  } catch (e) {
-    console.warn(
-      `[AgentChat] SSE JSON parse failed (${label}):`,
-      (e as Error).message,
-      `len=${jsonStr.length}`,
-      jsonStr.slice(0, 160),
-    )
-    return null
-  }
 }
 
 // ── Lightweight inline markdown renderer ────────────────────────────────────
@@ -1321,7 +1307,6 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
       const seenSourceUrls = new Set<string>()
       const segments: import('@/lib/agents/types').MessageSegment[] = []
       const pendingPermissions: import('@/lib/agents/types').PendingPermission[] = []
-      let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
 
       // Incremental persist: debounced save during streaming
       let lastPersistTime = Date.now()
@@ -1363,7 +1348,7 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
         const effectiveModelOverride =
           st.localMode && st.localModelId ? st.localModelId : (st.modelOverride ?? undefined)
 
-        const fetchBody = JSON.stringify({
+        const agentRequest: Record<string, unknown> = {
           message: messageContent,
           agentOverride: apiAgentOverride,
           directorTemplate: st.directorTemplate ?? undefined,
@@ -1401,67 +1386,14 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
           ...(initialStoryboard ? { initialStoryboard } : {}),
           ...(resumeToolCall ? { resumeToolCall } : {}),
           ...(extraBody ?? {}),
-        })
-
-        // Phase 2: SSE fetch with exponential backoff retry
-        const SSE_BACKOFF = [1000, 2000, 4000]
-        let response!: Response
-        for (let attempt = 0; attempt <= SSE_BACKOFF.length; attempt++) {
-          try {
-            response = await fetch('/api/agent', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: fetchBody,
-              signal: controller.signal,
-            })
-            break // success
-          } catch (fetchErr) {
-            if (fetchErr instanceof DOMException && fetchErr.name === 'AbortError') throw fetchErr
-            if (attempt >= SSE_BACKOFF.length) throw fetchErr
-            setStreamingText((prev) => prev || 'Reconnecting...')
-            await new Promise((r) => setTimeout(r, SSE_BACKOFF[attempt]))
-          }
         }
 
-        if (!response.ok) {
-          const errorBody = await response.text().catch(() => '')
-          throw new Error(
-            `Agent error: ${response.status} ${response.statusText}${errorBody ? ` — ${errorBody.slice(0, 200)}` : ''}`,
-          )
-        }
-
-        reader = response.body!.getReader()
-        const decoder = new TextDecoder()
-        let buffer = ''
-        const SSE_TIMEOUT_MS = 90_000 // 90s — generous for long tool calls
-
-        while (true) {
-          let timeoutId: ReturnType<typeof setTimeout> | undefined
-          const readResult = await Promise.race([
-            reader.read(),
-            new Promise<never>((_, reject) => {
-              timeoutId = setTimeout(
-                () => reject(new Error('Agent connection timed out — no data received for 90s')),
-                SSE_TIMEOUT_MS,
-              )
-            }),
-          ])
-          clearTimeout(timeoutId)
-          const { done, value } = readResult
-          if (done) break
-
-          buffer += decoder.decode(value, { stream: true })
-          const lines = buffer.split('\n')
-          buffer = lines.pop() ?? ''
-
-          for (const line of lines) {
-            if (!line.startsWith('data: ')) continue
-            const jsonStr = line.slice(6).trim()
-            if (!jsonStr) continue
-
-            const event = parseAgentSseEvent(jsonStr, 'stream')
-            if (!event) continue
-
+        // Phase 2: SSE stream — transport lives in lib/agent-transport.ts so
+        // components/AgentChat.tsx stays agnostic to fetch vs IPC events.
+        await streamAgentSse(agentRequest, {
+          signal: controller.signal,
+          onReconnecting: () => setStreamingText((prev) => prev || 'Reconnecting...'),
+          onEvent: (event) => {
             switch (event.type) {
               case 'run_start':
                 if (event.runId) console.log(`[AgentChat] Run started: ${event.runId}`)
@@ -1531,28 +1463,16 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                   try {
                     const dataUrl = await useVideoStore.getState().captureSceneFrame(capSceneId, capTime)
                     if (!dataUrl) {
-                      await fetch('/api/agent/capture-response', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ captureId: capId, error: 'no capturer registered' }),
-                      })
+                      await postAgentCaptureResponse({ captureId: capId, error: 'no capturer registered' })
                       return
                     }
                     const mimeMatch = dataUrl.match(/^data:([^;,]+)/)
                     const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg'
-                    await fetch('/api/agent/capture-response', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ captureId: capId, dataUri: dataUrl, mimeType }),
-                    })
+                    await postAgentCaptureResponse({ captureId: capId, dataUri: dataUrl, mimeType })
                   } catch (err) {
-                    await fetch('/api/agent/capture-response', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        captureId: capId,
-                        error: (err as Error).message || 'capture failed',
-                      }),
+                    await postAgentCaptureResponse({
+                      captureId: capId,
+                      error: (err as Error).message || 'capture failed',
                     }).catch(() => {})
                   }
                 })()
@@ -1716,13 +1636,9 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
                 accumulatedText = `Error: ${event.error ?? 'Something went wrong'}`
                 break
             }
-          }
-        }
+          },
+        })
       } catch (err) {
-        // Cancel the stream reader on any error (including timeout) to free the connection
-        try {
-          reader?.cancel()
-        } catch {}
         if ((err as Error).name === 'AbortError') {
           // User-initiated abort — set sentinel text if nothing was accumulated
           if (!accumulatedText && toolCalls.length === 0) {
