@@ -351,7 +351,11 @@ export async function designVoice(input: DesignVoiceInput): Promise<DesignVoiceR
       provider: 'voxcpm',
     }
   } catch (err) {
-    const message = err instanceof Error ? sanitizeErrorMessage(err.message) : 'Voice design failed'
-    throw new Error(message, { cause: err })
+    // sanitizeErrorMessage expects an Error, not a string. Passing err.message
+    // (as the pre-extraction HTTP route did) always hit the non-Error branch
+    // and returned the generic fallback. Pass `err` so the real message is
+    // sanitized and surfaced.
+    const message = sanitizeErrorMessage(err)
+    throw new Error(message === 'Audio operation failed' ? 'Voice design failed' : message, { cause: err })
   }
 }
