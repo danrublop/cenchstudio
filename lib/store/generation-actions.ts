@@ -121,24 +121,29 @@ export function createGenerationActions(set: Set, get: Get) {
       get().updateScene(sceneId, { canvasCode: '' })
 
       try {
-        const response = await fetch('/api/generate-canvas', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            prompt: scene.prompt,
-            palette: getResolvedStyle(globalStyle).palette,
-            bgColor: scene.bgColor,
-            duration: scene.duration || 8,
-            previousSummary,
-          }),
-        })
-
-        if (!response.ok) {
-          const err = await response.text()
-          throw new Error(err || 'Canvas generation failed')
+        const ipc = typeof window !== 'undefined' ? window.cenchApi?.generate : undefined
+        const payload = {
+          prompt: scene.prompt,
+          palette: getResolvedStyle(globalStyle).palette,
+          bgColor: scene.bgColor,
+          duration: scene.duration || 8,
+          previousSummary,
         }
-
-        const data = await response.json()
+        let data: { result?: string; usage?: SceneUsage }
+        if (ipc) {
+          data = await ipc.canvas(payload)
+        } else {
+          const response = await fetch('/api/generate-canvas', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          })
+          if (!response.ok) {
+            const err = await response.text()
+            throw new Error(err || 'Canvas generation failed')
+          }
+          data = await response.json()
+        }
         const cleanedCode: string = data.result ?? ''
         const usage: SceneUsage | null = data.usage ?? null
 

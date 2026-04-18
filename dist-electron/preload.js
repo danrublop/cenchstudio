@@ -100,6 +100,9 @@ var cenchApi = {
   ingest: {
     fromUrl: (args) => import_electron.ipcRenderer.invoke("cench:ingest.fromUrl", args),
     fromDirectUrl: (args) => import_electron.ipcRenderer.invoke("cench:ingest.fromDirectUrl", args)
+  },
+  generate: {
+    canvas: (args) => import_electron.ipcRenderer.invoke("cench:generate.canvas", args)
   }
 };
 import_electron.contextBridge.exposeInMainWorld("cenchApi", cenchApi);

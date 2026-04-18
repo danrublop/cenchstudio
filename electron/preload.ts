@@ -193,6 +193,21 @@ export type CenchApi = {
       tags?: string[]
     }) => Promise<Record<string, unknown>>
   }
+  generate: {
+    canvas: (args: {
+      prompt: string
+      palette?: string[]
+      bgColor?: string
+      duration?: number
+      previousSummary?: string
+      modelId?: string
+      modelConfigs?: unknown[]
+    }) => Promise<{
+      result: string
+      usage: { input_tokens: number; output_tokens: number; cost_usd: number }
+      truncated?: boolean
+    }>
+  }
 }
 
 const cenchApi: CenchApi = {
@@ -278,6 +293,9 @@ const cenchApi: CenchApi = {
   ingest: {
     fromUrl: (args) => ipcRenderer.invoke('cench:ingest.fromUrl', args),
     fromDirectUrl: (args) => ipcRenderer.invoke('cench:ingest.fromDirectUrl', args),
+  },
+  generate: {
+    canvas: (args) => ipcRenderer.invoke('cench:generate.canvas', args),
   },
 }
 

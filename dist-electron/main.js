@@ -14357,6 +14357,2567 @@ function register15(ipcMain2) {
   });
 }
 
+// lib/generation/generate.ts
+var import_sdk = __toESM(require("@anthropic-ai/sdk"));
+
+// lib/agents/types.ts
+var MODEL_PRICING = {
+  "claude-haiku-4-5-20251001": { inputPer1M: 0.8, outputPer1M: 4 },
+  "claude-sonnet-4-6": { inputPer1M: 3, outputPer1M: 15 },
+  "claude-opus-4-6": { inputPer1M: 15, outputPer1M: 75 },
+  "claude-3-5-sonnet-20241022": { inputPer1M: 3, outputPer1M: 15 },
+  "gpt-4o-mini": { inputPer1M: 0.15, outputPer1M: 0.6 },
+  "gpt-4o": { inputPer1M: 2.5, outputPer1M: 10 },
+  "gpt-4.1-nano": { inputPer1M: 0.1, outputPer1M: 0.4 },
+  "gpt-4.1-mini": { inputPer1M: 0.4, outputPer1M: 1.6 },
+  "gpt-4.1": { inputPer1M: 2, outputPer1M: 8 },
+  o1: { inputPer1M: 15, outputPer1M: 60 },
+  "o3-mini": { inputPer1M: 1.1, outputPer1M: 4.4 },
+  "gemini-2.5-flash-preview-05-20": { inputPer1M: 0.15, outputPer1M: 0.6 },
+  "gemini-2.5-pro-preview-05-06": { inputPer1M: 1.25, outputPer1M: 10 }
+};
+function getModelProvider(modelId, modelConfigs) {
+  if (!modelId) return "anthropic";
+  if (modelId === "codex-cli") return "openai";
+  if (modelId === "claude-code") return "claude-code";
+  if (modelConfigs) {
+    const config4 = modelConfigs.find((m) => m.id === modelId || m.modelId === modelId);
+    if (config4?.provider === "local") return "local";
+    if (config4?.provider === "claude-code") return "claude-code";
+  }
+  if (modelId.startsWith("claude-")) return "anthropic";
+  if (modelId.startsWith("gpt-") || modelId.startsWith("o1") || modelId.startsWith("o3")) return "openai";
+  if (modelId.startsWith("gemini-")) return "google";
+  const knownPrefixes = ["claude-", "gpt-", "o1", "o3", "gemini-"];
+  if (!knownPrefixes.some((p) => modelId.startsWith(p))) return "local";
+  return "anthropic";
+}
+function getModelPricing(modelId) {
+  return MODEL_PRICING[modelId] ?? { inputPer1M: 0, outputPer1M: 0 };
+}
+
+// lib/three-environments/registry.ts
+var CENCH_STUDIO_ENV_IDS = [
+  "track_rolling_topdown",
+  "studio_white",
+  "cinematic_fog",
+  "iso_playful",
+  "tech_grid",
+  "nature_sunset",
+  "data_lab"
+];
+var CENCH_THREE_ENVIRONMENTS = [
+  {
+    id: "studio_white",
+    name: "Studio white",
+    description: "White cyclorama + circular floor + soft hemisphere key/fill. Product, SaaS, corporate.",
+    tags: ["studio", "white", "cyclorama", "product", "corporate"]
+  },
+  {
+    id: "cinematic_fog",
+    name: "Cinematic fog",
+    description: "Dark fogged backdrop, reflective floor, warm spot key + cool rim. Premium reveals, film.",
+    tags: ["dark", "cinematic", "fog", "dramatic", "premium"]
+  },
+  {
+    id: "iso_playful",
+    name: "Playful pastel",
+    description: "Warm pastel background + hemisphere + sun-warm key. Tutorials, kids, casual.",
+    tags: ["pastel", "playful", "tutorial", "kids"]
+  },
+  {
+    id: "tech_grid",
+    name: "Tech grid",
+    description: "Cyan shader grid floor + magenta rim + starfield on deep blue. Cyberpunk, AI, data.",
+    tags: ["cyberpunk", "neon", "grid", "tech", "data", "ai"]
+  },
+  {
+    id: "nature_sunset",
+    name: "Nature sunset",
+    description: "Gradient sunset sky, green ground, warm sun. Wellness, environment.",
+    tags: ["nature", "sunset", "outdoor", "wellness"]
+  },
+  {
+    id: "data_lab",
+    name: "Data lab",
+    description: "White void + transparent shadow-catcher floor. Charts, infographics, minimal.",
+    tags: ["data", "white", "shadow-catcher", "chart", "minimal"]
+  },
+  {
+    id: "track_rolling_topdown",
+    name: "Rolling track lanes",
+    description: "Top-down white surface, 4 lanes of rolling marbles. Diagrams, races.",
+    tags: ["top-down", "tracks", "marbles", "diagram"]
+  }
+];
+function formatThreeEnvironmentsForPrompt() {
+  return CENCH_THREE_ENVIRONMENTS.map((e) => `- \`${e.id}\` \u2014 ${e.name}: ${e.description}`).join("\n");
+}
+
+// lib/three-environments/build-three-data-scatter-scene-code.ts
+var STUDIO_ID_SET = new Set(CENCH_STUDIO_ENV_IDS);
+
+// lib/generation/design-principles.ts
+var LANDSCAPE_LAYOUT_RULES = `
+ASPECT RATIO: Landscape (16:9)
+- Full layout pattern library available. Side-by-side layouts encouraged.
+- Hero text: 80-160px. Content can span full width.
+- HERO-SPLIT works especially well \u2014 60/40 text-visual split.
+- OFFSET-GRID for comparisons using the wide canvas.
+`;
+var PORTRAIT_LAYOUT_RULES = `
+ASPECT RATIO: Portrait (9:16 or 4:5)
+- Stack EVERYTHING vertically. Never use side-by-side columns \u2014 not enough width.
+- Maximum 3 text blocks per scene (even less space than landscape).
+- Hero text: 60-100px (narrower viewport demands smaller type).
+- Full-width cards only, max 2 per scene.
+- Increase vertical spacing between groups to 64px minimum.
+- Available layout patterns: STACK-BREATHE, STAT-ANCHOR (vertical), FOCAL-POINT.
+- Do NOT use: HERO-SPLIT, OFFSET-GRID, EDITORIAL-COLUMN (they need horizontal space).
+`;
+var SQUARE_LAYOUT_RULES = `
+ASPECT RATIO: Square (1:1)
+- Center-biased layouts are acceptable (unlike landscape where asymmetry is preferred).
+- Maximum 4 visual elements per scene.
+- Hero text: 64-96px.
+- Consider radial or circular compositions \u2014 the square frame naturally draws the eye to center.
+- Available layout patterns: FOCAL-POINT, STACK-BREATHE, HERO-SPLIT (use 50/50 split).
+- STAT-ANCHOR works centered in square format.
+`;
+function getDesignPrinciples(dims) {
+  const W = dims?.width ?? 1920;
+  const H = dims?.height ?? 1080;
+  const isPortrait = H > W;
+  const isSquare = Math.abs(W - H) < 100;
+  const scale = W / 1920;
+  const safeArea = Math.round(80 * scale);
+  const groupGap = Math.round(48 * scale);
+  const innerGap = Math.round(16 * scale);
+  const titleGapMin = Math.round(64 * scale);
+  const titleGapMax = Math.round(96 * scale);
+  const cardPaddingMin = Math.round(32 * scale);
+  const cardPaddingMax = Math.round(48 * scale);
+  const minGap = Math.round(24 * scale);
+  const sectionGap = Math.round(120 * scale);
+  const aspectRules = isPortrait ? PORTRAIT_LAYOUT_RULES : isSquare ? SQUARE_LAYOUT_RULES : LANDSCAPE_LAYOUT_RULES;
+  return `
+DESIGN QUALITY BAR (adapted from Impeccable):
+
+The Slop Test: If someone looked at your output and said "AI made this," would they believe it immediately? If yes, redesign. Distinctive output makes people ask "how was this made?" not "which AI made this."
+
+TYPOGRAPHY:
+- VIDEO TEXT MUST BE LARGE. This is video, not a webpage \u2014 viewers watch on phones, embedded players, TVs across a room. Text that looks fine in a code editor is unreadable in a video.
+- 4-step scale for video (at 1920\xD71080): display (100-180px), heading (48-72px), body (32-42px), label (24-32px). NOTHING below 24px. Ratio between levels: at least 1.5\xD7.
+- The absolute minimum readable text in video is 24px at 1920\xD71080. If you're tempted to use a smaller size, remove the text instead \u2014 it won't be read.
+- Never use overused fonts: Inter, Syne, Space Grotesk, DM Sans, Playfair Display, Montserrat, Roboto, Open Sans, Lato.
+- Choose fonts that match the content's tone as a physical object \u2014 a museum caption, a hand-lettered sign, a mainframe manual.
+- Light text on dark backgrounds reads heavier \u2014 reduce weight slightly and increase line-height.
+
+COMPOSITION:
+- Do NOT center everything. Asymmetric layouts with left-aligned text feel more designed.
+- Create visual hierarchy through 2-3 dimensions simultaneously: size + weight + space.
+- Squint Test: blur your eyes. Can you identify the most important element and clear groupings? If everything looks the same weight, redesign.
+- Vary spacing \u2014 tight groupings next to generous whitespace creates rhythm. Same-padding-everywhere is monotonous.
+- Cards are overused. Spacing and alignment create visual grouping naturally. Only use cards when content needs clear boundaries or comparison.
+- Break the grid intentionally for emphasis. One off-grid element draws the eye.
+
+COLOR:
+- Tint neutrals toward your accent hue. Even 0.005 chroma creates subconscious cohesion.
+- 60-30-10 rule: 60% neutral/background, 30% secondary, 10% accent. Accent works because it's rare.
+- Never pure black (#000) or pure white (#fff) \u2014 always tint toward the scene's mood.
+- Never gray text on colored backgrounds \u2014 use a darker shade of the background color.
+- Never the AI palette: cyan-on-dark, purple-to-blue gradients, neon accents on dark.
+- Never gradient text \u2014 solid colors only for text.
+
+MOTION:
+- Exponential easing only: cubic-bezier(0.16, 1, 0.3, 1) for entrances, cubic-bezier(0.7, 0, 0.84, 0) for exits.
+- NEVER bounce or elastic. They feel dated and amateurish.
+- NEVER linear easing on spatial movement (position) \u2014 it looks robotic.
+- Stagger: 50-100ms between items. Cap total stagger under 800ms.
+- Exit at 75% of entrance duration.
+- Do not animate everything \u2014 animation fatigue is real.
+- Vary animation directions. Not everything should fade-in-from-below.
+- Scene timing: 0-20% bg appears, 20-80% content builds, 80-100% hold (everything visible, viewer absorbs).
+- Two-property sweet spot: pair position+opacity for entrances, scale+color for emphasis.
+- Stagger secondary elements 50-100ms after the primary action for depth.
+
+EMOTION-TO-MOTION (match motion to the scene's emotional intent):
+- Joy / success: upward arcs, elastic settle, 150-250ms transitions, expanding scale.
+- Urgency / warning: sharp direct paths, fast 100-150ms, angular movement.
+- Trust / professionalism: smooth curves, medium 300-400ms, no overshoot, predictable.
+- Elegance / premium: slow controlled curves, 400-600ms, subtle deceleration.
+- Growth / progress: upward paths, expanding scale, sequential reveal.
+- Calm / reflection: gentle floating drift, 500-1000ms, sine easing.
+- Energy / excitement: quick snappy transitions, 100-200ms, dramatic direction changes.
+
+CAMERA (required \u2014 but VARY per scene purpose; do NOT stamp kenBurns on every scene):
+- Title / opening card \u2192 CenchCamera.presetCinematicPush({ at: 0, duration: DURATION * 0.6 })
+- Static data / receipt / grid \u2192 CenchCamera.kenBurns({ duration: DURATION, endScale: 1.02 })
+- Reveal of multiple items \u2192 CenchCamera.presetReveal({ duration: DURATION * 0.7 })
+- Sign-off / closing \u2192 CenchCamera.presetEmphasis({ at: 0.5, duration: DURATION - 0.5 })
+- Focus on one element \u2192 CenchCamera.dollyIn({ targetSelector: '#key-element', at: 1, duration: 3 })
+- Content already moves (video playback, 3D spin, fast data animation) \u2192 SKIP CenchCamera entirely.
+  Stacking camera motion on top of intrinsic motion causes visual nausea.
+- If three scenes in a row use the same motion, change one. Mechanical sameness is worse than a mildly wrong motion.
+
+ANTI-PATTERNS (instant AI tells):
+- Side-stripe borders on cards (border-left: 4px solid ...)
+- Identical card grids (icon + heading + text repeated)
+- Hero metric layout (big number, small label, gradient accent)
+- Particle background + gradient text hero
+- Purple-to-blue gradients on dark backgrounds
+- Bounce/elastic easing
+
+CONTENT DENSITY (hard limits \u2014 do not exceed):
+- Maximum 5 text blocks per scene (1 title + up to 4 supporting elements).
+- Maximum 4 list/bullet items visible simultaneously. Longer lists \u2192 split across scenes.
+- Maximum 3 cards or containers per scene. Prefer 1-2 for visual impact.
+- If a scene has more than 6 distinct visual elements, remove or combine until 5 or fewer.
+- One "hero element" per scene that occupies 40-60% of viewport area.
+- Body text: maximum 3 lines per text block (~50 words). Cut ruthlessly.
+- Bullet points: maximum 8 words per bullet. If longer, rewrite.
+- These limits exist because viewers watch, not read. Less content = more retention.
+
+SPACING SYSTEM (viewport: ${W}\xD7${H}px):
+- Viewport edge safe area: ${safeArea}px inset from all edges minimum.
+- Gap between content groups (e.g. title block vs. body block): ${groupGap}px minimum.
+- Gap between elements within a group (e.g. heading and subheading): ${innerGap}px minimum.
+- Title-to-first-content gap: ${titleGapMin}-${titleGapMax}px \u2014 this breathing room is what separates good from amateur.
+- Card/container internal padding: ${cardPaddingMin}-${cardPaddingMax}px.
+- Minimum gap between any two elements: ${minGap}px. Never less.
+- Whitespace target: at least 40% of the viewport should be empty space. If your layout feels dense, remove elements \u2014 don't shrink them.
+- Between sections or conceptual groups: ${sectionGap}px+ vertical gap.
+
+ELEMENT SIZING:
+- Hero/display text: at least ${isPortrait ? "72" : "100"}px, spanning 50%+ of viewport width.
+- Heading text: at least ${isPortrait ? "40" : "48"}px.
+- Body text: at least ${isPortrait ? "28" : "32"}px. This is the FLOOR \u2014 body text below this is unreadable in video.
+- Labels, list items, annotations: at least ${isPortrait ? "22" : "24"}px. Nothing smaller, ever.
+- Heading-to-body font size ratio: at least 1.5\xD7 (e.g. 72px heading, 36px body \u2014 not 48px/36px).
+- Icons and illustrations: ${Math.round(140 * scale)}-${Math.round(400 * scale)}px. Below ${Math.round(140 * scale)}px they become unreadable.
+- Data visualizations: minimum ${Math.round(500 * scale)}px wide, ${Math.round(300 * scale)}px tall.
+- Interactive elements (pills, badges, tags): at least 24px text, 48px height minimum.
+- Decorative elements: never larger than the primary content element.
+- If text won't fit at these sizes, you have too much text. Cut content, don't shrink type.
+- COMMON MISTAKE: Using 16-20px for secondary text. That's web sizing, not video sizing. Scale everything up.
+
+LAYOUT PATTERNS (choose one per scene \u2014 do not improvise from scratch):
+
+HERO-SPLIT: Large text left (60% width), visual/illustration right (40%). Text left-aligned. Visual can bleed to edge. Best for: introductions, key statements, definitions.
+
+STACK-BREATHE: Full-width text blocks stacked vertically with ${Math.round(80 * scale)}px+ gaps. No containers or cards. Let whitespace do the grouping. Best for: single concepts, quotes, definitions.
+
+OFFSET-GRID: 2-column asymmetric grid (55/45 or 65/35 split). Items intentionally DON'T align horizontally \u2014 the offset creates visual interest. Best for: comparisons, before/after, two related concepts.
+
+FOCAL-POINT: One large central element (60%+ of viewport) with 2-3 small annotations positioned around it with subtle leader lines or arrows. Best for: diagrams, anatomy, feature highlights.
+
+TIMELINE-FLOW: Horizontal or vertical flow with connected nodes. Maximum 4 nodes per scene. Best for: processes, history, step-by-step sequences.
+
+STAT-ANCHOR: One massive number/metric (${Math.round(120 * scale)}px+) anchored to the left or top third, with supporting context text in smaller type beside or below it. NOT centered. Best for: data points, key statistics, impact numbers.
+
+EDITORIAL-COLUMN: Single narrow text column (max ${Math.round(600 * scale)}px wide) offset to the left third, with a full-bleed background color, image, or illustration filling the rest. Best for: narrative text, storytelling.
+
+SCATTER-ORGANIC: Elements placed at intentional but non-grid positions, varying in size. Connected by subtle lines, shared color, or proximity. Best for: mind maps, ecosystem overviews, relationship diagrams.
+${aspectRules}
+`;
+}
+var DESIGN_PRINCIPLES = getDesignPrinciples();
+
+// lib/motion/easing.ts
+var PERSONALITIES = {
+  playful: {
+    name: "Playful",
+    durationRange: [0.15, 0.3],
+    staggerMs: 60,
+    maxStaggerMs: 500,
+    overshoot: 0.15,
+    easing: {
+      entrance: [0.34, 1.56, 0.64, 1],
+      // back-out approximation
+      exit: [0.36, 0, 0.66, -0.56],
+      // back-in approximation
+      emphasis: [0.22, 1.4, 0.36, 1],
+      // elastic-ish settle
+      ambient: [0.37, 0, 0.63, 1]
+      // ease-in-out
+    },
+    gsap: {
+      entrance: "back.out(1.4)",
+      exit: "back.in(1.4)",
+      emphasis: "back.out(1.7)",
+      ambient: "sine.inOut"
+    }
+  },
+  premium: {
+    name: "Premium",
+    durationRange: [0.35, 0.6],
+    staggerMs: 80,
+    maxStaggerMs: 600,
+    overshoot: 0,
+    easing: {
+      entrance: [0.4, 0, 0.2, 1],
+      // smooth deceleration
+      exit: [0.4, 0, 1, 1],
+      // subtle acceleration
+      emphasis: [0.16, 1, 0.3, 1],
+      // exponential out
+      ambient: [0.37, 0, 0.63, 1]
+      // ease-in-out
+    },
+    gsap: {
+      entrance: "power3.out",
+      exit: "power2.in",
+      emphasis: "expo.out",
+      ambient: "sine.inOut"
+    }
+  },
+  corporate: {
+    name: "Corporate",
+    durationRange: [0.2, 0.4],
+    staggerMs: 70,
+    maxStaggerMs: 600,
+    overshoot: 0.02,
+    easing: {
+      entrance: [0.42, 0, 0.58, 1],
+      // ease-in-out (predictable)
+      exit: [0.42, 0, 1, 1],
+      // ease-in
+      emphasis: [0.16, 1, 0.3, 1],
+      // exponential out
+      ambient: [0.37, 0, 0.63, 1]
+      // ease-in-out
+    },
+    gsap: {
+      entrance: "power2.inOut",
+      exit: "power2.in",
+      emphasis: "expo.out",
+      ambient: "sine.inOut"
+    }
+  },
+  energetic: {
+    name: "Energetic",
+    durationRange: [0.1, 0.25],
+    staggerMs: 40,
+    maxStaggerMs: 400,
+    overshoot: 0.25,
+    easing: {
+      entrance: [0.22, 1.8, 0.36, 1],
+      // strong back-out
+      exit: [0.55, 0, 1, 0.45],
+      // quick acceleration
+      emphasis: [0.18, 1.6, 0.32, 1],
+      // aggressive overshoot
+      ambient: [0.37, 0, 0.63, 1]
+      // ease-in-out
+    },
+    gsap: {
+      entrance: "back.out(2.0)",
+      exit: "power3.in",
+      emphasis: "back.out(2.5)",
+      ambient: "sine.inOut"
+    }
+  }
+};
+function easingToLottieHandles(bezier, dimensions = 1) {
+  const [x1, y1, x2, y2] = bezier;
+  if (dimensions === 1) {
+    return {
+      i: { x: [x2], y: [y2] },
+      o: { x: [x1], y: [y1] }
+    };
+  }
+  return {
+    i: { x: [x2, x2, x2], y: [y2, y2, y2] },
+    o: { x: [x1, x1, x1], y: [y1, y1, y1] }
+  };
+}
+function personalityPromptBlock(personality) {
+  const p = PERSONALITIES[personality];
+  const fmt = (b) => `cubic-bezier(${b.join(", ")})`;
+  const lottie1d = (b) => {
+    const h = easingToLottieHandles(b, 1);
+    return `"i":{"x":[${h.i.x}],"y":[${h.i.y}]}, "o":{"x":[${h.o.x}],"y":[${h.o.y}]}`;
+  };
+  const lottie3d = (b) => {
+    const h = easingToLottieHandles(b, 3);
+    return `"i":{"x":[${h.i.x}],"y":[${h.i.y}]}, "o":{"x":[${h.o.x}],"y":[${h.o.y}]}`;
+  };
+  return `MOTION PERSONALITY: ${p.name}
+Duration range: ${p.durationRange[0]}-${p.durationRange[1]}s per element transition
+Stagger: ${p.staggerMs}ms between items (cap at ${p.maxStaggerMs}ms total)
+Overshoot: ${p.overshoot === 0 ? "none" : `${Math.round(p.overshoot * 100)}%`}
+
+Entrance easing: ${fmt(p.easing.entrance)}
+  1D Lottie: ${lottie1d(p.easing.entrance)}
+  3D Lottie: ${lottie3d(p.easing.entrance)}
+
+Exit easing: ${fmt(p.easing.exit)}
+  1D Lottie: ${lottie1d(p.easing.exit)}
+  3D Lottie: ${lottie3d(p.easing.exit)}
+
+Emphasis easing: ${fmt(p.easing.emphasis)}
+  1D Lottie: ${lottie1d(p.easing.emphasis)}
+
+Ambient easing: ${fmt(p.easing.ambient)}
+  1D Lottie: ${lottie1d(p.easing.ambient)}`;
+}
+
+// lib/generation/prompts.ts
+var SVG_SYSTEM_PROMPT = (palette, strokeWidth, font, duration, previousSummary, hasExplicitPalette = true, dims = { width: 1920, height: 1080 }) => {
+  const W = dims.width;
+  const H = dims.height;
+  return `You are an SVG animation artist for a high-end vector video editor.
+Generate a single <svg> element with viewBox="0 0 ${W} ${H}" that draws itself using CSS animations.
+
+STRICT RULES:
+- Output ONLY the raw <svg>...</svg> element. No markdown, no explanation, no code blocks.
+${hasExplicitPalette ? `- Suggested palette (prefer these, override when content demands): ${palette.join(", ")}` : "- Choose a color palette that best suits the content. You have full creative control over colors."}
+- Default stroke-width: ${strokeWidth}
+- Default font-family: ${font}
+- Total animation must complete within ${duration} seconds
+- Canvas: ${W}\xD7${H}px \u2014 fill the full space deliberately
+- ALL content MUST fit within the viewBox (0,0 to ${W},${H}). Nothing below y=${H} or past x=${W} \u2014 it will be clipped and invisible. If there are too many items, reduce count, use smaller text, multi-column layout, or split into multiple scenes.
+
+ANIMATION CLASSES (apply to SVG elements via class="..."):
+
+class="stroke" \u2014 Draw effect for lines, paths, curves, outlines.
+  CSS vars: --len (auto-calculated), --dur (seconds), --delay (seconds)
+  Always pair with: stroke-linecap="round" stroke-linejoin="round" fill="none"
+  Use for: all lines, arrows, outlines, technical diagrams, handwriting paths
+
+class="fadein" \u2014 Opacity reveal for filled shapes and icons.
+  CSS vars: --dur (seconds), --delay (seconds)
+  Use for: filled rects, circles, polygons, solid-color blocks, icons, backgrounds
+
+class="scale" \u2014 Scale entrance from 0 \u2192 1.
+  CSS vars: --dur (seconds), --delay (seconds)
+  Use for: icons appearing, callout circles, emphasis elements, data points
+
+class="slide-up" \u2014 Slide in from below with fade.
+  CSS vars: --dur (seconds), --delay (seconds)
+  Use for: labels, annotations, body text, captions
+
+class="slide-left" \u2014 Slide in from right with fade.
+  CSS vars: --dur (seconds), --delay (seconds)
+  Use for: titles entering from right, horizontal list items
+
+class="bounce" \u2014 Elastic scale pop with overshoot.
+  CSS vars: --dur (seconds), --delay (seconds)
+  Use for: key data points, highlighted numbers, important icons
+
+class="rotate" \u2014 Rotation entrance with fade.
+  CSS vars: --dur (seconds), --delay (seconds)
+  Use for: arrows, spinning decorative elements
+
+LAYERING MODEL (always use these <g id="..."> groups in order):
+1. <g id="bg">         \u2014 full-bleed background fills, gradients, texture shapes (fadein, delay 0)
+2. <g id="midground">  \u2014 primary graphic content: charts, diagrams, illustrations (20\u201360% of duration)
+3. <g id="fg">         \u2014 supporting lines, connectors, arrows (60\u201380%)
+4. <g id="text">       \u2014 all <text> elements, titles, numbers, labels (70\u201390%)
+
+STAGGER RULE:
+- Never assign --delay 0 to all elements. Divide duration by element count, assign ascending delays.
+- Background: --delay 0\u2013${(duration * 0.2).toFixed(1)}s
+- Midground: --delay ${(duration * 0.2).toFixed(1)}\u2013${(duration * 0.6).toFixed(1)}s
+- Foreground: --delay ${(duration * 0.6).toFixed(1)}\u2013${(duration * 0.8).toFixed(1)}s
+- Text: --delay ${(duration * 0.7).toFixed(1)}\u2013${(duration * 0.9).toFixed(1)}s
+
+TEXT RULES:
+- Use <text> elements only (never foreignObject)
+- font-family="${font}", specify dominant-baseline
+- Pair large display text (font-size 80\u2013160) with smaller annotations (font-size 32\u201356)
+- Apply class="slide-up" or class="fadein" with appropriate --delay
+
+GSAP ANIMATION (preferred over CSS classes for new scenes):
+A GSAP master timeline is available as window.__tl. Use it for seekable, pausable animations.
+After the <svg> element, include a <script> block that adds animations to __tl:
+
+  document.fonts.ready.then(() => {
+    const tl = window.__tl;
+    // DrawSVGPlugin: animate strokes from 0% to 100%
+    tl.from('#path-id', { drawSVG: '0%', duration: 0.8, ease: 'power2.inOut' }, 0.5);
+    // Fade in elements
+    tl.from('#label-id', { opacity: 0, y: 10, duration: 0.3 }, 1.2);
+    // Stagger multiple elements
+    tl.from('.diagram-element', { drawSVG: '0%', duration: 0.6, stagger: 0.2 }, 0);
+  });
+
+All SVG elements MUST have unique id attributes for GSAP targeting.
+Timeline position syntax: tl.from(el, opts, 0) = start at t=0s, tl.from(el, opts, '+=0.3') = 0.3s after previous.
+
+ELEMENT IDS (required for editor inspector):
+- EVERY visible SVG element (rect, circle, path, text, line, polygon, etc.) MUST have a unique id attribute
+- Add data-label="Human-readable name" to each element for the editor's element list
+- Example: <rect id="bg-rect-1" data-label="Blue background" ... />
+- Example: <text id="title-text" data-label="Main title" ... />
+- Groups <g> should also have id and data-label if they represent a logical unit
+
+COMPOSITION:
+- Include at least 3 layers (bg, midground, text minimum)
+- Use arrows: <line> or <path> with unique ids + a small <polygon> arrowhead
+- Include <!-- section comments --> for each group
+- Vary element sizes for hierarchy \u2014 one dominant visual, 2-3 supporting, many small details.
+- Use overlapping shapes and partial occlusion for depth, not flat side-by-side arrangement.
+- Break symmetry: offset related elements, use diagonal flows, cluster groups off-center.
+- Give every animated element a unique id attribute and data-label
+${getDesignPrinciples(dims)}
+Previous scene summary (for visual continuity): ${previousSummary || "none"}`;
+};
+var CANVAS_SYSTEM_PROMPT = (palette, bgColor, duration, previousSummary, hasExplicitPalette = true, dims = { width: 1920, height: 1080 }) => {
+  const W = dims.width;
+  const H = dims.height;
+  return `You are a Canvas 2D animation programmer for a high-end video editor.
+
+Generate a SINGLE self-contained JavaScript code block. No HTML, no <script> tags, no markdown fences, no explanation.
+
+STRICT RULES:
+- Output ONLY raw JavaScript.
+- The canvas is already in the DOM: use document.getElementById('c') and getContext('2d').
+- Canvas size: ${W}\xD7${H}. Never resize it.
+${hasExplicitPalette ? `- Suggested palette (prefer these, override when content demands): ${palette.join(", ")}` : "- Choose colors that best suit the content. You have full creative control over the palette."}
+- Duration: ${duration} seconds. Animation must complete in that time.
+- All motion must be driven purely by t (elapsed seconds), never by setInterval or setTimeout.
+
+GSAP PROXY PATTERN (required for all canvas2d scenes):
+
+A GSAP master timeline is available as window.__tl. Use it with proxy objects.
+Progress-based draw functions are available as globals: drawRoughLineAtProgress,
+drawRoughCircleAtProgress, drawRoughRectAtProgress, drawRoughArrowAtProgress, drawTextAtProgress.
+
+REQUIRED SKELETON:
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const tl = window.__tl;
+
+// Define proxy objects for each animated element (progress 0\u21921)
+const proxies = {
+  line1:   { p: 0 },
+  circle1: { p: 0 },
+  text1:   { p: 0 },
+};
+
+// REGISTER every element for the inspector (required)
+window.__register({ id: 'line1', type: 'rough-line', label: 'Main line',
+  x1: 100, y1: 540, x2: 900, y2: 540, color: STROKE_COLOR, strokeWidth: 3,
+  tool: TOOL, seed: 1, opacity: 1, visible: true,
+  animStartTime: 0, animDuration: 0.8,
+  bbox: { x: 100, y: 530, w: 800, h: 20 } });
+window.__register({ id: 'circle1', type: 'rough-circle', label: 'Circle',
+  cx: 500, cy: 400, radius: 160, color: PALETTE[1], fill: 'none', fillAlpha: 0,
+  strokeWidth: 3, tool: TOOL, seed: 2, opacity: 1, visible: true,
+  animStartTime: 0.9, animDuration: 0.6,
+  bbox: { x: 340, y: 240, w: 320, h: 320 } });
+window.__register({ id: 'text1', type: 'text', label: 'Hello text',
+  text: 'Hello', x: 500, y: 300, fontSize: 56, fontFamily: FONT,
+  color: STROKE_COLOR, fontWeight: 'bold', textAlign: 'left',
+  opacity: 1, visible: true, animStartTime: 1.5, animDuration: 0.4,
+  bbox: { x: 500, y: 260, w: 200, h: 60 } });
+
+// Master redraw \u2014 reads from __elements so inspector patches take effect
+function draw() {
+  ctx.clearRect(0, 0, WIDTH, HEIGHT);
+  var els = window.__elements;
+  Object.keys(els).forEach(function(id) {
+    var el = els[id];
+    if (!el.visible) return;
+    ctx.globalAlpha = el.opacity;
+    var p = proxies[id] ? proxies[id].p : 1;
+    if (el.type === 'rough-line') drawRoughLineAtProgress(ctx, el.x1, el.y1, el.x2, el.y2, p, { color: el.color, tool: el.tool, seed: el.seed, strokeWidth: el.strokeWidth });
+    else if (el.type === 'rough-circle') drawRoughCircleAtProgress(ctx, el.cx, el.cy, el.radius, p, { color: el.color, fill: el.fill, fillAlpha: el.fillAlpha, tool: el.tool, seed: el.seed, strokeWidth: el.strokeWidth });
+    else if (el.type === 'rough-rect') drawRoughRectAtProgress(ctx, el.x, el.y, el.width, el.height, p, { color: el.color, fill: el.fill, fillAlpha: el.fillAlpha, tool: el.tool, seed: el.seed, strokeWidth: el.strokeWidth, cornerRadius: el.cornerRadius });
+    else if (el.type === 'rough-arrow') drawRoughArrowAtProgress(ctx, el.x1, el.y1, el.x2, el.y2, p, { color: el.color, tool: el.tool, seed: el.seed, strokeWidth: el.strokeWidth, arrowheadSize: el.arrowheadSize });
+    else if (el.type === 'text') drawTextAtProgress(ctx, el.text, el.x, el.y, p, { fontSize: el.fontSize, fontFamily: el.fontFamily, color: el.color, fontWeight: el.fontWeight, textAlign: el.textAlign });
+    ctx.globalAlpha = 1;
+  });
+}
+window.__redrawAll = draw;
+
+// Wire up timeline \u2014 wrap in fonts.ready for text rendering
+document.fonts.ready.then(() => {
+  tl.to(proxies.line1,   { p: 1, duration: 0.8, onUpdate: draw }, 0)
+    .to(proxies.circle1, { p: 1, duration: 0.6, onUpdate: draw }, 0.9)
+    .to(proxies.text1,   { p: 1, duration: 0.4, onUpdate: draw }, 1.5);
+});
+
+CRITICAL RULES:
+- NEVER use requestAnimationFrame, setInterval, setTimeout, async/await, or Promise-based animation.
+- NEVER define your own loop() function. GSAP drives all frame updates.
+- ALWAYS use window.__tl for sequencing. Timeline position: tl.to(el, opts, 0) = starts at t=0s.
+- ALWAYS use fixed seed integers (1, 2, 3...) for drawRough* functions. Never Math.random().
+- ALWAYS wrap in document.fonts.ready.then(() => { ... }) if drawing text.
+- Do NOT fill the background \u2014 clearRect + body CSS handles it.
+- Stagger: background elements at t=0, midground at 20-60% of DURATION, text at 60-90%.
+- Fill the full ${W}\xD7${H} canvas.
+- Rich compositions: create visual depth with layered elements (background wash, midground subjects, foreground details).
+- For generative art: use coherent mathematical systems (attractors, flow fields, recursive subdivisions) not random scatter. Each pattern should have governing logic the viewer can sense.
+- Vary stroke weights \u2014 thin detail lines alongside bold structural strokes.
+- ALL content MUST fit within ${W}\xD7${H}. Nothing drawn below y=${H} or past x=${W} \u2014 it will be clipped. If too many items, reduce count, use smaller text, or use multi-column layout.
+
+DrawOpts for progress functions: { color, tool, seed, width, fill, fillAlpha }
+Available tools: 'marker', 'pen', 'chalk', 'brush', 'highlighter'
+Globals: PALETTE, DURATION, ROUGHNESS, FONT, WIDTH, HEIGHT, TOOL, STROKE_COLOR, BG_COLOR
+${getDesignPrinciples(dims)}
+Previous scene summary (for visual continuity): ${previousSummary || "none"}`;
+};
+var D3_SYSTEM_PROMPT = (palette, font, bgColor, duration, previousSummary, hasExplicitPalette = true, dims = { width: 1920, height: 1080 }) => {
+  const W = dims.width;
+  const H = dims.height;
+  return `You are a D3.js data visualization programmer for a high-end video editor.
+
+Output ONLY a raw JSON object \u2014 no markdown fences, no explanation.
+
+Required JSON shape:
+{
+  "styles": "<CSS string for chart elements, no <style> tags>",
+  "sceneCode": "<JavaScript using D3 \u2014 appends SVG to #chart>",
+  "suggestedData": <JSON data object appropriate for the visualization>
+}
+
+STRICT RULES:
+- Use d3 global (v7), DATA global (user data or suggested), WIDTH=${W}, HEIGHT=${H}
+- Create an SVG: d3.select('#chart').append('svg').attr('viewBox','0 0 ${W} ${H}').attr('width','100%').attr('height','100%')
+- NEVER use .attr('width', WIDTH).attr('height', HEIGHT) with pixel values \u2014 this creates a fixed-size SVG that overflows the container. ALWAYS use viewBox + width="100%" + height="100%".
+${hasExplicitPalette ? `- Suggested palette (prefer these, override when content demands): ${palette.join(", ")}` : "- Choose a color palette that suits the data and content."}
+- Font: ${font}; background is already ${bgColor}
+- Duration: ${duration} seconds \u2014 use .transition().duration(ms) for all enters
+- Stagger elements: .delay((d,i) => i * 100)
+- Title text: 56px bold; axis labels: 28px; data labels: 24px (nothing below 24px \u2014 this is video)
+- Fill the full ${W}\xD7${H} canvas deliberately \u2014 ALL content must fit within the viewBox. Nothing below y=${H} or past x=${W}. If too many data points or labels, reduce the dataset or use smaller text.
+- suggestedData should be a realistic dataset matching the prompt (array or object)
+SEEK/SCRUB SAFETY (MANDATORY):
+- Scene output MUST be deterministic from timeline time.
+- Define a function renderAtTime(t) that computes all visual state (camera + chart) from absolute t.
+- Define window.__updateScene = function(t) { renderAtTime(t || 0); }.
+- Register a single GSAP timeline driver:
+    const sceneState = { t: 0 };
+    window.__tl.to(sceneState, { t: DURATION, duration: DURATION, ease: 'none', onUpdate: () => renderAtTime(sceneState.t) }, 0);
+- Call renderAtTime(0) once for initial paused frame.
+- NEVER rely on one-shot animation triggers for core state (no event-only transitions).
+GSAP ANIMATION (preferred over D3 transitions):
+A GSAP master timeline is available as window.__tl. Use it for seekable animations:
+
+  bars.each(function(d, i) {
+    const proxy = { height: 0 };
+    window.__tl.to(proxy, {
+      height: targetHeight,
+      duration: 0.8,
+      ease: 'power2.out',
+      delay: i * 0.1,
+      onUpdate: () => d3.select(this).attr('height', proxy.height).attr('y', HEIGHT - margin.bottom - proxy.height),
+    }, 0);
+  });
+
+This is preferred over D3 .transition() because GSAP timelines are pausable and seekable.
+NEVER use setTimeout/setInterval for visual sequencing; use window.__tl positions only.
+Avoid d3.transition() for core chart state; if used for micro-effects, scene must still render correctly at any seek time via renderAtTime(t).
+
+ANIMATION GUIDANCE:
+- Start all elements at opacity 0, use GSAP to animate to full opacity
+- Bars: start height 0, animate to full height via GSAP proxy
+- Use GSAP eases: 'power2.out', 'power2.inOut', 'power3.out'
+- Add gridlines, axis labels, title, and data value labels
+- Readability default (MANDATORY unless user requests otherwise): clear legible typography, high contrast text, and explicit axis/title/value labels. Do not sacrifice readability for style unless the user explicitly asks.
+
+CHART DESIGN:
+- Prefer horizontal bar charts over vertical when labels are long.
+- Avoid pie charts for more than 4 categories \u2014 use horizontal bar or treemap instead.
+- Never use 3D effects on 2D charts.
+- Use direct labeling on data points instead of legends when possible \u2014 reduces eye travel.
+- Choose chart type by question: comparison \u2192 bar, trend \u2192 line, proportion \u2192 stacked bar/waffle, distribution \u2192 histogram, correlation \u2192 scatter.
+- Animate the data, not the decoration. Bar height growing from zero is meaningful; decorative spinning is not.
+${getDesignPrinciples(dims)}
+Previous scene summary (for visual continuity): ${previousSummary || "none"}`;
+};
+var THREE_SYSTEM_PROMPT = (palette, bgColor, duration, previousSummary, hasExplicitPalette = true, dims = { width: 1920, height: 1080 }) => {
+  const W = dims.width;
+  const H = dims.height;
+  return `You are a Three.js 3D scene programmer for a high-end video editor.
+
+Output ONLY a raw JSON object \u2014 no markdown fences, no explanation.
+
+Required JSON shape:
+{
+  "sceneCode": "<ES module JavaScript \u2014 full self-contained scene>"
+}
+
+STRICT RULES:
+- Three.js r183 via ES modules. Your code runs in its own <script type="module">.
+- You MUST import THREE yourself: import * as THREE from 'three';
+- You MUST read globals from window: const WIDTH = window.WIDTH, etc.
+- Available window globals: WIDTH, HEIGHT, PALETTE, DURATION, MATERIALS, mulberry32, setupEnvironment, THREE, applyCenchThreeEnvironment, updateCenchThreeEnvironment, CENCH_THREE_ENV_IDS, createCenchDataScatterplot, updateCenchDataScatterplot, createCenchPostFX, createCenchPostFXPreset, CENCH_POSTFX_PRESETS, CENCH_TONE_MAPS, addCinematicLighting, addGroundPlane, loadPBRSet, loadHDREnvironment, createInstancedField, createPositionalAudio
+- Background is already set to ${bgColor} via CSS; set renderer.setClearColor to match.
+${hasExplicitPalette ? `- Suggested palette (convert hex to THREE.Color, override when content demands): ${palette.join(", ")}` : "- Choose colors that suit the 3D content. PALETTE global is available but you may use any colors."}
+- WebGLRenderer MUST include preserveDrawingBuffer: true
+- NEVER use requestAnimationFrame for your animation loop \u2014 use window.__tl (GSAP) onUpdate instead.
+- NEVER use Math.random() \u2014 use mulberry32(seed) for deterministic randomness.
+- NEVER use MeshBasicMaterial \u2014 always use MeshStandardMaterial or MeshPhysicalMaterial.
+- You CAN import from 'three/addons/' for OrbitControls, postprocessing, GLTFLoader, RGBELoader, etc.
+
+AVAILABLE IMPORTS (use as needed):
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { BokehPass } from 'three/addons/postprocessing/BokehPass.js';
+import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { SVGLoader } from 'three/addons/loaders/SVGLoader.js';
+import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
+import { Text } from 'troika-three-text';  // SDF 3D text \u2014 any font URL
+import { SUBTRACTION, ADDITION, INTERSECTION, Brush, Evaluator } from 'three-bvh-csg'; // Boolean ops on meshes
+
+SVG-TO-3D EXTRUSION (SVGLoader cannot resolve url(#...) gradients \u2014 always use PALETTE):
+const pivot = new THREE.Group(); scene.add(pivot);
+const data = new SVGLoader().parse(await fetch(svgUrl).then(r => r.text()));
+const inner = new THREE.Group(); let i = 0;
+for (const p of data.paths) for (const sh of SVGLoader.createShapes(p)) {
+  const g = new THREE.ExtrudeGeometry(sh, { depth: 20, bevelEnabled: true, bevelThickness: 2, bevelSize: 1.5, bevelSegments: 8, curveSegments: 24 });
+  const m = new THREE.MeshStandardMaterial({ color: PALETTE[i++ % PALETTE.length], metalness: 0.6, roughness: 0.25 });
+  const mesh = new THREE.Mesh(g, m); mesh.castShadow = true; inner.add(mesh);
+}
+// center + Y-flip via pivot:
+const box = new THREE.Box3().setFromObject(inner), c = box.getCenter(new THREE.Vector3()), sz = box.getSize(new THREE.Vector3());
+inner.position.set(-c.x, -c.y, -c.z); pivot.scale.set(4/Math.max(sz.x,sz.y,sz.z), -4/Math.max(sz.x,sz.y,sz.z), 4/Math.max(sz.x,sz.y,sz.z)); pivot.add(inner);
+
+DREI-VANILLA (import { Sparkles, Grid, Stars } from '@pmndrs/vanilla'):
+- new Sparkles(scene, { count, size, color }) | new Grid(scene, { cellSize, sectionSize, fadeDistance }) | new Stars(scene, { count, radius })
+
+3D TEXT (troika SDF \u2014 decorative only; prefer HTML overlays for readable captions):
+import { Text } from 'troika-three-text';
+const t = new Text(); t.text = 'hi'; t.fontSize = 0.8; t.color = PALETTE[0]; t.anchorX='center'; t.anchorY='middle'; t.font = 'https://fonts.gstatic.com/s/inter/v18/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuLyfAZ9hjQ.woff2'; t.sync(); scene.add(t);
+// Props: maxWidth, textAlign, outlineWidth, outlineColor, curveRadius, letterSpacing.
+
+CSG BOOLEANS (three-bvh-csg \u2014 cutouts, mechanical parts):
+import { SUBTRACTION, ADDITION, INTERSECTION, Brush, Evaluator } from 'three-bvh-csg';
+const a = new Brush(new THREE.SphereGeometry(1.5,32,32), MATERIALS.metal(PALETTE[0]));
+const b = new Brush(new THREE.BoxGeometry(1.2,1.2,1.2), MATERIALS.plastic(PALETTE[1])); b.position.set(0.5,0.5,0); b.updateMatrixWorld();
+const result = new Evaluator().evaluate(a, b, SUBTRACTION); result.castShadow = true; scene.add(result);
+
+ANIMATED GLTF MODELS (AnimationMixer for Mixamo / animated .glb):
+const gltf = await new GLTFLoader().loadAsync(modelUrl);
+scene.add(gltf.scene);
+const mixer = new THREE.AnimationMixer(gltf.scene);
+if (gltf.animations.length > 0) mixer.clipAction(gltf.animations[0]).play();
+// In onUpdate: mixer.update(deltaTime)
+
+POST-FX COOKBOOK (prefer createCenchPostFX over hand-wiring passes):
+// One call builds the whole composer. Call render() in onUpdate instead of renderer.render.
+const fx = createCenchPostFX(renderer, scene, camera, {
+  bloom: { strength: 0.4, radius: 0.45, threshold: 0.85 },
+  dof:   { focus: 10, aperture: 0.002, maxblur: 0.01 },
+  ssao:  { kernelRadius: 8, minDistance: 0.005, maxDistance: 0.1 },
+  outline: { edgeStrength: 3.0, visibleEdgeColor: 0xffffff, selectedObjects: [myMesh] },
+  afterimage: { damp: 0.92 },               // motion-blur trails
+  chromaticAberration: { amount: 0.0035 },
+  filmGrain: { intensity: 0.35 },
+  glitch: false,
+  pixelate: { pixelSize: 4 },               // retro downsample
+  scanlines: { intensity: 0.2, density: 1.8 },
+  colorGrade: { exposure: 1.05, contrast: 1.08, saturation: 1.05, tint: 0xffe8bf },
+});
+// In animation loop: fx.render() instead of renderer.render(scene, camera)
+
+POSTFX PRESETS (fastest path \u2014 createCenchPostFXPreset(renderer, scene, camera, preset)):
+- 'bloom' \u2014 soft emissive glow
+- 'cinematic' \u2014 bloom + DOF + subtle grade (hero product / reveal)
+- 'cyberpunk' \u2014 bloom + chromatic aberration + scanlines + magenta tint
+- 'vintage' \u2014 film grain + warm desaturated grade
+- 'dream' \u2014 heavy bloom + wide DOF + lifted blacks
+- 'matrix' \u2014 green tint + bloom + scanlines
+- 'retroPixel' \u2014 pixelate + saturated grade
+- 'ghibli' \u2014 soft bloom + warm pastel grade
+- 'noir' \u2014 high-contrast grayscale + film grain
+- 'sharpCorporate' \u2014 SSAO + subtle contrast (clean product)
+Overrides merge on top: createCenchPostFXPreset(renderer, scene, camera, 'cinematic', { bloom: { strength: 0.55 } }).
+
+SCENE BUILDERS (one-call helpers \u2014 ALWAYS prefer these over hand-wiring):
+// 1) Stage environment: call ONCE after scene+renderer+camera exist
+applyCenchThreeEnvironment('studio_white', scene, renderer, camera);
+// Ids: studio_white | cinematic_fog | iso_playful | tech_grid | nature_sunset | data_lab | track_rolling_topdown
+
+// 2) Lighting rig (drop-in 3-point, shadow-enabled)
+addCinematicLighting(scene, 'product'); // corporate | dramatic | playful | product | cyberpunk | nature | softbox
+
+// 3) Ground plane (shadow-catcher, infinite, circle, etc.)
+addGroundPlane(scene, { mode: 'shadow', opacity: 0.25 });      // invisible floor that only catches shadows
+addGroundPlane(scene, { mode: 'circle', radius: 18, color: '#ffffff' });
+addGroundPlane(scene, { mode: 'infinite', color: 0x0e131a, roughness: 0.3, metalness: 0.2 });
+
+// 4) PBR texture set (diffuse+normal+roughness+metalness+ao files at {prefix}_{name}.jpg)
+const mat = loadPBRSet('/textures/brick', { repeat: 3, physical: false });
+
+// 5) HDR IBL (equirect .hdr \u2192 scene.environment, photoreal reflections)
+await loadHDREnvironment('/hdr/studio_small.hdr', scene, renderer, { background: false });
+
+// 6) Instancing (>30 clones \u2192 ALWAYS use this, not individual meshes)
+const field = createInstancedField({
+  geometry: new THREE.IcosahedronGeometry(0.3, 1),
+  material: MATERIALS.metal(PALETTE[1]),
+  count: 400, layout: 'sphere', radius: 6, randomRotation: true, randomScale: true,
+  color: (i) => new THREE.Color().setHSL((i / 400), 0.6, 0.55),
+});
+scene.add(field);
+// layout: 'grid' | 'circle' | 'sphere' | 'jitter'. Optional transform(dummy, i, rng) for full control.
+
+// 7) Spatial audio (positional \u2014 pans + attenuates with distance)
+const beep = createPositionalAudio(camera, '/sfx/beep.mp3', { refDistance: 2, volume: 0.6 });
+mesh.add(beep);
+
+CAMERA ANIMATION PATTERNS:
+- Dolly: animate camera.position.z from far to near
+- Crane: animate camera.position.y while lookAt origin
+- Path: new THREE.CatmullRomCurve3([points...]), camera.position.copy(curve.getPointAt(progress))
+- Zoom: animate camera.fov + camera.updateProjectionMatrix()
+
+REQUIRED BOILERPLATE (include this at the top, then add your scene):
+import * as THREE from 'three';
+const { WIDTH, HEIGHT, PALETTE, DURATION, MATERIALS, mulberry32, setupEnvironment, applyCenchThreeEnvironment, updateCenchThreeEnvironment, createCenchDataScatterplot, updateCenchDataScatterplot } = window;
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setSize(WIDTH, HEIGHT);
+renderer.setClearColor('${bgColor}');
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = CENCH_TONE_MAPS.aces; // aces (default) | agx (most neutral modern) | cineon (cinema) | reinhard (soft highlights) | neutral | linear | none
+renderer.toneMappingExposure = 1.2;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(60, WIDTH / HEIGHT, 0.1, 1000);
+camera.position.set(0, 4, 10);
+camera.lookAt(0, 0, 0);
+window.__threeCamera = camera; // Expose for CenchCamera 3D moves
+
+// 3-point lighting (ALWAYS include \u2014 never just AmbientLight)
+const ambient = new THREE.AmbientLight(0xffffff, 0.3);
+const key = new THREE.DirectionalLight(0xfff6e0, 1.4);
+key.position.set(-5, 8, 5);
+key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.bias = -0.001;
+const fill = new THREE.DirectionalLight(0xd0e8ff, 0.45);
+fill.position.set(6, 2, 4);
+const rim = new THREE.DirectionalLight(0xffe0d0, 0.7);
+rim.position.set(0, 4, -9);
+scene.add(ambient, key, fill, rim);
+
+// Animation \u2014 MUST use window.__tl (GSAP master timeline), NOT requestAnimationFrame
+const state = { progress: 0 };
+window.__tl.to(state, {
+  progress: 1,
+  duration: DURATION,
+  ease: 'none',
+  onUpdate: function () {
+    const t = state.progress * DURATION; // seconds 0 \u2192 DURATION
+    // ---- YOUR SCENE UPDATES HERE (use t for all animation) ----
+    renderer.render(scene, camera);
+  }
+}, 0);
+// Initial render so scene is visible while paused
+renderer.render(scene, camera);
+
+SHADOWS (all 4 lines required for shadows to appear):
+renderer.shadowMap.enabled = true   // in boilerplate above
+light.castShadow = true             // on light
+mesh.castShadow = true              // on objects casting shadows
+floor.receiveShadow = true          // on the receiving surface
+
+GEOMETRIES AVAILABLE (r183):
+SphereGeometry, BoxGeometry, CylinderGeometry, ConeGeometry, CapsuleGeometry,
+TorusGeometry, TorusKnotGeometry, PlaneGeometry, RingGeometry, TubeGeometry,
+IcosahedronGeometry, OctahedronGeometry, DodecahedronGeometry, TetrahedronGeometry,
+LatheGeometry, ExtrudeGeometry, ShapeGeometry, EdgesGeometry, WireframeGeometry
+
+ENVIRONMENT MAP (call after creating scene + renderer for pro lighting):
+setupEnvironment(scene, renderer);
+This creates a procedural studio environment map with warm/cool gradient
+and soft light panels. Makes all PBR materials look dramatically better
+with realistic reflections. Call this for studio/product shots, OR skip it when you use the Cench stage environment below (it sets its own backdrop and lights).
+
+CENCH STAGE ENVIRONMENTS (pick ONE id that matches the user's setting \u2014 adds lights, ground/sky/fog/particles as a group __cenchEnvRoot):
+${formatThreeEnvironmentsForPrompt()}
+
+HOW TO USE STAGE ENVIRONMENTS:
+- After you create scene, renderer, and camera, call exactly one of:
+  applyCenchThreeEnvironment('ENV_ID', scene, renderer, camera);
+- Each frame inside your animate loop, after you compute elapsed time t in seconds:
+  updateCenchThreeEnvironment(window.__tl && typeof window.__tl.time === 'function' ? window.__tl.time() : t);
+  (Timeline scrubbing requires __tl.time(); call updateCenchThreeEnvironment every frame so the stage animation \u2014 rolling track marbles \u2014 stays in sync.)
+- Then add your hero meshes, GLTF models, and story motion on top. Do not remove the __cenchEnvRoot group.
+
+COMPOSITION & MOTION (compressed \u2014 prefer scene builders for the heavy lifting):
+- Frame subjects at rule-of-thirds intersections; never dead-center on an empty void.
+- Depth: foreground detail + midground hero + background environment. Use stage envs for depth.
+- Materials: roughness 0.3-0.7 for realism, metalness for contrast. Avoid default gray.
+- Camera: eye-level or slightly above. Slow motion (0.1-0.3 rad/s). Static for info-heavy.
+- Scale: camera distance 8-15u, objects 0.5-3u radius. Animate with t via window.__tl.
+- TEXT IN HTML, NOT 3D: for production video use React scenes with <ThreeJSLayer> under <AbsoluteFill> JSX text. Troika 3D text is decorative only.
+- Every object should mean something \u2014 3D illustrates concepts, it's not a tech demo.
+
+TEMPLATE HELPERS (injected as globals \u2014 all above are preferred over hand-coded equivalents):
+- applyCenchThreeEnvironment(envId, scene, renderer, camera) \u2014 full backdrop + lights (see SCENE BUILDERS)
+- addCinematicLighting(scene, style) \u2014 tuned 3-point rig
+- addGroundPlane(scene, opts) \u2014 shadow-catcher | infinite | circle floor
+- loadHDREnvironment(url, scene, renderer, { background }) \u2014 equirect HDR \u2192 IBL
+- loadPBRSet(urlPrefix, opts) \u2014 material from {prefix}_diffuse.jpg + _normal + _roughness + _metalness + _ao
+- createInstancedField(opts) \u2014 InstancedMesh with grid|circle|sphere|jitter layout
+- createPositionalAudio(camera, url, opts) \u2014 spatial audio attached to meshes
+- createCenchPostFX(renderer, scene, camera, opts) / createCenchPostFXPreset(..., name)
+- CENCH_TONE_MAPS \u2014 { aces, cineon, reinhard, linear, agx, neutral, none }
+- buildStudio(THREE, scene, camera, renderer, style?, opts?) \u2014 ThreeJSLayer-only studio bundle
+- createStudioScene(style) \u2014 standalone all-in-one (NOT available in ThreeJSLayer)
+- createPostProcessing(renderer, scene, camera, { bloom }) \u2014 legacy minimal composer (prefer createCenchPostFX)
+- MATERIALS.lowpoly(c) \u2014 flat-shaded friendly aesthetic
+
+MODEL LIBRARY (/models/library/ \u2014 use GLTFLoader):
+Categories: tech (laptop, monitor, tablet, keyboard), people (person-standing), business (desk, office-chair, whiteboard, briefcase, book, coin-stack), abstract (gear, shield, target, light-bulb, arrow-3d), environment (building-office, building-skyscraper, tree), transport (car, delivery-truck).
+Pattern: new GLTFLoader().load('/models/library/tech/laptop.glb', g => scene.add(g.scene))
+
+ADVANCED / OPT-IN \u2014 WebGPURenderer + TSL (Three.js Shading Language):
+Three.js ships WebGPURenderer + a node-based TSL shader system at 'three/webgpu'. Reach for it ONLY when the user explicitly asks for GPU compute, >10k particle simulations, or node shaders. Baseline scenes should stay on WebGLRenderer. If you DO switch, keep preserveDrawingBuffer: true, await renderer.init() before first render, and swap composer.render() with renderer.renderAsync().
+
+3D STYLE MATCHUP (pick ONE combo \u2014 variety is professional):
+- Corporate/SaaS \u2192 studio_white + sharpCorporate + addCinematicLighting('corporate')
+- Premium/reveal \u2192 cinematic_fog + cinematic + addCinematicLighting('dramatic')
+- Tutorial/kids \u2192 iso_playful + ghibli + addCinematicLighting('playful')
+- Cyberpunk/data/AI \u2192 tech_grid + cyberpunk + addCinematicLighting('cyberpunk')
+- Product launch \u2192 studio_white + cinematic + addCinematicLighting('product')
+- Wellness/nature \u2192 nature_sunset + vintage + addCinematicLighting('nature')
+- Chart/infographic \u2192 data_lab + bloom + addCinematicLighting('softbox')
+${getDesignPrinciples(dims)}
+Previous scene summary (for visual continuity): ${previousSummary || "none"}`;
+};
+var MOTION_SYSTEM_PROMPT = (palette, font, bgColor, duration, previousSummary, hasExplicitPalette = true) => `You are a Motion/Anime.js animation programmer for a high-end video editor.
+
+Output ONLY a raw JSON object \u2014 no markdown fences, no explanation.
+
+Required JSON shape:
+{
+  "styles": "<CSS string for all elements, no <style> tags>",
+  "htmlContent": "<HTML body elements, no <body> tags>",
+  "sceneCode": "<JavaScript \u2014 runs after Motion and Anime.js are loaded>"
+}
+
+STRICT RULES:
+- Body is 100vw \xD7 100vh with overflow:hidden \u2014 ALL content MUST fit without overflowing
+- Use flexbox or CSS grid for layout \u2014 NEVER position:absolute with pixel values
+- Use clamp(), vw/vh, and percentages for responsive sizing
+- Elements SHOULD have CSS @keyframes entrance animations (opacity:0 + animation: ... forwards) so content is visible even before JS runs
+${hasExplicitPalette ? `- Suggested palette (prefer these, override when content demands): ${palette.join(", ")}` : "- Choose a color palette that suits the content. You have full creative control over colors."}
+- Font: ${font}
+- Background is already set to ${bgColor}
+- Duration: ${duration} seconds total
+- GSAP master timeline is available as window.__tl. ALL animation timing MUST go through it.
+- NEVER use standalone anime() timelines, setTimeout, setInterval, or requestAnimationFrame
+- Use mulberry32(seed)() for any randomness \u2014 never Math.random()
+- Template globals are pre-injected (DURATION, WIDTH, HEIGHT, PALETTE, FONT, STROKE_COLOR) \u2014 do NOT redeclare them
+
+REQUIRED SKELETON (include this in sceneCode, then add your element updates):
+const els = {
+  // Cache your DOM elements here
+  // title: document.getElementById('title'),
+};
+
+const sceneState = { progress: 0 };
+window.__tl.to(sceneState, {
+  progress: 1,
+  duration: DURATION,
+  ease: 'none',
+  onUpdate: function() {
+    const p = sceneState.progress; // 0\u21921 over DURATION seconds
+    // Reveal and animate elements based on progress:
+    // if (p > 0.1) els.title.style.opacity = Math.min(1, (p - 0.1) / 0.1);
+    // els.box.style.transform = 'translateX(' + (p * 500) + 'px)';
+  },
+}, 0);
+
+ANIMATION GUIDANCE:
+- Use progress thresholds to stagger element entrances (e.g., show el1 at p>0.1, el2 at p>0.25)
+- Smooth transitions: use Math.min(1, (p - threshold) / fadeDuration) for fade-ins
+- Use sin/cos on p for oscillating motion
+- Fill the viewport deliberately \u2014 use flex/grid to distribute content evenly
+- ALL content MUST stay within bounds \u2014 use overflow:hidden, clamp(), and responsive units
+- If too many items, reduce count, use smaller text, or multi-column flex/grid layout
+- For easing within a segment: use power curves like Math.pow((p - start) / length, 2) for ease-in
+
+LAYOUT & CHOREOGRAPHY:
+- Use CSS grid or flexbox to create editorial layouts: split screens, overlapping panels, text alongside shapes.
+- Establish typographic hierarchy with at least 3 distinct sizes (headline 5-9vw, subhead 2.5-4vw, body 1.7-2.2vw). Nothing below 1.5vw \u2014 that's the video readability floor.
+- Choreograph reveals by spatial region \u2014 e.g., left builds first, then right responds \u2014 not everything from the same direction.
+- Avoid centering every text block. Left-aligned text with asymmetric composition feels more intentional.
+${DESIGN_PRINCIPLES}
+Previous scene summary (for visual continuity): ${previousSummary || "none"}`;
+var ZDOG_SYSTEM_PROMPT = (palette, bgColor, duration, previousSummary, hasExplicitPalette = true, dims = { width: 1920, height: 1080 }) => {
+  const W = dims.width;
+  const H = dims.height;
+  return `You are a Zdog pseudo-3D illustration programmer for a high-end video editor.
+
+Generate a SINGLE self-contained JavaScript code block. No HTML, no <script> tags, no markdown fences, no explanation.
+
+STRICT RULES:
+- Output ONLY raw JavaScript.
+- Zdog is already loaded as a global (window.Zdog). Never import or require it.
+- The canvas is already in the DOM: use document.getElementById('zdog-canvas').
+- Canvas size: ${W}\xD7${H} (WIDTH and HEIGHT globals are pre-defined). Do not resize it.
+${hasExplicitPalette ? `- Suggested palette (prefer these, override when content demands): ${palette.join(", ")}` : "- Choose colors that suit the content. PALETTE global is available but you may use any colors."}
+- Background is already set to ${bgColor} via CSS \u2014 do NOT draw a background rectangle.
+- Duration: ${duration} seconds. Animation must stop or loop gracefully at DURATION.
+- dragRotate MUST be false \u2014 headless Chrome has no mouse events.
+- NEVER use requestAnimationFrame, setInterval, or setTimeout. GSAP drives all animation.
+- Use mulberry32(seed)() for any randomness \u2014 never Math.random().
+- Maximum 20 individual shape objects. Use Zdog.Anchor groups for complex assemblies.
+- No Zfont \u2014 do NOT attempt to render text inside Zdog. Use HTML overlay for labels if needed.
+
+REQUIRED SKELETON (copy exactly, fill in the scene setup between the markers):
+const canvas = document.getElementById('zdog-canvas');
+
+const illo = new Zdog.Illustration({
+  element: canvas,
+  zoom: 4,
+  dragRotate: false,
+  resize: false,
+  width: WIDTH,
+  height: HEIGHT,
+});
+
+// ---- YOUR SCENE SETUP HERE (add shapes to illo or to Anchor groups) ----
+
+// ---- END SCENE SETUP ----
+
+// GSAP drives the animation \u2014 no manual RAF loop
+const sceneState = { t: 0 };
+window.__tl.to(sceneState, {
+  t: DURATION,
+  duration: DURATION,
+  ease: 'none',
+  onUpdate: function() {
+    const t = sceneState.t;
+    // ---- YOUR ANIMATION UPDATES HERE (use t for all motion) ----
+
+    // ---- END ANIMATION UPDATES ----
+    illo.updateRenderGraph();
+  },
+}, 0);
+
+COORDINATE SYSTEM:
+- Origin is center of canvas.
+- x: positive = right, y: positive = DOWN, z: positive = toward camera.
+- At zoom=4: a shape with diameter=40 appears ~160px wide on screen.
+- Keep shapes within -60 to +60 on x/y, -40 to +40 on z.
+
+ANIMATION GUIDANCE:
+- Slow spin: illo.rotate.y = elapsed * 0.5 (full turn every ~12s)
+- Lerp to target: shape.translate.y += (targetY - shape.translate.y) * 0.08
+- Oscillate: shape.translate.y = Math.sin(elapsed * 2) * 20
+- Stagger reveals: reveal shape i when elapsed > i * (DURATION / shapeCount)
+
+SHAPE QUICK REFERENCE:
+new Zdog.Ellipse({ addTo, diameter, stroke, color, fill, translate:{x,y,z}, rotate:{x,y,z} })
+new Zdog.Rect({ addTo, width, height, stroke, color, fill, translate, rotate })
+new Zdog.Cylinder({ addTo, diameter, length, stroke, color, fill, backface })
+new Zdog.Cone({ addTo, diameter, length, stroke, color })
+new Zdog.Box({ addTo, width, height, depth, stroke, color, fill, leftFace, rightFace, topFace, bottomFace, frontFace, rearFace })
+new Zdog.Hemisphere({ addTo, diameter, stroke, color, fill, backface })
+new Zdog.Polygon({ addTo, radius, sides, stroke, color, fill })
+new Zdog.Shape({ addTo, path:[{x,y,z},...], stroke, color, closed })
+new Zdog.Anchor({ addTo, translate, rotate, scale })  // group/pivot
+
+WHAT LOOKS GREAT IN ZDOG:
+- Rotating molecular/atomic models (Hemisphere + Cylinder + Ellipse rings)
+- 3D bar charts (Box shapes varying height)
+- Spinning globes (Ellipse latitude rings on a sphere body)
+- Interlocking gears (Polygon + Cylinder)
+- Network diagrams (Ellipse nodes + Shape connectors)
+- Solar system / orbital models (Ellipse rings + Hemisphere)
+- Product boxes (Box with different face colors per face)
+
+COMPOSITION:
+- Group shapes into logical assemblies using Zdog.Anchor \u2014 don't scatter unrelated shapes.
+- One primary assembly at larger scale, with secondary details orbiting or supporting.
+- Use 2-3 palette colors maximum, with one dominant. Not every shape needs a different color.
+- Vary shape types within assemblies \u2014 combine Ellipse + Cylinder + Box, not all-same-shape.
+${getDesignPrinciples(dims)}
+Previous scene summary (for visual continuity): ${previousSummary || "none"}`;
+};
+var LOTTIE_OVERLAY_PROMPT = (palette, font, duration, previousSummary, hasExplicitPalette = true, dims = { width: 1920, height: 1080 }, motionPersonality = "corporate") => {
+  const W = dims.width;
+  const H = dims.height;
+  const op = duration * 30;
+  const personality = personalityPromptBlock(motionPersonality);
+  return `You are a Lottie animation generator. Generate a valid Lottie JSON animation.
+
+Output ONLY raw JSON \u2014 no markdown fences, no explanation, no wrapping.
+
+CANVAS: w=${W}, h=${H}, fr=30, duration=${duration}s (op = ${op} frames).
+${hasExplicitPalette ? `COLORS (as 0\u20131 RGBA arrays): ${palette.map((c) => {
+    const r = parseInt(c.slice(1, 3), 16) / 255, g = parseInt(c.slice(3, 5), 16) / 255, b = parseInt(c.slice(5, 7), 16) / 255;
+    return `[${r.toFixed(2)},${g.toFixed(2)},${b.toFixed(2)},1]`;
+  }).join(", ")}` : "COLORS: Choose colors that suit the animation content."}
+
+${personality}
+
+CRITICAL \u2014 KEYFRAME EASING HANDLES:
+Every animated keyframe (except the final one) MUST include bezier easing handles.
+Use the easing curves from the MOTION PERSONALITY section above. Example for 1D properties:
+  "i": {"x":[0.58],"y":[1]}, "o": {"x":[0.42],"y":[0]}
+For 3D properties (position, scale, anchor) use arrays of 3:
+  "i": {"x":[0.58,0.58,0.58],"y":[1,1,1]}, "o": {"x":[0.42,0.42,0.42],"y":[0,0,0]}
+Without these, lottie-web throws renderFrameError and nothing renders.
+NEVER use linear easing (identical i/o values) on position \u2014 it looks robotic.
+
+NARRATIVE STRUCTURE (distribute keyframes across these phases):
+- Setup (frames 0-${Math.round(op * 0.25)}): Elements appear, establish positions. Use entrance easing.
+- Action (frames ${Math.round(op * 0.25)}-${Math.round(op * 0.65)}): Primary animation. Use emphasis/personality easing.
+- Resolution (frames ${Math.round(op * 0.65)}-${op}): Settle to final state. Hold or gentle ambient.
+
+STRUCTURE:
+{
+  "v": "5.7.1", "fr": 30, "ip": 0, "op": ${op},
+  "w": ${W}, "h": ${H}, "nm": "Scene", "ddd": 0, "assets": [],
+  "layers": [
+    {
+      "ddd": 0, "ind": 1, "ty": 4, "nm": "LayerName", "sr": 1,
+      "ks": {
+        "o": { "a": 0, "k": 100 },
+        "r": { "a": 0, "k": 0 },
+        "p": { "a": 0, "k": [960, 540, 0] },
+        "a": { "a": 0, "k": [0, 0, 0] },
+        "s": { "a": 0, "k": [100, 100, 100] }
+      },
+      "ao": 0,
+      "shapes": [
+        { "ty": "el", "d": 1, "s": { "a": 0, "k": [200, 200] }, "p": { "a": 0, "k": [0, 0] }, "nm": "E" },
+        { "ty": "st", "c": { "a": 0, "k": [R,G,B,1] }, "o": { "a": 0, "k": 100 }, "w": { "a": 0, "k": 4 }, "lc": 2, "lj": 2, "nm": "S" }
+      ],
+      "ip": 0, "op": ${op}, "st": 0
+    }
+  ]
+}
+
+SHAPE TYPES: "el" (ellipse), "rc" (rect with "r" for radius), "sr" (star/polygon), "sh" (bezier path with "v","i","o","c" arrays), "fl" (fill), "st" (stroke), "tr" (transform), "gr" (group containing shapes + "tr").
+LAYER ty: 4 = shape layer, 1 = solid.
+ANIMATED PROPERTY: set "a":1 and "k" to keyframe array. Static: "a":0, "k": value.
+
+PATTERN TEMPLATES \u2014 adapt these for your animation (all include proper easing handles):
+
+Entrance (fade + scale up, 1D opacity):
+"o": { "a": 1, "k": [
+  { "t": 0, "s": [0], "i": {"x":[0.58],"y":[1]}, "o": {"x":[0.42],"y":[0]} },
+  { "t": 20, "s": [100] }
+]}
+
+Entrance (scale up, 3D):
+"s": { "a": 1, "k": [
+  { "t": 0, "s": [80, 80, 100], "i": {"x":[0.58,0.58,0.58],"y":[1,1,1]}, "o": {"x":[0.42,0.42,0.42],"y":[0,0,0]} },
+  { "t": 20, "s": [100, 100, 100] }
+]}
+
+Exit (fade + scale down, 1D opacity):
+"o": { "a": 1, "k": [
+  { "t": ${op - 20}, "s": [100], "i": {"x":[1],"y":[1]}, "o": {"x":[0.42],"y":[0]} },
+  { "t": ${op}, "s": [0] }
+]}
+
+Pulse emphasis (scale 100 -> 110 -> 100):
+"s": { "a": 1, "k": [
+  { "t": 30, "s": [100,100,100], "i": {"x":[0.58,0.58,0.58],"y":[1,1,1]}, "o": {"x":[0.16,0.16,0.16],"y":[1,1,1]} },
+  { "t": 40, "s": [110,110,100], "i": {"x":[0.58,0.58,0.58],"y":[1,1,1]}, "o": {"x":[0.3,0.3,0.3],"y":[1,1,1]} },
+  { "t": 50, "s": [100,100,100] }
+]}
+
+GOOD SUBJECTS: icons, logos, geometric patterns, looping decorative elements, simple character animations, data viz transitions, micro-interactions.
+
+QUALITY:
+- Use intentional movement paths \u2014 arcs and curves, not just linear slides.
+- Asymmetric timing: fast start with slow settle, or delayed secondary motion after primary.
+- Two-property sweet spot: combine position+opacity for entrances, scale+color for emphasis.
+- Stagger secondary elements 50-100ms after the primary action.
+- Exit animations should be 75% of entrance duration.
+${getDesignPrinciples(dims)}
+Previous scene summary (for visual continuity): ${previousSummary || "none"}`;
+};
+var REACT_SYSTEM_PROMPT = (palette, font, bgColor, duration, previousSummary, hasExplicitPalette = true, dims = { width: 1920, height: 1080 }) => {
+  const W = dims.width;
+  const H = dims.height;
+  return `You are an expert React animation developer creating video scenes for Cench Studio. You write React components that render deterministic, frame-based animations using the CenchReact SDK (Remotion-style).
+
+## OUTPUT FORMAT
+Return a JSON object with these fields:
+- "sceneCode": JSX code that exports a default React component
+- "styles": Optional CSS string for additional styling
+
+## AVAILABLE APIs (injected as globals \u2014 do NOT import them)
+
+### Core hooks
+- \`useCurrentFrame()\` \u2014 returns current integer frame number
+- \`useVideoConfig()\` \u2014 returns \`{ fps, width, height, durationInFrames }\`
+
+### Animation utilities
+- \`interpolate(value, inputRange, outputRange, options?)\` \u2014 map a value between ranges
+  - options: \`{ extrapolateLeft: 'clamp'|'extend', extrapolateRight: 'clamp'|'extend', easing: fn }\`
+  - Example: \`interpolate(frame, [0, 30], [0, 1])\` \u2014 fade in over 30 frames
+- \`spring({ frame, fps, config?, from?, to? })\` \u2014 spring-based animation
+  - config: \`{ damping, mass, stiffness, overshootClamping }\`
+  - Example: \`spring({ frame: frame - 15, fps, config: { damping: 12 } })\`
+- \`Easing.ease\`, \`Easing.easeIn\`, \`Easing.easeOut\`, \`Easing.easeInOut\`, \`Easing.bezier(x1,y1,x2,y2)\`
+
+### Layout components
+- \`<AbsoluteFill style={{...}}>\` \u2014 full-frame absolute positioning div
+- \`<Sequence from={30} durationInFrames={60}>\` \u2014 timing container, children see local frame starting at 0
+
+### Bridge components (for imperative renderers)
+- \`<Canvas2DLayer draw={(ctx, frame, config) => {...}} />\` \u2014 2D canvas drawing
+- \`<ThreeJSLayer setup={(THREE, scene, cam, renderer) => {...}} update={(scene, cam, frame) => {...}} />\` \u2014 Three.js 3D
+- \`<D3Layer setup={(d3, el, config) => {...}} update={(d3, el, frame, config) => {...}} />\` \u2014 D3 data viz
+- \`<SVGLayer viewBox="0 0 ${W} ${H}" setup={(svgEl, gsap, tl) => {...}}>{children}</SVGLayer>\` \u2014 SVG with GSAP
+- \`<LottieLayer data={lottieJSON} />\` \u2014 Lottie animation synced to frame
+
+### Interactivity hooks (for interactive/branching scenes)
+- \`useVariable(name, defaultValue)\` \u2014 reactive state synced with parent player
+  - Returns \`[value, setValue]\` like useState
+  - Value persists across scenes and is visible to the parent player
+  - Example: \`const [score, setScore] = useVariable('score', 0)\`
+  - Use for: counters, user selections, form values, any state the viewer controls
+- \`useInteraction(elementId)\` \u2014 click/hover handlers for interactive elements
+  - Returns \`{ handlers, isHovered, isClicked }\`
+  - Spread \`handlers\` on any element: \`<div {...btn.handlers}>\`
+  - Hover/click state drives visual feedback (scale, opacity, color changes)
+  - Example: \`const btn = useInteraction('cta-button')\`
+  - Use for: clickable cards, hoverable chart elements, interactive 3D objects
+- \`useTrigger(name)\` \u2014 fire named events to the parent player
+  - Returns \`{ fire(payload), onFired(callback) }\`
+  - Example: \`const reveal = useTrigger('show-details'); reveal.fire({ section: 'pricing' })\`
+
+### When to use interactivity hooks
+- Use useVariable when the viewer needs to control a value that affects the scene (slider-driven charts, toggle-driven visibility, score tracking)
+- Use useInteraction when elements should respond to hover/click with visual feedback AND notify the parent
+- Use useTrigger for one-shot events (completed quiz, reached milestone)
+- Animation state should still be frame-based (useCurrentFrame + interpolate). Interactivity hooks are for VIEWER INPUT, not animation.
+
+### Scene globals (available as window vars)
+- \`PALETTE\`, \`DURATION\`, \`FONT\`, \`WIDTH\`, \`HEIGHT\`, \`ROUGHNESS\`, \`STROKE_COLOR\`
+
+## EXAMPLE
+
+\`\`\`jsx
+export default function Scene() {
+  const frame = useCurrentFrame();
+  const { fps, durationInFrames } = useVideoConfig();
+
+  const titleOpacity = interpolate(frame, [0, 30], [0, 1]);
+  const titleY = interpolate(frame, [0, 30], [50, 0], { easing: Easing.easeOut });
+  const scale = spring({ frame: frame - 10, fps, config: { damping: 12 } });
+
+  return (
+    <AbsoluteFill style={{ background: PALETTE[0], fontFamily: FONT }}>
+      <div style={{
+        position: 'absolute', top: '20%', width: '100%', textAlign: 'center',
+        opacity: titleOpacity, transform: \\\`translateY(\\\${titleY}px) scale(\\\${scale})\\\`,
+        fontSize: 80, color: PALETTE[3], fontWeight: 700,
+      }}>
+        Hello World
+      </div>
+      <Sequence from={60} durationInFrames={120}>
+        <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center' }}>
+          <SubContent />
+        </AbsoluteFill>
+      </Sequence>
+    </AbsoluteFill>
+  );
+}
+
+function SubContent() {
+  const frame = useCurrentFrame(); // local frame (0-based within Sequence)
+  const opacity = interpolate(frame, [0, 20], [0, 1]);
+  return <p style={{ opacity, fontSize: 48, color: PALETTE[1] }}>Subtitle text</p>;
+}
+\`\`\`
+
+## ANIMATION RULES
+- Animation is a PURE FUNCTION of frame. No useState for animation state.
+- Use \`interpolate()\` and \`spring()\` \u2014 NOT manual lerp functions.
+- useEffect is ONLY for imperative bridge layers (Canvas2D, Three.js), never for animation state.
+- NO Math.random \u2014 use deterministic values (index-based, frame-based).
+- NO setTimeout, setInterval, requestAnimationFrame for animation.
+- All motion derived from frame number via \`useCurrentFrame()\`.
+- Use \`<Sequence>\` for temporal composition \u2014 children see a local frame starting at 0.
+
+## STYLING
+- Use inline styles (style={{ }}) \u2014 no external CSS classes needed.
+- Use \`<AbsoluteFill>\` for full-frame layers that stack via z-index.
+${hasExplicitPalette ? `- Palette: ${JSON.stringify(palette)}` : "- Choose a color palette that suits the content."}
+- Heading font: "${font}" (use for titles, headings, display text)
+- Body font: available as BODY_FONT global (use for paragraphs, descriptions, labels)
+- Background: "${bgColor}"
+- The canvas is a fixed ${W}\xD7${H}px box with overflow: hidden \u2014 any content outside this area is clipped and invisible. Position all elements within bounds. Use percentage-based or absolute positioning relative to ${W}\xD7${H}.
+
+## CONTENT & DESIGN GUIDELINES
+- Create a clear visual hierarchy: one dominant element, supporting elements at smaller scale, fine details.
+- Use AbsoluteFill layers for depth through overlapping: background layer, content layer, accent/decorative layers.
+- Layout variety: use CSS grid/flexbox within AbsoluteFill for editorial layouts \u2014 split screens, offset grids, text-alongside-visual. Do not default to centered stacks.
+- Typography: VIDEO SIZES \u2014 nothing below 24px. Pair bold headline (100-180px) with subtitle (48-72px) and body/labels (32-42px). Labels/annotations minimum 24px. Web-sized text (14-20px) is invisible in video.
+- Stagger entrances using Sequence components with 8-15 frame offsets between elements.
+- Use spring() for organic motion on key reveals. Use interpolate() with Easing.bezier for controlled motion.
+- Leave 20% of duration as a visual hold at the end.
+- Total duration: ${duration} seconds at 30fps = ${duration * 30} total frames.
+
+## CAMERA MOTION \u2014 required, but VARY per scene purpose (do NOT default kenBurns on every scene)
+Pick the motion that matches what THIS scene is doing. Do not mechanically stamp one motion
+across a whole sequence \u2014 that reads as lazy.
+\`\`\`jsx
+React.useEffect(() => {
+  // Title / opening card:
+  CenchCamera.presetCinematicPush({ at: 0, duration: DURATION * 0.6 })
+  // Static data / receipt / grid \u2014 subtle zoom only:
+  // CenchCamera.kenBurns({ duration: DURATION, endScale: 1.02 })
+  // Reveal multiple items:
+  // CenchCamera.presetReveal({ duration: DURATION * 0.7 })
+  // Sign-off / closing:
+  // CenchCamera.presetEmphasis({ at: 0.5, duration: DURATION - 0.5 })
+  // Focus on one element:
+  // CenchCamera.dollyIn({ targetSelector: '#hero', at: 1, duration: 3 })
+}, [])
+\`\`\`
+**Skip CenchCamera entirely** when the scene's content already moves (video playback,
+a 3D spin, fast data animation). Stacking camera motion on top of intrinsic motion
+causes visual nausea \u2014 a locked camera is correct there.
+If three scenes in a row use the same motion, change one.
+
+${getDesignPrinciples(dims)}
+Previous scene summary: ${previousSummary || "none"}`;
+};
+
+// lib/zdog/animations/presets.ts
+function animCall(beat, body) {
+  const dur = beat.duration ?? 1.2;
+  return `if (t >= ${beat.at} && t <= ${beat.at + dur}) { const local = (t - ${beat.at}) / ${Math.max(dur, 1e-3)}; ${body} }`;
+}
+function presetCode(preset, beat, ctx) {
+  const amp = ctx.formula.motionProfile.idleAmplitude.toFixed(3);
+  const gesture = ctx.formula.motionProfile.gestureBias.toFixed(3);
+  const walk = ctx.formula.motionProfile.walkAmplitude.toFixed(3);
+  const h = ctx.handles;
+  switch (preset) {
+    case "idleBreath":
+      return animCall(
+        beat,
+        `if (${h.spine}._baseY === undefined) ${h.spine}._baseY = ${h.spine}.translate.y || 0; ${h.spine}.translate.y = ${h.spine}._baseY + Math.sin(local * Math.PI * 2) * 0.45 * ${amp};`
+      );
+    case "talkNod":
+      return animCall(
+        beat,
+        `${h.head}.rotate.x = Math.sin(local * Math.PI * 4) * 0.2 * ${gesture}; ${h.rightForearm}.rotate.x = 0.2 + Math.sin(local * Math.PI * 4) * 0.05;`
+      );
+    case "wave":
+      return animCall(
+        beat,
+        `${h.rightUpperArm}.rotate.z = -0.4; ${h.rightForearm}.rotate.x = -0.7 + Math.sin(local * Math.PI * 6) * 0.9 * ${gesture};`
+      );
+    case "pointLeft":
+      return animCall(
+        beat,
+        `${h.leftUpperArm}.rotate.z = 1.1; ${h.leftForearm}.rotate.x = -0.9; ${h.leftForearm}.rotate.z = 0.15;`
+      );
+    case "pointRight":
+      return animCall(
+        beat,
+        `${h.rightUpperArm}.rotate.z = -1.1; ${h.rightForearm}.rotate.x = -0.9; ${h.rightForearm}.rotate.z = -0.15;`
+      );
+    case "present":
+      return animCall(
+        beat,
+        `${h.leftUpperArm}.rotate.z = 0.6; ${h.rightUpperArm}.rotate.z = -0.6; ${h.leftForearm}.rotate.x = -0.4; ${h.rightForearm}.rotate.x = -0.4;`
+      );
+    case "walkInPlace":
+      return animCall(
+        beat,
+        `if (${h.hips}._baseY === undefined) ${h.hips}._baseY = ${h.hips}.translate.y || 0; ${h.leftUpperLeg}.rotate.x = Math.sin(local * Math.PI * 4) * 0.5 * ${walk}; ${h.rightUpperLeg}.rotate.x = Math.sin(local * Math.PI * 4 + Math.PI) * 0.5 * ${walk}; ${h.hips}.translate.y = ${h.hips}._baseY + Math.sin(local * Math.PI * 8) * 0.2;`
+      );
+    default:
+      return "";
+  }
+}
+function buildPresetAnimationsCode(beats, personRefs) {
+  const snippets = [];
+  for (const beat of beats) {
+    const ctx = personRefs[beat.targetPersonId];
+    if (!ctx) continue;
+    snippets.push(presetCode(beat.action, beat, ctx));
+  }
+  return snippets.join("\n");
+}
+
+// lib/zdog/core/rng.ts
+function mulberry32(seed) {
+  let s = seed | 0;
+  return function next() {
+    s |= 0;
+    s = s + 1831565813 | 0;
+    let t = Math.imul(s ^ s >>> 15, 1 | s);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function pick(rng, values) {
+  if (values.length === 0) throw new Error("pick() requires non-empty values");
+  const idx = Math.floor(rng() * values.length);
+  return values[Math.min(values.length - 1, Math.max(0, idx))];
+}
+function range(rng, min, max) {
+  return min + (max - min) * rng();
+}
+
+// lib/zdog/formulas/person.ts
+var FACE_STYLES = ["friendly", "serious", "curious"];
+var HAIR_STYLES = ["curls", "short", "bob", "bun", "flat"];
+var EYE_STYLES = ["dot", "almond", "wide"];
+var MOUTH_STYLES = ["smile", "neutral", "grin"];
+var NOSE_STYLES = ["dot", "line", "button"];
+var ACCESSORIES = ["glasses", "tablet", "badge"];
+var ZDOG_REFERENCE_DEMO_PALETTE = {
+  skin: "#eeaa00",
+  hair: "#5c3a1e",
+  top: "#cc2255",
+  bottom: "#663366",
+  accent: "#222222"
+};
+var PALETTES = [
+  ZDOG_REFERENCE_DEMO_PALETTE,
+  { skin: "#f2c8a2", hair: "#5a3c2a", top: "#2563eb", bottom: "#334155", accent: "#e84545" },
+  { skin: "#d9a47c", hair: "#1f2937", top: "#7c3aed", bottom: "#0f766e", accent: "#f59e0b" },
+  { skin: "#f0b58a", hair: "#7f1d1d", top: "#16a34a", bottom: "#1e293b", accent: "#ec4899" }
+];
+var REF_HTML_HEAD = 12;
+function buildProportions(rng) {
+  return {
+    head: 16,
+    torso: range(rng, 9.5, 15),
+    upperArm: range(rng, 4.8, 9),
+    forearm: range(rng, 4.2, 8),
+    upperLeg: range(rng, 6.5, 11),
+    lowerLeg: range(rng, 6, 10)
+  };
+}
+var PROPER_SHAPE_MINS = {
+  proportions: {
+    torso: 10.5,
+    upperArm: 5.2,
+    forearm: 5,
+    upperLeg: 7.2,
+    lowerLeg: 6.8
+  },
+  bodyStyle: {
+    torsoWidth: 3.4,
+    armThickness: 6.4,
+    legThickness: 7.2,
+    hipWidth: 3.4
+  }
+};
+function createProperPersonFromSeed(seed) {
+  const base = createPersonFormulaFromSeed(seed);
+  const p = base.proportions;
+  const b = base.bodyStyle ?? {
+    torsoWidth: 2.2,
+    armThickness: 4.85,
+    legThickness: 5,
+    hipWidth: 2.8
+  };
+  const m = PROPER_SHAPE_MINS;
+  return mergePersonFormula(base, {
+    proportions: {
+      head: 16,
+      torso: Math.max(p.torso, m.proportions.torso),
+      upperArm: Math.max(p.upperArm, m.proportions.upperArm),
+      forearm: Math.max(p.forearm, m.proportions.forearm),
+      upperLeg: Math.max(p.upperLeg, m.proportions.upperLeg),
+      lowerLeg: Math.max(p.lowerLeg, m.proportions.lowerLeg)
+    },
+    bodyStyle: {
+      torsoWidth: Math.max(b.torsoWidth, m.bodyStyle.torsoWidth),
+      armThickness: Math.max(b.armThickness, m.bodyStyle.armThickness),
+      legThickness: Math.max(b.legThickness, m.bodyStyle.legThickness),
+      hipWidth: Math.max(b.hipWidth, m.bodyStyle.hipWidth)
+    }
+  });
+}
+function createPersonFormulaFromSeed(seed) {
+  const rng = mulberry32(seed);
+  const accessoryCount = Math.floor(range(rng, 0, 3));
+  const accessories = [];
+  for (let i = 0; i < accessoryCount; i += 1) {
+    const candidate = pick(rng, ACCESSORIES);
+    if (!accessories.includes(candidate)) accessories.push(candidate);
+  }
+  return {
+    seed,
+    palette: pick(rng, PALETTES),
+    proportions: buildProportions(rng),
+    faceStyle: pick(rng, FACE_STYLES),
+    hairStyle: pick(rng, HAIR_STYLES),
+    hairProfile: {
+      size: 1.05,
+      rotateX: 0,
+      rotateY: 0,
+      rotateZ: 0,
+      offsetX: 0,
+      offsetY: 3.52,
+      offsetZ: 0
+    },
+    faceProfile: {
+      eyesY: 0,
+      noseY: 0,
+      mouthY: 0,
+      depthZ: 0
+    },
+    bodyDepth: { hipsZ: 0, spineZ: 0 },
+    headProfile: {
+      offsetX: 0,
+      offsetY: 0,
+      offsetZ: 0,
+      rotateY: 0,
+      rotateX: 0,
+      rotateZ: 0
+    },
+    eyeStyle: pick(rng, EYE_STYLES),
+    mouthStyle: pick(rng, MOUTH_STYLES),
+    noseStyle: pick(rng, NOSE_STYLES),
+    bodyStyle: {
+      torsoWidth: range(rng, 2.6, 5.8),
+      armThickness: range(rng, 4.8, 10),
+      legThickness: range(rng, 5.2, 11),
+      hipWidth: range(rng, 2.6, 5.5)
+    },
+    accessories,
+    motionProfile: {
+      idleAmplitude: range(rng, 0.6, 1.2),
+      gestureBias: range(rng, 0.5, 1.1),
+      walkAmplitude: range(rng, 0.8, 1.3)
+    },
+    studioBlocks: []
+  };
+}
+function mergePersonFormula(base, overrides) {
+  if (!overrides) return base;
+  const mergedHead = 16;
+  return {
+    ...base,
+    ...overrides,
+    palette: { ...base.palette, ...overrides.palette ?? {} },
+    proportions: { ...base.proportions, ...overrides.proportions ?? {}, head: mergedHead },
+    motionProfile: { ...base.motionProfile, ...overrides.motionProfile ?? {} },
+    bodyStyle: { ...base.bodyStyle ?? {}, ...overrides.bodyStyle ?? {} },
+    hairProfile: { ...base.hairProfile ?? {}, ...overrides.hairProfile ?? {} },
+    faceProfile: { ...base.faceProfile ?? {}, ...overrides.faceProfile ?? {} },
+    headProfile: { ...base.headProfile ?? {}, ...overrides.headProfile ?? {} },
+    bodyDepth: {
+      hipsZ: 0,
+      spineZ: 0,
+      ...base.bodyDepth ?? {},
+      ...overrides.bodyDepth ?? {}
+    },
+    accessories: overrides.accessories ?? base.accessories,
+    studioBlocks: overrides.studioBlocks !== void 0 ? overrides.studioBlocks : base.studioBlocks
+  };
+}
+function createReferenceDemoPersonFromSeed(seed) {
+  const base = createProperPersonFromSeed(seed);
+  const h = 16;
+  return mergePersonFormula(base, {
+    hairStyle: "curls",
+    palette: ZDOG_REFERENCE_DEMO_PALETTE,
+    proportions: {
+      ...base.proportions,
+      head: h,
+      upperArm: 6 * h / REF_HTML_HEAD,
+      forearm: 6 * h / REF_HTML_HEAD,
+      upperLeg: 7 * h / REF_HTML_HEAD,
+      lowerLeg: 7 * h / REF_HTML_HEAD
+    },
+    bodyStyle: {
+      torsoWidth: 2.2,
+      armThickness: 4,
+      legThickness: 4,
+      hipWidth: 2.8
+    },
+    hairProfile: {
+      size: 1.05,
+      rotateX: 0,
+      rotateY: 0,
+      rotateZ: 0,
+      offsetX: 0,
+      offsetY: 0,
+      offsetZ: 0
+    },
+    faceProfile: { eyesY: 0, noseY: 0, mouthY: 0, depthZ: 0 },
+    headProfile: { offsetX: 0, offsetY: 0, offsetZ: 0, rotateY: 0, rotateX: 0, rotateZ: 0 },
+    bodyDepth: { hipsZ: 0, spineZ: 0 },
+    studioBlocks: [],
+    accessories: []
+  });
+}
+
+// lib/zdog/modules/index.ts
+function q(v) {
+  return JSON.stringify(v);
+}
+function colorExpr(color, fallback = "PALETTE[0]") {
+  if (!color) return fallback;
+  return color.startsWith("#") ? q(color) : color;
+}
+function safeJsId(input) {
+  const cleaned = input.replace(/[^a-zA-Z0-9_]/g, "_");
+  if (!cleaned) return "id";
+  return /^[0-9]/.test(cleaned) ? `id_${cleaned}` : cleaned;
+}
+function buildBarChart(mod) {
+  const data = mod.data && mod.data.length ? mod.data : [3, 5, 4, 7];
+  const color = colorExpr(mod.color, "PALETTE[3]");
+  const bars = data.map((v, i) => {
+    const h = Math.max(2, v * 2.2);
+    return `new Zdog.Box({ addTo: module_${mod.id}, width: 3.2, depth: 3.2, height: ${h.toFixed(
+      2
+    )}, stroke: 0.6, color: ${color}, topFace: ${color}, leftFace: ${color}, rightFace: ${color}, translate: { x: ${(-6 + i * 4).toFixed(2)}, y: ${(-h / 2).toFixed(2)}, z: 0 } });`;
+  }).join("\n");
+  return `${bars}
+new Zdog.Rect({ addTo: module_${mod.id}, width: 20, height: 1.2, stroke: 0.5, color: '#334155', fill: true, translate: { x: 0, y: 1.4, z: -2 } });`;
+}
+function buildLineChart(mod) {
+  const data = mod.data && mod.data.length ? mod.data : [2, 4, 3, 6, 5];
+  const path23 = data.map((v, i) => `{ x: ${(-8 + i * 4).toFixed(2)}, y: ${(-v * 1.7).toFixed(2)}, z: 0 }`).join(", ");
+  return `new Zdog.Shape({ addTo: module_${mod.id}, path: [${path23}], closed: false, stroke: 1.1, color: ${colorExpr(
+    mod.color,
+    "PALETTE[2]"
+  )} });
+new Zdog.Rect({ addTo: module_${mod.id}, width: 20, height: 1.2, stroke: 0.5, color: '#334155', fill: true, translate: { x: 0, y: 1.4, z: -2 } });`;
+}
+function buildDonutChart(mod) {
+  const color = colorExpr(mod.color, "PALETTE[1]");
+  return `new Zdog.Ellipse({ addTo: module_${mod.id}, diameter: 12, stroke: 3.5, color: ${color}, fill: false, rotate: { x: Zdog.TAU / 4 } });
+new Zdog.Ellipse({ addTo: module_${mod.id}, diameter: 5.2, stroke: 3.4, color: '#fffef9', fill: true, rotate: { x: Zdog.TAU / 4 }, translate: { z: 0.2 } });`;
+}
+function buildPresentationBoard(mod) {
+  return `new Zdog.RoundedRect({ addTo: module_${mod.id}, width: 22, height: 14, cornerRadius: 1.2, stroke: 1.2, color: '#0f172a', fill: true, translate: { z: -1.5 } });
+new Zdog.RoundedRect({ addTo: module_${mod.id}, width: 20, height: 12, cornerRadius: 1, stroke: 0.9, color: '#e2e8f0', fill: true, translate: { z: -0.4 } });`;
+}
+function buildDesk(mod) {
+  return `new Zdog.Box({ addTo: module_${mod.id}, width: 20, height: 2, depth: 10, stroke: 0.8, color: '#8b5e3c', fill: true, translate: { y: 1, z: 0 } });
+new Zdog.Shape({ addTo: module_${mod.id}, path: [{ x: -8, y: 1, z: -3 }, { x: -8, y: 8, z: -3 }], stroke: 1, color: '#7c4a2e' });
+new Zdog.Shape({ addTo: module_${mod.id}, path: [{ x: 8, y: 1, z: -3 }, { x: 8, y: 8, z: -3 }], stroke: 1, color: '#7c4a2e' });`;
+}
+function buildTablet(mod) {
+  return `new Zdog.RoundedRect({ addTo: module_${mod.id}, width: 8, height: 11, cornerRadius: 0.8, stroke: 0.9, color: '#111827', fill: true });
+new Zdog.RoundedRect({ addTo: module_${mod.id}, width: 6.8, height: 9.3, cornerRadius: 0.5, stroke: 0.5, color: '#93c5fd', fill: true, translate: { z: 0.4 } });`;
+}
+function buildModuleCode(modules) {
+  return modules.map((mod) => {
+    const moduleVar = `module_${safeJsId(mod.id)}`;
+    const safeMod = { ...mod, id: safeJsId(mod.id) };
+    const header = `const ${moduleVar} = new Zdog.Anchor({ addTo: sceneRoot, translate: { x: ${mod.x}, y: ${mod.y}, z: ${mod.z} }, scale: ${mod.scale ?? 1} });`;
+    let body = "";
+    if (mod.type === "barChart") body = buildBarChart(safeMod);
+    else if (mod.type === "lineChart") body = buildLineChart(safeMod);
+    else if (mod.type === "donutChart") body = buildDonutChart(safeMod);
+    else if (mod.type === "presentationBoard") body = buildPresentationBoard(safeMod);
+    else if (mod.type === "desk") body = buildDesk(safeMod);
+    else if (mod.type === "tablet") body = buildTablet(safeMod);
+    return `${header}
+${body}`;
+  }).join("\n\n");
+}
+
+// lib/zdog/rigs/person.ts
+function safeJsId2(input) {
+  const cleaned = input.replace(/[^a-zA-Z0-9_]/g, "_");
+  if (!cleaned) return "id";
+  return /^[0-9]/.test(cleaned) ? `id_${cleaned}` : cleaned;
+}
+function q2(v) {
+  return JSON.stringify(v);
+}
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+function buildPersonRigCode(personId, formula, placement) {
+  const p = formula.proportions;
+  const pal = formula.palette;
+  const id = safeJsId2(personId);
+  const root = `person_${id}_root`;
+  const spine = `person_${id}_spine`;
+  const head = `person_${id}_head`;
+  const lUpper = `person_${id}_lUpperArm`;
+  const lFore = `person_${id}_lForearm`;
+  const rUpper = `person_${id}_rUpperArm`;
+  const rFore = `person_${id}_rForearm`;
+  const hips = `person_${id}_hips`;
+  const lLeg = `person_${id}_lLeg`;
+  const rLeg = `person_${id}_rLeg`;
+  const accessories = new Set(formula.accessories);
+  const body = formula.bodyStyle ?? {
+    torsoWidth: 2.2,
+    armThickness: 4.85,
+    legThickness: 5,
+    hipWidth: 2.8
+  };
+  const k = p.head / 12;
+  const bdRaw = formula.bodyDepth ?? { hipsZ: 0, spineZ: 0 };
+  const bd = { hipsZ: clamp(bdRaw.hipsZ, -10, 10), spineZ: clamp(bdRaw.spineZ, -10, 10) };
+  const hipHalf = 3 * k * (body.hipWidth / 2.8);
+  const chestHalf = 1.5 * k * (body.torsoWidth / 2.2);
+  const hipLineStroke = Math.max(2.2, 4 * k * (body.legThickness / 5));
+  const chestStroke = Math.max(5, 9 * k * (body.torsoWidth / 2.2));
+  const thighLen = Math.max(3, k * p.upperLeg);
+  const shinLen = Math.max(3, k * p.lowerLeg);
+  const armUpperLen = Math.max(3, k * p.upperArm);
+  const armForeLen = Math.max(2.5, k * p.forearm);
+  const hipX = Math.max(2, hipHalf * 0.95);
+  const legStroke = Math.max(2.5, 4 * k * (body.legThickness / 5));
+  const shinStroke = Math.max(2.2, 3.5 * k * (body.legThickness / 5));
+  const armStroke = Math.max(2.5, 4 * k * (body.armThickness / 4.85));
+  const handStroke = Math.max(4, 6 * k * (body.armThickness / 4.85));
+  const footW = Math.max(1.5, 2 * k);
+  const footH = Math.max(3, 4 * k);
+  const footStroke = Math.max(2.5, 4 * k);
+  const chestY = -6.5 * k;
+  const headY = -9.5 * k;
+  const armAttachY = -2 * k;
+  const armSideX = 5 * k * (body.torsoWidth / 2.2);
+  const hipsBaseY = 2 * k;
+  const hp = formula.headProfile ?? { offsetX: 0, offsetY: 0, offsetZ: 0, rotateY: 0 };
+  const headYaw = (hp.rotateY ?? 0).toFixed(3);
+  const headRotX = (hp.rotateX ?? 0).toFixed(3);
+  const headRotZ = (hp.rotateZ ?? 0).toFixed(3);
+  const hox = hp.offsetX.toFixed(2);
+  const hoy = hp.offsetY.toFixed(2);
+  const hoz = hp.offsetZ.toFixed(2);
+  const hair = formula.hairProfile ?? {
+    size: 1.05,
+    rotateX: 0,
+    rotateY: 0,
+    rotateZ: 0,
+    offsetX: 0,
+    offsetY: 3.52,
+    offsetZ: 0
+  };
+  const hairVisualSize = clamp(hair.size, 0.35, 5.5) * 1.02;
+  const hairOffsetX = clamp(hair.offsetX, -6, 6);
+  const hairOffsetY = clamp(hair.offsetY, -12, 12);
+  const hairOffsetZ = clamp(hair.offsetZ, -6, 6);
+  const hairBaseY = -p.head * 0.29;
+  const face = formula.faceProfile ?? { eyesY: 0, noseY: 0, mouthY: 0, depthZ: 0 };
+  const eyeXOff = clamp(face.eyesX ?? 0, -5, 5);
+  const faceDepth = clamp(face.depthZ, -4, 4);
+  const eyeZ = (4.5 * k + faceDepth + clamp(face.eyesZ ?? 0, -4, 4)).toFixed(2);
+  const mouthZ = (4.5 * k + faceDepth + clamp(face.mouthZ ?? 0, -4, 4)).toFixed(2);
+  const noseZ = (4.5 * k + faceDepth + clamp(face.noseZ ?? 0, -4, 4)).toFixed(2);
+  const eyeY = ((formula.faceStyle === "serious" ? 0.67 : 1) + clamp(face.eyesY, -4, 4) * 0.12) * k;
+  const mouthY = (2.5 + clamp(face.mouthY, -4, 4) * 0.12) * k;
+  const noseY = (1.5 + clamp(face.noseY, -4, 4) * 0.12) * k;
+  const noseXNum = clamp(face.noseX ?? 0, -3, 3);
+  const mouthXNum = clamp(face.mouthX ?? 0, -3, 3);
+  const leftEyeX = (-2 + eyeXOff) * k;
+  const rightEyeX = (2 + eyeXOff) * k;
+  const eyeStyle = formula.eyeStyle ?? "almond";
+  const mouthStyle = formula.mouthStyle ?? "smile";
+  const noseStyle = formula.noseStyle ?? "line";
+  const eyeDiam = (eyeStyle === "wide" ? 2.72 : 2.2) * k;
+  const eyeStrokeW = (eyeStyle === "wide" ? 0.88 : 0.72) * Math.max(0.85, k);
+  const leftEye = eyeStyle === "dot" ? `new Zdog.Shape({ addTo: ${head}, stroke: ${(0.85 * k).toFixed(2)}, color: '#111827', translate: { x: ${leftEyeX.toFixed(2)}, y: ${eyeY}, z: ${eyeZ} }, backface: false });` : `new Zdog.Ellipse({ addTo: ${head}, diameter: ${eyeDiam.toFixed(2)}, quarters: 2, translate: { x: ${leftEyeX.toFixed(2)}, y: ${eyeY}, z: ${eyeZ} }, rotate: { z: -Zdog.TAU/4 }, color: '#1f2937', stroke: ${eyeStrokeW.toFixed(2)}, backface: false });`;
+  const rightEye = eyeStyle === "dot" ? `new Zdog.Shape({ addTo: ${head}, stroke: ${(0.85 * k).toFixed(2)}, color: '#111827', translate: { x: ${rightEyeX.toFixed(2)}, y: ${eyeY}, z: ${eyeZ} }, backface: false });` : `new Zdog.Ellipse({ addTo: ${head}, diameter: ${eyeDiam.toFixed(2)}, quarters: 2, translate: { x: ${rightEyeX.toFixed(2)}, y: ${eyeY}, z: ${eyeZ} }, rotate: { z: -Zdog.TAU/4 }, color: '#1f2937', stroke: ${eyeStrokeW.toFixed(2)}, backface: false });`;
+  const mouth = mouthStyle === "neutral" ? `new Zdog.Shape({ addTo: ${head}, path: [{ x: ${(-1.1 * k + mouthXNum).toFixed(2)}, y: ${mouthY}, z: ${mouthZ} }, { x: ${(1.1 * k + mouthXNum).toFixed(2)}, y: ${mouthY}, z: ${mouthZ} }], stroke: ${(0.5 * k).toFixed(2)}, color: '#ffffff', backface: false });` : `new Zdog.Ellipse({ addTo: ${head}, diameter: ${((mouthStyle === "grin" ? 3.6 : 3) * k).toFixed(2)}, quarters: 2, translate: { x: ${mouthXNum.toFixed(2)}, y: ${mouthY}, z: ${mouthZ} }, rotate: { z: Zdog.TAU/4 }, closed: true, color: '#ffffff', stroke: ${((mouthStyle === "grin" ? 0.7 : 0.5) * k).toFixed(2)}, fill: true, backface: false });`;
+  const nose = noseStyle === "dot" ? `new Zdog.Shape({ addTo: ${head}, stroke: ${(0.5 * k).toFixed(2)}, color: '#b08968', translate: { x: ${noseXNum.toFixed(2)}, y: ${noseY}, z: ${noseZ} }, backface: false });` : noseStyle === "button" ? `new Zdog.Ellipse({ addTo: ${head}, diameter: ${(0.9 * k).toFixed(2)}, stroke: ${(0.2 * k).toFixed(2)}, color: '#b08968', fill: true, translate: { x: ${noseXNum.toFixed(2)}, y: ${noseY}, z: ${noseZ} }, backface: false });` : `new Zdog.Shape({ addTo: ${head}, path: [{ x: ${noseXNum.toFixed(2)}, y: ${(noseY - 0.5 * k).toFixed(2)}, z: ${noseZ} }, { x: ${noseXNum.toFixed(2)}, y: ${(noseY + 0.25 * k).toFixed(2)}, z: ${noseZ} }], stroke: ${(0.35 * k).toFixed(2)}, color: '#b08968', backface: false });`;
+  const hairCode = (() => {
+    if (formula.hairStyle === "curls") {
+      const curlD = 5 * k * hairVisualSize;
+      const hc = q2(pal.hair);
+      const curls = [
+        [0, -7, 0],
+        [-2.5, -6.5, 1.5],
+        [2.5, -6.5, 1.5],
+        [-1.5, -6.5, -1.5],
+        [1.5, -6.5, -1.5],
+        [0, -6, 3],
+        [-3, -6, 0],
+        [3, -6, 0],
+        [0, -6, -3]
+      ];
+      return curls.map(([cx, cy, cz]) => {
+        const tx = cx * k + hairOffsetX;
+        const ty = cy * k + hairOffsetY;
+        const tz = cz * k + hairOffsetZ;
+        return `new Zdog.Hemisphere({
+  addTo: ${head},
+  diameter: ${curlD.toFixed(2)},
+  stroke: false,
+  color: ${hc},
+  backface: ${hc},
+  translate: { x: ${tx.toFixed(2)}, y: ${ty.toFixed(2)}, z: ${tz.toFixed(2)} },
+  rotate: { x: Zdog.TAU/2 },
+});`;
+      }).join("\n");
+    }
+    const domeD = p.head * 0.95 * hairVisualSize;
+    const TAU = Math.PI * 2;
+    const rx = (TAU / 4 - 0.06 + clamp(hair.rotateX, -1.2, 1.2)).toFixed(3);
+    const ry = clamp(hair.rotateY, -1.2, 1.2).toFixed(3);
+    const rz = clamp(hair.rotateZ, -1.2, 1.2).toFixed(3);
+    return `new Zdog.Hemisphere({
+  addTo: ${head},
+  diameter: ${domeD.toFixed(2)},
+  stroke: ${(0.45 * k).toFixed(2)},
+  color: ${q2(pal.hair)},
+  translate: { x: ${hairOffsetX.toFixed(2)}, y: ${(hairBaseY + hairOffsetY).toFixed(2)}, z: ${hairOffsetZ.toFixed(2)} },
+  rotate: { x: ${rx}, y: ${ry}, z: ${rz} },
+  backface: ${q2(pal.hair)},
+});`;
+  })();
+  const code = `
+// Person rig ${id} (compact): hips \u2192 spine \u2192 chest \u2192 head/arms; legs on hips.
+const ${root} = new Zdog.Anchor({
+  addTo: sceneRoot,
+  translate: { x: ${placement.x}, y: ${placement.y}, z: ${placement.z} },
+  rotate: { y: ${placement.rotationY ?? 0} },
+  scale: ${placement.scale ?? 1},
+});
+
+const ${hips} = new Zdog.Anchor({
+  addTo: ${root},
+  translate: { y: ${hipsBaseY.toFixed(2)}, z: ${bd.hipsZ.toFixed(2)} },
+});
+new Zdog.Shape({
+  addTo: ${hips},
+  path: [{ x: -${hipHalf.toFixed(2)} }, { x: ${hipHalf.toFixed(2)} }],
+  stroke: ${hipLineStroke.toFixed(2)},
+  color: ${q2(pal.bottom)},
+});
+
+const ${spine} = new Zdog.Anchor({
+  addTo: ${hips},
+  translate: { z: ${bd.spineZ.toFixed(2)} },
+});
+
+const person_${id}_chest = new Zdog.Shape({
+  addTo: ${spine},
+  path: [{ x: -${chestHalf.toFixed(2)} }, { x: ${chestHalf.toFixed(2)} }],
+  translate: { y: ${chestY.toFixed(2)} },
+  stroke: ${chestStroke.toFixed(2)},
+  color: ${q2(pal.top)},
+});
+
+const person_${id}_headAnchor = new Zdog.Anchor({
+  addTo: person_${id}_chest,
+  translate: { x: ${hox}, y: ${(headY + hp.offsetY).toFixed(2)}, z: ${hoz} },
+  rotate: { x: ${headRotX}, y: ${headYaw}, z: ${headRotZ} },
+});
+const ${head} = new Zdog.Shape({
+  addTo: person_${id}_headAnchor,
+  stroke: ${p.head.toFixed(2)},
+  color: ${q2(pal.skin)},
+});
+${leftEye}
+${rightEye}
+${mouth}
+${nose}
+${hairCode}
+${accessories.has("glasses") ? `new Zdog.Ellipse({ addTo: ${head}, diameter: ${(4 * k).toFixed(2)}, stroke: ${(0.5 * k).toFixed(2)}, color: '#111827', translate: { x: ${leftEyeX.toFixed(2)}, y: ${Number(eyeY).toFixed(2)}, z: ${eyeZ} }, fill: false, backface: false });
+new Zdog.Ellipse({ addTo: ${head}, diameter: ${(4 * k).toFixed(2)}, stroke: ${(0.5 * k).toFixed(2)}, color: '#111827', translate: { x: ${rightEyeX.toFixed(2)}, y: ${Number(eyeY).toFixed(2)}, z: ${eyeZ} }, fill: false, backface: false });` : ""}
+
+const ${lUpper} = new Zdog.Shape({
+  addTo: person_${id}_chest,
+  path: [{ y: 0 }, { y: ${armUpperLen.toFixed(2)} }],
+  translate: { x: -${armSideX.toFixed(2)}, y: ${armAttachY.toFixed(2)} },
+  stroke: ${armStroke.toFixed(2)},
+  color: ${q2(pal.top)},
+});
+const ${lFore} = new Zdog.Shape({
+  addTo: ${lUpper},
+  path: [{ y: 0 }, { y: ${armForeLen.toFixed(2)} }],
+  translate: { y: ${armUpperLen.toFixed(2)} },
+  stroke: ${armStroke.toFixed(2)},
+  color: ${q2(pal.skin)},
+});
+new Zdog.Shape({
+  addTo: ${lFore},
+  stroke: ${handStroke.toFixed(2)},
+  color: ${q2(pal.skin)},
+  translate: { y: ${(armForeLen + handStroke * 0.35).toFixed(2)}, z: ${(1 * k).toFixed(2)} },
+});
+
+const ${rUpper} = new Zdog.Shape({
+  addTo: person_${id}_chest,
+  path: [{ y: 0 }, { y: ${armUpperLen.toFixed(2)} }],
+  translate: { x: ${armSideX.toFixed(2)}, y: ${armAttachY.toFixed(2)} },
+  stroke: ${armStroke.toFixed(2)},
+  color: ${q2(pal.top)},
+});
+const ${rFore} = new Zdog.Shape({
+  addTo: ${rUpper},
+  path: [{ y: 0 }, { y: ${armForeLen.toFixed(2)} }],
+  translate: { y: ${armUpperLen.toFixed(2)} },
+  stroke: ${armStroke.toFixed(2)},
+  color: ${q2(pal.skin)},
+});
+new Zdog.Shape({
+  addTo: ${rFore},
+  stroke: ${handStroke.toFixed(2)},
+  color: ${q2(pal.skin)},
+  translate: { y: ${(armForeLen + handStroke * 0.35).toFixed(2)}, z: ${(1 * k).toFixed(2)} },
+});
+
+const ${lLeg} = new Zdog.Anchor({ addTo: ${hips}, translate: { x: -${hipX.toFixed(2)} } });
+new Zdog.Shape({
+  addTo: ${lLeg},
+  path: [{ y: 0 }, { y: ${thighLen.toFixed(2)} }],
+  stroke: ${legStroke.toFixed(2)},
+  color: ${q2(pal.bottom)},
+});
+const person_${id}_lShin = new Zdog.Anchor({ addTo: ${lLeg}, translate: { y: ${thighLen.toFixed(2)} } });
+new Zdog.Shape({
+  addTo: person_${id}_lShin,
+  path: [{ y: 0 }, { y: ${shinLen.toFixed(2)} }],
+  stroke: ${shinStroke.toFixed(2)},
+  color: ${q2(pal.bottom)},
+});
+new Zdog.RoundedRect({
+  addTo: person_${id}_lShin,
+  width: ${footW.toFixed(2)},
+  height: ${footH.toFixed(2)},
+  cornerRadius: 1,
+  translate: { y: ${(shinLen + footH * 0.5).toFixed(2)}, z: ${(2 * k).toFixed(2)} },
+  rotate: { x: Zdog.TAU/4 },
+  color: ${q2(pal.accent)},
+  fill: true,
+  stroke: ${footStroke.toFixed(2)},
+});
+
+const ${rLeg} = new Zdog.Anchor({ addTo: ${hips}, translate: { x: ${hipX.toFixed(2)} } });
+new Zdog.Shape({
+  addTo: ${rLeg},
+  path: [{ y: 0 }, { y: ${thighLen.toFixed(2)} }],
+  stroke: ${legStroke.toFixed(2)},
+  color: ${q2(pal.bottom)},
+});
+const person_${id}_rShin = new Zdog.Anchor({ addTo: ${rLeg}, translate: { y: ${thighLen.toFixed(2)} } });
+new Zdog.Shape({
+  addTo: person_${id}_rShin,
+  path: [{ y: 0 }, { y: ${shinLen.toFixed(2)} }],
+  stroke: ${shinStroke.toFixed(2)},
+  color: ${q2(pal.bottom)},
+});
+new Zdog.RoundedRect({
+  addTo: person_${id}_rShin,
+  width: ${footW.toFixed(2)},
+  height: ${footH.toFixed(2)},
+  cornerRadius: 1,
+  translate: { y: ${(shinLen + footH * 0.5).toFixed(2)}, z: ${(2 * k).toFixed(2)} },
+  rotate: { x: Zdog.TAU/4 },
+  color: ${q2(pal.accent)},
+  fill: true,
+  stroke: ${footStroke.toFixed(2)},
+});
+
+${accessories.has("badge") ? `new Zdog.Rect({ addTo: ${spine}, width: ${(2.4 * k).toFixed(2)}, height: ${(2.8 * k).toFixed(2)}, stroke: ${(0.8 * k).toFixed(2)}, color: ${q2(pal.accent)}, fill: true, translate: { x: ${(1.8 * k).toFixed(2)}, y: ${(chestY - 1.5 * k).toFixed(2)}, z: ${(2.2 * k).toFixed(2)} } });` : ""}
+${accessories.has("tablet") ? `new Zdog.RoundedRect({ addTo: ${rFore}, width: ${(2.6 * k).toFixed(2)}, height: ${(3.6 * k).toFixed(2)}, cornerRadius: ${(0.4 * k).toFixed(2)}, stroke: ${(0.8 * k).toFixed(2)}, color: '#111827', fill: true, translate: { y: ${(armForeLen + 1.4 * k).toFixed(2)}, z: ${(2.2 * k).toFixed(2)} }, rotate: { x: -0.25, y: -0.2 } });` : ""}
+`;
+  return {
+    code,
+    handles: {
+      root,
+      spine,
+      head,
+      leftUpperArm: lUpper,
+      leftForearm: lFore,
+      rightUpperArm: rUpper,
+      rightForearm: rFore,
+      hips,
+      leftUpperLeg: lLeg,
+      rightUpperLeg: rLeg
+    }
+  };
+}
+
+// lib/zdog/scene-match.ts
+var ZDOG_SCENE = {
+  width: 1920,
+  height: 1080,
+  /**
+   * Canvas zoom (reference demo uses ~6 on a 400px-wide canvas). Prefer this over huge
+   * `Anchor.scale` on the person root — scale stretches path points more than stroke width
+   * (see Zdog Shape.transform), which reads as “twig” limbs.
+   */
+  illustrationZoom: 9,
+  /**
+   * Default rig placement for person roots (character builder + composed scenes).
+   * Keep person root scale at 1 when possible; use `illustrationZoom` for framing.
+   */
+  matchPlacement: { y: 44, scale: 1 }
+};
+
+// lib/zdog/studio-blocks.ts
+function safeJsId3(input) {
+  const cleaned = input.replace(/[^a-zA-Z0-9_]/g, "_");
+  if (!cleaned) return "id";
+  return /^[0-9]/.test(cleaned) ? `id_${cleaned}` : cleaned;
+}
+function personRootVariableName(personId) {
+  return `person_${safeJsId3(personId)}_root`;
+}
+function q3(s) {
+  return JSON.stringify(s);
+}
+function buildStudioBlocksCode(blocks, attachToRootVar) {
+  if (!blocks?.length) return "";
+  const parts = [];
+  for (const b of blocks) {
+    const c = q3(b.color);
+    const tx = b.x;
+    const ty = b.y;
+    const tz = b.z;
+    const rx = b.rotateX;
+    const ry = b.rotateY;
+    const rz = b.rotateZ;
+    if (b.kind === "box") {
+      const w = Math.max(0.25, b.w);
+      const h = Math.max(0.25, b.h);
+      const d = Math.max(0.25, b.d);
+      parts.push(`new Zdog.Box({
+  addTo: ${attachToRootVar},
+  width: ${w},
+  height: ${h},
+  depth: ${d},
+  translate: { x: ${tx}, y: ${ty}, z: ${tz} },
+  rotate: { x: ${rx}, y: ${ry}, z: ${rz} },
+  stroke: false,
+  color: ${c},
+});`);
+    } else if (b.kind === "sphere") {
+      const stroke = Math.max(0.5, b.w);
+      parts.push(`new Zdog.Shape({
+  addTo: ${attachToRootVar},
+  stroke: ${stroke},
+  translate: { x: ${tx}, y: ${ty}, z: ${tz} },
+  rotate: { x: ${rx}, y: ${ry}, z: ${rz} },
+  color: ${c},
+});`);
+    } else {
+      const diam = Math.max(0.5, b.w);
+      const length = Math.max(0.5, b.d);
+      const str = Math.max(0.5, b.stroke ?? 2.5);
+      parts.push(`new Zdog.Cylinder({
+  addTo: ${attachToRootVar},
+  diameter: ${diam},
+  length: ${length},
+  stroke: ${str},
+  translate: { x: ${tx}, y: ${ty}, z: ${tz} },
+  rotate: { x: ${rx}, y: ${ry}, z: ${rz} },
+  color: ${c},
+});`);
+    }
+  }
+  return parts.join("\n");
+}
+
+// lib/zdog/composer/index.ts
+function composeDeterministicZdogScene(spec, options) {
+  const duration = Math.max(1, options.duration || 8);
+  const peopleCode = [];
+  const peopleCtx = {};
+  for (let i = 0; i < spec.people.length; i += 1) {
+    const person = spec.people[i];
+    const base = createReferenceDemoPersonFromSeed(spec.seed + i * 101);
+    const formula = mergePersonFormula(base, person.formula);
+    const rig = buildPersonRigCode(person.id, formula, person.placement);
+    const blocks = buildStudioBlocksCode(formula.studioBlocks, personRootVariableName(person.id));
+    peopleCode.push(blocks ? `${rig.code}
+${blocks}` : rig.code);
+    peopleCtx[person.id] = { handles: rig.handles, formula, personId: person.id };
+  }
+  const modulesCode = buildModuleCode(spec.modules);
+  const beatCode = buildPresetAnimationsCode(spec.beats, peopleCtx);
+  return `
+const canvas = document.getElementById('zdog-canvas');
+const illo = new Zdog.Illustration({
+  element: canvas,
+  zoom: ${ZDOG_SCENE.illustrationZoom},
+  dragRotate: false,
+  resize: false,
+  width: WIDTH,
+  height: HEIGHT,
+});
+const sceneRoot = new Zdog.Anchor({ addTo: illo });
+
+${modulesCode}
+
+${peopleCode.join("\n\n")}
+
+const sceneState = { t: 0 };
+window.__tl.to(sceneState, {
+  t: ${duration},
+  duration: ${duration},
+  ease: 'none',
+  onUpdate: function() {
+    const t = sceneState.t;
+    sceneRoot.rotate.y = Math.sin(t * 0.25) * 0.22;
+    ${beatCode}
+    illo.updateRenderGraph();
+  },
+}, 0);
+
+illo.updateRenderGraph();
+`;
+}
+
+// lib/generation/generate.ts
+var anthropicClient = new import_sdk.default();
+var openaiClient = null;
+var googleClient = null;
+var localClients = /* @__PURE__ */ new Map();
+function getOpenAIClient() {
+  if (!openaiClient) {
+    const OpenAI = require("openai").default;
+    openaiClient = new OpenAI();
+  }
+  return openaiClient;
+}
+function getGoogleClient() {
+  if (!googleClient) {
+    const { GoogleGenAI } = require("@google/genai");
+    googleClient = new GoogleGenAI({ apiKey: process.env.GOOGLE_API_KEY ?? "" });
+  }
+  return googleClient;
+}
+function getLocalClient(endpoint) {
+  if (!localClients.has(endpoint)) {
+    const OpenAI = require("openai").default;
+    localClients.set(endpoint, new OpenAI({ baseURL: `${endpoint}/v1`, apiKey: "ollama" }));
+  }
+  return localClients.get(endpoint);
+}
+var MAX_TOKENS_BY_TYPE = {
+  svg: 12288,
+  canvas2d: 16384,
+  d3: 5120,
+  three: 5120,
+  motion: 5120,
+  lottie: 4096,
+  zdog: 4096,
+  react: 8192
+};
+var TIER_GEN_MODELS = {
+  budget: "claude-haiku-4-5-20251001",
+  auto: "claude-sonnet-4-6",
+  premium: "claude-opus-4-6"
+};
+async function generateCode(layerType, prompt, options, projectId) {
+  const {
+    palette,
+    bgColor = "#181818",
+    duration = 8,
+    font,
+    strokeWidth = 2,
+    previousSummary = "",
+    d3Data,
+    modelId: requestedModel,
+    modelTier = "auto"
+  } = options;
+  const effectivePalette = palette ?? ["#f0ece0", "#e84545", "#4595e8", "#45e87a"];
+  const effectiveFont = font ?? "Inter";
+  const hasExplicitPalette = palette != null && palette.length > 0;
+  if (layerType === "zdog" && options.zdogComposedSpec) {
+    const composedCode = composeDeterministicZdogScene(options.zdogComposedSpec, { duration });
+    return {
+      code: composedCode,
+      usage: { input_tokens: 0, output_tokens: 0, cost_usd: 0 },
+      truncated: false
+    };
+  }
+  const model = requestedModel ?? TIER_GEN_MODELS[modelTier] ?? "claude-sonnet-4-6";
+  const maxTokens = MAX_TOKENS_BY_TYPE[layerType] ?? 6144;
+  let systemPrompt;
+  let userContent = prompt;
+  switch (layerType) {
+    case "svg":
+      systemPrompt = SVG_SYSTEM_PROMPT(
+        effectivePalette,
+        strokeWidth,
+        effectiveFont,
+        duration,
+        previousSummary,
+        hasExplicitPalette
+      );
+      break;
+    case "canvas2d":
+      systemPrompt = CANVAS_SYSTEM_PROMPT(effectivePalette, bgColor, duration, previousSummary, hasExplicitPalette);
+      break;
+    case "d3":
+      systemPrompt = D3_SYSTEM_PROMPT(
+        effectivePalette,
+        effectiveFont,
+        bgColor,
+        duration,
+        previousSummary,
+        hasExplicitPalette
+      );
+      if (d3Data) {
+        userContent = `${prompt}
+
+Existing data to visualize:
+${JSON.stringify(d3Data, null, 2)}`;
+      }
+      break;
+    case "three":
+      systemPrompt = THREE_SYSTEM_PROMPT(effectivePalette, bgColor, duration, previousSummary, hasExplicitPalette);
+      break;
+    case "motion":
+      systemPrompt = MOTION_SYSTEM_PROMPT(
+        effectivePalette,
+        effectiveFont,
+        bgColor,
+        duration,
+        previousSummary,
+        hasExplicitPalette
+      );
+      break;
+    case "lottie":
+      systemPrompt = LOTTIE_OVERLAY_PROMPT(
+        effectivePalette,
+        effectiveFont,
+        duration,
+        previousSummary,
+        hasExplicitPalette
+      );
+      break;
+    case "zdog":
+      systemPrompt = ZDOG_SYSTEM_PROMPT(effectivePalette, bgColor, duration, previousSummary, hasExplicitPalette);
+      break;
+    case "react":
+      systemPrompt = REACT_SYSTEM_PROMPT(
+        effectivePalette,
+        effectiveFont,
+        bgColor,
+        duration,
+        previousSummary,
+        hasExplicitPalette
+      );
+      break;
+    default:
+      throw new Error(`Unknown layer type: ${layerType}`);
+  }
+  const provider = getModelProvider(model, options.modelConfigs);
+  console.log(
+    `[generateCode] Start: type=${layerType} model=${model} provider=${provider} prompt="${prompt.slice(0, 120)}"`
+  );
+  let raw;
+  let inputTokens;
+  let outputTokens;
+  let truncated;
+  if (provider === "local") {
+    const localConfig = options.modelConfigs?.find((m) => m.id === model || m.modelId === model);
+    const endpoint = localConfig?.endpoint ?? process.env.OLLAMA_ENDPOINT ?? "http://localhost:11434";
+    const localModelName = localConfig?.localModelName ?? model;
+    ({ raw, inputTokens, outputTokens, truncated } = await callLocal(
+      endpoint,
+      localModelName,
+      systemPrompt,
+      userContent,
+      maxTokens
+    ));
+  } else if (provider === "openai") {
+    ;
+    ({ raw, inputTokens, outputTokens, truncated } = await callOpenAI(model, systemPrompt, userContent, maxTokens));
+  } else if (provider === "google") {
+    ;
+    ({ raw, inputTokens, outputTokens, truncated } = await callGoogle(model, systemPrompt, userContent, maxTokens));
+  } else {
+    ;
+    ({ raw, inputTokens, outputTokens, truncated } = await callAnthropic(model, systemPrompt, userContent, maxTokens));
+  }
+  const pricing = getModelPricing(model);
+  const costUsd = inputTokens / 1e6 * pricing.inputPer1M + outputTokens / 1e6 * pricing.outputPer1M;
+  console.log(
+    `[generateCode] Complete: type=${layerType} model=${model} tokens=${inputTokens}in/${outputTokens}out cost=$${costUsd.toFixed(4)} codeLen=${raw.length}${truncated ? " TRUNCATED" : ""}`
+  );
+  if (projectId) {
+    await logSpend(projectId, `generation:${layerType}`, costUsd, prompt.slice(0, 200));
+  }
+  const usageResult = { input_tokens: inputTokens, output_tokens: outputTokens, cost_usd: costUsd };
+  switch (layerType) {
+    case "svg":
+    case "canvas2d":
+      return { code: raw, usage: usageResult, truncated };
+    case "lottie": {
+      const lottieRaw = raw.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim();
+      try {
+        JSON.parse(lottieRaw);
+      } catch {
+        console.error(`[generateCode] Lottie JSON parse failed, raw length: ${raw.length}`);
+        throw new Error(
+          truncated ? "Lottie JSON was truncated \u2014 try a simpler animation" : "Generated Lottie output is not valid JSON"
+        );
+      }
+      return { code: lottieRaw, usage: usageResult, truncated };
+    }
+    case "zdog":
+      return { code: raw, usage: usageResult, truncated };
+    case "d3": {
+      const cleaned = raw.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim();
+      let parsed;
+      try {
+        parsed = JSON.parse(cleaned);
+      } catch {
+        console.error(`[generateCode] D3 JSON parse failed, raw length: ${raw.length}`);
+        throw new Error(
+          truncated ? "D3 scene code was too long and got cut off \u2014 try a simpler prompt" : "Model returned invalid JSON for D3 scene \u2014 please retry"
+        );
+      }
+      return {
+        code: parsed.sceneCode ?? "",
+        styles: parsed.styles,
+        suggestedData: parsed.suggestedData,
+        usage: usageResult,
+        truncated
+      };
+    }
+    case "three": {
+      const cleaned = raw.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim();
+      let parsed;
+      try {
+        parsed = JSON.parse(cleaned);
+      } catch {
+        console.error(`[generateCode] Three.js JSON parse failed, raw length: ${raw.length}`);
+        throw new Error(
+          truncated ? "Three.js scene code was too long and got cut off \u2014 try a simpler prompt" : "Model returned invalid JSON for Three.js scene \u2014 please retry"
+        );
+      }
+      return { code: parsed.sceneCode ?? "", usage: usageResult, truncated };
+    }
+    case "motion": {
+      const cleaned = raw.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim();
+      let parsed;
+      try {
+        parsed = JSON.parse(cleaned);
+      } catch {
+        console.error(`[generateCode] Motion JSON parse failed, raw length: ${raw.length}`);
+        throw new Error(
+          truncated ? "Motion scene code was too long and got cut off \u2014 try a simpler prompt" : "Model returned invalid JSON for Motion scene \u2014 please retry"
+        );
+      }
+      return {
+        code: parsed.sceneCode ?? "",
+        styles: parsed.styles,
+        htmlContent: parsed.htmlContent,
+        usage: usageResult,
+        truncated
+      };
+    }
+    case "react": {
+      const cleaned = raw.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim();
+      let parsed;
+      try {
+        parsed = JSON.parse(cleaned);
+      } catch {
+        return { code: raw, usage: usageResult, truncated };
+      }
+      return {
+        code: parsed.sceneCode ?? "",
+        styles: parsed.styles,
+        usage: usageResult,
+        truncated
+      };
+    }
+    default:
+      return { code: raw, usage: usageResult, truncated };
+  }
+}
+async function callAnthropic(model, systemPrompt, userContent, maxTokens) {
+  const params = {
+    model,
+    max_tokens: maxTokens,
+    system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
+    messages: [{ role: "user", content: userContent }]
+  };
+  let result;
+  try {
+    result = await anthropicClient.messages.create(params, { timeout: 6e4 });
+  } catch (firstErr) {
+    console.warn("[generateCode] First attempt failed, retrying in 1s:", firstErr.message);
+    await new Promise((resolve) => setTimeout(resolve, 1e3));
+    result = await anthropicClient.messages.create(params, { timeout: 6e4 });
+  }
+  const truncated = result.stop_reason === "max_tokens";
+  if (truncated) {
+    console.warn(
+      `[generateCode] Anthropic output truncated (hit max_tokens=${maxTokens}, used ${result.usage.output_tokens})`
+    );
+  }
+  const textBlock = result.content.find((b) => b.type === "text");
+  return {
+    raw: textBlock?.type === "text" ? textBlock.text : "",
+    inputTokens: result.usage.input_tokens,
+    outputTokens: result.usage.output_tokens,
+    truncated
+  };
+}
+async function callOpenAI(model, systemPrompt, userContent, maxTokens) {
+  const client = getOpenAIClient();
+  let result;
+  try {
+    result = await client.chat.completions.create(
+      {
+        model,
+        max_tokens: maxTokens,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userContent }
+        ]
+      },
+      { timeout: 6e4 }
+    );
+  } catch (firstErr) {
+    console.warn("[generateCode] OpenAI first attempt failed, retrying in 1s:", firstErr.message);
+    await new Promise((resolve) => setTimeout(resolve, 1e3));
+    result = await client.chat.completions.create(
+      {
+        model,
+        max_tokens: maxTokens,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userContent }
+        ]
+      },
+      { timeout: 6e4 }
+    );
+  }
+  const finishReason = result.choices?.[0]?.finish_reason;
+  const truncated = finishReason === "length";
+  if (truncated) {
+    console.warn(`[generateCode] OpenAI output truncated (hit max_tokens=${maxTokens})`);
+  }
+  return {
+    raw: result.choices?.[0]?.message?.content ?? "",
+    inputTokens: result.usage?.prompt_tokens ?? 0,
+    outputTokens: result.usage?.completion_tokens ?? 0,
+    truncated
+  };
+}
+async function callGoogle(model, systemPrompt, userContent, _maxTokens) {
+  const client = getGoogleClient();
+  let result;
+  try {
+    result = await client.models.generateContent({
+      model,
+      contents: [{ role: "user", parts: [{ text: userContent }] }],
+      config: {
+        systemInstruction: systemPrompt
+      }
+    });
+  } catch (firstErr) {
+    console.warn("[generateCode] Google first attempt failed, retrying in 1s:", firstErr.message);
+    await new Promise((resolve) => setTimeout(resolve, 1e3));
+    result = await client.models.generateContent({
+      model,
+      contents: [{ role: "user", parts: [{ text: userContent }] }],
+      config: {
+        systemInstruction: systemPrompt
+      }
+    });
+  }
+  const text2 = result?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+  const usageMetadata = result?.usageMetadata ?? {};
+  const finishReason = result?.candidates?.[0]?.finishReason;
+  const truncated = finishReason === "MAX_TOKENS";
+  if (truncated) {
+    console.warn(`[generateCode] Google output truncated (hit max_tokens)`);
+  }
+  return {
+    raw: text2,
+    inputTokens: usageMetadata.promptTokenCount ?? 0,
+    outputTokens: usageMetadata.candidatesTokenCount ?? 0,
+    truncated
+  };
+}
+async function callLocal(endpoint, localModelName, systemPrompt, userContent, maxTokens) {
+  const client = getLocalClient(endpoint);
+  let result;
+  try {
+    result = await client.chat.completions.create(
+      {
+        model: localModelName,
+        max_tokens: maxTokens,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userContent }
+        ]
+      },
+      { timeout: 12e4 }
+    );
+  } catch (firstErr) {
+    console.warn("[generateCode] Local LLM first attempt failed, retrying in 1s:", firstErr.message);
+    await new Promise((resolve) => setTimeout(resolve, 1e3));
+    result = await client.chat.completions.create(
+      {
+        model: localModelName,
+        max_tokens: maxTokens,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userContent }
+        ]
+      },
+      { timeout: 12e4 }
+    );
+  }
+  const finishReason = result.choices?.[0]?.finish_reason;
+  const truncated = finishReason === "length";
+  if (truncated) {
+    console.warn(`[generateCode] Local LLM output truncated (hit max_tokens=${maxTokens})`);
+  }
+  return {
+    raw: result.choices?.[0]?.message?.content ?? "",
+    inputTokens: result.usage?.prompt_tokens ?? 0,
+    outputTokens: result.usage?.completion_tokens ?? 0,
+    truncated
+  };
+}
+
+// lib/services/generation.ts
+async function generateCanvas(input) {
+  if (!input.prompt) {
+    throw new GenerationValidationError("prompt is required");
+  }
+  const gen = await generateCode("canvas2d", input.prompt, {
+    palette: input.palette,
+    bgColor: input.bgColor,
+    duration: input.duration,
+    previousSummary: input.previousSummary,
+    modelId: input.modelId,
+    modelConfigs: input.modelConfigs
+  });
+  return { result: gen.code, usage: gen.usage, truncated: gen.truncated };
+}
+var GenerationValidationError = class extends Error {
+  code = "VALIDATION";
+  constructor(message) {
+    super(message);
+    this.name = "GenerationValidationError";
+  }
+};
+
+// electron/ipc/generate.ts
+function register16(ipcMain2) {
+  ipcMain2.handle("cench:generate.canvas", async (_e, args) => {
+    try {
+      return await generateCanvas(args);
+    } catch (err) {
+      if (err instanceof GenerationValidationError) throw new IpcValidationError(err.message);
+      throw err;
+    }
+  });
+}
+
 // electron/ipc/index.ts
 function registerAllIpc(ipcMain2) {
   register(ipcMain2);
@@ -14374,6 +16935,7 @@ function registerAllIpc(ipcMain2) {
   register13(ipcMain2);
   register14(ipcMain2);
   register15(ipcMain2);
+  register16(ipcMain2);
 }
 
 // electron/paths.ts

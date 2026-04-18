@@ -333,6 +333,26 @@ export interface CenchApi {
       tags?: string[]
     }): Promise<Record<string, unknown>>
   }
+  generate: {
+    /**
+     * Canvas2D scene code (raw JS string). Routes through
+     * `lib/generation/generate.ts` which picks Anthropic / OpenAI /
+     * Google / local based on `modelId` + `modelConfigs`.
+     */
+    canvas(args: {
+      prompt: string
+      palette?: string[]
+      bgColor?: string
+      duration?: number
+      previousSummary?: string
+      modelId?: string
+      modelConfigs?: unknown[]
+    }): Promise<{
+      result: string
+      usage: { input_tokens: number; output_tokens: number; cost_usd: number }
+      truncated?: boolean
+    }>
+  }
 }
 
 declare global {
