@@ -16949,12 +16949,16 @@ var GenerationValidationError = class extends Error {
 };
 
 // electron/ipc/generate.ts
+function sanitize(message) {
+  return message.replace(/[a-zA-Z0-9_\-]{20,}/g, "[REDACTED]").slice(0, 200);
+}
 function wrap(fn) {
   return async (_e, args) => {
     try {
       return await fn(args);
     } catch (err) {
       if (err instanceof GenerationValidationError) throw new IpcValidationError(err.message);
+      if (err instanceof Error) throw new Error(sanitize(err.message));
       throw err;
     }
   };

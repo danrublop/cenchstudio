@@ -23,12 +23,21 @@ import { IpcValidationError } from './_helpers'
  *   - generate-image / generate-video / generate-avatar (different APIs)
  */
 
+/** Same pattern the HTTP routes use: strip long tokens + cap length so an
+ *  accidental API-key leak or stack-trace noise doesn't reach the renderer. */
+function sanitize(message: string): string {
+  return message.replace(/[a-zA-Z0-9_\-]{20,}/g, '[REDACTED]').slice(0, 200)
+}
+
 function wrap<T extends (input: never) => unknown>(fn: T) {
   return async (_e: unknown, args: Parameters<T>[0]) => {
     try {
       return await fn(args)
     } catch (err) {
       if (err instanceof GenerationValidationError) throw new IpcValidationError(err.message)
+      // Scrub before rethrowing — same defense the HTTP routes apply. Without
+      // this, provider SDK errors propagate raw to the renderer console.
+      if (err instanceof Error) throw new Error(sanitize(err.message))
       throw err
     }
   }
