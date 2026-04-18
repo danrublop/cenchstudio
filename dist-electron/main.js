@@ -16142,7 +16142,7 @@ async function ingestUrl(input) {
       };
     } catch (e) {
       if (e instanceof YtDlpNotInstalledError) throw new YtDlpMissingError(e.message);
-      throw new Error(`yt-dlp probe failed: ${e.message}`);
+      throw new Error(`yt-dlp probe failed: ${e.message}`, { cause: e });
     }
   }
   const assetId = (0, import_uuid3.v4)();
@@ -16162,7 +16162,7 @@ async function ingestUrl(input) {
       downloadSucceeded = true;
     } catch (e) {
       if (e instanceof YtDlpNotInstalledError) throw new YtDlpMissingError(e.message);
-      throw new Error(`yt-dlp download failed: ${e.message}`);
+      throw new Error(`yt-dlp download failed: ${e.message}`, { cause: e });
     }
   } finally {
     if (!downloadSucceeded) {
@@ -18237,14 +18237,24 @@ async function generateImageAsset(input) {
     style: input.style ?? null
   });
   if (result.cost > 0 && input.projectId) {
-    await logSpend2(input.projectId, "imageGen", result.cost, `${input.model ?? "flux-schnell"}: ${input.prompt.slice(0, 100)}`);
+    await logSpend2(
+      input.projectId,
+      "imageGen",
+      result.cost,
+      `${input.model ?? "flux-schnell"}: ${input.prompt.slice(0, 100)}`
+    );
   }
   let stickerUrl = null;
   if (input.removeBackground) {
     const bgResult = await removeImageBackground2(result.imageUrl);
     stickerUrl = bgResult.resultUrl;
     if (bgResult.cost > 0 && input.projectId) {
-      await logSpend2(input.projectId, "backgroundRemoval", bgResult.cost, `BG removal for: ${input.prompt.slice(0, 80)}`);
+      await logSpend2(
+        input.projectId,
+        "backgroundRemoval",
+        bgResult.cost,
+        `BG removal for: ${input.prompt.slice(0, 80)}`
+      );
     }
   }
   return {
@@ -18273,11 +18283,6 @@ function wrap(fn) {
       return await fn(args);
     } catch (err) {
       if (err instanceof GenerationValidationError) throw new IpcValidationError(err.message);
-      if (err instanceof LottieParseError) {
-        const e = new Error(err.message);
-        e.usage = err.usage;
-        throw e;
-      }
       if (err instanceof Error) throw new Error(sanitize(err.message));
       throw err;
     }

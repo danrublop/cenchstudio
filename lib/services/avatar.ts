@@ -86,7 +86,7 @@ export async function generateAvatar(projectId: string, input: GenerateAvatarInp
       })
       resolvedAudioUrl = ttsResult.audioUrl
     } catch (e) {
-      throw new Error(`TTS generation failed: ${(e as Error).message}`)
+      throw new Error(`TTS generation failed: ${(e as Error).message}`, { cause: e })
     }
   }
 
@@ -143,7 +143,7 @@ export async function generateAvatar(projectId: string, input: GenerateAvatarInp
         .update(avatarVideos)
         .set({ status: 'error', errorMessage: message })
         .where(eq(avatarVideos.id, videoRecord.id))
-      throw new Error(`Avatar generation failed: ${message}`)
+      throw new Error(`Avatar generation failed: ${message}`, { cause: e })
     }
   }
 
@@ -181,6 +181,6 @@ export async function generateAvatar(projectId: string, input: GenerateAvatarInp
       })
       .where(eq(avatarVideos.id, videoRecord.id))
 
-    throw new Error(`Avatar generation failed: ${message}`)
+    throw new Error(`Avatar generation failed: ${message}`, { cause: e })
   }
 }

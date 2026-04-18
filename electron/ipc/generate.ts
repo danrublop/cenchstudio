@@ -8,7 +8,6 @@ import {
   generateD3,
   generateImageAsset,
   GenerationValidationError,
-  LottieParseError,
 } from '@/lib/services/generation'
 import { IpcValidationError } from './_helpers'
 
@@ -39,15 +38,11 @@ function wrap<T extends (input: never) => unknown>(fn: T) {
       return await fn(args)
     } catch (err) {
       if (err instanceof GenerationValidationError) throw new IpcValidationError(err.message)
-      // Lottie parse errors carry partial `usage` data — preserve it so the
-      // renderer can still charge the user for the tokens already spent.
-      if (err instanceof LottieParseError) {
-        const e = new Error(err.message) as Error & { usage?: unknown }
-        e.usage = err.usage
-        throw e
-      }
       // Scrub before rethrowing — same defense the HTTP routes apply. Without
       // this, provider SDK errors propagate raw to the renderer console.
+      // Note: attached properties (e.g. `LottieParseError.usage`) don't
+      // survive IPC — Electron only transports `error.message`. Callers
+      // that need partial usage data on failure use the HTTP path.
       if (err instanceof Error) throw new Error(sanitize(err.message))
       throw err
     }

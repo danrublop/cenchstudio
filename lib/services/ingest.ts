@@ -144,7 +144,7 @@ export async function ingestUrl(input: IngestUrlInput): Promise<IngestUrlResult>
       }
     } catch (e) {
       if (e instanceof YtDlpNotInstalledError) throw new YtDlpMissingError(e.message)
-      throw new Error(`yt-dlp probe failed: ${(e as Error).message}`)
+      throw new Error(`yt-dlp probe failed: ${(e as Error).message}`, { cause: e })
     }
   }
 
@@ -167,7 +167,7 @@ export async function ingestUrl(input: IngestUrlInput): Promise<IngestUrlResult>
       downloadSucceeded = true
     } catch (e) {
       if (e instanceof YtDlpNotInstalledError) throw new YtDlpMissingError(e.message)
-      throw new Error(`yt-dlp download failed: ${(e as Error).message}`)
+      throw new Error(`yt-dlp download failed: ${(e as Error).message}`, { cause: e })
     }
   } finally {
     // yt-dlp may leave a partial file on disk if it errors mid-download
