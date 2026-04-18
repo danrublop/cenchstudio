@@ -9,6 +9,8 @@ import CustomizeView from './CustomizeView'
 import PreviewPlayer from './PreviewPlayer'
 import SceneEditor from './SceneEditor'
 import ExportModal from './ExportModal'
+import NewProjectModal from './NewProjectModal'
+import ExportPanel from './ExportPanel'
 import PublishPanel from './PublishPanel'
 import PermissionDialog from './PermissionDialog'
 import EditorStatusBar from './EditorStatusBar'
@@ -33,6 +35,7 @@ import {
   Package2,
   Download,
   Globe,
+  Loader2,
   Search,
   SquarePlay,
   Briefcase,
@@ -280,6 +283,7 @@ export default function Editor({ showWelcome, onEnterEditor }: { showWelcome?: b
     updateScene,
     isExportModalOpen,
     openExportModal,
+    openNewProjectModal,
     globalStyle,
     project,
     setOutputMode,
@@ -311,7 +315,24 @@ export default function Editor({ showWelcome, onEnterEditor }: { showWelcome?: b
     closeCenterTab,
     layersStripDragTabId,
     setLayersStripDragTabId,
+    isExporting,
+    lastExportStatus,
   } = useVideoStore()
+
+  // Trigger export — opens as a center tab in Electron, falls back to modal
+  // in web layout. Centralized so both the Download button and command
+  // palette stay in sync.
+  const triggerExport = () => {
+    if (project.outputMode !== 'mp4') {
+      publishProject()
+      return
+    }
+    if (useElectronLayout) {
+      setCenterTab('export')
+    } else {
+      openExportModal()
+    }
+  }
   const [mounted, setMounted] = useState(false)
   const [isDraggingTimeline, setIsDraggingTimeline] = useState(false)
   const timelineDragRef = useRef<{ startY: number; startH: number } | null>(null)
@@ -884,10 +905,7 @@ export default function Editor({ showWelcome, onEnterEditor }: { showWelcome?: b
                           <MediaIcon size={19} />
                         </button>
                         <button
-                          onClick={() => {
-                            if (project.outputMode === 'mp4') openExportModal()
-                            else publishProject()
-                          }}
+                          onClick={triggerExport}
                           className="no-style electron-titlebar-icon w-8 h-8 rounded-md flex items-center justify-center shrink-0 transition-colors"
                           data-tooltip={project.outputMode === 'mp4' ? 'Export' : 'Publish'}
                           data-tooltip-pos="right"
@@ -922,7 +940,7 @@ export default function Editor({ showWelcome, onEnterEditor }: { showWelcome?: b
                           <Briefcase size={19} strokeWidth={1.5} />
                         </button>
                         <button
-                          onClick={() => void createNewProject()}
+                          onClick={openNewProjectModal}
                           className="no-style electron-titlebar-icon w-8 h-8 rounded-md flex items-center justify-center shrink-0 transition-colors"
                           data-tooltip="New Project"
                           data-tooltip-pos="right"
@@ -1111,6 +1129,7 @@ export default function Editor({ showWelcome, onEnterEditor }: { showWelcome?: b
                                 {id === 'settings' && <SettingsAdjustIcon size={14} />}
                                 {id === 'workspace' && <Package2 size={14} />}
                                 {id === 'customize' && <Briefcase size={14} />}
+                                {id === 'export' && <Download size={14} />}
                               </>
                             )}
                             <span className="text-xs font-medium whitespace-nowrap">
@@ -1124,8 +1143,19 @@ export default function Editor({ showWelcome, onEnterEditor }: { showWelcome?: b
                                       ? 'Workspaces'
                                       : id === 'customize'
                                         ? 'Customize'
-                                        : id}
+                                        : id === 'export'
+                                          ? 'Export'
+                                          : id}
                             </span>
+                            {id === 'export' && isExporting && (
+                              <Loader2 size={11} className="animate-spin text-[var(--color-text-muted)]" />
+                            )}
+                            {id === 'export' && !isExporting && !isActive && lastExportStatus === 'success' && (
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" aria-label="Export complete" />
+                            )}
+                            {id === 'export' && !isExporting && !isActive && lastExportStatus === 'error' && (
+                              <span className="w-1.5 h-1.5 rounded-full bg-red-400" aria-label="Export failed" />
+                            )}
                             <span
                               onClick={(e) => {
                                 e.stopPropagation()
@@ -1183,6 +1213,13 @@ export default function Editor({ showWelcome, onEnterEditor }: { showWelcome?: b
                     if (centerTab === 'customize') {
                       return <CustomizeView onClose={() => closeCenterTab('customize')} />
                     }
+                    if (centerTab === 'export') {
+                      return (
+                        <div className="flex-1 overflow-y-auto bg-[var(--color-input-bg)]">
+                          <ExportPanel inTab />
+                        </div>
+                      )
+                    }
                     return (
                       <div className="flex flex-1 items-center justify-center bg-[var(--color-panel)]">
                         <AgentIcon size={120} className="text-[var(--color-text-muted)] opacity-[0.08]" />
@@ -1224,6 +1261,16 @@ export default function Editor({ showWelcome, onEnterEditor }: { showWelcome?: b
                             new CustomEvent('cench-preview-command', { detail: { action: 'seek', time: t } }),
                           )
                         }
+                        onScrubStart={() =>
+                          window.dispatchEvent(
+                            new CustomEvent('cench-preview-command', { detail: { action: 'scrub_start' } }),
+                          )
+                        }
+                        onScrubEnd={() =>
+                          window.dispatchEvent(
+                            new CustomEvent('cench-preview-command', { detail: { action: 'scrub_end' } }),
+                          )
+                        }
                         trackHeight={timelineHeight}
                       />
                     ))}
@@ -1259,7 +1306,8 @@ export default function Editor({ showWelcome, onEnterEditor }: { showWelcome?: b
 
       {/* Modals */}
       <PermissionDialog />
-      {isExportModalOpen && <ExportModal />}
+      {isExportModalOpen && !useElectronLayout && <ExportModal />}
+      <NewProjectModal />
 
       {showPublishPanel && publishedUrl && (
         <PublishPanel url={publishedUrl} onClose={() => setShowPublishPanel(false)} />
@@ -1281,10 +1329,8 @@ export default function Editor({ showWelcome, onEnterEditor }: { showWelcome?: b
             else if (action === 'projects') setShowProjectPanel(true)
             else if (action === 'media') setElectronLeftTab('media')
             else if (action === 'layers') setElectronLeftTab('layers')
-            else if (action === 'export') {
-              if (project.outputMode === 'mp4') openExportModal()
-              else publishProject()
-            } else if (action === 'agents') setSettingsTab('agents')
+            else if (action === 'export') triggerExport()
+            else if (action === 'agents') setSettingsTab('agents')
             else if (action === 'new-scene') addScene()
           }}
         />

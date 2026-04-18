@@ -73,7 +73,18 @@ export const useVideoStore = create<VideoStore>()(
       lastGenerationError: null,
       isExporting: false,
       isExportModalOpen: false,
+      isNewProjectModalOpen: false,
+      openNewProjectModal: () => set({ isNewProjectModalOpen: true }),
+      closeNewProjectModal: () => set({ isNewProjectModalOpen: false }),
       exportProgress: null,
+      exportFormDraft: null,
+      setExportFormDraft: (patch) =>
+        set((s) => ({
+          exportFormDraft: { ...(s.exportFormDraft ?? ({} as any)), ...patch },
+        })),
+      clearExportFormDraft: () => set({ exportFormDraft: null }),
+      lastExportStatus: 'idle',
+      markExportStatusSeen: () => set({ lastExportStatus: 'idle' }),
 
       // Recording
       recordingState: 'idle' as const,
@@ -122,6 +133,7 @@ export const useVideoStore = create<VideoStore>()(
       timelineZoom: 0,
       timelineScrollX: 0,
       timelineAutoScroll: true,
+      timelineFollowPaused: false,
       selectedClipIds: [],
       sceneHtmlVersion: 0,
       sceneWriteErrors: {},
@@ -373,6 +385,7 @@ export const useVideoStore = create<VideoStore>()(
       setTimelineZoom: (zoom: number) => set({ timelineZoom: zoom }),
       setTimelineScrollX: (x: number) => set({ timelineScrollX: x }),
       setTimelineAutoScroll: (v: boolean) => set({ timelineAutoScroll: v }),
+      setTimelineFollowPaused: (v: boolean) => set({ timelineFollowPaused: v }),
 
       setSelectedClipIds: (ids: string[]) => set({ selectedClipIds: ids }),
       toggleClipSelection: (clipId: string, multi?: boolean) => {

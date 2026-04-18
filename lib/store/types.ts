@@ -76,7 +76,25 @@ export type CoreCenterTabId = 'preview' | 'settings' | 'workspace' | 'customize'
 /** Layers strip sub-tab opened as its own center tab (drag from left Layers). */
 export type LayersDockCenterTabId = `layers:${LayersStripTabId}`
 
-export type CenterTabId = CoreCenterTabId | LayersDockCenterTabId
+/** Ephemeral tabs that only appear when explicitly opened (not in always-available core set). */
+export type ExportCenterTabId = 'export'
+
+export type CenterTabId = CoreCenterTabId | LayersDockCenterTabId | ExportCenterTabId
+
+export interface ExportFormDraft {
+  platformId: import('../export/platform-profiles').PlatformProfileId
+  resolution: import('../types').ExportResolution
+  fps: import('../types').ExportFPS
+  profile: 'fast' | 'quality'
+  os: 'mac' | 'windows' | 'linux' | 'unknown'
+  filename: string
+  /** Absolute filesystem path (Electron) or empty string (web fallback). */
+  saveDirPath: string
+  /** Display name for the save folder (basename of saveDirPath). */
+  saveDirName: string
+}
+
+export type LastExportStatus = 'idle' | 'success' | 'error'
 
 export interface VideoStore {
   scenes: Scene[]
@@ -99,7 +117,15 @@ export interface VideoStore {
   lastGenerationError: string | null
   isExporting: boolean
   isExportModalOpen: boolean
+  isNewProjectModalOpen: boolean
+  openNewProjectModal: () => void
+  closeNewProjectModal: () => void
   exportProgress: ExportProgress | null
+  exportFormDraft: ExportFormDraft | null
+  setExportFormDraft: (patch: Partial<ExportFormDraft>) => void
+  clearExportFormDraft: () => void
+  lastExportStatus: LastExportStatus
+  markExportStatusSeen: () => void
 
   // Recording (agent/API-driven)
   recordingState: import('@/types/electron').RecordingStoreState
@@ -140,6 +166,8 @@ export interface VideoStore {
   timelineZoom: number // pixels per second (0 = fit-to-width)
   timelineScrollX: number
   timelineAutoScroll: boolean
+  /** Transient: set true when user manually scrolls the timeline during playback, suppresses auto-follow until next play-start */
+  timelineFollowPaused: boolean
   sceneHtmlVersion: number
   /** Per-scene HTML write errors — shown in preview when a scene file failed to save */
   sceneWriteErrors: Record<string, string>
@@ -305,6 +333,7 @@ export interface VideoStore {
   setTimelineZoom: (zoom: number) => void
   setTimelineScrollX: (x: number) => void
   setTimelineAutoScroll: (v: boolean) => void
+  setTimelineFollowPaused: (v: boolean) => void
   addScene: (prompt?: string) => string
   updateScene: (id: string, updates: Partial<Scene>) => void
   deleteScene: (id: string) => void
@@ -508,7 +537,7 @@ export interface VideoStore {
   }[]
   isLoadingProjects: boolean
   fetchProjectList: () => Promise<void>
-  createNewProject: (name?: string) => Promise<void>
+  createNewProject: (name?: string, aspectRatio?: import('../dimensions').AspectRatio) => Promise<void>
   /** Reload project row + scenes from API (e.g. after agent run when SSE may have dropped). */
   refreshProjectFromServer: () => Promise<void>
   loadProject: (projectId: string) => Promise<void>

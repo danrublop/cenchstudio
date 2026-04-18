@@ -211,9 +211,11 @@ export function createExportActions(set: Set, get: Get) {
               sceneProgress: 100,
               // Keep downloadUrl null (Electron save path is already chosen)
               downloadUrl: null,
+              filePath,
               error: null,
               diagnostics: [...diagnostics],
             },
+            lastExportStatus: 'success',
           })
         } catch (err) {
           set({
@@ -226,6 +228,7 @@ export function createExportActions(set: Set, get: Get) {
               error: String(err),
               diagnostics: [...diagnostics],
             },
+            lastExportStatus: 'error',
           })
         } finally {
           set({ isExporting: false })
@@ -342,6 +345,7 @@ export function createExportActions(set: Set, get: Get) {
                     downloadUrl: data.downloadUrl,
                     error: null,
                   },
+                  lastExportStatus: 'success',
                 })
               } else if (type === 'error') {
                 set({
@@ -353,6 +357,7 @@ export function createExportActions(set: Set, get: Get) {
                     downloadUrl: null,
                     error: data.message,
                   },
+                  lastExportStatus: 'error',
                 })
               }
             } catch {
@@ -370,6 +375,7 @@ export function createExportActions(set: Set, get: Get) {
               phase: 'error',
               error: 'Export connection lost unexpectedly. Check that the render server is running.',
             },
+            lastExportStatus: 'error',
           })
         }
       } catch (err) {
@@ -386,6 +392,7 @@ export function createExportActions(set: Set, get: Get) {
             downloadUrl: null,
             error: message,
           },
+          lastExportStatus: 'error',
         })
       } finally {
         clearTimeout(activityTimeout!)

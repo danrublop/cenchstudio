@@ -123,7 +123,7 @@ export function createProjectActions(set: Set, get: Get) {
       }
     },
 
-    createNewProject: async (name?: string) => {
+    createNewProject: async (name?: string, aspectRatio?: import('../dimensions').AspectRatio) => {
       const state = get()
       // Don't save current project — auto-save handles it.
       // Saving here overwrites externally-added scenes.
@@ -140,6 +140,9 @@ export function createProjectActions(set: Set, get: Get) {
         newProject.name = `Untitled Project ${n}`
       } else {
         newProject.name = name
+      }
+      if (aspectRatio) {
+        newProject.mp4Settings = { ...newProject.mp4Settings, aspectRatio }
       }
       set({
         project: newProject,
