@@ -19440,6 +19440,7 @@ function registerAllIpc(ipcMain2) {
 
 // electron/paths.ts
 var import_electron5 = require("electron");
+var import_node_fs2 = __toESM(require("node:fs"));
 var import_node_path11 = __toESM(require("node:path"));
 function getUserScenesDir() {
   return import_node_path11.default.join(import_electron5.app.getPath("userData"), "scenes");
@@ -19452,6 +19453,36 @@ function getUserAudioDir() {
 }
 function getStaticAppDir() {
   return import_node_path11.default.join(__dirname, "..", "out");
+}
+function getRenderServerDir() {
+  return import_electron5.app.isPackaged ? import_node_path11.default.join(process.resourcesPath, "render-server") : import_node_path11.default.join(process.cwd(), "render-server");
+}
+function getStitcherPath() {
+  return import_node_path11.default.join(getRenderServerDir(), "stitcher.js");
+}
+var cachedStatus = null;
+function validateExportDeps(forceRefresh = false) {
+  if (cachedStatus && !forceRefresh) return cachedStatus;
+  const renderServer = getRenderServerDir();
+  const required = [
+    { label: "stitcher.js", abs: getStitcherPath() },
+    { label: "fluent-ffmpeg", abs: import_node_path11.default.join(renderServer, "node_modules", "fluent-ffmpeg") },
+    { label: "ffmpeg-static", abs: import_node_path11.default.join(renderServer, "node_modules", "ffmpeg-static") }
+  ];
+  const missing = required.filter((r) => !import_node_fs2.default.existsSync(r.abs)).map((r) => r.label);
+  if (missing.length === 0) {
+    cachedStatus = { ok: true };
+  } else {
+    const hint = import_electron5.app.isPackaged ? "The Cench installation appears incomplete. Reinstalling the app from the original download should restore it." : `Run \`npm install\` inside \`render-server/\` to fetch the FFmpeg dependencies. (expected at ${renderServer})`;
+    cachedStatus = {
+      ok: false,
+      missing,
+      message: `Export dependencies missing: ${missing.join(", ")}.
+
+${hint}`
+    };
+  }
+  return cachedStatus;
 }
 
 // electron/main.ts
@@ -19827,9 +19858,11 @@ import_electron6.app.whenReady().then(async () => {
         }
         return { ok: true };
       }
+      const deps2 = validateExportDeps();
+      if (!deps2.ok) throw new Error(deps2.message);
       const transitions = args.transitions ?? [];
       try {
-        const stitcherPath = import_electron6.app.isPackaged ? import_path14.default.join(process.resourcesPath, "render-server", "stitcher.js") : import_path14.default.join(process.cwd(), "render-server", "stitcher.js");
+        const stitcherPath = getStitcherPath();
         const mod = await import((0, import_url.pathToFileURL)(stitcherPath).href);
         const stitchScenes = mod?.stitchScenes;
         if (typeof stitchScenes !== "function") {
@@ -19934,6 +19967,18 @@ import_electron6.app.whenReady().then(async () => {
   await registerCenchProtocol();
   registerAllIpc(import_electron6.ipcMain);
   createWindow();
+  const deps = validateExportDeps();
+  if (!deps.ok) {
+    console.error("[Electron] export dependency check failed:", deps.missing.join(", "));
+    import_electron6.dialog.showMessageBox({
+      type: "warning",
+      title: "Export setup incomplete",
+      message: "MP4 export is unavailable",
+      detail: deps.message,
+      buttons: ["OK"],
+      noLink: true
+    });
+  }
   import_electron6.session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
     console.log("[Electron] setDisplayMediaRequestHandler called");
     console.log("[Electron]   videoRequested:", !!request.videoRequested);

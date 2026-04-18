@@ -9,7 +9,14 @@ import { config as loadDotenv } from 'dotenv'
 import { registerAllIpc } from './ipc'
 // Path helpers live in `./paths.ts` so `electron/ipc/*.ts` can reuse them
 // without creating circular imports with main.ts.
-import { getUserScenesDir, getUserUploadsDir, getUserAudioDir, getStaticAppDir } from './paths'
+import {
+  getUserScenesDir,
+  getUserUploadsDir,
+  getUserAudioDir,
+  getStaticAppDir,
+  getStitcherPath,
+  validateExportDeps,
+} from './paths'
 
 // ── .env loading ────────────────────────────────────────────────────────────
 // The main process does not inherit the Next.js auto-dotenv behavior. Without
@@ -469,20 +476,17 @@ app.whenReady().then(async () => {
         return { ok: true }
       }
 
+      const deps = validateExportDeps()
+      if (!deps.ok) throw new Error(deps.message)
+
       const transitions = args.transitions ?? []
       try {
-        // Resolve the stitcher across dev + packaged layouts. In dev the file
-        // lives at <repo>/render-server/stitcher.js. In the packaged app,
-        // electron-builder copies it to <Resources>/render-server/stitcher.js
-        // via `extraResources`. `process.cwd()` is unreliable in the packaged
-        // app (it's the launch dir, often `/`), so branch on `app.isPackaged`.
-        //
         // stitcher.js is an ES module (render-server/package.json has
         // `"type": "module"`), so require() throws ERR_REQUIRE_ESM. Use
-        // dynamic `import(pathToFileURL(...))` instead.
-        const stitcherPath = app.isPackaged
-          ? path.join(process.resourcesPath, 'render-server', 'stitcher.js')
-          : path.join(process.cwd(), 'render-server', 'stitcher.js')
+        // dynamic `import(pathToFileURL(...))` instead. The path is resolved
+        // in `./paths.ts` so dev + packaged layouts stay in sync with the
+        // startup validator.
+        const stitcherPath = getStitcherPath()
         const mod = (await import(pathToFileURL(stitcherPath).href)) as {
           stitchScenes?: (v: string[], t: Array<{ type: string; duration: number }>, o: string) => Promise<void>
         }
@@ -612,6 +616,24 @@ app.whenReady().then(async () => {
   registerAllIpc(ipcMain)
 
   createWindow()
+
+  // Surface a clear warning on boot if the export stitcher or its bundled
+  // FFmpeg dependencies are missing. Non-fatal — the rest of the app still
+  // runs, but the user knows up front that MP4 export will fail before they
+  // spend minutes rendering scenes. The result is memoized, so `concatMp4`
+  // picks up the same status without re-hitting disk.
+  const deps = validateExportDeps()
+  if (!deps.ok) {
+    console.error('[Electron] export dependency check failed:', deps.missing.join(', '))
+    dialog.showMessageBox({
+      type: 'warning',
+      title: 'Export setup incomplete',
+      message: 'MP4 export is unavailable',
+      detail: deps.message,
+      buttons: ['OK'],
+      noLink: true,
+    })
+  }
 
   // ── Allow screen/window capture via getDisplayMedia in renderer ────
   // Use the native macOS system picker (desktopCapturer.getSources is broken in Electron 41)
