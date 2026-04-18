@@ -2,6 +2,7 @@
 
 import { v4 as uuidv4 } from 'uuid'
 import type { Scene, SceneUsage, SvgObject, SvgBranch, AILayer, AvatarLayer } from '../types'
+import type { D3ChartLayer } from '../types/d3'
 import { generateSceneHTML } from '../sceneTemplate'
 import { resolveProjectDimensions } from '../dimensions'
 import { mergeAvatarLayerUpdates } from '../avatar-layer-sync'
@@ -290,32 +291,46 @@ export function createGenerationActions(set: Set, get: Get) {
       get().updateScene(sceneId, { sceneCode: '', sceneStyles: '' })
 
       try {
-        const response = await fetch('/api/generate-d3', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            prompt: scene.prompt,
-            palette: getResolvedStyle(globalStyle).palette,
-            font: getResolvedStyle(globalStyle).font,
-            bgColor: scene.bgColor,
-            duration: scene.duration || 8,
-            d3Data: scene.d3Data,
-            previousSummary,
-          }),
-        })
-
-        if (!response.ok) {
-          const err = await response.text()
-          throw new Error(err || 'D3 generation failed')
+        const ipc = typeof window !== 'undefined' ? window.cenchApi?.generate : undefined
+        const payload = {
+          prompt: scene.prompt,
+          palette: getResolvedStyle(globalStyle).palette,
+          font: getResolvedStyle(globalStyle).font,
+          bgColor: scene.bgColor,
+          duration: scene.duration || 8,
+          d3Data: scene.d3Data,
+          previousSummary,
         }
-
-        const data = await response.json()
-        const { result } = data
-        const nextLayers = Array.isArray(result.chartLayers) ? result.chartLayers : []
+        let data: {
+          result?: {
+            chartLayers?: unknown[]
+            sceneCode?: string
+            d3Data?: unknown
+            styles?: unknown
+            suggestedData?: unknown
+          }
+          usage?: SceneUsage
+        }
+        if (ipc) {
+          data = (await ipc.d3(payload)) as typeof data
+        } else {
+          const response = await fetch('/api/generate-d3', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          })
+          if (!response.ok) {
+            const err = await response.text()
+            throw new Error(err || 'D3 generation failed')
+          }
+          data = await response.json()
+        }
+        const result = data.result ?? {}
+        const nextLayers = (Array.isArray(result.chartLayers) ? result.chartLayers : []) as D3ChartLayer[]
         get().updateScene(sceneId, {
           sceneType: 'd3',
           sceneCode: result.sceneCode ?? '',
-          sceneStyles: result.styles ?? '',
+          sceneStyles: (result.styles as string) ?? '',
           d3Data: result.d3Data ?? result.suggestedData ?? null,
           chartLayers: nextLayers,
           usage: data.usage ?? null,
@@ -390,24 +405,29 @@ export function createGenerationActions(set: Set, get: Get) {
       get().updateScene(sceneId, { svgContent: '' })
 
       try {
-        const response = await fetch('/api/generate-lottie', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            prompt: scene.prompt,
-            palette: getResolvedStyle(globalStyle).palette,
-            font: getResolvedStyle(globalStyle).font,
-            duration: scene.duration || 8,
-            previousSummary,
-          }),
-        })
-
-        if (!response.ok) {
-          const err = await response.text()
-          throw new Error(err || 'Lottie overlay generation failed')
+        const ipc = typeof window !== 'undefined' ? window.cenchApi?.generate : undefined
+        const payload = {
+          prompt: scene.prompt,
+          palette: getResolvedStyle(globalStyle).palette,
+          font: getResolvedStyle(globalStyle).font,
+          duration: scene.duration || 8,
+          previousSummary,
         }
-
-        const data = await response.json()
+        let data: { result?: string; usage?: SceneUsage }
+        if (ipc) {
+          data = (await ipc.lottie(payload)) as typeof data
+        } else {
+          const response = await fetch('/api/generate-lottie', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          })
+          if (!response.ok) {
+            const err = await response.text()
+            throw new Error(err || 'Lottie overlay generation failed')
+          }
+          data = await response.json()
+        }
         const cleanedSvg: string = data.result ?? ''
         const usage: SceneUsage | null = data.usage ?? null
 

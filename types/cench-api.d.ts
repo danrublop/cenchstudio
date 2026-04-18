@@ -348,6 +348,33 @@ export interface CenchApi {
     react(
       args: GenerateCodeArgs & { font?: string },
     ): Promise<GenerateCodeStructuredResult<{ sceneCode: string; styles?: unknown }>>
+    /**
+     * Lottie overlay animation. Returns serialized JSON string in `result`
+     * plus a quality score. May produce `fixCount > 0` when the validator
+     * auto-repairs the model's output.
+     */
+    lottie(args: GenerateCodeArgs & { font?: string; motionPersonality?: string }): Promise<{
+      result: string
+      usage: GenerateCodeUsage
+      quality: { score: number; dimensions: unknown; suggestions: unknown }
+      fixCount?: number
+    }>
+    /**
+     * D3 data visualization via the `cench_charts` structured pipeline.
+     * `result.chartLayers` is the canonical compiled output; `sceneCode` +
+     * `styles` are legacy compatibility fields that scenes still read.
+     */
+    d3(args: GenerateCodeArgs & { font?: string; d3Data?: unknown }): Promise<{
+      result: {
+        chartLayers: unknown[]
+        sceneCode: string
+        d3Data: unknown
+        styles: unknown
+        suggestedData: unknown
+      }
+      usage: GenerateCodeUsage
+      mode: 'cench_charts' | 'legacy'
+    }>
   }
 }
 

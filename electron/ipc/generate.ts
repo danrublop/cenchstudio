@@ -4,7 +4,10 @@ import {
   generateMotion,
   generateThree,
   generateReact,
+  generateLottie,
+  generateD3,
   GenerationValidationError,
+  LottieParseError,
 } from '@/lib/services/generation'
 import { IpcValidationError } from './_helpers'
 
@@ -35,6 +38,13 @@ function wrap<T extends (input: never) => unknown>(fn: T) {
       return await fn(args)
     } catch (err) {
       if (err instanceof GenerationValidationError) throw new IpcValidationError(err.message)
+      // Lottie parse errors carry partial `usage` data — preserve it so the
+      // renderer can still charge the user for the tokens already spent.
+      if (err instanceof LottieParseError) {
+        const e = new Error(err.message) as Error & { usage?: unknown }
+        e.usage = err.usage
+        throw e
+      }
       // Scrub before rethrowing — same defense the HTTP routes apply. Without
       // this, provider SDK errors propagate raw to the renderer console.
       if (err instanceof Error) throw new Error(sanitize(err.message))
@@ -48,4 +58,6 @@ export function register(ipcMain: IpcMain): void {
   ipcMain.handle('cench:generate.motion', wrap(generateMotion))
   ipcMain.handle('cench:generate.three', wrap(generateThree))
   ipcMain.handle('cench:generate.react', wrap(generateReact))
+  ipcMain.handle('cench:generate.lottie', wrap(generateLottie))
+  ipcMain.handle('cench:generate.d3', wrap(generateD3))
 }

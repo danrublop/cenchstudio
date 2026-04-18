@@ -105,7 +105,9 @@ var cenchApi = {
     canvas: (args) => import_electron.ipcRenderer.invoke("cench:generate.canvas", args),
     motion: (args) => import_electron.ipcRenderer.invoke("cench:generate.motion", args),
     three: (args) => import_electron.ipcRenderer.invoke("cench:generate.three", args),
-    react: (args) => import_electron.ipcRenderer.invoke("cench:generate.react", args)
+    react: (args) => import_electron.ipcRenderer.invoke("cench:generate.react", args),
+    lottie: (args) => import_electron.ipcRenderer.invoke("cench:generate.lottie", args),
+    d3: (args) => import_electron.ipcRenderer.invoke("cench:generate.d3", args)
   }
 };
 import_electron.contextBridge.exposeInMainWorld("cenchApi", cenchApi);

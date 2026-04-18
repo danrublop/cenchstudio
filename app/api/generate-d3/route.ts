@@ -130,27 +130,9 @@ Regenerate the full JSON and fix those issues. Keep the same chart intent and st
     }
 
     try {
-      const out = await runStructuredD3Generation({
-        prompt,
-        palette,
-        font,
-        bgColor,
-        duration,
-        previousSummary,
-        d3Data,
-      })
-      const costUsd = (out.usage.input_tokens / 1_000_000) * 3 + (out.usage.output_tokens / 1_000_000) * 15
-      return NextResponse.json({
-        result: {
-          chartLayers: out.chartLayers,
-          sceneCode: out.sceneCode,
-          d3Data: out.d3Data,
-          styles: out.styles,
-          suggestedData: out.d3Data,
-        },
-        usage: { input_tokens: out.usage.input_tokens, output_tokens: out.usage.output_tokens, cost_usd: costUsd },
-        mode: 'cench_charts',
-      })
+      const { generateD3 } = await import('@/lib/services/generation')
+      const result = await generateD3({ prompt, palette, font, bgColor, duration, previousSummary, d3Data })
+      return NextResponse.json(result)
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Structured D3 generation failed'
       console.error('[D3 generate structured]', e)
@@ -158,7 +140,8 @@ Regenerate the full JSON and fix those issues. Keep the same chart intent and st
     }
   } catch (err: unknown) {
     console.error('D3 generate error:', err)
-    const message = err instanceof Error ? err.message.replace(/[a-zA-Z0-9_\-]{20,}/g, '[REDACTED]').slice(0, 200) : 'Internal error'
+    const message =
+      err instanceof Error ? err.message.replace(/[a-zA-Z0-9_\-]{20,}/g, '[REDACTED]').slice(0, 200) : 'Internal error'
     return NextResponse.json({ error: message }, { status: 500 })
   }
 }

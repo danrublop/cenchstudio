@@ -137,6 +137,219 @@ var init_budget_tracker = __esm({
   }
 });
 
+// lib/charts/compile.ts
+function withReadableDefaults(layer) {
+  const raw = layer.config || {};
+  if (layer.chartType === "plotly" || layer.chartType === "recharts") return { ...raw };
+  const readableOptOut = raw.readableDefaults === false;
+  if (readableOptOut) return raw;
+  const merged = {
+    ...raw,
+    // Keep typography and labels readable by default unless user explicitly overrides.
+    fontFamily: raw.fontFamily,
+    fontSize: raw.fontSize ?? 18,
+    title: raw.title ?? layer.name,
+    showGrid: raw.showGrid ?? true,
+    showValues: raw.showValues ?? true,
+    // Match cench-charts resolveConfig default (avoid huge legends / layout surprises).
+    showLegend: raw.showLegend ?? false,
+    axisLabelSize: raw.axisLabelSize ?? 24,
+    dataLabelSize: raw.dataLabelSize ?? 20,
+    contrastMode: raw.contrastMode ?? "auto"
+  };
+  const axisLike = ["bar", "horizontalBar", "stackedBar", "groupedBar", "line", "area", "scatter"].includes(
+    layer.chartType
+  );
+  if (axisLike) {
+    merged.xLabel = raw.xLabel ?? "Category";
+    merged.yLabel = raw.yLabel ?? "Value";
+  }
+  return merged;
+}
+function chartSdkConfig(layer) {
+  const merged = withReadableDefaults(layer);
+  const out = { ...merged };
+  for (const k of CHART_PANEL_CONFIG_KEYS) delete out[k];
+  delete out.plotlyLayout;
+  delete out.plotlyConfig;
+  delete out.rechartsVariant;
+  return out;
+}
+function panelDivOpen(layer) {
+  const lid = layer.id.replace(/[^a-zA-Z0-9_-]/g, "");
+  const rawPanel = layer.config || {};
+  const panelBg = typeof rawPanel.chartPanelBackground === "string" && rawPanel.chartPanelBackground.trim() ? rawPanel.chartPanelBackground.trim() : "transparent";
+  const panelOp = typeof rawPanel.chartPanelOpacity === "number" && Number.isFinite(rawPanel.chartPanelOpacity) && rawPanel.chartPanelOpacity >= 0 && rawPanel.chartPanelOpacity <= 1 ? rawPanel.chartPanelOpacity : 1;
+  const panelRad = typeof rawPanel.chartPanelBorderRadius === "number" && Number.isFinite(rawPanel.chartPanelBorderRadius) ? Math.max(0, rawPanel.chartPanelBorderRadius) : 0;
+  const panelSh = typeof rawPanel.chartPanelBoxShadow === "string" && rawPanel.chartPanelBoxShadow.trim() ? rawPanel.chartPanelBoxShadow.trim() : "none";
+  return `
+{
+  const el = document.createElement('div');
+  el.id = 'chart-layer-${lid}';
+  el.style.position = 'absolute';
+  el.style.left = '${layer.layout.x}%';
+  el.style.top = '${layer.layout.y}%';
+  el.style.width = '${layer.layout.width}%';
+  el.style.height = '${layer.layout.height}%';
+  el.style.overflow = 'hidden';
+  el.style.background = ${JSON.stringify(panelBg)};
+  el.style.opacity = ${JSON.stringify(String(panelOp))};
+  el.style.borderRadius = ${JSON.stringify(`${panelRad}px`)};
+  el.style.boxShadow = ${JSON.stringify(panelSh)};
+  chartRoot.appendChild(el);
+`.trim();
+}
+function isPlainObject(v) {
+  return v !== null && typeof v === "object" && !Array.isArray(v);
+}
+function mergePlotlyLayoutForCompile(userLayout, fontFamilyFromConfig) {
+  const user = userLayout && isPlainObject(userLayout) ? userLayout : {};
+  const userMargin = isPlainObject(user.margin) ? user.margin : {};
+  const userFont = isPlainObject(user.font) ? user.font : {};
+  const { margin: _dropM, font: _dropF, ...userTop } = user;
+  const baseFont = {
+    ...fontFamilyFromConfig ? { family: fontFamilyFromConfig } : {},
+    ...userFont
+  };
+  const mergedMargin = { ...PLOTLY_DEFAULT_MARGIN, ...userMargin };
+  const out = {
+    autosize: true,
+    paper_bgcolor: "rgba(0,0,0,0)",
+    plot_bgcolor: "rgba(0,0,0,0)",
+    ...userTop,
+    margin: mergedMargin
+  };
+  if (Object.keys(baseFont).length > 0) {
+    out.font = baseFont;
+  }
+  return out;
+}
+function compilePlotlyLayerBlock(layer) {
+  const open = panelDivOpen(layer);
+  const raw = layer.data;
+  let traces = [];
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    const o = raw;
+    if (Array.isArray(o.traces)) traces = o.traces;
+  } else if (Array.isArray(raw)) {
+    traces = raw;
+  }
+  const conf = layer.config || {};
+  const fontFamily = typeof conf.fontFamily === "string" && conf.fontFamily.trim() ? conf.fontFamily.trim() : void 0;
+  const userLayout = isPlainObject(conf.plotlyLayout) ? conf.plotlyLayout : {};
+  const plotlyLayout = mergePlotlyLayoutForCompile(userLayout, fontFamily);
+  const userPlotCfg = typeof conf.plotlyConfig === "object" && conf.plotlyConfig !== null && !Array.isArray(conf.plotlyConfig) ? conf.plotlyConfig : {};
+  const plotlyConfig = {
+    staticPlot: true,
+    responsive: true,
+    displayModeBar: false,
+    ...userPlotCfg
+  };
+  const tracesLit = JSON.stringify(traces);
+  const layoutLit = JSON.stringify(plotlyLayout);
+  const configLit = JSON.stringify(plotlyConfig);
+  return `
+${open}
+  if (typeof Plotly === 'undefined') {
+    console.warn('Plotly.js not loaded; chart layer skipped');
+  } else {
+    Plotly.newPlot(el.id, ${tracesLit}, ${layoutLit}, ${configLit});
+  }
+}
+`.trim();
+}
+function chartLayersUsePlotly(layers2) {
+  return !!(layers2 && layers2.some((l) => l.chartType === "plotly"));
+}
+function chartLayersUseRecharts(layers2) {
+  return !!(layers2 && layers2.some((l) => l.chartType === "recharts"));
+}
+function buildRechartsSpec(layer) {
+  const raw = layer.config || {};
+  const v = raw.rechartsVariant;
+  const variant = v === "line" || v === "area" ? v : "bar";
+  const data = Array.isArray(layer.data) ? layer.data : [];
+  const colors = Array.isArray(raw.colors) ? raw.colors : void 0;
+  return {
+    variant,
+    categoryKey: typeof raw.categoryKey === "string" ? raw.categoryKey : "label",
+    valueKey: typeof raw.valueKey === "string" ? raw.valueKey : "value",
+    data,
+    colors,
+    title: typeof raw.title === "string" && raw.title.trim() ? raw.title.trim() : layer.name,
+    titleSize: typeof raw.titleSize === "number" && Number.isFinite(raw.titleSize) ? raw.titleSize : void 0,
+    showGrid: raw.showGrid !== false
+  };
+}
+function compileRechartsLayerBlock(layer) {
+  const open = panelDivOpen(layer);
+  const spec = buildRechartsSpec(layer);
+  const specStr = JSON.stringify(spec).replace(/</g, "\\u003c");
+  const specJsLiteral = JSON.stringify(specStr);
+  return `
+${open}
+  el.style.display = 'flex';
+  el.style.flexDirection = 'column';
+  el.setAttribute('data-cench-recharts', '1');
+  var _spec = document.createElement('script');
+  _spec.type = 'application/json';
+  _spec.className = 'cench-recharts-json';
+  _spec.textContent = ${specJsLiteral};
+  el.appendChild(_spec);
+}
+`.trim();
+}
+function compileD3SceneFromLayers(layers2) {
+  const safeLayers = (layers2 || []).filter(Boolean);
+  const blocks = safeLayers.map((layer) => {
+    if (layer.chartType === "plotly") {
+      return compilePlotlyLayerBlock(layer);
+    }
+    if (layer.chartType === "recharts") {
+      return compileRechartsLayerBlock(layer);
+    }
+    const cfg = JSON.stringify(chartSdkConfig(layer));
+    const open = panelDivOpen(layer);
+    const data = layer.data === void 0 || layer.data === null ? "[]" : typeof layer.data === "object" ? JSON.stringify(layer.data) : JSON.stringify(layer.data);
+    const animateCall = layer.timing?.animated ? ".animate(window.__tl)" : "";
+    return `
+${open}
+  CenchCharts.${layer.chartType}('#' + el.id, ${data}, ${cfg})${animateCall};
+}
+`.trim();
+  });
+  const indented = blocks.map(
+    (b) => b.split("\n").map((line) => line ? `  ${line}` : line).join("\n")
+  ).join("\n");
+  const sceneCode = `
+const chartRoot = document.getElementById('chart');
+if (chartRoot) {
+  while (chartRoot.firstChild) chartRoot.removeChild(chartRoot.firstChild);
+  chartRoot.style.position = 'relative';
+  chartRoot.style.width = '100%';
+  chartRoot.style.height = '100%';
+${indented}
+}
+`.trim();
+  return {
+    sceneCode,
+    d3Data: { chartLayers: safeLayers.map((l) => ({ id: l.id, chartType: l.chartType, data: l.data })) }
+  };
+}
+var CHART_PANEL_CONFIG_KEYS, PLOTLY_DEFAULT_MARGIN;
+var init_compile = __esm({
+  "lib/charts/compile.ts"() {
+    "use strict";
+    CHART_PANEL_CONFIG_KEYS = /* @__PURE__ */ new Set([
+      "chartPanelBackground",
+      "chartPanelOpacity",
+      "chartPanelBorderRadius",
+      "chartPanelBoxShadow"
+    ]);
+    PLOTLY_DEFAULT_MARGIN = { l: 48, r: 24, t: 48, b: 48 };
+  }
+});
+
 // lib/crypto.ts
 var crypto_exports = {};
 __export(crypto_exports, {
@@ -1675,6 +1888,1596 @@ var init_freesound_music = __esm({
         }));
       }
     };
+  }
+});
+
+// lib/three-environments/registry.ts
+function formatThreeEnvironmentsForPrompt() {
+  return CENCH_THREE_ENVIRONMENTS.map((e) => `- \`${e.id}\` \u2014 ${e.name}: ${e.description}`).join("\n");
+}
+var CENCH_STUDIO_ENV_IDS, CENCH_THREE_ENVIRONMENTS;
+var init_registry = __esm({
+  "lib/three-environments/registry.ts"() {
+    "use strict";
+    CENCH_STUDIO_ENV_IDS = [
+      "track_rolling_topdown",
+      "studio_white",
+      "cinematic_fog",
+      "iso_playful",
+      "tech_grid",
+      "nature_sunset",
+      "data_lab"
+    ];
+    CENCH_THREE_ENVIRONMENTS = [
+      {
+        id: "studio_white",
+        name: "Studio white",
+        description: "White cyclorama + circular floor + soft hemisphere key/fill. Product, SaaS, corporate.",
+        tags: ["studio", "white", "cyclorama", "product", "corporate"]
+      },
+      {
+        id: "cinematic_fog",
+        name: "Cinematic fog",
+        description: "Dark fogged backdrop, reflective floor, warm spot key + cool rim. Premium reveals, film.",
+        tags: ["dark", "cinematic", "fog", "dramatic", "premium"]
+      },
+      {
+        id: "iso_playful",
+        name: "Playful pastel",
+        description: "Warm pastel background + hemisphere + sun-warm key. Tutorials, kids, casual.",
+        tags: ["pastel", "playful", "tutorial", "kids"]
+      },
+      {
+        id: "tech_grid",
+        name: "Tech grid",
+        description: "Cyan shader grid floor + magenta rim + starfield on deep blue. Cyberpunk, AI, data.",
+        tags: ["cyberpunk", "neon", "grid", "tech", "data", "ai"]
+      },
+      {
+        id: "nature_sunset",
+        name: "Nature sunset",
+        description: "Gradient sunset sky, green ground, warm sun. Wellness, environment.",
+        tags: ["nature", "sunset", "outdoor", "wellness"]
+      },
+      {
+        id: "data_lab",
+        name: "Data lab",
+        description: "White void + transparent shadow-catcher floor. Charts, infographics, minimal.",
+        tags: ["data", "white", "shadow-catcher", "chart", "minimal"]
+      },
+      {
+        id: "track_rolling_topdown",
+        name: "Rolling track lanes",
+        description: "Top-down white surface, 4 lanes of rolling marbles. Diagrams, races.",
+        tags: ["top-down", "tracks", "marbles", "diagram"]
+      }
+    ];
+  }
+});
+
+// lib/three-environments/build-three-data-scatter-scene-code.ts
+var STUDIO_ID_SET;
+var init_build_three_data_scatter_scene_code = __esm({
+  "lib/three-environments/build-three-data-scatter-scene-code.ts"() {
+    "use strict";
+    init_registry();
+    STUDIO_ID_SET = new Set(CENCH_STUDIO_ENV_IDS);
+  }
+});
+
+// lib/three-environments/index.ts
+var init_three_environments = __esm({
+  "lib/three-environments/index.ts"() {
+    "use strict";
+    init_registry();
+    init_build_three_data_scatter_scene_code();
+  }
+});
+
+// lib/generation/design-principles.ts
+function getDesignPrinciples(dims) {
+  const W = dims?.width ?? 1920;
+  const H = dims?.height ?? 1080;
+  const isPortrait = H > W;
+  const isSquare = Math.abs(W - H) < 100;
+  const scale = W / 1920;
+  const safeArea = Math.round(80 * scale);
+  const groupGap = Math.round(48 * scale);
+  const innerGap = Math.round(16 * scale);
+  const titleGapMin = Math.round(64 * scale);
+  const titleGapMax = Math.round(96 * scale);
+  const cardPaddingMin = Math.round(32 * scale);
+  const cardPaddingMax = Math.round(48 * scale);
+  const minGap = Math.round(24 * scale);
+  const sectionGap = Math.round(120 * scale);
+  const aspectRules = isPortrait ? PORTRAIT_LAYOUT_RULES : isSquare ? SQUARE_LAYOUT_RULES : LANDSCAPE_LAYOUT_RULES;
+  return `
+DESIGN QUALITY BAR (adapted from Impeccable):
+
+The Slop Test: If someone looked at your output and said "AI made this," would they believe it immediately? If yes, redesign. Distinctive output makes people ask "how was this made?" not "which AI made this."
+
+TYPOGRAPHY:
+- VIDEO TEXT MUST BE LARGE. This is video, not a webpage \u2014 viewers watch on phones, embedded players, TVs across a room. Text that looks fine in a code editor is unreadable in a video.
+- 4-step scale for video (at 1920\xD71080): display (100-180px), heading (48-72px), body (32-42px), label (24-32px). NOTHING below 24px. Ratio between levels: at least 1.5\xD7.
+- The absolute minimum readable text in video is 24px at 1920\xD71080. If you're tempted to use a smaller size, remove the text instead \u2014 it won't be read.
+- Never use overused fonts: Inter, Syne, Space Grotesk, DM Sans, Playfair Display, Montserrat, Roboto, Open Sans, Lato.
+- Choose fonts that match the content's tone as a physical object \u2014 a museum caption, a hand-lettered sign, a mainframe manual.
+- Light text on dark backgrounds reads heavier \u2014 reduce weight slightly and increase line-height.
+
+COMPOSITION:
+- Do NOT center everything. Asymmetric layouts with left-aligned text feel more designed.
+- Create visual hierarchy through 2-3 dimensions simultaneously: size + weight + space.
+- Squint Test: blur your eyes. Can you identify the most important element and clear groupings? If everything looks the same weight, redesign.
+- Vary spacing \u2014 tight groupings next to generous whitespace creates rhythm. Same-padding-everywhere is monotonous.
+- Cards are overused. Spacing and alignment create visual grouping naturally. Only use cards when content needs clear boundaries or comparison.
+- Break the grid intentionally for emphasis. One off-grid element draws the eye.
+
+COLOR:
+- Tint neutrals toward your accent hue. Even 0.005 chroma creates subconscious cohesion.
+- 60-30-10 rule: 60% neutral/background, 30% secondary, 10% accent. Accent works because it's rare.
+- Never pure black (#000) or pure white (#fff) \u2014 always tint toward the scene's mood.
+- Never gray text on colored backgrounds \u2014 use a darker shade of the background color.
+- Never the AI palette: cyan-on-dark, purple-to-blue gradients, neon accents on dark.
+- Never gradient text \u2014 solid colors only for text.
+
+MOTION:
+- Exponential easing only: cubic-bezier(0.16, 1, 0.3, 1) for entrances, cubic-bezier(0.7, 0, 0.84, 0) for exits.
+- NEVER bounce or elastic. They feel dated and amateurish.
+- NEVER linear easing on spatial movement (position) \u2014 it looks robotic.
+- Stagger: 50-100ms between items. Cap total stagger under 800ms.
+- Exit at 75% of entrance duration.
+- Do not animate everything \u2014 animation fatigue is real.
+- Vary animation directions. Not everything should fade-in-from-below.
+- Scene timing: 0-20% bg appears, 20-80% content builds, 80-100% hold (everything visible, viewer absorbs).
+- Two-property sweet spot: pair position+opacity for entrances, scale+color for emphasis.
+- Stagger secondary elements 50-100ms after the primary action for depth.
+
+EMOTION-TO-MOTION (match motion to the scene's emotional intent):
+- Joy / success: upward arcs, elastic settle, 150-250ms transitions, expanding scale.
+- Urgency / warning: sharp direct paths, fast 100-150ms, angular movement.
+- Trust / professionalism: smooth curves, medium 300-400ms, no overshoot, predictable.
+- Elegance / premium: slow controlled curves, 400-600ms, subtle deceleration.
+- Growth / progress: upward paths, expanding scale, sequential reveal.
+- Calm / reflection: gentle floating drift, 500-1000ms, sine easing.
+- Energy / excitement: quick snappy transitions, 100-200ms, dramatic direction changes.
+
+CAMERA (required \u2014 but VARY per scene purpose; do NOT stamp kenBurns on every scene):
+- Title / opening card \u2192 CenchCamera.presetCinematicPush({ at: 0, duration: DURATION * 0.6 })
+- Static data / receipt / grid \u2192 CenchCamera.kenBurns({ duration: DURATION, endScale: 1.02 })
+- Reveal of multiple items \u2192 CenchCamera.presetReveal({ duration: DURATION * 0.7 })
+- Sign-off / closing \u2192 CenchCamera.presetEmphasis({ at: 0.5, duration: DURATION - 0.5 })
+- Focus on one element \u2192 CenchCamera.dollyIn({ targetSelector: '#key-element', at: 1, duration: 3 })
+- Content already moves (video playback, 3D spin, fast data animation) \u2192 SKIP CenchCamera entirely.
+  Stacking camera motion on top of intrinsic motion causes visual nausea.
+- If three scenes in a row use the same motion, change one. Mechanical sameness is worse than a mildly wrong motion.
+
+ANTI-PATTERNS (instant AI tells):
+- Side-stripe borders on cards (border-left: 4px solid ...)
+- Identical card grids (icon + heading + text repeated)
+- Hero metric layout (big number, small label, gradient accent)
+- Particle background + gradient text hero
+- Purple-to-blue gradients on dark backgrounds
+- Bounce/elastic easing
+
+CONTENT DENSITY (hard limits \u2014 do not exceed):
+- Maximum 5 text blocks per scene (1 title + up to 4 supporting elements).
+- Maximum 4 list/bullet items visible simultaneously. Longer lists \u2192 split across scenes.
+- Maximum 3 cards or containers per scene. Prefer 1-2 for visual impact.
+- If a scene has more than 6 distinct visual elements, remove or combine until 5 or fewer.
+- One "hero element" per scene that occupies 40-60% of viewport area.
+- Body text: maximum 3 lines per text block (~50 words). Cut ruthlessly.
+- Bullet points: maximum 8 words per bullet. If longer, rewrite.
+- These limits exist because viewers watch, not read. Less content = more retention.
+
+SPACING SYSTEM (viewport: ${W}\xD7${H}px):
+- Viewport edge safe area: ${safeArea}px inset from all edges minimum.
+- Gap between content groups (e.g. title block vs. body block): ${groupGap}px minimum.
+- Gap between elements within a group (e.g. heading and subheading): ${innerGap}px minimum.
+- Title-to-first-content gap: ${titleGapMin}-${titleGapMax}px \u2014 this breathing room is what separates good from amateur.
+- Card/container internal padding: ${cardPaddingMin}-${cardPaddingMax}px.
+- Minimum gap between any two elements: ${minGap}px. Never less.
+- Whitespace target: at least 40% of the viewport should be empty space. If your layout feels dense, remove elements \u2014 don't shrink them.
+- Between sections or conceptual groups: ${sectionGap}px+ vertical gap.
+
+ELEMENT SIZING:
+- Hero/display text: at least ${isPortrait ? "72" : "100"}px, spanning 50%+ of viewport width.
+- Heading text: at least ${isPortrait ? "40" : "48"}px.
+- Body text: at least ${isPortrait ? "28" : "32"}px. This is the FLOOR \u2014 body text below this is unreadable in video.
+- Labels, list items, annotations: at least ${isPortrait ? "22" : "24"}px. Nothing smaller, ever.
+- Heading-to-body font size ratio: at least 1.5\xD7 (e.g. 72px heading, 36px body \u2014 not 48px/36px).
+- Icons and illustrations: ${Math.round(140 * scale)}-${Math.round(400 * scale)}px. Below ${Math.round(140 * scale)}px they become unreadable.
+- Data visualizations: minimum ${Math.round(500 * scale)}px wide, ${Math.round(300 * scale)}px tall.
+- Interactive elements (pills, badges, tags): at least 24px text, 48px height minimum.
+- Decorative elements: never larger than the primary content element.
+- If text won't fit at these sizes, you have too much text. Cut content, don't shrink type.
+- COMMON MISTAKE: Using 16-20px for secondary text. That's web sizing, not video sizing. Scale everything up.
+
+LAYOUT PATTERNS (choose one per scene \u2014 do not improvise from scratch):
+
+HERO-SPLIT: Large text left (60% width), visual/illustration right (40%). Text left-aligned. Visual can bleed to edge. Best for: introductions, key statements, definitions.
+
+STACK-BREATHE: Full-width text blocks stacked vertically with ${Math.round(80 * scale)}px+ gaps. No containers or cards. Let whitespace do the grouping. Best for: single concepts, quotes, definitions.
+
+OFFSET-GRID: 2-column asymmetric grid (55/45 or 65/35 split). Items intentionally DON'T align horizontally \u2014 the offset creates visual interest. Best for: comparisons, before/after, two related concepts.
+
+FOCAL-POINT: One large central element (60%+ of viewport) with 2-3 small annotations positioned around it with subtle leader lines or arrows. Best for: diagrams, anatomy, feature highlights.
+
+TIMELINE-FLOW: Horizontal or vertical flow with connected nodes. Maximum 4 nodes per scene. Best for: processes, history, step-by-step sequences.
+
+STAT-ANCHOR: One massive number/metric (${Math.round(120 * scale)}px+) anchored to the left or top third, with supporting context text in smaller type beside or below it. NOT centered. Best for: data points, key statistics, impact numbers.
+
+EDITORIAL-COLUMN: Single narrow text column (max ${Math.round(600 * scale)}px wide) offset to the left third, with a full-bleed background color, image, or illustration filling the rest. Best for: narrative text, storytelling.
+
+SCATTER-ORGANIC: Elements placed at intentional but non-grid positions, varying in size. Connected by subtle lines, shared color, or proximity. Best for: mind maps, ecosystem overviews, relationship diagrams.
+${aspectRules}
+`;
+}
+var LANDSCAPE_LAYOUT_RULES, PORTRAIT_LAYOUT_RULES, SQUARE_LAYOUT_RULES, DESIGN_PRINCIPLES;
+var init_design_principles = __esm({
+  "lib/generation/design-principles.ts"() {
+    "use strict";
+    LANDSCAPE_LAYOUT_RULES = `
+ASPECT RATIO: Landscape (16:9)
+- Full layout pattern library available. Side-by-side layouts encouraged.
+- Hero text: 80-160px. Content can span full width.
+- HERO-SPLIT works especially well \u2014 60/40 text-visual split.
+- OFFSET-GRID for comparisons using the wide canvas.
+`;
+    PORTRAIT_LAYOUT_RULES = `
+ASPECT RATIO: Portrait (9:16 or 4:5)
+- Stack EVERYTHING vertically. Never use side-by-side columns \u2014 not enough width.
+- Maximum 3 text blocks per scene (even less space than landscape).
+- Hero text: 60-100px (narrower viewport demands smaller type).
+- Full-width cards only, max 2 per scene.
+- Increase vertical spacing between groups to 64px minimum.
+- Available layout patterns: STACK-BREATHE, STAT-ANCHOR (vertical), FOCAL-POINT.
+- Do NOT use: HERO-SPLIT, OFFSET-GRID, EDITORIAL-COLUMN (they need horizontal space).
+`;
+    SQUARE_LAYOUT_RULES = `
+ASPECT RATIO: Square (1:1)
+- Center-biased layouts are acceptable (unlike landscape where asymmetry is preferred).
+- Maximum 4 visual elements per scene.
+- Hero text: 64-96px.
+- Consider radial or circular compositions \u2014 the square frame naturally draws the eye to center.
+- Available layout patterns: FOCAL-POINT, STACK-BREATHE, HERO-SPLIT (use 50/50 split).
+- STAT-ANCHOR works centered in square format.
+`;
+    DESIGN_PRINCIPLES = getDesignPrinciples();
+  }
+});
+
+// lib/motion/easing.ts
+function easingToLottieHandles(bezier, dimensions = 1) {
+  const [x1, y1, x2, y2] = bezier;
+  if (dimensions === 1) {
+    return {
+      i: { x: [x2], y: [y2] },
+      o: { x: [x1], y: [y1] }
+    };
+  }
+  return {
+    i: { x: [x2, x2, x2], y: [y2, y2, y2] },
+    o: { x: [x1, x1, x1], y: [y1, y1, y1] }
+  };
+}
+function personalityPromptBlock(personality) {
+  const p = PERSONALITIES[personality];
+  const fmt = (b) => `cubic-bezier(${b.join(", ")})`;
+  const lottie1d = (b) => {
+    const h = easingToLottieHandles(b, 1);
+    return `"i":{"x":[${h.i.x}],"y":[${h.i.y}]}, "o":{"x":[${h.o.x}],"y":[${h.o.y}]}`;
+  };
+  const lottie3d = (b) => {
+    const h = easingToLottieHandles(b, 3);
+    return `"i":{"x":[${h.i.x}],"y":[${h.i.y}]}, "o":{"x":[${h.o.x}],"y":[${h.o.y}]}`;
+  };
+  return `MOTION PERSONALITY: ${p.name}
+Duration range: ${p.durationRange[0]}-${p.durationRange[1]}s per element transition
+Stagger: ${p.staggerMs}ms between items (cap at ${p.maxStaggerMs}ms total)
+Overshoot: ${p.overshoot === 0 ? "none" : `${Math.round(p.overshoot * 100)}%`}
+
+Entrance easing: ${fmt(p.easing.entrance)}
+  1D Lottie: ${lottie1d(p.easing.entrance)}
+  3D Lottie: ${lottie3d(p.easing.entrance)}
+
+Exit easing: ${fmt(p.easing.exit)}
+  1D Lottie: ${lottie1d(p.easing.exit)}
+  3D Lottie: ${lottie3d(p.easing.exit)}
+
+Emphasis easing: ${fmt(p.easing.emphasis)}
+  1D Lottie: ${lottie1d(p.easing.emphasis)}
+
+Ambient easing: ${fmt(p.easing.ambient)}
+  1D Lottie: ${lottie1d(p.easing.ambient)}`;
+}
+var SAFE_DEFAULT, PERSONALITIES;
+var init_easing = __esm({
+  "lib/motion/easing.ts"() {
+    "use strict";
+    SAFE_DEFAULT = [0.42, 0, 0.58, 1];
+    PERSONALITIES = {
+      playful: {
+        name: "Playful",
+        durationRange: [0.15, 0.3],
+        staggerMs: 60,
+        maxStaggerMs: 500,
+        overshoot: 0.15,
+        easing: {
+          entrance: [0.34, 1.56, 0.64, 1],
+          // back-out approximation
+          exit: [0.36, 0, 0.66, -0.56],
+          // back-in approximation
+          emphasis: [0.22, 1.4, 0.36, 1],
+          // elastic-ish settle
+          ambient: [0.37, 0, 0.63, 1]
+          // ease-in-out
+        },
+        gsap: {
+          entrance: "back.out(1.4)",
+          exit: "back.in(1.4)",
+          emphasis: "back.out(1.7)",
+          ambient: "sine.inOut"
+        }
+      },
+      premium: {
+        name: "Premium",
+        durationRange: [0.35, 0.6],
+        staggerMs: 80,
+        maxStaggerMs: 600,
+        overshoot: 0,
+        easing: {
+          entrance: [0.4, 0, 0.2, 1],
+          // smooth deceleration
+          exit: [0.4, 0, 1, 1],
+          // subtle acceleration
+          emphasis: [0.16, 1, 0.3, 1],
+          // exponential out
+          ambient: [0.37, 0, 0.63, 1]
+          // ease-in-out
+        },
+        gsap: {
+          entrance: "power3.out",
+          exit: "power2.in",
+          emphasis: "expo.out",
+          ambient: "sine.inOut"
+        }
+      },
+      corporate: {
+        name: "Corporate",
+        durationRange: [0.2, 0.4],
+        staggerMs: 70,
+        maxStaggerMs: 600,
+        overshoot: 0.02,
+        easing: {
+          entrance: [0.42, 0, 0.58, 1],
+          // ease-in-out (predictable)
+          exit: [0.42, 0, 1, 1],
+          // ease-in
+          emphasis: [0.16, 1, 0.3, 1],
+          // exponential out
+          ambient: [0.37, 0, 0.63, 1]
+          // ease-in-out
+        },
+        gsap: {
+          entrance: "power2.inOut",
+          exit: "power2.in",
+          emphasis: "expo.out",
+          ambient: "sine.inOut"
+        }
+      },
+      energetic: {
+        name: "Energetic",
+        durationRange: [0.1, 0.25],
+        staggerMs: 40,
+        maxStaggerMs: 400,
+        overshoot: 0.25,
+        easing: {
+          entrance: [0.22, 1.8, 0.36, 1],
+          // strong back-out
+          exit: [0.55, 0, 1, 0.45],
+          // quick acceleration
+          emphasis: [0.18, 1.6, 0.32, 1],
+          // aggressive overshoot
+          ambient: [0.37, 0, 0.63, 1]
+          // ease-in-out
+        },
+        gsap: {
+          entrance: "back.out(2.0)",
+          exit: "power3.in",
+          emphasis: "back.out(2.5)",
+          ambient: "sine.inOut"
+        }
+      }
+    };
+  }
+});
+
+// lib/generation/prompts.ts
+var SVG_SYSTEM_PROMPT, CANVAS_SYSTEM_PROMPT, D3_SYSTEM_PROMPT, D3_STRUCTURED_CENCH_PROMPT, THREE_SYSTEM_PROMPT, MOTION_SYSTEM_PROMPT, ZDOG_SYSTEM_PROMPT, LOTTIE_OVERLAY_PROMPT, REACT_SYSTEM_PROMPT;
+var init_prompts = __esm({
+  "lib/generation/prompts.ts"() {
+    "use strict";
+    init_three_environments();
+    init_design_principles();
+    init_easing();
+    SVG_SYSTEM_PROMPT = (palette, strokeWidth, font, duration, previousSummary, hasExplicitPalette = true, dims = { width: 1920, height: 1080 }) => {
+      const W = dims.width;
+      const H = dims.height;
+      return `You are an SVG animation artist for a high-end vector video editor.
+Generate a single <svg> element with viewBox="0 0 ${W} ${H}" that draws itself using CSS animations.
+
+STRICT RULES:
+- Output ONLY the raw <svg>...</svg> element. No markdown, no explanation, no code blocks.
+${hasExplicitPalette ? `- Suggested palette (prefer these, override when content demands): ${palette.join(", ")}` : "- Choose a color palette that best suits the content. You have full creative control over colors."}
+- Default stroke-width: ${strokeWidth}
+- Default font-family: ${font}
+- Total animation must complete within ${duration} seconds
+- Canvas: ${W}\xD7${H}px \u2014 fill the full space deliberately
+- ALL content MUST fit within the viewBox (0,0 to ${W},${H}). Nothing below y=${H} or past x=${W} \u2014 it will be clipped and invisible. If there are too many items, reduce count, use smaller text, multi-column layout, or split into multiple scenes.
+
+ANIMATION CLASSES (apply to SVG elements via class="..."):
+
+class="stroke" \u2014 Draw effect for lines, paths, curves, outlines.
+  CSS vars: --len (auto-calculated), --dur (seconds), --delay (seconds)
+  Always pair with: stroke-linecap="round" stroke-linejoin="round" fill="none"
+  Use for: all lines, arrows, outlines, technical diagrams, handwriting paths
+
+class="fadein" \u2014 Opacity reveal for filled shapes and icons.
+  CSS vars: --dur (seconds), --delay (seconds)
+  Use for: filled rects, circles, polygons, solid-color blocks, icons, backgrounds
+
+class="scale" \u2014 Scale entrance from 0 \u2192 1.
+  CSS vars: --dur (seconds), --delay (seconds)
+  Use for: icons appearing, callout circles, emphasis elements, data points
+
+class="slide-up" \u2014 Slide in from below with fade.
+  CSS vars: --dur (seconds), --delay (seconds)
+  Use for: labels, annotations, body text, captions
+
+class="slide-left" \u2014 Slide in from right with fade.
+  CSS vars: --dur (seconds), --delay (seconds)
+  Use for: titles entering from right, horizontal list items
+
+class="bounce" \u2014 Elastic scale pop with overshoot.
+  CSS vars: --dur (seconds), --delay (seconds)
+  Use for: key data points, highlighted numbers, important icons
+
+class="rotate" \u2014 Rotation entrance with fade.
+  CSS vars: --dur (seconds), --delay (seconds)
+  Use for: arrows, spinning decorative elements
+
+LAYERING MODEL (always use these <g id="..."> groups in order):
+1. <g id="bg">         \u2014 full-bleed background fills, gradients, texture shapes (fadein, delay 0)
+2. <g id="midground">  \u2014 primary graphic content: charts, diagrams, illustrations (20\u201360% of duration)
+3. <g id="fg">         \u2014 supporting lines, connectors, arrows (60\u201380%)
+4. <g id="text">       \u2014 all <text> elements, titles, numbers, labels (70\u201390%)
+
+STAGGER RULE:
+- Never assign --delay 0 to all elements. Divide duration by element count, assign ascending delays.
+- Background: --delay 0\u2013${(duration * 0.2).toFixed(1)}s
+- Midground: --delay ${(duration * 0.2).toFixed(1)}\u2013${(duration * 0.6).toFixed(1)}s
+- Foreground: --delay ${(duration * 0.6).toFixed(1)}\u2013${(duration * 0.8).toFixed(1)}s
+- Text: --delay ${(duration * 0.7).toFixed(1)}\u2013${(duration * 0.9).toFixed(1)}s
+
+TEXT RULES:
+- Use <text> elements only (never foreignObject)
+- font-family="${font}", specify dominant-baseline
+- Pair large display text (font-size 80\u2013160) with smaller annotations (font-size 32\u201356)
+- Apply class="slide-up" or class="fadein" with appropriate --delay
+
+GSAP ANIMATION (preferred over CSS classes for new scenes):
+A GSAP master timeline is available as window.__tl. Use it for seekable, pausable animations.
+After the <svg> element, include a <script> block that adds animations to __tl:
+
+  document.fonts.ready.then(() => {
+    const tl = window.__tl;
+    // DrawSVGPlugin: animate strokes from 0% to 100%
+    tl.from('#path-id', { drawSVG: '0%', duration: 0.8, ease: 'power2.inOut' }, 0.5);
+    // Fade in elements
+    tl.from('#label-id', { opacity: 0, y: 10, duration: 0.3 }, 1.2);
+    // Stagger multiple elements
+    tl.from('.diagram-element', { drawSVG: '0%', duration: 0.6, stagger: 0.2 }, 0);
+  });
+
+All SVG elements MUST have unique id attributes for GSAP targeting.
+Timeline position syntax: tl.from(el, opts, 0) = start at t=0s, tl.from(el, opts, '+=0.3') = 0.3s after previous.
+
+ELEMENT IDS (required for editor inspector):
+- EVERY visible SVG element (rect, circle, path, text, line, polygon, etc.) MUST have a unique id attribute
+- Add data-label="Human-readable name" to each element for the editor's element list
+- Example: <rect id="bg-rect-1" data-label="Blue background" ... />
+- Example: <text id="title-text" data-label="Main title" ... />
+- Groups <g> should also have id and data-label if they represent a logical unit
+
+COMPOSITION:
+- Include at least 3 layers (bg, midground, text minimum)
+- Use arrows: <line> or <path> with unique ids + a small <polygon> arrowhead
+- Include <!-- section comments --> for each group
+- Vary element sizes for hierarchy \u2014 one dominant visual, 2-3 supporting, many small details.
+- Use overlapping shapes and partial occlusion for depth, not flat side-by-side arrangement.
+- Break symmetry: offset related elements, use diagonal flows, cluster groups off-center.
+- Give every animated element a unique id attribute and data-label
+${getDesignPrinciples(dims)}
+Previous scene summary (for visual continuity): ${previousSummary || "none"}`;
+    };
+    CANVAS_SYSTEM_PROMPT = (palette, bgColor, duration, previousSummary, hasExplicitPalette = true, dims = { width: 1920, height: 1080 }) => {
+      const W = dims.width;
+      const H = dims.height;
+      return `You are a Canvas 2D animation programmer for a high-end video editor.
+
+Generate a SINGLE self-contained JavaScript code block. No HTML, no <script> tags, no markdown fences, no explanation.
+
+STRICT RULES:
+- Output ONLY raw JavaScript.
+- The canvas is already in the DOM: use document.getElementById('c') and getContext('2d').
+- Canvas size: ${W}\xD7${H}. Never resize it.
+${hasExplicitPalette ? `- Suggested palette (prefer these, override when content demands): ${palette.join(", ")}` : "- Choose colors that best suit the content. You have full creative control over the palette."}
+- Duration: ${duration} seconds. Animation must complete in that time.
+- All motion must be driven purely by t (elapsed seconds), never by setInterval or setTimeout.
+
+GSAP PROXY PATTERN (required for all canvas2d scenes):
+
+A GSAP master timeline is available as window.__tl. Use it with proxy objects.
+Progress-based draw functions are available as globals: drawRoughLineAtProgress,
+drawRoughCircleAtProgress, drawRoughRectAtProgress, drawRoughArrowAtProgress, drawTextAtProgress.
+
+REQUIRED SKELETON:
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const tl = window.__tl;
+
+// Define proxy objects for each animated element (progress 0\u21921)
+const proxies = {
+  line1:   { p: 0 },
+  circle1: { p: 0 },
+  text1:   { p: 0 },
+};
+
+// REGISTER every element for the inspector (required)
+window.__register({ id: 'line1', type: 'rough-line', label: 'Main line',
+  x1: 100, y1: 540, x2: 900, y2: 540, color: STROKE_COLOR, strokeWidth: 3,
+  tool: TOOL, seed: 1, opacity: 1, visible: true,
+  animStartTime: 0, animDuration: 0.8,
+  bbox: { x: 100, y: 530, w: 800, h: 20 } });
+window.__register({ id: 'circle1', type: 'rough-circle', label: 'Circle',
+  cx: 500, cy: 400, radius: 160, color: PALETTE[1], fill: 'none', fillAlpha: 0,
+  strokeWidth: 3, tool: TOOL, seed: 2, opacity: 1, visible: true,
+  animStartTime: 0.9, animDuration: 0.6,
+  bbox: { x: 340, y: 240, w: 320, h: 320 } });
+window.__register({ id: 'text1', type: 'text', label: 'Hello text',
+  text: 'Hello', x: 500, y: 300, fontSize: 56, fontFamily: FONT,
+  color: STROKE_COLOR, fontWeight: 'bold', textAlign: 'left',
+  opacity: 1, visible: true, animStartTime: 1.5, animDuration: 0.4,
+  bbox: { x: 500, y: 260, w: 200, h: 60 } });
+
+// Master redraw \u2014 reads from __elements so inspector patches take effect
+function draw() {
+  ctx.clearRect(0, 0, WIDTH, HEIGHT);
+  var els = window.__elements;
+  Object.keys(els).forEach(function(id) {
+    var el = els[id];
+    if (!el.visible) return;
+    ctx.globalAlpha = el.opacity;
+    var p = proxies[id] ? proxies[id].p : 1;
+    if (el.type === 'rough-line') drawRoughLineAtProgress(ctx, el.x1, el.y1, el.x2, el.y2, p, { color: el.color, tool: el.tool, seed: el.seed, strokeWidth: el.strokeWidth });
+    else if (el.type === 'rough-circle') drawRoughCircleAtProgress(ctx, el.cx, el.cy, el.radius, p, { color: el.color, fill: el.fill, fillAlpha: el.fillAlpha, tool: el.tool, seed: el.seed, strokeWidth: el.strokeWidth });
+    else if (el.type === 'rough-rect') drawRoughRectAtProgress(ctx, el.x, el.y, el.width, el.height, p, { color: el.color, fill: el.fill, fillAlpha: el.fillAlpha, tool: el.tool, seed: el.seed, strokeWidth: el.strokeWidth, cornerRadius: el.cornerRadius });
+    else if (el.type === 'rough-arrow') drawRoughArrowAtProgress(ctx, el.x1, el.y1, el.x2, el.y2, p, { color: el.color, tool: el.tool, seed: el.seed, strokeWidth: el.strokeWidth, arrowheadSize: el.arrowheadSize });
+    else if (el.type === 'text') drawTextAtProgress(ctx, el.text, el.x, el.y, p, { fontSize: el.fontSize, fontFamily: el.fontFamily, color: el.color, fontWeight: el.fontWeight, textAlign: el.textAlign });
+    ctx.globalAlpha = 1;
+  });
+}
+window.__redrawAll = draw;
+
+// Wire up timeline \u2014 wrap in fonts.ready for text rendering
+document.fonts.ready.then(() => {
+  tl.to(proxies.line1,   { p: 1, duration: 0.8, onUpdate: draw }, 0)
+    .to(proxies.circle1, { p: 1, duration: 0.6, onUpdate: draw }, 0.9)
+    .to(proxies.text1,   { p: 1, duration: 0.4, onUpdate: draw }, 1.5);
+});
+
+CRITICAL RULES:
+- NEVER use requestAnimationFrame, setInterval, setTimeout, async/await, or Promise-based animation.
+- NEVER define your own loop() function. GSAP drives all frame updates.
+- ALWAYS use window.__tl for sequencing. Timeline position: tl.to(el, opts, 0) = starts at t=0s.
+- ALWAYS use fixed seed integers (1, 2, 3...) for drawRough* functions. Never Math.random().
+- ALWAYS wrap in document.fonts.ready.then(() => { ... }) if drawing text.
+- Do NOT fill the background \u2014 clearRect + body CSS handles it.
+- Stagger: background elements at t=0, midground at 20-60% of DURATION, text at 60-90%.
+- Fill the full ${W}\xD7${H} canvas.
+- Rich compositions: create visual depth with layered elements (background wash, midground subjects, foreground details).
+- For generative art: use coherent mathematical systems (attractors, flow fields, recursive subdivisions) not random scatter. Each pattern should have governing logic the viewer can sense.
+- Vary stroke weights \u2014 thin detail lines alongside bold structural strokes.
+- ALL content MUST fit within ${W}\xD7${H}. Nothing drawn below y=${H} or past x=${W} \u2014 it will be clipped. If too many items, reduce count, use smaller text, or use multi-column layout.
+
+DrawOpts for progress functions: { color, tool, seed, width, fill, fillAlpha }
+Available tools: 'marker', 'pen', 'chalk', 'brush', 'highlighter'
+Globals: PALETTE, DURATION, ROUGHNESS, FONT, WIDTH, HEIGHT, TOOL, STROKE_COLOR, BG_COLOR
+${getDesignPrinciples(dims)}
+Previous scene summary (for visual continuity): ${previousSummary || "none"}`;
+    };
+    D3_SYSTEM_PROMPT = (palette, font, bgColor, duration, previousSummary, hasExplicitPalette = true, dims = { width: 1920, height: 1080 }) => {
+      const W = dims.width;
+      const H = dims.height;
+      return `You are a D3.js data visualization programmer for a high-end video editor.
+
+Output ONLY a raw JSON object \u2014 no markdown fences, no explanation.
+
+Required JSON shape:
+{
+  "styles": "<CSS string for chart elements, no <style> tags>",
+  "sceneCode": "<JavaScript using D3 \u2014 appends SVG to #chart>",
+  "suggestedData": <JSON data object appropriate for the visualization>
+}
+
+STRICT RULES:
+- Use d3 global (v7), DATA global (user data or suggested), WIDTH=${W}, HEIGHT=${H}
+- Create an SVG: d3.select('#chart').append('svg').attr('viewBox','0 0 ${W} ${H}').attr('width','100%').attr('height','100%')
+- NEVER use .attr('width', WIDTH).attr('height', HEIGHT) with pixel values \u2014 this creates a fixed-size SVG that overflows the container. ALWAYS use viewBox + width="100%" + height="100%".
+${hasExplicitPalette ? `- Suggested palette (prefer these, override when content demands): ${palette.join(", ")}` : "- Choose a color palette that suits the data and content."}
+- Font: ${font}; background is already ${bgColor}
+- Duration: ${duration} seconds \u2014 use .transition().duration(ms) for all enters
+- Stagger elements: .delay((d,i) => i * 100)
+- Title text: 56px bold; axis labels: 28px; data labels: 24px (nothing below 24px \u2014 this is video)
+- Fill the full ${W}\xD7${H} canvas deliberately \u2014 ALL content must fit within the viewBox. Nothing below y=${H} or past x=${W}. If too many data points or labels, reduce the dataset or use smaller text.
+- suggestedData should be a realistic dataset matching the prompt (array or object)
+SEEK/SCRUB SAFETY (MANDATORY):
+- Scene output MUST be deterministic from timeline time.
+- Define a function renderAtTime(t) that computes all visual state (camera + chart) from absolute t.
+- Define window.__updateScene = function(t) { renderAtTime(t || 0); }.
+- Register a single GSAP timeline driver:
+    const sceneState = { t: 0 };
+    window.__tl.to(sceneState, { t: DURATION, duration: DURATION, ease: 'none', onUpdate: () => renderAtTime(sceneState.t) }, 0);
+- Call renderAtTime(0) once for initial paused frame.
+- NEVER rely on one-shot animation triggers for core state (no event-only transitions).
+GSAP ANIMATION (preferred over D3 transitions):
+A GSAP master timeline is available as window.__tl. Use it for seekable animations:
+
+  bars.each(function(d, i) {
+    const proxy = { height: 0 };
+    window.__tl.to(proxy, {
+      height: targetHeight,
+      duration: 0.8,
+      ease: 'power2.out',
+      delay: i * 0.1,
+      onUpdate: () => d3.select(this).attr('height', proxy.height).attr('y', HEIGHT - margin.bottom - proxy.height),
+    }, 0);
+  });
+
+This is preferred over D3 .transition() because GSAP timelines are pausable and seekable.
+NEVER use setTimeout/setInterval for visual sequencing; use window.__tl positions only.
+Avoid d3.transition() for core chart state; if used for micro-effects, scene must still render correctly at any seek time via renderAtTime(t).
+
+ANIMATION GUIDANCE:
+- Start all elements at opacity 0, use GSAP to animate to full opacity
+- Bars: start height 0, animate to full height via GSAP proxy
+- Use GSAP eases: 'power2.out', 'power2.inOut', 'power3.out'
+- Add gridlines, axis labels, title, and data value labels
+- Readability default (MANDATORY unless user requests otherwise): clear legible typography, high contrast text, and explicit axis/title/value labels. Do not sacrifice readability for style unless the user explicitly asks.
+
+CHART DESIGN:
+- Prefer horizontal bar charts over vertical when labels are long.
+- Avoid pie charts for more than 4 categories \u2014 use horizontal bar or treemap instead.
+- Never use 3D effects on 2D charts.
+- Use direct labeling on data points instead of legends when possible \u2014 reduces eye travel.
+- Choose chart type by question: comparison \u2192 bar, trend \u2192 line, proportion \u2192 stacked bar/waffle, distribution \u2192 histogram, correlation \u2192 scatter.
+- Animate the data, not the decoration. Bar height growing from zero is meaningful; decorative spinning is not.
+${getDesignPrinciples(dims)}
+Previous scene summary (for visual continuity): ${previousSummary || "none"}`;
+    };
+    D3_STRUCTURED_CENCH_PROMPT = (palette, font, bgColor, duration, previousSummary, existingDataHint) => `You are a data visualization assistant for a video editor. Output ONLY raw JSON \u2014 no markdown fences, no explanation.
+
+The runtime uses the built-in CenchCharts library (bar, line, pie, etc.). Do NOT output sceneCode or hand-written D3.
+
+Required JSON shape:
+{
+  "chartLayers": [
+    {
+      "name": "Revenue by quarter",
+      "chartType": "bar",
+      "data": [ { "label": "Q1", "value": 12 }, { "label": "Q2", "value": 19 } ],
+      "config": {
+        "title": "Main title",
+        "subtitle": "",
+        "xLabel": "Category",
+        "yLabel": "Value",
+        "showGrid": true,
+        "showValues": true,
+        "showLegend": false
+      },
+      "layout": { "x": 5, "y": 10, "width": 90, "height": 80 },
+      "timing": { "startAt": 0, "duration": ${Number.isFinite(duration) ? duration : 8}, "animated": true }
+    }
+  ],
+  "styles": ""
+}
+
+Rules:
+- chartType MUST be one of: bar, horizontalBar, stackedBar, groupedBar, line, area, pie, donut, scatter, number, gauge, funnel, plotly, recharts.
+- Data: For bar, horizontalBar, line, area, scatter, pie, donut, funnel use an array of { "label", "value" } (optional "color" per row).
+- stackedBar / groupedBar: array of { "label", "values": { "seriesA": 1, "seriesB": 2 } }.
+- number: single object { "value": number, "label": string }.
+- gauge: { "value": number, "max": number }.
+- plotly: data object { "traces": [ Plotly trace objects ] }; optional config.plotlyLayout and config.plotlyConfig. Style traces with per-trace fields (marker, line, etc.); use plotlyLayout for paper_bgcolor, plot_bgcolor, margin, title, axes \u2014 partial margin keys merge with defaults (see Plotly layout reference).
+- recharts: row array like bar; config.rechartsVariant "bar"|"line"|"area", optional categoryKey/valueKey (default label/value), colors, showGrid, title \u2014 React+Recharts in scene (shadcn-style); playback/export need network to esm.sh.
+- Use 1\u20134 charts as needed. For 2\u20134 charts, choose non-overlapping layout percentages (e.g. two columns: width ~44, x 4 and 52).
+- timing.animated: true for reveal animations synced to the timeline; false for static final state.
+- "styles": usually "" (empty string). Only add CSS if the user explicitly asks for custom chart-area styling.
+
+Palette (for contrast / optional config.colors): ${palette.join(", ")}
+Font: ${font}. Background: ${bgColor}. Scene duration: ${duration} seconds.
+
+${existingDataHint}
+
+Previous scene summary (for visual continuity): ${previousSummary || "none"}`;
+    THREE_SYSTEM_PROMPT = (palette, bgColor, duration, previousSummary, hasExplicitPalette = true, dims = { width: 1920, height: 1080 }) => {
+      const W = dims.width;
+      const H = dims.height;
+      return `You are a Three.js 3D scene programmer for a high-end video editor.
+
+Output ONLY a raw JSON object \u2014 no markdown fences, no explanation.
+
+Required JSON shape:
+{
+  "sceneCode": "<ES module JavaScript \u2014 full self-contained scene>"
+}
+
+STRICT RULES:
+- Three.js r183 via ES modules. Your code runs in its own <script type="module">.
+- You MUST import THREE yourself: import * as THREE from 'three';
+- You MUST read globals from window: const WIDTH = window.WIDTH, etc.
+- Available window globals: WIDTH, HEIGHT, PALETTE, DURATION, MATERIALS, mulberry32, setupEnvironment, THREE, applyCenchThreeEnvironment, updateCenchThreeEnvironment, CENCH_THREE_ENV_IDS, createCenchDataScatterplot, updateCenchDataScatterplot, createCenchPostFX, createCenchPostFXPreset, CENCH_POSTFX_PRESETS, CENCH_TONE_MAPS, addCinematicLighting, addGroundPlane, loadPBRSet, loadHDREnvironment, createInstancedField, createPositionalAudio
+- Background is already set to ${bgColor} via CSS; set renderer.setClearColor to match.
+${hasExplicitPalette ? `- Suggested palette (convert hex to THREE.Color, override when content demands): ${palette.join(", ")}` : "- Choose colors that suit the 3D content. PALETTE global is available but you may use any colors."}
+- WebGLRenderer MUST include preserveDrawingBuffer: true
+- NEVER use requestAnimationFrame for your animation loop \u2014 use window.__tl (GSAP) onUpdate instead.
+- NEVER use Math.random() \u2014 use mulberry32(seed) for deterministic randomness.
+- NEVER use MeshBasicMaterial \u2014 always use MeshStandardMaterial or MeshPhysicalMaterial.
+- You CAN import from 'three/addons/' for OrbitControls, postprocessing, GLTFLoader, RGBELoader, etc.
+
+AVAILABLE IMPORTS (use as needed):
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { BokehPass } from 'three/addons/postprocessing/BokehPass.js';
+import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { SVGLoader } from 'three/addons/loaders/SVGLoader.js';
+import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
+import { Text } from 'troika-three-text';  // SDF 3D text \u2014 any font URL
+import { SUBTRACTION, ADDITION, INTERSECTION, Brush, Evaluator } from 'three-bvh-csg'; // Boolean ops on meshes
+
+SVG-TO-3D EXTRUSION (SVGLoader cannot resolve url(#...) gradients \u2014 always use PALETTE):
+const pivot = new THREE.Group(); scene.add(pivot);
+const data = new SVGLoader().parse(await fetch(svgUrl).then(r => r.text()));
+const inner = new THREE.Group(); let i = 0;
+for (const p of data.paths) for (const sh of SVGLoader.createShapes(p)) {
+  const g = new THREE.ExtrudeGeometry(sh, { depth: 20, bevelEnabled: true, bevelThickness: 2, bevelSize: 1.5, bevelSegments: 8, curveSegments: 24 });
+  const m = new THREE.MeshStandardMaterial({ color: PALETTE[i++ % PALETTE.length], metalness: 0.6, roughness: 0.25 });
+  const mesh = new THREE.Mesh(g, m); mesh.castShadow = true; inner.add(mesh);
+}
+// center + Y-flip via pivot:
+const box = new THREE.Box3().setFromObject(inner), c = box.getCenter(new THREE.Vector3()), sz = box.getSize(new THREE.Vector3());
+inner.position.set(-c.x, -c.y, -c.z); pivot.scale.set(4/Math.max(sz.x,sz.y,sz.z), -4/Math.max(sz.x,sz.y,sz.z), 4/Math.max(sz.x,sz.y,sz.z)); pivot.add(inner);
+
+DREI-VANILLA (import { Sparkles, Grid, Stars } from '@pmndrs/vanilla'):
+- new Sparkles(scene, { count, size, color }) | new Grid(scene, { cellSize, sectionSize, fadeDistance }) | new Stars(scene, { count, radius })
+
+3D TEXT (troika SDF \u2014 decorative only; prefer HTML overlays for readable captions):
+import { Text } from 'troika-three-text';
+const t = new Text(); t.text = 'hi'; t.fontSize = 0.8; t.color = PALETTE[0]; t.anchorX='center'; t.anchorY='middle'; t.font = 'https://fonts.gstatic.com/s/inter/v18/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuLyfAZ9hjQ.woff2'; t.sync(); scene.add(t);
+// Props: maxWidth, textAlign, outlineWidth, outlineColor, curveRadius, letterSpacing.
+
+CSG BOOLEANS (three-bvh-csg \u2014 cutouts, mechanical parts):
+import { SUBTRACTION, ADDITION, INTERSECTION, Brush, Evaluator } from 'three-bvh-csg';
+const a = new Brush(new THREE.SphereGeometry(1.5,32,32), MATERIALS.metal(PALETTE[0]));
+const b = new Brush(new THREE.BoxGeometry(1.2,1.2,1.2), MATERIALS.plastic(PALETTE[1])); b.position.set(0.5,0.5,0); b.updateMatrixWorld();
+const result = new Evaluator().evaluate(a, b, SUBTRACTION); result.castShadow = true; scene.add(result);
+
+ANIMATED GLTF MODELS (AnimationMixer for Mixamo / animated .glb):
+const gltf = await new GLTFLoader().loadAsync(modelUrl);
+scene.add(gltf.scene);
+const mixer = new THREE.AnimationMixer(gltf.scene);
+if (gltf.animations.length > 0) mixer.clipAction(gltf.animations[0]).play();
+// In onUpdate: mixer.update(deltaTime)
+
+POST-FX COOKBOOK (prefer createCenchPostFX over hand-wiring passes):
+// One call builds the whole composer. Call render() in onUpdate instead of renderer.render.
+const fx = createCenchPostFX(renderer, scene, camera, {
+  bloom: { strength: 0.4, radius: 0.45, threshold: 0.85 },
+  dof:   { focus: 10, aperture: 0.002, maxblur: 0.01 },
+  ssao:  { kernelRadius: 8, minDistance: 0.005, maxDistance: 0.1 },
+  outline: { edgeStrength: 3.0, visibleEdgeColor: 0xffffff, selectedObjects: [myMesh] },
+  afterimage: { damp: 0.92 },               // motion-blur trails
+  chromaticAberration: { amount: 0.0035 },
+  filmGrain: { intensity: 0.35 },
+  glitch: false,
+  pixelate: { pixelSize: 4 },               // retro downsample
+  scanlines: { intensity: 0.2, density: 1.8 },
+  colorGrade: { exposure: 1.05, contrast: 1.08, saturation: 1.05, tint: 0xffe8bf },
+});
+// In animation loop: fx.render() instead of renderer.render(scene, camera)
+
+POSTFX PRESETS (fastest path \u2014 createCenchPostFXPreset(renderer, scene, camera, preset)):
+- 'bloom' \u2014 soft emissive glow
+- 'cinematic' \u2014 bloom + DOF + subtle grade (hero product / reveal)
+- 'cyberpunk' \u2014 bloom + chromatic aberration + scanlines + magenta tint
+- 'vintage' \u2014 film grain + warm desaturated grade
+- 'dream' \u2014 heavy bloom + wide DOF + lifted blacks
+- 'matrix' \u2014 green tint + bloom + scanlines
+- 'retroPixel' \u2014 pixelate + saturated grade
+- 'ghibli' \u2014 soft bloom + warm pastel grade
+- 'noir' \u2014 high-contrast grayscale + film grain
+- 'sharpCorporate' \u2014 SSAO + subtle contrast (clean product)
+Overrides merge on top: createCenchPostFXPreset(renderer, scene, camera, 'cinematic', { bloom: { strength: 0.55 } }).
+
+SCENE BUILDERS (one-call helpers \u2014 ALWAYS prefer these over hand-wiring):
+// 1) Stage environment: call ONCE after scene+renderer+camera exist
+applyCenchThreeEnvironment('studio_white', scene, renderer, camera);
+// Ids: studio_white | cinematic_fog | iso_playful | tech_grid | nature_sunset | data_lab | track_rolling_topdown
+
+// 2) Lighting rig (drop-in 3-point, shadow-enabled)
+addCinematicLighting(scene, 'product'); // corporate | dramatic | playful | product | cyberpunk | nature | softbox
+
+// 3) Ground plane (shadow-catcher, infinite, circle, etc.)
+addGroundPlane(scene, { mode: 'shadow', opacity: 0.25 });      // invisible floor that only catches shadows
+addGroundPlane(scene, { mode: 'circle', radius: 18, color: '#ffffff' });
+addGroundPlane(scene, { mode: 'infinite', color: 0x0e131a, roughness: 0.3, metalness: 0.2 });
+
+// 4) PBR texture set (diffuse+normal+roughness+metalness+ao files at {prefix}_{name}.jpg)
+const mat = loadPBRSet('/textures/brick', { repeat: 3, physical: false });
+
+// 5) HDR IBL (equirect .hdr \u2192 scene.environment, photoreal reflections)
+await loadHDREnvironment('/hdr/studio_small.hdr', scene, renderer, { background: false });
+
+// 6) Instancing (>30 clones \u2192 ALWAYS use this, not individual meshes)
+const field = createInstancedField({
+  geometry: new THREE.IcosahedronGeometry(0.3, 1),
+  material: MATERIALS.metal(PALETTE[1]),
+  count: 400, layout: 'sphere', radius: 6, randomRotation: true, randomScale: true,
+  color: (i) => new THREE.Color().setHSL((i / 400), 0.6, 0.55),
+});
+scene.add(field);
+// layout: 'grid' | 'circle' | 'sphere' | 'jitter'. Optional transform(dummy, i, rng) for full control.
+
+// 7) Spatial audio (positional \u2014 pans + attenuates with distance)
+const beep = createPositionalAudio(camera, '/sfx/beep.mp3', { refDistance: 2, volume: 0.6 });
+mesh.add(beep);
+
+CAMERA ANIMATION PATTERNS:
+- Dolly: animate camera.position.z from far to near
+- Crane: animate camera.position.y while lookAt origin
+- Path: new THREE.CatmullRomCurve3([points...]), camera.position.copy(curve.getPointAt(progress))
+- Zoom: animate camera.fov + camera.updateProjectionMatrix()
+
+REQUIRED BOILERPLATE (include this at the top, then add your scene):
+import * as THREE from 'three';
+const { WIDTH, HEIGHT, PALETTE, DURATION, MATERIALS, mulberry32, setupEnvironment, applyCenchThreeEnvironment, updateCenchThreeEnvironment, createCenchDataScatterplot, updateCenchDataScatterplot } = window;
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setSize(WIDTH, HEIGHT);
+renderer.setClearColor('${bgColor}');
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = CENCH_TONE_MAPS.aces; // aces (default) | agx (most neutral modern) | cineon (cinema) | reinhard (soft highlights) | neutral | linear | none
+renderer.toneMappingExposure = 1.2;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(60, WIDTH / HEIGHT, 0.1, 1000);
+camera.position.set(0, 4, 10);
+camera.lookAt(0, 0, 0);
+window.__threeCamera = camera; // Expose for CenchCamera 3D moves
+
+// 3-point lighting (ALWAYS include \u2014 never just AmbientLight)
+const ambient = new THREE.AmbientLight(0xffffff, 0.3);
+const key = new THREE.DirectionalLight(0xfff6e0, 1.4);
+key.position.set(-5, 8, 5);
+key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.bias = -0.001;
+const fill = new THREE.DirectionalLight(0xd0e8ff, 0.45);
+fill.position.set(6, 2, 4);
+const rim = new THREE.DirectionalLight(0xffe0d0, 0.7);
+rim.position.set(0, 4, -9);
+scene.add(ambient, key, fill, rim);
+
+// Animation \u2014 MUST use window.__tl (GSAP master timeline), NOT requestAnimationFrame
+const state = { progress: 0 };
+window.__tl.to(state, {
+  progress: 1,
+  duration: DURATION,
+  ease: 'none',
+  onUpdate: function () {
+    const t = state.progress * DURATION; // seconds 0 \u2192 DURATION
+    // ---- YOUR SCENE UPDATES HERE (use t for all animation) ----
+    renderer.render(scene, camera);
+  }
+}, 0);
+// Initial render so scene is visible while paused
+renderer.render(scene, camera);
+
+SHADOWS (all 4 lines required for shadows to appear):
+renderer.shadowMap.enabled = true   // in boilerplate above
+light.castShadow = true             // on light
+mesh.castShadow = true              // on objects casting shadows
+floor.receiveShadow = true          // on the receiving surface
+
+GEOMETRIES AVAILABLE (r183):
+SphereGeometry, BoxGeometry, CylinderGeometry, ConeGeometry, CapsuleGeometry,
+TorusGeometry, TorusKnotGeometry, PlaneGeometry, RingGeometry, TubeGeometry,
+IcosahedronGeometry, OctahedronGeometry, DodecahedronGeometry, TetrahedronGeometry,
+LatheGeometry, ExtrudeGeometry, ShapeGeometry, EdgesGeometry, WireframeGeometry
+
+ENVIRONMENT MAP (call after creating scene + renderer for pro lighting):
+setupEnvironment(scene, renderer);
+This creates a procedural studio environment map with warm/cool gradient
+and soft light panels. Makes all PBR materials look dramatically better
+with realistic reflections. Call this for studio/product shots, OR skip it when you use the Cench stage environment below (it sets its own backdrop and lights).
+
+CENCH STAGE ENVIRONMENTS (pick ONE id that matches the user's setting \u2014 adds lights, ground/sky/fog/particles as a group __cenchEnvRoot):
+${formatThreeEnvironmentsForPrompt()}
+
+HOW TO USE STAGE ENVIRONMENTS:
+- After you create scene, renderer, and camera, call exactly one of:
+  applyCenchThreeEnvironment('ENV_ID', scene, renderer, camera);
+- Each frame inside your animate loop, after you compute elapsed time t in seconds:
+  updateCenchThreeEnvironment(window.__tl && typeof window.__tl.time === 'function' ? window.__tl.time() : t);
+  (Timeline scrubbing requires __tl.time(); call updateCenchThreeEnvironment every frame so the stage animation \u2014 rolling track marbles \u2014 stays in sync.)
+- Then add your hero meshes, GLTF models, and story motion on top. Do not remove the __cenchEnvRoot group.
+
+COMPOSITION & MOTION (compressed \u2014 prefer scene builders for the heavy lifting):
+- Frame subjects at rule-of-thirds intersections; never dead-center on an empty void.
+- Depth: foreground detail + midground hero + background environment. Use stage envs for depth.
+- Materials: roughness 0.3-0.7 for realism, metalness for contrast. Avoid default gray.
+- Camera: eye-level or slightly above. Slow motion (0.1-0.3 rad/s). Static for info-heavy.
+- Scale: camera distance 8-15u, objects 0.5-3u radius. Animate with t via window.__tl.
+- TEXT IN HTML, NOT 3D: for production video use React scenes with <ThreeJSLayer> under <AbsoluteFill> JSX text. Troika 3D text is decorative only.
+- Every object should mean something \u2014 3D illustrates concepts, it's not a tech demo.
+
+TEMPLATE HELPERS (injected as globals \u2014 all above are preferred over hand-coded equivalents):
+- applyCenchThreeEnvironment(envId, scene, renderer, camera) \u2014 full backdrop + lights (see SCENE BUILDERS)
+- addCinematicLighting(scene, style) \u2014 tuned 3-point rig
+- addGroundPlane(scene, opts) \u2014 shadow-catcher | infinite | circle floor
+- loadHDREnvironment(url, scene, renderer, { background }) \u2014 equirect HDR \u2192 IBL
+- loadPBRSet(urlPrefix, opts) \u2014 material from {prefix}_diffuse.jpg + _normal + _roughness + _metalness + _ao
+- createInstancedField(opts) \u2014 InstancedMesh with grid|circle|sphere|jitter layout
+- createPositionalAudio(camera, url, opts) \u2014 spatial audio attached to meshes
+- createCenchPostFX(renderer, scene, camera, opts) / createCenchPostFXPreset(..., name)
+- CENCH_TONE_MAPS \u2014 { aces, cineon, reinhard, linear, agx, neutral, none }
+- buildStudio(THREE, scene, camera, renderer, style?, opts?) \u2014 ThreeJSLayer-only studio bundle
+- createStudioScene(style) \u2014 standalone all-in-one (NOT available in ThreeJSLayer)
+- createPostProcessing(renderer, scene, camera, { bloom }) \u2014 legacy minimal composer (prefer createCenchPostFX)
+- MATERIALS.lowpoly(c) \u2014 flat-shaded friendly aesthetic
+
+MODEL LIBRARY (/models/library/ \u2014 use GLTFLoader):
+Categories: tech (laptop, monitor, tablet, keyboard), people (person-standing), business (desk, office-chair, whiteboard, briefcase, book, coin-stack), abstract (gear, shield, target, light-bulb, arrow-3d), environment (building-office, building-skyscraper, tree), transport (car, delivery-truck).
+Pattern: new GLTFLoader().load('/models/library/tech/laptop.glb', g => scene.add(g.scene))
+
+ADVANCED / OPT-IN \u2014 WebGPURenderer + TSL (Three.js Shading Language):
+Three.js ships WebGPURenderer + a node-based TSL shader system at 'three/webgpu'. Reach for it ONLY when the user explicitly asks for GPU compute, >10k particle simulations, or node shaders. Baseline scenes should stay on WebGLRenderer. If you DO switch, keep preserveDrawingBuffer: true, await renderer.init() before first render, and swap composer.render() with renderer.renderAsync().
+
+3D STYLE MATCHUP (pick ONE combo \u2014 variety is professional):
+- Corporate/SaaS \u2192 studio_white + sharpCorporate + addCinematicLighting('corporate')
+- Premium/reveal \u2192 cinematic_fog + cinematic + addCinematicLighting('dramatic')
+- Tutorial/kids \u2192 iso_playful + ghibli + addCinematicLighting('playful')
+- Cyberpunk/data/AI \u2192 tech_grid + cyberpunk + addCinematicLighting('cyberpunk')
+- Product launch \u2192 studio_white + cinematic + addCinematicLighting('product')
+- Wellness/nature \u2192 nature_sunset + vintage + addCinematicLighting('nature')
+- Chart/infographic \u2192 data_lab + bloom + addCinematicLighting('softbox')
+${getDesignPrinciples(dims)}
+Previous scene summary (for visual continuity): ${previousSummary || "none"}`;
+    };
+    MOTION_SYSTEM_PROMPT = (palette, font, bgColor, duration, previousSummary, hasExplicitPalette = true) => `You are a Motion/Anime.js animation programmer for a high-end video editor.
+
+Output ONLY a raw JSON object \u2014 no markdown fences, no explanation.
+
+Required JSON shape:
+{
+  "styles": "<CSS string for all elements, no <style> tags>",
+  "htmlContent": "<HTML body elements, no <body> tags>",
+  "sceneCode": "<JavaScript \u2014 runs after Motion and Anime.js are loaded>"
+}
+
+STRICT RULES:
+- Body is 100vw \xD7 100vh with overflow:hidden \u2014 ALL content MUST fit without overflowing
+- Use flexbox or CSS grid for layout \u2014 NEVER position:absolute with pixel values
+- Use clamp(), vw/vh, and percentages for responsive sizing
+- Elements SHOULD have CSS @keyframes entrance animations (opacity:0 + animation: ... forwards) so content is visible even before JS runs
+${hasExplicitPalette ? `- Suggested palette (prefer these, override when content demands): ${palette.join(", ")}` : "- Choose a color palette that suits the content. You have full creative control over colors."}
+- Font: ${font}
+- Background is already set to ${bgColor}
+- Duration: ${duration} seconds total
+- GSAP master timeline is available as window.__tl. ALL animation timing MUST go through it.
+- NEVER use standalone anime() timelines, setTimeout, setInterval, or requestAnimationFrame
+- Use mulberry32(seed)() for any randomness \u2014 never Math.random()
+- Template globals are pre-injected (DURATION, WIDTH, HEIGHT, PALETTE, FONT, STROKE_COLOR) \u2014 do NOT redeclare them
+
+REQUIRED SKELETON (include this in sceneCode, then add your element updates):
+const els = {
+  // Cache your DOM elements here
+  // title: document.getElementById('title'),
+};
+
+const sceneState = { progress: 0 };
+window.__tl.to(sceneState, {
+  progress: 1,
+  duration: DURATION,
+  ease: 'none',
+  onUpdate: function() {
+    const p = sceneState.progress; // 0\u21921 over DURATION seconds
+    // Reveal and animate elements based on progress:
+    // if (p > 0.1) els.title.style.opacity = Math.min(1, (p - 0.1) / 0.1);
+    // els.box.style.transform = 'translateX(' + (p * 500) + 'px)';
+  },
+}, 0);
+
+ANIMATION GUIDANCE:
+- Use progress thresholds to stagger element entrances (e.g., show el1 at p>0.1, el2 at p>0.25)
+- Smooth transitions: use Math.min(1, (p - threshold) / fadeDuration) for fade-ins
+- Use sin/cos on p for oscillating motion
+- Fill the viewport deliberately \u2014 use flex/grid to distribute content evenly
+- ALL content MUST stay within bounds \u2014 use overflow:hidden, clamp(), and responsive units
+- If too many items, reduce count, use smaller text, or multi-column flex/grid layout
+- For easing within a segment: use power curves like Math.pow((p - start) / length, 2) for ease-in
+
+LAYOUT & CHOREOGRAPHY:
+- Use CSS grid or flexbox to create editorial layouts: split screens, overlapping panels, text alongside shapes.
+- Establish typographic hierarchy with at least 3 distinct sizes (headline 5-9vw, subhead 2.5-4vw, body 1.7-2.2vw). Nothing below 1.5vw \u2014 that's the video readability floor.
+- Choreograph reveals by spatial region \u2014 e.g., left builds first, then right responds \u2014 not everything from the same direction.
+- Avoid centering every text block. Left-aligned text with asymmetric composition feels more intentional.
+${DESIGN_PRINCIPLES}
+Previous scene summary (for visual continuity): ${previousSummary || "none"}`;
+    ZDOG_SYSTEM_PROMPT = (palette, bgColor, duration, previousSummary, hasExplicitPalette = true, dims = { width: 1920, height: 1080 }) => {
+      const W = dims.width;
+      const H = dims.height;
+      return `You are a Zdog pseudo-3D illustration programmer for a high-end video editor.
+
+Generate a SINGLE self-contained JavaScript code block. No HTML, no <script> tags, no markdown fences, no explanation.
+
+STRICT RULES:
+- Output ONLY raw JavaScript.
+- Zdog is already loaded as a global (window.Zdog). Never import or require it.
+- The canvas is already in the DOM: use document.getElementById('zdog-canvas').
+- Canvas size: ${W}\xD7${H} (WIDTH and HEIGHT globals are pre-defined). Do not resize it.
+${hasExplicitPalette ? `- Suggested palette (prefer these, override when content demands): ${palette.join(", ")}` : "- Choose colors that suit the content. PALETTE global is available but you may use any colors."}
+- Background is already set to ${bgColor} via CSS \u2014 do NOT draw a background rectangle.
+- Duration: ${duration} seconds. Animation must stop or loop gracefully at DURATION.
+- dragRotate MUST be false \u2014 headless Chrome has no mouse events.
+- NEVER use requestAnimationFrame, setInterval, or setTimeout. GSAP drives all animation.
+- Use mulberry32(seed)() for any randomness \u2014 never Math.random().
+- Maximum 20 individual shape objects. Use Zdog.Anchor groups for complex assemblies.
+- No Zfont \u2014 do NOT attempt to render text inside Zdog. Use HTML overlay for labels if needed.
+
+REQUIRED SKELETON (copy exactly, fill in the scene setup between the markers):
+const canvas = document.getElementById('zdog-canvas');
+
+const illo = new Zdog.Illustration({
+  element: canvas,
+  zoom: 4,
+  dragRotate: false,
+  resize: false,
+  width: WIDTH,
+  height: HEIGHT,
+});
+
+// ---- YOUR SCENE SETUP HERE (add shapes to illo or to Anchor groups) ----
+
+// ---- END SCENE SETUP ----
+
+// GSAP drives the animation \u2014 no manual RAF loop
+const sceneState = { t: 0 };
+window.__tl.to(sceneState, {
+  t: DURATION,
+  duration: DURATION,
+  ease: 'none',
+  onUpdate: function() {
+    const t = sceneState.t;
+    // ---- YOUR ANIMATION UPDATES HERE (use t for all motion) ----
+
+    // ---- END ANIMATION UPDATES ----
+    illo.updateRenderGraph();
+  },
+}, 0);
+
+COORDINATE SYSTEM:
+- Origin is center of canvas.
+- x: positive = right, y: positive = DOWN, z: positive = toward camera.
+- At zoom=4: a shape with diameter=40 appears ~160px wide on screen.
+- Keep shapes within -60 to +60 on x/y, -40 to +40 on z.
+
+ANIMATION GUIDANCE:
+- Slow spin: illo.rotate.y = elapsed * 0.5 (full turn every ~12s)
+- Lerp to target: shape.translate.y += (targetY - shape.translate.y) * 0.08
+- Oscillate: shape.translate.y = Math.sin(elapsed * 2) * 20
+- Stagger reveals: reveal shape i when elapsed > i * (DURATION / shapeCount)
+
+SHAPE QUICK REFERENCE:
+new Zdog.Ellipse({ addTo, diameter, stroke, color, fill, translate:{x,y,z}, rotate:{x,y,z} })
+new Zdog.Rect({ addTo, width, height, stroke, color, fill, translate, rotate })
+new Zdog.Cylinder({ addTo, diameter, length, stroke, color, fill, backface })
+new Zdog.Cone({ addTo, diameter, length, stroke, color })
+new Zdog.Box({ addTo, width, height, depth, stroke, color, fill, leftFace, rightFace, topFace, bottomFace, frontFace, rearFace })
+new Zdog.Hemisphere({ addTo, diameter, stroke, color, fill, backface })
+new Zdog.Polygon({ addTo, radius, sides, stroke, color, fill })
+new Zdog.Shape({ addTo, path:[{x,y,z},...], stroke, color, closed })
+new Zdog.Anchor({ addTo, translate, rotate, scale })  // group/pivot
+
+WHAT LOOKS GREAT IN ZDOG:
+- Rotating molecular/atomic models (Hemisphere + Cylinder + Ellipse rings)
+- 3D bar charts (Box shapes varying height)
+- Spinning globes (Ellipse latitude rings on a sphere body)
+- Interlocking gears (Polygon + Cylinder)
+- Network diagrams (Ellipse nodes + Shape connectors)
+- Solar system / orbital models (Ellipse rings + Hemisphere)
+- Product boxes (Box with different face colors per face)
+
+COMPOSITION:
+- Group shapes into logical assemblies using Zdog.Anchor \u2014 don't scatter unrelated shapes.
+- One primary assembly at larger scale, with secondary details orbiting or supporting.
+- Use 2-3 palette colors maximum, with one dominant. Not every shape needs a different color.
+- Vary shape types within assemblies \u2014 combine Ellipse + Cylinder + Box, not all-same-shape.
+${getDesignPrinciples(dims)}
+Previous scene summary (for visual continuity): ${previousSummary || "none"}`;
+    };
+    LOTTIE_OVERLAY_PROMPT = (palette, font, duration, previousSummary, hasExplicitPalette = true, dims = { width: 1920, height: 1080 }, motionPersonality = "corporate") => {
+      const W = dims.width;
+      const H = dims.height;
+      const op = duration * 30;
+      const personality = personalityPromptBlock(motionPersonality);
+      return `You are a Lottie animation generator. Generate a valid Lottie JSON animation.
+
+Output ONLY raw JSON \u2014 no markdown fences, no explanation, no wrapping.
+
+CANVAS: w=${W}, h=${H}, fr=30, duration=${duration}s (op = ${op} frames).
+${hasExplicitPalette ? `COLORS (as 0\u20131 RGBA arrays): ${palette.map((c) => {
+        const r = parseInt(c.slice(1, 3), 16) / 255, g = parseInt(c.slice(3, 5), 16) / 255, b = parseInt(c.slice(5, 7), 16) / 255;
+        return `[${r.toFixed(2)},${g.toFixed(2)},${b.toFixed(2)},1]`;
+      }).join(", ")}` : "COLORS: Choose colors that suit the animation content."}
+
+${personality}
+
+CRITICAL \u2014 KEYFRAME EASING HANDLES:
+Every animated keyframe (except the final one) MUST include bezier easing handles.
+Use the easing curves from the MOTION PERSONALITY section above. Example for 1D properties:
+  "i": {"x":[0.58],"y":[1]}, "o": {"x":[0.42],"y":[0]}
+For 3D properties (position, scale, anchor) use arrays of 3:
+  "i": {"x":[0.58,0.58,0.58],"y":[1,1,1]}, "o": {"x":[0.42,0.42,0.42],"y":[0,0,0]}
+Without these, lottie-web throws renderFrameError and nothing renders.
+NEVER use linear easing (identical i/o values) on position \u2014 it looks robotic.
+
+NARRATIVE STRUCTURE (distribute keyframes across these phases):
+- Setup (frames 0-${Math.round(op * 0.25)}): Elements appear, establish positions. Use entrance easing.
+- Action (frames ${Math.round(op * 0.25)}-${Math.round(op * 0.65)}): Primary animation. Use emphasis/personality easing.
+- Resolution (frames ${Math.round(op * 0.65)}-${op}): Settle to final state. Hold or gentle ambient.
+
+STRUCTURE:
+{
+  "v": "5.7.1", "fr": 30, "ip": 0, "op": ${op},
+  "w": ${W}, "h": ${H}, "nm": "Scene", "ddd": 0, "assets": [],
+  "layers": [
+    {
+      "ddd": 0, "ind": 1, "ty": 4, "nm": "LayerName", "sr": 1,
+      "ks": {
+        "o": { "a": 0, "k": 100 },
+        "r": { "a": 0, "k": 0 },
+        "p": { "a": 0, "k": [960, 540, 0] },
+        "a": { "a": 0, "k": [0, 0, 0] },
+        "s": { "a": 0, "k": [100, 100, 100] }
+      },
+      "ao": 0,
+      "shapes": [
+        { "ty": "el", "d": 1, "s": { "a": 0, "k": [200, 200] }, "p": { "a": 0, "k": [0, 0] }, "nm": "E" },
+        { "ty": "st", "c": { "a": 0, "k": [R,G,B,1] }, "o": { "a": 0, "k": 100 }, "w": { "a": 0, "k": 4 }, "lc": 2, "lj": 2, "nm": "S" }
+      ],
+      "ip": 0, "op": ${op}, "st": 0
+    }
+  ]
+}
+
+SHAPE TYPES: "el" (ellipse), "rc" (rect with "r" for radius), "sr" (star/polygon), "sh" (bezier path with "v","i","o","c" arrays), "fl" (fill), "st" (stroke), "tr" (transform), "gr" (group containing shapes + "tr").
+LAYER ty: 4 = shape layer, 1 = solid.
+ANIMATED PROPERTY: set "a":1 and "k" to keyframe array. Static: "a":0, "k": value.
+
+PATTERN TEMPLATES \u2014 adapt these for your animation (all include proper easing handles):
+
+Entrance (fade + scale up, 1D opacity):
+"o": { "a": 1, "k": [
+  { "t": 0, "s": [0], "i": {"x":[0.58],"y":[1]}, "o": {"x":[0.42],"y":[0]} },
+  { "t": 20, "s": [100] }
+]}
+
+Entrance (scale up, 3D):
+"s": { "a": 1, "k": [
+  { "t": 0, "s": [80, 80, 100], "i": {"x":[0.58,0.58,0.58],"y":[1,1,1]}, "o": {"x":[0.42,0.42,0.42],"y":[0,0,0]} },
+  { "t": 20, "s": [100, 100, 100] }
+]}
+
+Exit (fade + scale down, 1D opacity):
+"o": { "a": 1, "k": [
+  { "t": ${op - 20}, "s": [100], "i": {"x":[1],"y":[1]}, "o": {"x":[0.42],"y":[0]} },
+  { "t": ${op}, "s": [0] }
+]}
+
+Pulse emphasis (scale 100 -> 110 -> 100):
+"s": { "a": 1, "k": [
+  { "t": 30, "s": [100,100,100], "i": {"x":[0.58,0.58,0.58],"y":[1,1,1]}, "o": {"x":[0.16,0.16,0.16],"y":[1,1,1]} },
+  { "t": 40, "s": [110,110,100], "i": {"x":[0.58,0.58,0.58],"y":[1,1,1]}, "o": {"x":[0.3,0.3,0.3],"y":[1,1,1]} },
+  { "t": 50, "s": [100,100,100] }
+]}
+
+GOOD SUBJECTS: icons, logos, geometric patterns, looping decorative elements, simple character animations, data viz transitions, micro-interactions.
+
+QUALITY:
+- Use intentional movement paths \u2014 arcs and curves, not just linear slides.
+- Asymmetric timing: fast start with slow settle, or delayed secondary motion after primary.
+- Two-property sweet spot: combine position+opacity for entrances, scale+color for emphasis.
+- Stagger secondary elements 50-100ms after the primary action.
+- Exit animations should be 75% of entrance duration.
+${getDesignPrinciples(dims)}
+Previous scene summary (for visual continuity): ${previousSummary || "none"}`;
+    };
+    REACT_SYSTEM_PROMPT = (palette, font, bgColor, duration, previousSummary, hasExplicitPalette = true, dims = { width: 1920, height: 1080 }) => {
+      const W = dims.width;
+      const H = dims.height;
+      return `You are an expert React animation developer creating video scenes for Cench Studio. You write React components that render deterministic, frame-based animations using the CenchReact SDK (Remotion-style).
+
+## OUTPUT FORMAT
+Return a JSON object with these fields:
+- "sceneCode": JSX code that exports a default React component
+- "styles": Optional CSS string for additional styling
+
+## AVAILABLE APIs (injected as globals \u2014 do NOT import them)
+
+### Core hooks
+- \`useCurrentFrame()\` \u2014 returns current integer frame number
+- \`useVideoConfig()\` \u2014 returns \`{ fps, width, height, durationInFrames }\`
+
+### Animation utilities
+- \`interpolate(value, inputRange, outputRange, options?)\` \u2014 map a value between ranges
+  - options: \`{ extrapolateLeft: 'clamp'|'extend', extrapolateRight: 'clamp'|'extend', easing: fn }\`
+  - Example: \`interpolate(frame, [0, 30], [0, 1])\` \u2014 fade in over 30 frames
+- \`spring({ frame, fps, config?, from?, to? })\` \u2014 spring-based animation
+  - config: \`{ damping, mass, stiffness, overshootClamping }\`
+  - Example: \`spring({ frame: frame - 15, fps, config: { damping: 12 } })\`
+- \`Easing.ease\`, \`Easing.easeIn\`, \`Easing.easeOut\`, \`Easing.easeInOut\`, \`Easing.bezier(x1,y1,x2,y2)\`
+
+### Layout components
+- \`<AbsoluteFill style={{...}}>\` \u2014 full-frame absolute positioning div
+- \`<Sequence from={30} durationInFrames={60}>\` \u2014 timing container, children see local frame starting at 0
+
+### Bridge components (for imperative renderers)
+- \`<Canvas2DLayer draw={(ctx, frame, config) => {...}} />\` \u2014 2D canvas drawing
+- \`<ThreeJSLayer setup={(THREE, scene, cam, renderer) => {...}} update={(scene, cam, frame) => {...}} />\` \u2014 Three.js 3D
+- \`<D3Layer setup={(d3, el, config) => {...}} update={(d3, el, frame, config) => {...}} />\` \u2014 D3 data viz
+- \`<SVGLayer viewBox="0 0 ${W} ${H}" setup={(svgEl, gsap, tl) => {...}}>{children}</SVGLayer>\` \u2014 SVG with GSAP
+- \`<LottieLayer data={lottieJSON} />\` \u2014 Lottie animation synced to frame
+
+### Interactivity hooks (for interactive/branching scenes)
+- \`useVariable(name, defaultValue)\` \u2014 reactive state synced with parent player
+  - Returns \`[value, setValue]\` like useState
+  - Value persists across scenes and is visible to the parent player
+  - Example: \`const [score, setScore] = useVariable('score', 0)\`
+  - Use for: counters, user selections, form values, any state the viewer controls
+- \`useInteraction(elementId)\` \u2014 click/hover handlers for interactive elements
+  - Returns \`{ handlers, isHovered, isClicked }\`
+  - Spread \`handlers\` on any element: \`<div {...btn.handlers}>\`
+  - Hover/click state drives visual feedback (scale, opacity, color changes)
+  - Example: \`const btn = useInteraction('cta-button')\`
+  - Use for: clickable cards, hoverable chart elements, interactive 3D objects
+- \`useTrigger(name)\` \u2014 fire named events to the parent player
+  - Returns \`{ fire(payload), onFired(callback) }\`
+  - Example: \`const reveal = useTrigger('show-details'); reveal.fire({ section: 'pricing' })\`
+
+### When to use interactivity hooks
+- Use useVariable when the viewer needs to control a value that affects the scene (slider-driven charts, toggle-driven visibility, score tracking)
+- Use useInteraction when elements should respond to hover/click with visual feedback AND notify the parent
+- Use useTrigger for one-shot events (completed quiz, reached milestone)
+- Animation state should still be frame-based (useCurrentFrame + interpolate). Interactivity hooks are for VIEWER INPUT, not animation.
+
+### Scene globals (available as window vars)
+- \`PALETTE\`, \`DURATION\`, \`FONT\`, \`WIDTH\`, \`HEIGHT\`, \`ROUGHNESS\`, \`STROKE_COLOR\`
+
+## EXAMPLE
+
+\`\`\`jsx
+export default function Scene() {
+  const frame = useCurrentFrame();
+  const { fps, durationInFrames } = useVideoConfig();
+
+  const titleOpacity = interpolate(frame, [0, 30], [0, 1]);
+  const titleY = interpolate(frame, [0, 30], [50, 0], { easing: Easing.easeOut });
+  const scale = spring({ frame: frame - 10, fps, config: { damping: 12 } });
+
+  return (
+    <AbsoluteFill style={{ background: PALETTE[0], fontFamily: FONT }}>
+      <div style={{
+        position: 'absolute', top: '20%', width: '100%', textAlign: 'center',
+        opacity: titleOpacity, transform: \\\`translateY(\\\${titleY}px) scale(\\\${scale})\\\`,
+        fontSize: 80, color: PALETTE[3], fontWeight: 700,
+      }}>
+        Hello World
+      </div>
+      <Sequence from={60} durationInFrames={120}>
+        <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center' }}>
+          <SubContent />
+        </AbsoluteFill>
+      </Sequence>
+    </AbsoluteFill>
+  );
+}
+
+function SubContent() {
+  const frame = useCurrentFrame(); // local frame (0-based within Sequence)
+  const opacity = interpolate(frame, [0, 20], [0, 1]);
+  return <p style={{ opacity, fontSize: 48, color: PALETTE[1] }}>Subtitle text</p>;
+}
+\`\`\`
+
+## ANIMATION RULES
+- Animation is a PURE FUNCTION of frame. No useState for animation state.
+- Use \`interpolate()\` and \`spring()\` \u2014 NOT manual lerp functions.
+- useEffect is ONLY for imperative bridge layers (Canvas2D, Three.js), never for animation state.
+- NO Math.random \u2014 use deterministic values (index-based, frame-based).
+- NO setTimeout, setInterval, requestAnimationFrame for animation.
+- All motion derived from frame number via \`useCurrentFrame()\`.
+- Use \`<Sequence>\` for temporal composition \u2014 children see a local frame starting at 0.
+
+## STYLING
+- Use inline styles (style={{ }}) \u2014 no external CSS classes needed.
+- Use \`<AbsoluteFill>\` for full-frame layers that stack via z-index.
+${hasExplicitPalette ? `- Palette: ${JSON.stringify(palette)}` : "- Choose a color palette that suits the content."}
+- Heading font: "${font}" (use for titles, headings, display text)
+- Body font: available as BODY_FONT global (use for paragraphs, descriptions, labels)
+- Background: "${bgColor}"
+- The canvas is a fixed ${W}\xD7${H}px box with overflow: hidden \u2014 any content outside this area is clipped and invisible. Position all elements within bounds. Use percentage-based or absolute positioning relative to ${W}\xD7${H}.
+
+## CONTENT & DESIGN GUIDELINES
+- Create a clear visual hierarchy: one dominant element, supporting elements at smaller scale, fine details.
+- Use AbsoluteFill layers for depth through overlapping: background layer, content layer, accent/decorative layers.
+- Layout variety: use CSS grid/flexbox within AbsoluteFill for editorial layouts \u2014 split screens, offset grids, text-alongside-visual. Do not default to centered stacks.
+- Typography: VIDEO SIZES \u2014 nothing below 24px. Pair bold headline (100-180px) with subtitle (48-72px) and body/labels (32-42px). Labels/annotations minimum 24px. Web-sized text (14-20px) is invisible in video.
+- Stagger entrances using Sequence components with 8-15 frame offsets between elements.
+- Use spring() for organic motion on key reveals. Use interpolate() with Easing.bezier for controlled motion.
+- Leave 20% of duration as a visual hold at the end.
+- Total duration: ${duration} seconds at 30fps = ${duration * 30} total frames.
+
+## CAMERA MOTION \u2014 required, but VARY per scene purpose (do NOT default kenBurns on every scene)
+Pick the motion that matches what THIS scene is doing. Do not mechanically stamp one motion
+across a whole sequence \u2014 that reads as lazy.
+\`\`\`jsx
+React.useEffect(() => {
+  // Title / opening card:
+  CenchCamera.presetCinematicPush({ at: 0, duration: DURATION * 0.6 })
+  // Static data / receipt / grid \u2014 subtle zoom only:
+  // CenchCamera.kenBurns({ duration: DURATION, endScale: 1.02 })
+  // Reveal multiple items:
+  // CenchCamera.presetReveal({ duration: DURATION * 0.7 })
+  // Sign-off / closing:
+  // CenchCamera.presetEmphasis({ at: 0.5, duration: DURATION - 0.5 })
+  // Focus on one element:
+  // CenchCamera.dollyIn({ targetSelector: '#hero', at: 1, duration: 3 })
+}, [])
+\`\`\`
+**Skip CenchCamera entirely** when the scene's content already moves (video playback,
+a 3D spin, fast data animation). Stacking camera motion on top of intrinsic motion
+causes visual nausea \u2014 a locked camera is correct there.
+If three scenes in a row use the same motion, change one.
+
+${getDesignPrinciples(dims)}
+Previous scene summary: ${previousSummary || "none"}`;
+    };
+  }
+});
+
+// lib/charts/structured-d3.ts
+function isCenchChartType(t) {
+  return TYPE_SET.has(t);
+}
+function clamp2(n, lo, hi) {
+  return Math.max(lo, Math.min(hi, n));
+}
+function defaultDataForType(chartType) {
+  switch (chartType) {
+    case "plotly":
+      return {
+        traces: [
+          { type: "scatter", mode: "lines+markers", x: [1, 2, 3, 4], y: [12, 9, 15, 11], line: { shape: "spline" } }
+        ]
+      };
+    case "number":
+      return { value: 0, label: "Value" };
+    case "gauge":
+      return { value: 72, max: 100 };
+    default:
+      return [
+        { label: "A", value: 12 },
+        { label: "B", value: 28 },
+        { label: "C", value: 18 }
+      ];
+  }
+}
+function normalizeChartLayerFromAi(raw, sceneDuration, _index) {
+  const o = raw && typeof raw === "object" ? raw : {};
+  const ctRaw = typeof o.chartType === "string" ? o.chartType : "bar";
+  const chartType = isCenchChartType(ctRaw) ? ctRaw : "bar";
+  let data = o.data;
+  if (data === void 0 || data === null) {
+    data = defaultDataForType(chartType);
+  }
+  const cfg = o.config && typeof o.config === "object" && !Array.isArray(o.config) ? { ...o.config } : {};
+  const layoutRaw = o.layout && typeof o.layout === "object" ? o.layout : {};
+  const layout = {
+    x: clamp2(Number(layoutRaw.x ?? (_index === 0 ? 5 : 52)), 0, 95),
+    y: clamp2(Number(layoutRaw.y ?? 10), 0, 95),
+    width: clamp2(Number(layoutRaw.width ?? 90), 5, 100),
+    height: clamp2(Number(layoutRaw.height ?? 80), 5, 100)
+  };
+  const timingRaw = o.timing && typeof o.timing === "object" ? o.timing : {};
+  const dur = sceneDuration > 0 ? sceneDuration : 8;
+  const timing = {
+    startAt: typeof timingRaw.startAt === "number" && Number.isFinite(timingRaw.startAt) ? timingRaw.startAt : 0,
+    duration: typeof timingRaw.duration === "number" && Number.isFinite(timingRaw.duration) && timingRaw.duration > 0 ? timingRaw.duration : Math.max(0.5, dur),
+    animated: timingRaw.animated === true
+  };
+  const id = typeof o.id === "string" && /^[a-zA-Z0-9_-]+$/.test(o.id) ? o.id : `chart-${(0, import_uuid4.v4)().slice(0, 8)}`;
+  const name = typeof o.name === "string" && o.name.trim() ? o.name.trim().slice(0, 120) : `${chartType} chart`;
+  return {
+    id,
+    name,
+    chartType,
+    data,
+    config: cfg,
+    layout,
+    timing
+  };
+}
+function normalizeChartLayersFromStructuredResponse(parsed, sceneDuration) {
+  if (!parsed || typeof parsed !== "object") return [];
+  const p = parsed;
+  const rawLayers = p.chartLayers;
+  if (!Array.isArray(rawLayers) || rawLayers.length === 0) return [];
+  return rawLayers.map((row, i) => normalizeChartLayerFromAi(row, sceneDuration, i));
+}
+function autoGridChartLayoutsForLayers(layers2) {
+  const n = layers2.length;
+  if (n <= 1) return layers2;
+  const presets = n === 2 ? [
+    { x: 4, y: 12, width: 44, height: 76 },
+    { x: 52, y: 12, width: 44, height: 76 }
+  ] : n === 3 ? [
+    { x: 4, y: 10, width: 44, height: 36 },
+    { x: 52, y: 10, width: 44, height: 36 },
+    { x: 28, y: 54, width: 44, height: 36 }
+  ] : [
+    { x: 4, y: 10, width: 44, height: 36 },
+    { x: 52, y: 10, width: 44, height: 36 },
+    { x: 4, y: 54, width: 44, height: 36 },
+    { x: 52, y: 54, width: 44, height: 36 }
+  ];
+  return layers2.map((l, i) => ({
+    ...l,
+    layout: presets[i] ?? l.layout
+  }));
+}
+var import_uuid4, CENCH_CHART_TYPES, TYPE_SET;
+var init_structured_d3 = __esm({
+  "lib/charts/structured-d3.ts"() {
+    "use strict";
+    import_uuid4 = require("uuid");
+    CENCH_CHART_TYPES = [
+      "bar",
+      "horizontalBar",
+      "stackedBar",
+      "groupedBar",
+      "line",
+      "area",
+      "pie",
+      "donut",
+      "scatter",
+      "number",
+      "gauge",
+      "funnel",
+      "plotly",
+      "recharts"
+    ];
+    TYPE_SET = new Set(CENCH_CHART_TYPES);
+  }
+});
+
+// lib/generation/d3-structured-run.ts
+var d3_structured_run_exports = {};
+__export(d3_structured_run_exports, {
+  runStructuredD3Generation: () => runStructuredD3Generation
+});
+async function generateOnce(client, model, systemPrompt, userContent) {
+  const result = await client.messages.create({
+    model,
+    max_tokens: 8192,
+    system: systemPrompt,
+    messages: [{ role: "user", content: userContent }]
+  });
+  const textBlock = result.content.find((b) => b.type === "text");
+  const raw = textBlock?.type === "text" ? textBlock.text : "";
+  const cleaned = raw.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim();
+  const parsed = JSON.parse(cleaned);
+  return { result, parsed, raw };
+}
+async function runStructuredD3Generation(input) {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    throw new Error("ANTHROPIC_API_KEY is not set");
+  }
+  const client = new import_sdk2.default({ apiKey });
+  const model = input.model?.trim() || "claude-sonnet-4-6";
+  const duration = Number.isFinite(input.duration) ? input.duration : 8;
+  const existingHint = input.d3Data ? `Existing chart / data context (refine or replace as the prompt asks):
+${JSON.stringify(input.d3Data, null, 2)}` : "";
+  const systemPrompt = D3_STRUCTURED_CENCH_PROMPT(
+    input.palette,
+    input.font,
+    input.bgColor,
+    duration,
+    input.previousSummary ?? "",
+    existingHint
+  );
+  const userContent = input.prompt;
+  let usageInput = 0;
+  let usageOutput = 0;
+  let parsed;
+  let raw = "";
+  try {
+    const first = await generateOnce(client, model, systemPrompt, userContent);
+    parsed = first.parsed;
+    raw = first.raw;
+    usageInput += first.result.usage.input_tokens;
+    usageOutput += first.result.usage.output_tokens;
+    let chartLayers = normalizeChartLayersFromStructuredResponse(parsed, duration);
+    if (chartLayers.length === 0) {
+      const repairPrompt = `${userContent}
+
+Your previous response did not include a valid non-empty "chartLayers" array. Return JSON only with chartLayers (see system shape).`;
+      const second = await generateOnce(client, model, systemPrompt, repairPrompt);
+      parsed = second.parsed;
+      raw = second.raw;
+      usageInput += second.result.usage.input_tokens;
+      usageOutput += second.result.usage.output_tokens;
+      chartLayers = normalizeChartLayersFromStructuredResponse(parsed, duration);
+    }
+    if (chartLayers.length === 0) {
+      throw new Error("Model did not return usable chartLayers");
+    }
+    if (chartLayers.length >= 2 && chartLayers.length <= 4) {
+      chartLayers = autoGridChartLayoutsForLayers(chartLayers);
+    }
+    const compiled = compileD3SceneFromLayers(chartLayers);
+    const styles = typeof parsed?.styles === "string" ? parsed.styles : "";
+    return {
+      chartLayers,
+      sceneCode: compiled.sceneCode,
+      d3Data: compiled.d3Data,
+      styles,
+      usage: { input_tokens: usageInput, output_tokens: usageOutput }
+    };
+  } catch (e) {
+    console.error("[runStructuredD3Generation] failed:", e);
+    throw e;
+  }
+}
+var import_sdk2;
+var init_d3_structured_run = __esm({
+  "lib/generation/d3-structured-run.ts"() {
+    "use strict";
+    import_sdk2 = __toESM(require("@anthropic-ai/sdk"));
+    init_compile();
+    init_structured_d3();
+    init_prompts();
   }
 });
 
@@ -3507,214 +5310,8 @@ var import_node_path2 = __toESM(require("node:path"));
 var import_promises2 = __toESM(require("node:fs/promises"));
 var import_drizzle_orm7 = require("drizzle-orm");
 
-// lib/charts/compile.ts
-var CHART_PANEL_CONFIG_KEYS = /* @__PURE__ */ new Set([
-  "chartPanelBackground",
-  "chartPanelOpacity",
-  "chartPanelBorderRadius",
-  "chartPanelBoxShadow"
-]);
-function withReadableDefaults(layer) {
-  const raw = layer.config || {};
-  if (layer.chartType === "plotly" || layer.chartType === "recharts") return { ...raw };
-  const readableOptOut = raw.readableDefaults === false;
-  if (readableOptOut) return raw;
-  const merged = {
-    ...raw,
-    // Keep typography and labels readable by default unless user explicitly overrides.
-    fontFamily: raw.fontFamily,
-    fontSize: raw.fontSize ?? 18,
-    title: raw.title ?? layer.name,
-    showGrid: raw.showGrid ?? true,
-    showValues: raw.showValues ?? true,
-    // Match cench-charts resolveConfig default (avoid huge legends / layout surprises).
-    showLegend: raw.showLegend ?? false,
-    axisLabelSize: raw.axisLabelSize ?? 24,
-    dataLabelSize: raw.dataLabelSize ?? 20,
-    contrastMode: raw.contrastMode ?? "auto"
-  };
-  const axisLike = ["bar", "horizontalBar", "stackedBar", "groupedBar", "line", "area", "scatter"].includes(
-    layer.chartType
-  );
-  if (axisLike) {
-    merged.xLabel = raw.xLabel ?? "Category";
-    merged.yLabel = raw.yLabel ?? "Value";
-  }
-  return merged;
-}
-function chartSdkConfig(layer) {
-  const merged = withReadableDefaults(layer);
-  const out = { ...merged };
-  for (const k of CHART_PANEL_CONFIG_KEYS) delete out[k];
-  delete out.plotlyLayout;
-  delete out.plotlyConfig;
-  delete out.rechartsVariant;
-  return out;
-}
-function panelDivOpen(layer) {
-  const lid = layer.id.replace(/[^a-zA-Z0-9_-]/g, "");
-  const rawPanel = layer.config || {};
-  const panelBg = typeof rawPanel.chartPanelBackground === "string" && rawPanel.chartPanelBackground.trim() ? rawPanel.chartPanelBackground.trim() : "transparent";
-  const panelOp = typeof rawPanel.chartPanelOpacity === "number" && Number.isFinite(rawPanel.chartPanelOpacity) && rawPanel.chartPanelOpacity >= 0 && rawPanel.chartPanelOpacity <= 1 ? rawPanel.chartPanelOpacity : 1;
-  const panelRad = typeof rawPanel.chartPanelBorderRadius === "number" && Number.isFinite(rawPanel.chartPanelBorderRadius) ? Math.max(0, rawPanel.chartPanelBorderRadius) : 0;
-  const panelSh = typeof rawPanel.chartPanelBoxShadow === "string" && rawPanel.chartPanelBoxShadow.trim() ? rawPanel.chartPanelBoxShadow.trim() : "none";
-  return `
-{
-  const el = document.createElement('div');
-  el.id = 'chart-layer-${lid}';
-  el.style.position = 'absolute';
-  el.style.left = '${layer.layout.x}%';
-  el.style.top = '${layer.layout.y}%';
-  el.style.width = '${layer.layout.width}%';
-  el.style.height = '${layer.layout.height}%';
-  el.style.overflow = 'hidden';
-  el.style.background = ${JSON.stringify(panelBg)};
-  el.style.opacity = ${JSON.stringify(String(panelOp))};
-  el.style.borderRadius = ${JSON.stringify(`${panelRad}px`)};
-  el.style.boxShadow = ${JSON.stringify(panelSh)};
-  chartRoot.appendChild(el);
-`.trim();
-}
-function isPlainObject(v) {
-  return v !== null && typeof v === "object" && !Array.isArray(v);
-}
-var PLOTLY_DEFAULT_MARGIN = { l: 48, r: 24, t: 48, b: 48 };
-function mergePlotlyLayoutForCompile(userLayout, fontFamilyFromConfig) {
-  const user = userLayout && isPlainObject(userLayout) ? userLayout : {};
-  const userMargin = isPlainObject(user.margin) ? user.margin : {};
-  const userFont = isPlainObject(user.font) ? user.font : {};
-  const { margin: _dropM, font: _dropF, ...userTop } = user;
-  const baseFont = {
-    ...fontFamilyFromConfig ? { family: fontFamilyFromConfig } : {},
-    ...userFont
-  };
-  const mergedMargin = { ...PLOTLY_DEFAULT_MARGIN, ...userMargin };
-  const out = {
-    autosize: true,
-    paper_bgcolor: "rgba(0,0,0,0)",
-    plot_bgcolor: "rgba(0,0,0,0)",
-    ...userTop,
-    margin: mergedMargin
-  };
-  if (Object.keys(baseFont).length > 0) {
-    out.font = baseFont;
-  }
-  return out;
-}
-function compilePlotlyLayerBlock(layer) {
-  const open = panelDivOpen(layer);
-  const raw = layer.data;
-  let traces = [];
-  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
-    const o = raw;
-    if (Array.isArray(o.traces)) traces = o.traces;
-  } else if (Array.isArray(raw)) {
-    traces = raw;
-  }
-  const conf = layer.config || {};
-  const fontFamily = typeof conf.fontFamily === "string" && conf.fontFamily.trim() ? conf.fontFamily.trim() : void 0;
-  const userLayout = isPlainObject(conf.plotlyLayout) ? conf.plotlyLayout : {};
-  const plotlyLayout = mergePlotlyLayoutForCompile(userLayout, fontFamily);
-  const userPlotCfg = typeof conf.plotlyConfig === "object" && conf.plotlyConfig !== null && !Array.isArray(conf.plotlyConfig) ? conf.plotlyConfig : {};
-  const plotlyConfig = {
-    staticPlot: true,
-    responsive: true,
-    displayModeBar: false,
-    ...userPlotCfg
-  };
-  const tracesLit = JSON.stringify(traces);
-  const layoutLit = JSON.stringify(plotlyLayout);
-  const configLit = JSON.stringify(plotlyConfig);
-  return `
-${open}
-  if (typeof Plotly === 'undefined') {
-    console.warn('Plotly.js not loaded; chart layer skipped');
-  } else {
-    Plotly.newPlot(el.id, ${tracesLit}, ${layoutLit}, ${configLit});
-  }
-}
-`.trim();
-}
-function chartLayersUsePlotly(layers2) {
-  return !!(layers2 && layers2.some((l) => l.chartType === "plotly"));
-}
-function chartLayersUseRecharts(layers2) {
-  return !!(layers2 && layers2.some((l) => l.chartType === "recharts"));
-}
-function buildRechartsSpec(layer) {
-  const raw = layer.config || {};
-  const v = raw.rechartsVariant;
-  const variant = v === "line" || v === "area" ? v : "bar";
-  const data = Array.isArray(layer.data) ? layer.data : [];
-  const colors = Array.isArray(raw.colors) ? raw.colors : void 0;
-  return {
-    variant,
-    categoryKey: typeof raw.categoryKey === "string" ? raw.categoryKey : "label",
-    valueKey: typeof raw.valueKey === "string" ? raw.valueKey : "value",
-    data,
-    colors,
-    title: typeof raw.title === "string" && raw.title.trim() ? raw.title.trim() : layer.name,
-    titleSize: typeof raw.titleSize === "number" && Number.isFinite(raw.titleSize) ? raw.titleSize : void 0,
-    showGrid: raw.showGrid !== false
-  };
-}
-function compileRechartsLayerBlock(layer) {
-  const open = panelDivOpen(layer);
-  const spec = buildRechartsSpec(layer);
-  const specStr = JSON.stringify(spec).replace(/</g, "\\u003c");
-  const specJsLiteral = JSON.stringify(specStr);
-  return `
-${open}
-  el.style.display = 'flex';
-  el.style.flexDirection = 'column';
-  el.setAttribute('data-cench-recharts', '1');
-  var _spec = document.createElement('script');
-  _spec.type = 'application/json';
-  _spec.className = 'cench-recharts-json';
-  _spec.textContent = ${specJsLiteral};
-  el.appendChild(_spec);
-}
-`.trim();
-}
-function compileD3SceneFromLayers(layers2) {
-  const safeLayers = (layers2 || []).filter(Boolean);
-  const blocks = safeLayers.map((layer) => {
-    if (layer.chartType === "plotly") {
-      return compilePlotlyLayerBlock(layer);
-    }
-    if (layer.chartType === "recharts") {
-      return compileRechartsLayerBlock(layer);
-    }
-    const cfg = JSON.stringify(chartSdkConfig(layer));
-    const open = panelDivOpen(layer);
-    const data = layer.data === void 0 || layer.data === null ? "[]" : typeof layer.data === "object" ? JSON.stringify(layer.data) : JSON.stringify(layer.data);
-    const animateCall = layer.timing?.animated ? ".animate(window.__tl)" : "";
-    return `
-${open}
-  CenchCharts.${layer.chartType}('#' + el.id, ${data}, ${cfg})${animateCall};
-}
-`.trim();
-  });
-  const indented = blocks.map(
-    (b) => b.split("\n").map((line) => line ? `  ${line}` : line).join("\n")
-  ).join("\n");
-  const sceneCode = `
-const chartRoot = document.getElementById('chart');
-if (chartRoot) {
-  while (chartRoot.firstChild) chartRoot.removeChild(chartRoot.firstChild);
-  chartRoot.style.position = 'relative';
-  chartRoot.style.width = '100%';
-  chartRoot.style.height = '100%';
-${indented}
-}
-`.trim();
-  return {
-    sceneCode,
-    d3Data: { chartLayers: safeLayers.map((l) => ({ id: l.id, chartType: l.chartType, data: l.data })) }
-  };
-}
-
 // lib/charts/normalize-scenes.ts
+init_compile();
 function autoGridLayouts(layers2) {
   const n = layers2.length;
   if (n <= 1) return layers2;
@@ -8609,6 +10206,97 @@ var PLAYBACK_CONTROLLER = `
   // Public API for scene code
   window.__tl = masterTL;
 
+  // \u2500\u2500 Unified scrub registry \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+  // React hooks, raw anime.js, raw lottie, and custom animations
+  // register themselves here so a single seek message reaches
+  // every scene type \u2014 not just the GSAP master timeline.
+  if (!window.__cench) window.__cench = {};
+  window.__cench._seekCallbacks = [];
+  window.__cench._animeInstances = [];
+  window.__cench._lottieInstances = [];
+  window.__cench._scrubMutedState = null;
+  window.__cench.onSeek = function(cb) {
+    if (typeof cb !== 'function') return function(){};
+    window.__cench._seekCallbacks.push(cb);
+    return function off() {
+      var idx = window.__cench._seekCallbacks.indexOf(cb);
+      if (idx >= 0) window.__cench._seekCallbacks.splice(idx, 1);
+    };
+  };
+  window.__cench.registerAnime = function(inst) {
+    if (inst && window.__cench._animeInstances.indexOf(inst) < 0) {
+      window.__cench._animeInstances.push(inst);
+    }
+    return inst;
+  };
+  window.__cench.registerLottie = function(inst) {
+    if (inst && window.__cench._lottieInstances.indexOf(inst) < 0) {
+      window.__cench._lottieInstances.push(inst);
+    }
+    return inst;
+  };
+
+  // Auto-register anime.js calls by wrapping window.anime at assignment.
+  // Works whether the library loads before or after this controller.
+  function _wrapAnime(fn) {
+    if (typeof fn !== 'function') return fn;
+    var wrapped = function() {
+      var inst = fn.apply(this, arguments);
+      window.__cench.registerAnime(inst);
+      return inst;
+    };
+    try {
+      Object.keys(fn).forEach(function(k) {
+        try { wrapped[k] = fn[k]; } catch(e) {}
+      });
+    } catch(e) {}
+    wrapped.__cenchWrapped = true;
+    return wrapped;
+  }
+  if (typeof window.anime === 'function' && !window.anime.__cenchWrapped) {
+    window.anime = _wrapAnime(window.anime);
+  } else {
+    try {
+      var _animeStore;
+      Object.defineProperty(window, 'anime', {
+        configurable: true,
+        enumerable: true,
+        get: function() { return _animeStore; },
+        set: function(v) {
+          _animeStore = (v && !v.__cenchWrapped) ? _wrapAnime(v) : v;
+        },
+      });
+    } catch(e) {}
+  }
+
+  // Auto-register lottie.loadAnimation instances by wrapping the method.
+  function _wrapLottie(lib) {
+    if (!lib || typeof lib.loadAnimation !== 'function' || lib.__cenchWrapped) return lib;
+    var orig = lib.loadAnimation.bind(lib);
+    lib.loadAnimation = function() {
+      var inst = orig.apply(null, arguments);
+      window.__cench.registerLottie(inst);
+      return inst;
+    };
+    lib.__cenchWrapped = true;
+    return lib;
+  }
+  if (window.lottie) {
+    _wrapLottie(window.lottie);
+  } else {
+    try {
+      var _lottieStore;
+      Object.defineProperty(window, 'lottie', {
+        configurable: true,
+        enumerable: true,
+        get: function() { return _lottieStore; },
+        set: function(v) {
+          _lottieStore = _wrapLottie(v);
+        },
+      });
+    } catch(e) {}
+  }
+
   // \u2500\u2500 Multi-track audio integration \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
   var ttsAudio = null;
   var sfxElements = [];
@@ -8948,6 +10636,36 @@ var PLAYBACK_CONTROLLER = `
         if (typeof window.__updateScene === 'function') {
           try { window.__updateScene(seekTime); } catch(e) {}
         }
+        // Registered scrub callbacks (React useCenchSeek, custom animations)
+        if (window.__cench && window.__cench._seekCallbacks) {
+          window.__cench._seekCallbacks.forEach(function(cb) {
+            try { cb(seekTime); } catch(e) {}
+          });
+        }
+        // Raw anime.js instances (direct anime({...}) calls not routed through GSAP)
+        if (window.__cench && window.__cench._animeInstances) {
+          window.__cench._animeInstances.forEach(function(inst) {
+            try {
+              if (inst && typeof inst.seek === 'function') {
+                inst.seek(Math.max(0, seekTime * 1000));
+              }
+            } catch(e) {}
+          });
+        }
+        // Raw lottie instances (direct lottie.loadAnimation not routed through GSAP)
+        if (window.__cench && window.__cench._lottieInstances) {
+          window.__cench._lottieInstances.forEach(function(inst) {
+            try {
+              if (!inst || typeof inst.getDuration !== 'function') return;
+              var totalFrames = inst.getDuration(true);
+              var durSec = inst.getDuration(false);
+              if (durSec > 0 && totalFrames > 0) {
+                var frame = Math.max(0, Math.min(totalFrames, (seekTime / durSec) * totalFrames));
+                inst.goToAndStop(frame, true);
+              }
+            } catch(e) {}
+          });
+        }
         // Sync all audio to seek position (optional startOffset skips into the file)
         if (ttsAudio) {
           var sOff = parseFloat(ttsAudio.dataset.startOffset || '0');
@@ -8975,6 +10693,33 @@ var PLAYBACK_CONTROLLER = `
           type: 'seeked',
           currentTime: masterTL.time(),
         });
+        break;
+
+      case 'scrub_start':
+        // Silence every audio/video element for the duration of the drag.
+        // Capture prior .muted per element so we can restore exact state on scrub_end.
+        if (!window.__cench._scrubMutedState) {
+          var seen = [];
+          var record = [];
+          var all = document.querySelectorAll('audio, video');
+          for (var i = 0; i < all.length; i++) {
+            var el = all[i];
+            if (seen.indexOf(el) >= 0) continue;
+            seen.push(el);
+            record.push({ el: el, muted: !!el.muted });
+            try { el.muted = true; } catch(e) {}
+          }
+          window.__cench._scrubMutedState = record;
+        }
+        break;
+
+      case 'scrub_end':
+        if (window.__cench._scrubMutedState) {
+          window.__cench._scrubMutedState.forEach(function(rec) {
+            try { rec.el.muted = rec.muted; } catch(e) {}
+          });
+          window.__cench._scrubMutedState = null;
+        }
         break;
 
       case 'reset':
@@ -9699,6 +11444,9 @@ function normalizeAudioLayer(raw) {
     music: null
   };
 }
+
+// lib/sceneTemplate.ts
+init_compile();
 
 // lib/avatars/talkinghead-models.ts
 var TALKING_HEAD_SAMPLE_CDN_BASE = "https://cdn.jsdelivr.net/gh/met4citizen/TalkingHead@1.7/avatars";
@@ -14357,6 +16105,9 @@ function register15(ipcMain2) {
   });
 }
 
+// lib/services/generation.ts
+var import_sdk3 = __toESM(require("@anthropic-ai/sdk"));
+
 // lib/generation/generate.ts
 var import_sdk = __toESM(require("@anthropic-ai/sdk"));
 
@@ -14396,1301 +16147,8 @@ function getModelPricing(modelId) {
   return MODEL_PRICING[modelId] ?? { inputPer1M: 0, outputPer1M: 0 };
 }
 
-// lib/three-environments/registry.ts
-var CENCH_STUDIO_ENV_IDS = [
-  "track_rolling_topdown",
-  "studio_white",
-  "cinematic_fog",
-  "iso_playful",
-  "tech_grid",
-  "nature_sunset",
-  "data_lab"
-];
-var CENCH_THREE_ENVIRONMENTS = [
-  {
-    id: "studio_white",
-    name: "Studio white",
-    description: "White cyclorama + circular floor + soft hemisphere key/fill. Product, SaaS, corporate.",
-    tags: ["studio", "white", "cyclorama", "product", "corporate"]
-  },
-  {
-    id: "cinematic_fog",
-    name: "Cinematic fog",
-    description: "Dark fogged backdrop, reflective floor, warm spot key + cool rim. Premium reveals, film.",
-    tags: ["dark", "cinematic", "fog", "dramatic", "premium"]
-  },
-  {
-    id: "iso_playful",
-    name: "Playful pastel",
-    description: "Warm pastel background + hemisphere + sun-warm key. Tutorials, kids, casual.",
-    tags: ["pastel", "playful", "tutorial", "kids"]
-  },
-  {
-    id: "tech_grid",
-    name: "Tech grid",
-    description: "Cyan shader grid floor + magenta rim + starfield on deep blue. Cyberpunk, AI, data.",
-    tags: ["cyberpunk", "neon", "grid", "tech", "data", "ai"]
-  },
-  {
-    id: "nature_sunset",
-    name: "Nature sunset",
-    description: "Gradient sunset sky, green ground, warm sun. Wellness, environment.",
-    tags: ["nature", "sunset", "outdoor", "wellness"]
-  },
-  {
-    id: "data_lab",
-    name: "Data lab",
-    description: "White void + transparent shadow-catcher floor. Charts, infographics, minimal.",
-    tags: ["data", "white", "shadow-catcher", "chart", "minimal"]
-  },
-  {
-    id: "track_rolling_topdown",
-    name: "Rolling track lanes",
-    description: "Top-down white surface, 4 lanes of rolling marbles. Diagrams, races.",
-    tags: ["top-down", "tracks", "marbles", "diagram"]
-  }
-];
-function formatThreeEnvironmentsForPrompt() {
-  return CENCH_THREE_ENVIRONMENTS.map((e) => `- \`${e.id}\` \u2014 ${e.name}: ${e.description}`).join("\n");
-}
-
-// lib/three-environments/build-three-data-scatter-scene-code.ts
-var STUDIO_ID_SET = new Set(CENCH_STUDIO_ENV_IDS);
-
-// lib/generation/design-principles.ts
-var LANDSCAPE_LAYOUT_RULES = `
-ASPECT RATIO: Landscape (16:9)
-- Full layout pattern library available. Side-by-side layouts encouraged.
-- Hero text: 80-160px. Content can span full width.
-- HERO-SPLIT works especially well \u2014 60/40 text-visual split.
-- OFFSET-GRID for comparisons using the wide canvas.
-`;
-var PORTRAIT_LAYOUT_RULES = `
-ASPECT RATIO: Portrait (9:16 or 4:5)
-- Stack EVERYTHING vertically. Never use side-by-side columns \u2014 not enough width.
-- Maximum 3 text blocks per scene (even less space than landscape).
-- Hero text: 60-100px (narrower viewport demands smaller type).
-- Full-width cards only, max 2 per scene.
-- Increase vertical spacing between groups to 64px minimum.
-- Available layout patterns: STACK-BREATHE, STAT-ANCHOR (vertical), FOCAL-POINT.
-- Do NOT use: HERO-SPLIT, OFFSET-GRID, EDITORIAL-COLUMN (they need horizontal space).
-`;
-var SQUARE_LAYOUT_RULES = `
-ASPECT RATIO: Square (1:1)
-- Center-biased layouts are acceptable (unlike landscape where asymmetry is preferred).
-- Maximum 4 visual elements per scene.
-- Hero text: 64-96px.
-- Consider radial or circular compositions \u2014 the square frame naturally draws the eye to center.
-- Available layout patterns: FOCAL-POINT, STACK-BREATHE, HERO-SPLIT (use 50/50 split).
-- STAT-ANCHOR works centered in square format.
-`;
-function getDesignPrinciples(dims) {
-  const W = dims?.width ?? 1920;
-  const H = dims?.height ?? 1080;
-  const isPortrait = H > W;
-  const isSquare = Math.abs(W - H) < 100;
-  const scale = W / 1920;
-  const safeArea = Math.round(80 * scale);
-  const groupGap = Math.round(48 * scale);
-  const innerGap = Math.round(16 * scale);
-  const titleGapMin = Math.round(64 * scale);
-  const titleGapMax = Math.round(96 * scale);
-  const cardPaddingMin = Math.round(32 * scale);
-  const cardPaddingMax = Math.round(48 * scale);
-  const minGap = Math.round(24 * scale);
-  const sectionGap = Math.round(120 * scale);
-  const aspectRules = isPortrait ? PORTRAIT_LAYOUT_RULES : isSquare ? SQUARE_LAYOUT_RULES : LANDSCAPE_LAYOUT_RULES;
-  return `
-DESIGN QUALITY BAR (adapted from Impeccable):
-
-The Slop Test: If someone looked at your output and said "AI made this," would they believe it immediately? If yes, redesign. Distinctive output makes people ask "how was this made?" not "which AI made this."
-
-TYPOGRAPHY:
-- VIDEO TEXT MUST BE LARGE. This is video, not a webpage \u2014 viewers watch on phones, embedded players, TVs across a room. Text that looks fine in a code editor is unreadable in a video.
-- 4-step scale for video (at 1920\xD71080): display (100-180px), heading (48-72px), body (32-42px), label (24-32px). NOTHING below 24px. Ratio between levels: at least 1.5\xD7.
-- The absolute minimum readable text in video is 24px at 1920\xD71080. If you're tempted to use a smaller size, remove the text instead \u2014 it won't be read.
-- Never use overused fonts: Inter, Syne, Space Grotesk, DM Sans, Playfair Display, Montserrat, Roboto, Open Sans, Lato.
-- Choose fonts that match the content's tone as a physical object \u2014 a museum caption, a hand-lettered sign, a mainframe manual.
-- Light text on dark backgrounds reads heavier \u2014 reduce weight slightly and increase line-height.
-
-COMPOSITION:
-- Do NOT center everything. Asymmetric layouts with left-aligned text feel more designed.
-- Create visual hierarchy through 2-3 dimensions simultaneously: size + weight + space.
-- Squint Test: blur your eyes. Can you identify the most important element and clear groupings? If everything looks the same weight, redesign.
-- Vary spacing \u2014 tight groupings next to generous whitespace creates rhythm. Same-padding-everywhere is monotonous.
-- Cards are overused. Spacing and alignment create visual grouping naturally. Only use cards when content needs clear boundaries or comparison.
-- Break the grid intentionally for emphasis. One off-grid element draws the eye.
-
-COLOR:
-- Tint neutrals toward your accent hue. Even 0.005 chroma creates subconscious cohesion.
-- 60-30-10 rule: 60% neutral/background, 30% secondary, 10% accent. Accent works because it's rare.
-- Never pure black (#000) or pure white (#fff) \u2014 always tint toward the scene's mood.
-- Never gray text on colored backgrounds \u2014 use a darker shade of the background color.
-- Never the AI palette: cyan-on-dark, purple-to-blue gradients, neon accents on dark.
-- Never gradient text \u2014 solid colors only for text.
-
-MOTION:
-- Exponential easing only: cubic-bezier(0.16, 1, 0.3, 1) for entrances, cubic-bezier(0.7, 0, 0.84, 0) for exits.
-- NEVER bounce or elastic. They feel dated and amateurish.
-- NEVER linear easing on spatial movement (position) \u2014 it looks robotic.
-- Stagger: 50-100ms between items. Cap total stagger under 800ms.
-- Exit at 75% of entrance duration.
-- Do not animate everything \u2014 animation fatigue is real.
-- Vary animation directions. Not everything should fade-in-from-below.
-- Scene timing: 0-20% bg appears, 20-80% content builds, 80-100% hold (everything visible, viewer absorbs).
-- Two-property sweet spot: pair position+opacity for entrances, scale+color for emphasis.
-- Stagger secondary elements 50-100ms after the primary action for depth.
-
-EMOTION-TO-MOTION (match motion to the scene's emotional intent):
-- Joy / success: upward arcs, elastic settle, 150-250ms transitions, expanding scale.
-- Urgency / warning: sharp direct paths, fast 100-150ms, angular movement.
-- Trust / professionalism: smooth curves, medium 300-400ms, no overshoot, predictable.
-- Elegance / premium: slow controlled curves, 400-600ms, subtle deceleration.
-- Growth / progress: upward paths, expanding scale, sequential reveal.
-- Calm / reflection: gentle floating drift, 500-1000ms, sine easing.
-- Energy / excitement: quick snappy transitions, 100-200ms, dramatic direction changes.
-
-CAMERA (required \u2014 but VARY per scene purpose; do NOT stamp kenBurns on every scene):
-- Title / opening card \u2192 CenchCamera.presetCinematicPush({ at: 0, duration: DURATION * 0.6 })
-- Static data / receipt / grid \u2192 CenchCamera.kenBurns({ duration: DURATION, endScale: 1.02 })
-- Reveal of multiple items \u2192 CenchCamera.presetReveal({ duration: DURATION * 0.7 })
-- Sign-off / closing \u2192 CenchCamera.presetEmphasis({ at: 0.5, duration: DURATION - 0.5 })
-- Focus on one element \u2192 CenchCamera.dollyIn({ targetSelector: '#key-element', at: 1, duration: 3 })
-- Content already moves (video playback, 3D spin, fast data animation) \u2192 SKIP CenchCamera entirely.
-  Stacking camera motion on top of intrinsic motion causes visual nausea.
-- If three scenes in a row use the same motion, change one. Mechanical sameness is worse than a mildly wrong motion.
-
-ANTI-PATTERNS (instant AI tells):
-- Side-stripe borders on cards (border-left: 4px solid ...)
-- Identical card grids (icon + heading + text repeated)
-- Hero metric layout (big number, small label, gradient accent)
-- Particle background + gradient text hero
-- Purple-to-blue gradients on dark backgrounds
-- Bounce/elastic easing
-
-CONTENT DENSITY (hard limits \u2014 do not exceed):
-- Maximum 5 text blocks per scene (1 title + up to 4 supporting elements).
-- Maximum 4 list/bullet items visible simultaneously. Longer lists \u2192 split across scenes.
-- Maximum 3 cards or containers per scene. Prefer 1-2 for visual impact.
-- If a scene has more than 6 distinct visual elements, remove or combine until 5 or fewer.
-- One "hero element" per scene that occupies 40-60% of viewport area.
-- Body text: maximum 3 lines per text block (~50 words). Cut ruthlessly.
-- Bullet points: maximum 8 words per bullet. If longer, rewrite.
-- These limits exist because viewers watch, not read. Less content = more retention.
-
-SPACING SYSTEM (viewport: ${W}\xD7${H}px):
-- Viewport edge safe area: ${safeArea}px inset from all edges minimum.
-- Gap between content groups (e.g. title block vs. body block): ${groupGap}px minimum.
-- Gap between elements within a group (e.g. heading and subheading): ${innerGap}px minimum.
-- Title-to-first-content gap: ${titleGapMin}-${titleGapMax}px \u2014 this breathing room is what separates good from amateur.
-- Card/container internal padding: ${cardPaddingMin}-${cardPaddingMax}px.
-- Minimum gap between any two elements: ${minGap}px. Never less.
-- Whitespace target: at least 40% of the viewport should be empty space. If your layout feels dense, remove elements \u2014 don't shrink them.
-- Between sections or conceptual groups: ${sectionGap}px+ vertical gap.
-
-ELEMENT SIZING:
-- Hero/display text: at least ${isPortrait ? "72" : "100"}px, spanning 50%+ of viewport width.
-- Heading text: at least ${isPortrait ? "40" : "48"}px.
-- Body text: at least ${isPortrait ? "28" : "32"}px. This is the FLOOR \u2014 body text below this is unreadable in video.
-- Labels, list items, annotations: at least ${isPortrait ? "22" : "24"}px. Nothing smaller, ever.
-- Heading-to-body font size ratio: at least 1.5\xD7 (e.g. 72px heading, 36px body \u2014 not 48px/36px).
-- Icons and illustrations: ${Math.round(140 * scale)}-${Math.round(400 * scale)}px. Below ${Math.round(140 * scale)}px they become unreadable.
-- Data visualizations: minimum ${Math.round(500 * scale)}px wide, ${Math.round(300 * scale)}px tall.
-- Interactive elements (pills, badges, tags): at least 24px text, 48px height minimum.
-- Decorative elements: never larger than the primary content element.
-- If text won't fit at these sizes, you have too much text. Cut content, don't shrink type.
-- COMMON MISTAKE: Using 16-20px for secondary text. That's web sizing, not video sizing. Scale everything up.
-
-LAYOUT PATTERNS (choose one per scene \u2014 do not improvise from scratch):
-
-HERO-SPLIT: Large text left (60% width), visual/illustration right (40%). Text left-aligned. Visual can bleed to edge. Best for: introductions, key statements, definitions.
-
-STACK-BREATHE: Full-width text blocks stacked vertically with ${Math.round(80 * scale)}px+ gaps. No containers or cards. Let whitespace do the grouping. Best for: single concepts, quotes, definitions.
-
-OFFSET-GRID: 2-column asymmetric grid (55/45 or 65/35 split). Items intentionally DON'T align horizontally \u2014 the offset creates visual interest. Best for: comparisons, before/after, two related concepts.
-
-FOCAL-POINT: One large central element (60%+ of viewport) with 2-3 small annotations positioned around it with subtle leader lines or arrows. Best for: diagrams, anatomy, feature highlights.
-
-TIMELINE-FLOW: Horizontal or vertical flow with connected nodes. Maximum 4 nodes per scene. Best for: processes, history, step-by-step sequences.
-
-STAT-ANCHOR: One massive number/metric (${Math.round(120 * scale)}px+) anchored to the left or top third, with supporting context text in smaller type beside or below it. NOT centered. Best for: data points, key statistics, impact numbers.
-
-EDITORIAL-COLUMN: Single narrow text column (max ${Math.round(600 * scale)}px wide) offset to the left third, with a full-bleed background color, image, or illustration filling the rest. Best for: narrative text, storytelling.
-
-SCATTER-ORGANIC: Elements placed at intentional but non-grid positions, varying in size. Connected by subtle lines, shared color, or proximity. Best for: mind maps, ecosystem overviews, relationship diagrams.
-${aspectRules}
-`;
-}
-var DESIGN_PRINCIPLES = getDesignPrinciples();
-
-// lib/motion/easing.ts
-var PERSONALITIES = {
-  playful: {
-    name: "Playful",
-    durationRange: [0.15, 0.3],
-    staggerMs: 60,
-    maxStaggerMs: 500,
-    overshoot: 0.15,
-    easing: {
-      entrance: [0.34, 1.56, 0.64, 1],
-      // back-out approximation
-      exit: [0.36, 0, 0.66, -0.56],
-      // back-in approximation
-      emphasis: [0.22, 1.4, 0.36, 1],
-      // elastic-ish settle
-      ambient: [0.37, 0, 0.63, 1]
-      // ease-in-out
-    },
-    gsap: {
-      entrance: "back.out(1.4)",
-      exit: "back.in(1.4)",
-      emphasis: "back.out(1.7)",
-      ambient: "sine.inOut"
-    }
-  },
-  premium: {
-    name: "Premium",
-    durationRange: [0.35, 0.6],
-    staggerMs: 80,
-    maxStaggerMs: 600,
-    overshoot: 0,
-    easing: {
-      entrance: [0.4, 0, 0.2, 1],
-      // smooth deceleration
-      exit: [0.4, 0, 1, 1],
-      // subtle acceleration
-      emphasis: [0.16, 1, 0.3, 1],
-      // exponential out
-      ambient: [0.37, 0, 0.63, 1]
-      // ease-in-out
-    },
-    gsap: {
-      entrance: "power3.out",
-      exit: "power2.in",
-      emphasis: "expo.out",
-      ambient: "sine.inOut"
-    }
-  },
-  corporate: {
-    name: "Corporate",
-    durationRange: [0.2, 0.4],
-    staggerMs: 70,
-    maxStaggerMs: 600,
-    overshoot: 0.02,
-    easing: {
-      entrance: [0.42, 0, 0.58, 1],
-      // ease-in-out (predictable)
-      exit: [0.42, 0, 1, 1],
-      // ease-in
-      emphasis: [0.16, 1, 0.3, 1],
-      // exponential out
-      ambient: [0.37, 0, 0.63, 1]
-      // ease-in-out
-    },
-    gsap: {
-      entrance: "power2.inOut",
-      exit: "power2.in",
-      emphasis: "expo.out",
-      ambient: "sine.inOut"
-    }
-  },
-  energetic: {
-    name: "Energetic",
-    durationRange: [0.1, 0.25],
-    staggerMs: 40,
-    maxStaggerMs: 400,
-    overshoot: 0.25,
-    easing: {
-      entrance: [0.22, 1.8, 0.36, 1],
-      // strong back-out
-      exit: [0.55, 0, 1, 0.45],
-      // quick acceleration
-      emphasis: [0.18, 1.6, 0.32, 1],
-      // aggressive overshoot
-      ambient: [0.37, 0, 0.63, 1]
-      // ease-in-out
-    },
-    gsap: {
-      entrance: "back.out(2.0)",
-      exit: "power3.in",
-      emphasis: "back.out(2.5)",
-      ambient: "sine.inOut"
-    }
-  }
-};
-function easingToLottieHandles(bezier, dimensions = 1) {
-  const [x1, y1, x2, y2] = bezier;
-  if (dimensions === 1) {
-    return {
-      i: { x: [x2], y: [y2] },
-      o: { x: [x1], y: [y1] }
-    };
-  }
-  return {
-    i: { x: [x2, x2, x2], y: [y2, y2, y2] },
-    o: { x: [x1, x1, x1], y: [y1, y1, y1] }
-  };
-}
-function personalityPromptBlock(personality) {
-  const p = PERSONALITIES[personality];
-  const fmt = (b) => `cubic-bezier(${b.join(", ")})`;
-  const lottie1d = (b) => {
-    const h = easingToLottieHandles(b, 1);
-    return `"i":{"x":[${h.i.x}],"y":[${h.i.y}]}, "o":{"x":[${h.o.x}],"y":[${h.o.y}]}`;
-  };
-  const lottie3d = (b) => {
-    const h = easingToLottieHandles(b, 3);
-    return `"i":{"x":[${h.i.x}],"y":[${h.i.y}]}, "o":{"x":[${h.o.x}],"y":[${h.o.y}]}`;
-  };
-  return `MOTION PERSONALITY: ${p.name}
-Duration range: ${p.durationRange[0]}-${p.durationRange[1]}s per element transition
-Stagger: ${p.staggerMs}ms between items (cap at ${p.maxStaggerMs}ms total)
-Overshoot: ${p.overshoot === 0 ? "none" : `${Math.round(p.overshoot * 100)}%`}
-
-Entrance easing: ${fmt(p.easing.entrance)}
-  1D Lottie: ${lottie1d(p.easing.entrance)}
-  3D Lottie: ${lottie3d(p.easing.entrance)}
-
-Exit easing: ${fmt(p.easing.exit)}
-  1D Lottie: ${lottie1d(p.easing.exit)}
-  3D Lottie: ${lottie3d(p.easing.exit)}
-
-Emphasis easing: ${fmt(p.easing.emphasis)}
-  1D Lottie: ${lottie1d(p.easing.emphasis)}
-
-Ambient easing: ${fmt(p.easing.ambient)}
-  1D Lottie: ${lottie1d(p.easing.ambient)}`;
-}
-
-// lib/generation/prompts.ts
-var SVG_SYSTEM_PROMPT = (palette, strokeWidth, font, duration, previousSummary, hasExplicitPalette = true, dims = { width: 1920, height: 1080 }) => {
-  const W = dims.width;
-  const H = dims.height;
-  return `You are an SVG animation artist for a high-end vector video editor.
-Generate a single <svg> element with viewBox="0 0 ${W} ${H}" that draws itself using CSS animations.
-
-STRICT RULES:
-- Output ONLY the raw <svg>...</svg> element. No markdown, no explanation, no code blocks.
-${hasExplicitPalette ? `- Suggested palette (prefer these, override when content demands): ${palette.join(", ")}` : "- Choose a color palette that best suits the content. You have full creative control over colors."}
-- Default stroke-width: ${strokeWidth}
-- Default font-family: ${font}
-- Total animation must complete within ${duration} seconds
-- Canvas: ${W}\xD7${H}px \u2014 fill the full space deliberately
-- ALL content MUST fit within the viewBox (0,0 to ${W},${H}). Nothing below y=${H} or past x=${W} \u2014 it will be clipped and invisible. If there are too many items, reduce count, use smaller text, multi-column layout, or split into multiple scenes.
-
-ANIMATION CLASSES (apply to SVG elements via class="..."):
-
-class="stroke" \u2014 Draw effect for lines, paths, curves, outlines.
-  CSS vars: --len (auto-calculated), --dur (seconds), --delay (seconds)
-  Always pair with: stroke-linecap="round" stroke-linejoin="round" fill="none"
-  Use for: all lines, arrows, outlines, technical diagrams, handwriting paths
-
-class="fadein" \u2014 Opacity reveal for filled shapes and icons.
-  CSS vars: --dur (seconds), --delay (seconds)
-  Use for: filled rects, circles, polygons, solid-color blocks, icons, backgrounds
-
-class="scale" \u2014 Scale entrance from 0 \u2192 1.
-  CSS vars: --dur (seconds), --delay (seconds)
-  Use for: icons appearing, callout circles, emphasis elements, data points
-
-class="slide-up" \u2014 Slide in from below with fade.
-  CSS vars: --dur (seconds), --delay (seconds)
-  Use for: labels, annotations, body text, captions
-
-class="slide-left" \u2014 Slide in from right with fade.
-  CSS vars: --dur (seconds), --delay (seconds)
-  Use for: titles entering from right, horizontal list items
-
-class="bounce" \u2014 Elastic scale pop with overshoot.
-  CSS vars: --dur (seconds), --delay (seconds)
-  Use for: key data points, highlighted numbers, important icons
-
-class="rotate" \u2014 Rotation entrance with fade.
-  CSS vars: --dur (seconds), --delay (seconds)
-  Use for: arrows, spinning decorative elements
-
-LAYERING MODEL (always use these <g id="..."> groups in order):
-1. <g id="bg">         \u2014 full-bleed background fills, gradients, texture shapes (fadein, delay 0)
-2. <g id="midground">  \u2014 primary graphic content: charts, diagrams, illustrations (20\u201360% of duration)
-3. <g id="fg">         \u2014 supporting lines, connectors, arrows (60\u201380%)
-4. <g id="text">       \u2014 all <text> elements, titles, numbers, labels (70\u201390%)
-
-STAGGER RULE:
-- Never assign --delay 0 to all elements. Divide duration by element count, assign ascending delays.
-- Background: --delay 0\u2013${(duration * 0.2).toFixed(1)}s
-- Midground: --delay ${(duration * 0.2).toFixed(1)}\u2013${(duration * 0.6).toFixed(1)}s
-- Foreground: --delay ${(duration * 0.6).toFixed(1)}\u2013${(duration * 0.8).toFixed(1)}s
-- Text: --delay ${(duration * 0.7).toFixed(1)}\u2013${(duration * 0.9).toFixed(1)}s
-
-TEXT RULES:
-- Use <text> elements only (never foreignObject)
-- font-family="${font}", specify dominant-baseline
-- Pair large display text (font-size 80\u2013160) with smaller annotations (font-size 32\u201356)
-- Apply class="slide-up" or class="fadein" with appropriate --delay
-
-GSAP ANIMATION (preferred over CSS classes for new scenes):
-A GSAP master timeline is available as window.__tl. Use it for seekable, pausable animations.
-After the <svg> element, include a <script> block that adds animations to __tl:
-
-  document.fonts.ready.then(() => {
-    const tl = window.__tl;
-    // DrawSVGPlugin: animate strokes from 0% to 100%
-    tl.from('#path-id', { drawSVG: '0%', duration: 0.8, ease: 'power2.inOut' }, 0.5);
-    // Fade in elements
-    tl.from('#label-id', { opacity: 0, y: 10, duration: 0.3 }, 1.2);
-    // Stagger multiple elements
-    tl.from('.diagram-element', { drawSVG: '0%', duration: 0.6, stagger: 0.2 }, 0);
-  });
-
-All SVG elements MUST have unique id attributes for GSAP targeting.
-Timeline position syntax: tl.from(el, opts, 0) = start at t=0s, tl.from(el, opts, '+=0.3') = 0.3s after previous.
-
-ELEMENT IDS (required for editor inspector):
-- EVERY visible SVG element (rect, circle, path, text, line, polygon, etc.) MUST have a unique id attribute
-- Add data-label="Human-readable name" to each element for the editor's element list
-- Example: <rect id="bg-rect-1" data-label="Blue background" ... />
-- Example: <text id="title-text" data-label="Main title" ... />
-- Groups <g> should also have id and data-label if they represent a logical unit
-
-COMPOSITION:
-- Include at least 3 layers (bg, midground, text minimum)
-- Use arrows: <line> or <path> with unique ids + a small <polygon> arrowhead
-- Include <!-- section comments --> for each group
-- Vary element sizes for hierarchy \u2014 one dominant visual, 2-3 supporting, many small details.
-- Use overlapping shapes and partial occlusion for depth, not flat side-by-side arrangement.
-- Break symmetry: offset related elements, use diagonal flows, cluster groups off-center.
-- Give every animated element a unique id attribute and data-label
-${getDesignPrinciples(dims)}
-Previous scene summary (for visual continuity): ${previousSummary || "none"}`;
-};
-var CANVAS_SYSTEM_PROMPT = (palette, bgColor, duration, previousSummary, hasExplicitPalette = true, dims = { width: 1920, height: 1080 }) => {
-  const W = dims.width;
-  const H = dims.height;
-  return `You are a Canvas 2D animation programmer for a high-end video editor.
-
-Generate a SINGLE self-contained JavaScript code block. No HTML, no <script> tags, no markdown fences, no explanation.
-
-STRICT RULES:
-- Output ONLY raw JavaScript.
-- The canvas is already in the DOM: use document.getElementById('c') and getContext('2d').
-- Canvas size: ${W}\xD7${H}. Never resize it.
-${hasExplicitPalette ? `- Suggested palette (prefer these, override when content demands): ${palette.join(", ")}` : "- Choose colors that best suit the content. You have full creative control over the palette."}
-- Duration: ${duration} seconds. Animation must complete in that time.
-- All motion must be driven purely by t (elapsed seconds), never by setInterval or setTimeout.
-
-GSAP PROXY PATTERN (required for all canvas2d scenes):
-
-A GSAP master timeline is available as window.__tl. Use it with proxy objects.
-Progress-based draw functions are available as globals: drawRoughLineAtProgress,
-drawRoughCircleAtProgress, drawRoughRectAtProgress, drawRoughArrowAtProgress, drawTextAtProgress.
-
-REQUIRED SKELETON:
-
-const canvas = document.getElementById('c');
-const ctx = canvas.getContext('2d');
-const tl = window.__tl;
-
-// Define proxy objects for each animated element (progress 0\u21921)
-const proxies = {
-  line1:   { p: 0 },
-  circle1: { p: 0 },
-  text1:   { p: 0 },
-};
-
-// REGISTER every element for the inspector (required)
-window.__register({ id: 'line1', type: 'rough-line', label: 'Main line',
-  x1: 100, y1: 540, x2: 900, y2: 540, color: STROKE_COLOR, strokeWidth: 3,
-  tool: TOOL, seed: 1, opacity: 1, visible: true,
-  animStartTime: 0, animDuration: 0.8,
-  bbox: { x: 100, y: 530, w: 800, h: 20 } });
-window.__register({ id: 'circle1', type: 'rough-circle', label: 'Circle',
-  cx: 500, cy: 400, radius: 160, color: PALETTE[1], fill: 'none', fillAlpha: 0,
-  strokeWidth: 3, tool: TOOL, seed: 2, opacity: 1, visible: true,
-  animStartTime: 0.9, animDuration: 0.6,
-  bbox: { x: 340, y: 240, w: 320, h: 320 } });
-window.__register({ id: 'text1', type: 'text', label: 'Hello text',
-  text: 'Hello', x: 500, y: 300, fontSize: 56, fontFamily: FONT,
-  color: STROKE_COLOR, fontWeight: 'bold', textAlign: 'left',
-  opacity: 1, visible: true, animStartTime: 1.5, animDuration: 0.4,
-  bbox: { x: 500, y: 260, w: 200, h: 60 } });
-
-// Master redraw \u2014 reads from __elements so inspector patches take effect
-function draw() {
-  ctx.clearRect(0, 0, WIDTH, HEIGHT);
-  var els = window.__elements;
-  Object.keys(els).forEach(function(id) {
-    var el = els[id];
-    if (!el.visible) return;
-    ctx.globalAlpha = el.opacity;
-    var p = proxies[id] ? proxies[id].p : 1;
-    if (el.type === 'rough-line') drawRoughLineAtProgress(ctx, el.x1, el.y1, el.x2, el.y2, p, { color: el.color, tool: el.tool, seed: el.seed, strokeWidth: el.strokeWidth });
-    else if (el.type === 'rough-circle') drawRoughCircleAtProgress(ctx, el.cx, el.cy, el.radius, p, { color: el.color, fill: el.fill, fillAlpha: el.fillAlpha, tool: el.tool, seed: el.seed, strokeWidth: el.strokeWidth });
-    else if (el.type === 'rough-rect') drawRoughRectAtProgress(ctx, el.x, el.y, el.width, el.height, p, { color: el.color, fill: el.fill, fillAlpha: el.fillAlpha, tool: el.tool, seed: el.seed, strokeWidth: el.strokeWidth, cornerRadius: el.cornerRadius });
-    else if (el.type === 'rough-arrow') drawRoughArrowAtProgress(ctx, el.x1, el.y1, el.x2, el.y2, p, { color: el.color, tool: el.tool, seed: el.seed, strokeWidth: el.strokeWidth, arrowheadSize: el.arrowheadSize });
-    else if (el.type === 'text') drawTextAtProgress(ctx, el.text, el.x, el.y, p, { fontSize: el.fontSize, fontFamily: el.fontFamily, color: el.color, fontWeight: el.fontWeight, textAlign: el.textAlign });
-    ctx.globalAlpha = 1;
-  });
-}
-window.__redrawAll = draw;
-
-// Wire up timeline \u2014 wrap in fonts.ready for text rendering
-document.fonts.ready.then(() => {
-  tl.to(proxies.line1,   { p: 1, duration: 0.8, onUpdate: draw }, 0)
-    .to(proxies.circle1, { p: 1, duration: 0.6, onUpdate: draw }, 0.9)
-    .to(proxies.text1,   { p: 1, duration: 0.4, onUpdate: draw }, 1.5);
-});
-
-CRITICAL RULES:
-- NEVER use requestAnimationFrame, setInterval, setTimeout, async/await, or Promise-based animation.
-- NEVER define your own loop() function. GSAP drives all frame updates.
-- ALWAYS use window.__tl for sequencing. Timeline position: tl.to(el, opts, 0) = starts at t=0s.
-- ALWAYS use fixed seed integers (1, 2, 3...) for drawRough* functions. Never Math.random().
-- ALWAYS wrap in document.fonts.ready.then(() => { ... }) if drawing text.
-- Do NOT fill the background \u2014 clearRect + body CSS handles it.
-- Stagger: background elements at t=0, midground at 20-60% of DURATION, text at 60-90%.
-- Fill the full ${W}\xD7${H} canvas.
-- Rich compositions: create visual depth with layered elements (background wash, midground subjects, foreground details).
-- For generative art: use coherent mathematical systems (attractors, flow fields, recursive subdivisions) not random scatter. Each pattern should have governing logic the viewer can sense.
-- Vary stroke weights \u2014 thin detail lines alongside bold structural strokes.
-- ALL content MUST fit within ${W}\xD7${H}. Nothing drawn below y=${H} or past x=${W} \u2014 it will be clipped. If too many items, reduce count, use smaller text, or use multi-column layout.
-
-DrawOpts for progress functions: { color, tool, seed, width, fill, fillAlpha }
-Available tools: 'marker', 'pen', 'chalk', 'brush', 'highlighter'
-Globals: PALETTE, DURATION, ROUGHNESS, FONT, WIDTH, HEIGHT, TOOL, STROKE_COLOR, BG_COLOR
-${getDesignPrinciples(dims)}
-Previous scene summary (for visual continuity): ${previousSummary || "none"}`;
-};
-var D3_SYSTEM_PROMPT = (palette, font, bgColor, duration, previousSummary, hasExplicitPalette = true, dims = { width: 1920, height: 1080 }) => {
-  const W = dims.width;
-  const H = dims.height;
-  return `You are a D3.js data visualization programmer for a high-end video editor.
-
-Output ONLY a raw JSON object \u2014 no markdown fences, no explanation.
-
-Required JSON shape:
-{
-  "styles": "<CSS string for chart elements, no <style> tags>",
-  "sceneCode": "<JavaScript using D3 \u2014 appends SVG to #chart>",
-  "suggestedData": <JSON data object appropriate for the visualization>
-}
-
-STRICT RULES:
-- Use d3 global (v7), DATA global (user data or suggested), WIDTH=${W}, HEIGHT=${H}
-- Create an SVG: d3.select('#chart').append('svg').attr('viewBox','0 0 ${W} ${H}').attr('width','100%').attr('height','100%')
-- NEVER use .attr('width', WIDTH).attr('height', HEIGHT) with pixel values \u2014 this creates a fixed-size SVG that overflows the container. ALWAYS use viewBox + width="100%" + height="100%".
-${hasExplicitPalette ? `- Suggested palette (prefer these, override when content demands): ${palette.join(", ")}` : "- Choose a color palette that suits the data and content."}
-- Font: ${font}; background is already ${bgColor}
-- Duration: ${duration} seconds \u2014 use .transition().duration(ms) for all enters
-- Stagger elements: .delay((d,i) => i * 100)
-- Title text: 56px bold; axis labels: 28px; data labels: 24px (nothing below 24px \u2014 this is video)
-- Fill the full ${W}\xD7${H} canvas deliberately \u2014 ALL content must fit within the viewBox. Nothing below y=${H} or past x=${W}. If too many data points or labels, reduce the dataset or use smaller text.
-- suggestedData should be a realistic dataset matching the prompt (array or object)
-SEEK/SCRUB SAFETY (MANDATORY):
-- Scene output MUST be deterministic from timeline time.
-- Define a function renderAtTime(t) that computes all visual state (camera + chart) from absolute t.
-- Define window.__updateScene = function(t) { renderAtTime(t || 0); }.
-- Register a single GSAP timeline driver:
-    const sceneState = { t: 0 };
-    window.__tl.to(sceneState, { t: DURATION, duration: DURATION, ease: 'none', onUpdate: () => renderAtTime(sceneState.t) }, 0);
-- Call renderAtTime(0) once for initial paused frame.
-- NEVER rely on one-shot animation triggers for core state (no event-only transitions).
-GSAP ANIMATION (preferred over D3 transitions):
-A GSAP master timeline is available as window.__tl. Use it for seekable animations:
-
-  bars.each(function(d, i) {
-    const proxy = { height: 0 };
-    window.__tl.to(proxy, {
-      height: targetHeight,
-      duration: 0.8,
-      ease: 'power2.out',
-      delay: i * 0.1,
-      onUpdate: () => d3.select(this).attr('height', proxy.height).attr('y', HEIGHT - margin.bottom - proxy.height),
-    }, 0);
-  });
-
-This is preferred over D3 .transition() because GSAP timelines are pausable and seekable.
-NEVER use setTimeout/setInterval for visual sequencing; use window.__tl positions only.
-Avoid d3.transition() for core chart state; if used for micro-effects, scene must still render correctly at any seek time via renderAtTime(t).
-
-ANIMATION GUIDANCE:
-- Start all elements at opacity 0, use GSAP to animate to full opacity
-- Bars: start height 0, animate to full height via GSAP proxy
-- Use GSAP eases: 'power2.out', 'power2.inOut', 'power3.out'
-- Add gridlines, axis labels, title, and data value labels
-- Readability default (MANDATORY unless user requests otherwise): clear legible typography, high contrast text, and explicit axis/title/value labels. Do not sacrifice readability for style unless the user explicitly asks.
-
-CHART DESIGN:
-- Prefer horizontal bar charts over vertical when labels are long.
-- Avoid pie charts for more than 4 categories \u2014 use horizontal bar or treemap instead.
-- Never use 3D effects on 2D charts.
-- Use direct labeling on data points instead of legends when possible \u2014 reduces eye travel.
-- Choose chart type by question: comparison \u2192 bar, trend \u2192 line, proportion \u2192 stacked bar/waffle, distribution \u2192 histogram, correlation \u2192 scatter.
-- Animate the data, not the decoration. Bar height growing from zero is meaningful; decorative spinning is not.
-${getDesignPrinciples(dims)}
-Previous scene summary (for visual continuity): ${previousSummary || "none"}`;
-};
-var THREE_SYSTEM_PROMPT = (palette, bgColor, duration, previousSummary, hasExplicitPalette = true, dims = { width: 1920, height: 1080 }) => {
-  const W = dims.width;
-  const H = dims.height;
-  return `You are a Three.js 3D scene programmer for a high-end video editor.
-
-Output ONLY a raw JSON object \u2014 no markdown fences, no explanation.
-
-Required JSON shape:
-{
-  "sceneCode": "<ES module JavaScript \u2014 full self-contained scene>"
-}
-
-STRICT RULES:
-- Three.js r183 via ES modules. Your code runs in its own <script type="module">.
-- You MUST import THREE yourself: import * as THREE from 'three';
-- You MUST read globals from window: const WIDTH = window.WIDTH, etc.
-- Available window globals: WIDTH, HEIGHT, PALETTE, DURATION, MATERIALS, mulberry32, setupEnvironment, THREE, applyCenchThreeEnvironment, updateCenchThreeEnvironment, CENCH_THREE_ENV_IDS, createCenchDataScatterplot, updateCenchDataScatterplot, createCenchPostFX, createCenchPostFXPreset, CENCH_POSTFX_PRESETS, CENCH_TONE_MAPS, addCinematicLighting, addGroundPlane, loadPBRSet, loadHDREnvironment, createInstancedField, createPositionalAudio
-- Background is already set to ${bgColor} via CSS; set renderer.setClearColor to match.
-${hasExplicitPalette ? `- Suggested palette (convert hex to THREE.Color, override when content demands): ${palette.join(", ")}` : "- Choose colors that suit the 3D content. PALETTE global is available but you may use any colors."}
-- WebGLRenderer MUST include preserveDrawingBuffer: true
-- NEVER use requestAnimationFrame for your animation loop \u2014 use window.__tl (GSAP) onUpdate instead.
-- NEVER use Math.random() \u2014 use mulberry32(seed) for deterministic randomness.
-- NEVER use MeshBasicMaterial \u2014 always use MeshStandardMaterial or MeshPhysicalMaterial.
-- You CAN import from 'three/addons/' for OrbitControls, postprocessing, GLTFLoader, RGBELoader, etc.
-
-AVAILABLE IMPORTS (use as needed):
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { BokehPass } from 'three/addons/postprocessing/BokehPass.js';
-import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { SVGLoader } from 'three/addons/loaders/SVGLoader.js';
-import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
-import { Text } from 'troika-three-text';  // SDF 3D text \u2014 any font URL
-import { SUBTRACTION, ADDITION, INTERSECTION, Brush, Evaluator } from 'three-bvh-csg'; // Boolean ops on meshes
-
-SVG-TO-3D EXTRUSION (SVGLoader cannot resolve url(#...) gradients \u2014 always use PALETTE):
-const pivot = new THREE.Group(); scene.add(pivot);
-const data = new SVGLoader().parse(await fetch(svgUrl).then(r => r.text()));
-const inner = new THREE.Group(); let i = 0;
-for (const p of data.paths) for (const sh of SVGLoader.createShapes(p)) {
-  const g = new THREE.ExtrudeGeometry(sh, { depth: 20, bevelEnabled: true, bevelThickness: 2, bevelSize: 1.5, bevelSegments: 8, curveSegments: 24 });
-  const m = new THREE.MeshStandardMaterial({ color: PALETTE[i++ % PALETTE.length], metalness: 0.6, roughness: 0.25 });
-  const mesh = new THREE.Mesh(g, m); mesh.castShadow = true; inner.add(mesh);
-}
-// center + Y-flip via pivot:
-const box = new THREE.Box3().setFromObject(inner), c = box.getCenter(new THREE.Vector3()), sz = box.getSize(new THREE.Vector3());
-inner.position.set(-c.x, -c.y, -c.z); pivot.scale.set(4/Math.max(sz.x,sz.y,sz.z), -4/Math.max(sz.x,sz.y,sz.z), 4/Math.max(sz.x,sz.y,sz.z)); pivot.add(inner);
-
-DREI-VANILLA (import { Sparkles, Grid, Stars } from '@pmndrs/vanilla'):
-- new Sparkles(scene, { count, size, color }) | new Grid(scene, { cellSize, sectionSize, fadeDistance }) | new Stars(scene, { count, radius })
-
-3D TEXT (troika SDF \u2014 decorative only; prefer HTML overlays for readable captions):
-import { Text } from 'troika-three-text';
-const t = new Text(); t.text = 'hi'; t.fontSize = 0.8; t.color = PALETTE[0]; t.anchorX='center'; t.anchorY='middle'; t.font = 'https://fonts.gstatic.com/s/inter/v18/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuLyfAZ9hjQ.woff2'; t.sync(); scene.add(t);
-// Props: maxWidth, textAlign, outlineWidth, outlineColor, curveRadius, letterSpacing.
-
-CSG BOOLEANS (three-bvh-csg \u2014 cutouts, mechanical parts):
-import { SUBTRACTION, ADDITION, INTERSECTION, Brush, Evaluator } from 'three-bvh-csg';
-const a = new Brush(new THREE.SphereGeometry(1.5,32,32), MATERIALS.metal(PALETTE[0]));
-const b = new Brush(new THREE.BoxGeometry(1.2,1.2,1.2), MATERIALS.plastic(PALETTE[1])); b.position.set(0.5,0.5,0); b.updateMatrixWorld();
-const result = new Evaluator().evaluate(a, b, SUBTRACTION); result.castShadow = true; scene.add(result);
-
-ANIMATED GLTF MODELS (AnimationMixer for Mixamo / animated .glb):
-const gltf = await new GLTFLoader().loadAsync(modelUrl);
-scene.add(gltf.scene);
-const mixer = new THREE.AnimationMixer(gltf.scene);
-if (gltf.animations.length > 0) mixer.clipAction(gltf.animations[0]).play();
-// In onUpdate: mixer.update(deltaTime)
-
-POST-FX COOKBOOK (prefer createCenchPostFX over hand-wiring passes):
-// One call builds the whole composer. Call render() in onUpdate instead of renderer.render.
-const fx = createCenchPostFX(renderer, scene, camera, {
-  bloom: { strength: 0.4, radius: 0.45, threshold: 0.85 },
-  dof:   { focus: 10, aperture: 0.002, maxblur: 0.01 },
-  ssao:  { kernelRadius: 8, minDistance: 0.005, maxDistance: 0.1 },
-  outline: { edgeStrength: 3.0, visibleEdgeColor: 0xffffff, selectedObjects: [myMesh] },
-  afterimage: { damp: 0.92 },               // motion-blur trails
-  chromaticAberration: { amount: 0.0035 },
-  filmGrain: { intensity: 0.35 },
-  glitch: false,
-  pixelate: { pixelSize: 4 },               // retro downsample
-  scanlines: { intensity: 0.2, density: 1.8 },
-  colorGrade: { exposure: 1.05, contrast: 1.08, saturation: 1.05, tint: 0xffe8bf },
-});
-// In animation loop: fx.render() instead of renderer.render(scene, camera)
-
-POSTFX PRESETS (fastest path \u2014 createCenchPostFXPreset(renderer, scene, camera, preset)):
-- 'bloom' \u2014 soft emissive glow
-- 'cinematic' \u2014 bloom + DOF + subtle grade (hero product / reveal)
-- 'cyberpunk' \u2014 bloom + chromatic aberration + scanlines + magenta tint
-- 'vintage' \u2014 film grain + warm desaturated grade
-- 'dream' \u2014 heavy bloom + wide DOF + lifted blacks
-- 'matrix' \u2014 green tint + bloom + scanlines
-- 'retroPixel' \u2014 pixelate + saturated grade
-- 'ghibli' \u2014 soft bloom + warm pastel grade
-- 'noir' \u2014 high-contrast grayscale + film grain
-- 'sharpCorporate' \u2014 SSAO + subtle contrast (clean product)
-Overrides merge on top: createCenchPostFXPreset(renderer, scene, camera, 'cinematic', { bloom: { strength: 0.55 } }).
-
-SCENE BUILDERS (one-call helpers \u2014 ALWAYS prefer these over hand-wiring):
-// 1) Stage environment: call ONCE after scene+renderer+camera exist
-applyCenchThreeEnvironment('studio_white', scene, renderer, camera);
-// Ids: studio_white | cinematic_fog | iso_playful | tech_grid | nature_sunset | data_lab | track_rolling_topdown
-
-// 2) Lighting rig (drop-in 3-point, shadow-enabled)
-addCinematicLighting(scene, 'product'); // corporate | dramatic | playful | product | cyberpunk | nature | softbox
-
-// 3) Ground plane (shadow-catcher, infinite, circle, etc.)
-addGroundPlane(scene, { mode: 'shadow', opacity: 0.25 });      // invisible floor that only catches shadows
-addGroundPlane(scene, { mode: 'circle', radius: 18, color: '#ffffff' });
-addGroundPlane(scene, { mode: 'infinite', color: 0x0e131a, roughness: 0.3, metalness: 0.2 });
-
-// 4) PBR texture set (diffuse+normal+roughness+metalness+ao files at {prefix}_{name}.jpg)
-const mat = loadPBRSet('/textures/brick', { repeat: 3, physical: false });
-
-// 5) HDR IBL (equirect .hdr \u2192 scene.environment, photoreal reflections)
-await loadHDREnvironment('/hdr/studio_small.hdr', scene, renderer, { background: false });
-
-// 6) Instancing (>30 clones \u2192 ALWAYS use this, not individual meshes)
-const field = createInstancedField({
-  geometry: new THREE.IcosahedronGeometry(0.3, 1),
-  material: MATERIALS.metal(PALETTE[1]),
-  count: 400, layout: 'sphere', radius: 6, randomRotation: true, randomScale: true,
-  color: (i) => new THREE.Color().setHSL((i / 400), 0.6, 0.55),
-});
-scene.add(field);
-// layout: 'grid' | 'circle' | 'sphere' | 'jitter'. Optional transform(dummy, i, rng) for full control.
-
-// 7) Spatial audio (positional \u2014 pans + attenuates with distance)
-const beep = createPositionalAudio(camera, '/sfx/beep.mp3', { refDistance: 2, volume: 0.6 });
-mesh.add(beep);
-
-CAMERA ANIMATION PATTERNS:
-- Dolly: animate camera.position.z from far to near
-- Crane: animate camera.position.y while lookAt origin
-- Path: new THREE.CatmullRomCurve3([points...]), camera.position.copy(curve.getPointAt(progress))
-- Zoom: animate camera.fov + camera.updateProjectionMatrix()
-
-REQUIRED BOILERPLATE (include this at the top, then add your scene):
-import * as THREE from 'three';
-const { WIDTH, HEIGHT, PALETTE, DURATION, MATERIALS, mulberry32, setupEnvironment, applyCenchThreeEnvironment, updateCenchThreeEnvironment, createCenchDataScatterplot, updateCenchDataScatterplot } = window;
-
-const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
-renderer.setSize(WIDTH, HEIGHT);
-renderer.setClearColor('${bgColor}');
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-renderer.toneMapping = CENCH_TONE_MAPS.aces; // aces (default) | agx (most neutral modern) | cineon (cinema) | reinhard (soft highlights) | neutral | linear | none
-renderer.toneMappingExposure = 1.2;
-renderer.outputColorSpace = THREE.SRGBColorSpace;
-document.body.appendChild(renderer.domElement);
-
-const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(60, WIDTH / HEIGHT, 0.1, 1000);
-camera.position.set(0, 4, 10);
-camera.lookAt(0, 0, 0);
-window.__threeCamera = camera; // Expose for CenchCamera 3D moves
-
-// 3-point lighting (ALWAYS include \u2014 never just AmbientLight)
-const ambient = new THREE.AmbientLight(0xffffff, 0.3);
-const key = new THREE.DirectionalLight(0xfff6e0, 1.4);
-key.position.set(-5, 8, 5);
-key.castShadow = true;
-key.shadow.mapSize.set(2048, 2048);
-key.shadow.bias = -0.001;
-const fill = new THREE.DirectionalLight(0xd0e8ff, 0.45);
-fill.position.set(6, 2, 4);
-const rim = new THREE.DirectionalLight(0xffe0d0, 0.7);
-rim.position.set(0, 4, -9);
-scene.add(ambient, key, fill, rim);
-
-// Animation \u2014 MUST use window.__tl (GSAP master timeline), NOT requestAnimationFrame
-const state = { progress: 0 };
-window.__tl.to(state, {
-  progress: 1,
-  duration: DURATION,
-  ease: 'none',
-  onUpdate: function () {
-    const t = state.progress * DURATION; // seconds 0 \u2192 DURATION
-    // ---- YOUR SCENE UPDATES HERE (use t for all animation) ----
-    renderer.render(scene, camera);
-  }
-}, 0);
-// Initial render so scene is visible while paused
-renderer.render(scene, camera);
-
-SHADOWS (all 4 lines required for shadows to appear):
-renderer.shadowMap.enabled = true   // in boilerplate above
-light.castShadow = true             // on light
-mesh.castShadow = true              // on objects casting shadows
-floor.receiveShadow = true          // on the receiving surface
-
-GEOMETRIES AVAILABLE (r183):
-SphereGeometry, BoxGeometry, CylinderGeometry, ConeGeometry, CapsuleGeometry,
-TorusGeometry, TorusKnotGeometry, PlaneGeometry, RingGeometry, TubeGeometry,
-IcosahedronGeometry, OctahedronGeometry, DodecahedronGeometry, TetrahedronGeometry,
-LatheGeometry, ExtrudeGeometry, ShapeGeometry, EdgesGeometry, WireframeGeometry
-
-ENVIRONMENT MAP (call after creating scene + renderer for pro lighting):
-setupEnvironment(scene, renderer);
-This creates a procedural studio environment map with warm/cool gradient
-and soft light panels. Makes all PBR materials look dramatically better
-with realistic reflections. Call this for studio/product shots, OR skip it when you use the Cench stage environment below (it sets its own backdrop and lights).
-
-CENCH STAGE ENVIRONMENTS (pick ONE id that matches the user's setting \u2014 adds lights, ground/sky/fog/particles as a group __cenchEnvRoot):
-${formatThreeEnvironmentsForPrompt()}
-
-HOW TO USE STAGE ENVIRONMENTS:
-- After you create scene, renderer, and camera, call exactly one of:
-  applyCenchThreeEnvironment('ENV_ID', scene, renderer, camera);
-- Each frame inside your animate loop, after you compute elapsed time t in seconds:
-  updateCenchThreeEnvironment(window.__tl && typeof window.__tl.time === 'function' ? window.__tl.time() : t);
-  (Timeline scrubbing requires __tl.time(); call updateCenchThreeEnvironment every frame so the stage animation \u2014 rolling track marbles \u2014 stays in sync.)
-- Then add your hero meshes, GLTF models, and story motion on top. Do not remove the __cenchEnvRoot group.
-
-COMPOSITION & MOTION (compressed \u2014 prefer scene builders for the heavy lifting):
-- Frame subjects at rule-of-thirds intersections; never dead-center on an empty void.
-- Depth: foreground detail + midground hero + background environment. Use stage envs for depth.
-- Materials: roughness 0.3-0.7 for realism, metalness for contrast. Avoid default gray.
-- Camera: eye-level or slightly above. Slow motion (0.1-0.3 rad/s). Static for info-heavy.
-- Scale: camera distance 8-15u, objects 0.5-3u radius. Animate with t via window.__tl.
-- TEXT IN HTML, NOT 3D: for production video use React scenes with <ThreeJSLayer> under <AbsoluteFill> JSX text. Troika 3D text is decorative only.
-- Every object should mean something \u2014 3D illustrates concepts, it's not a tech demo.
-
-TEMPLATE HELPERS (injected as globals \u2014 all above are preferred over hand-coded equivalents):
-- applyCenchThreeEnvironment(envId, scene, renderer, camera) \u2014 full backdrop + lights (see SCENE BUILDERS)
-- addCinematicLighting(scene, style) \u2014 tuned 3-point rig
-- addGroundPlane(scene, opts) \u2014 shadow-catcher | infinite | circle floor
-- loadHDREnvironment(url, scene, renderer, { background }) \u2014 equirect HDR \u2192 IBL
-- loadPBRSet(urlPrefix, opts) \u2014 material from {prefix}_diffuse.jpg + _normal + _roughness + _metalness + _ao
-- createInstancedField(opts) \u2014 InstancedMesh with grid|circle|sphere|jitter layout
-- createPositionalAudio(camera, url, opts) \u2014 spatial audio attached to meshes
-- createCenchPostFX(renderer, scene, camera, opts) / createCenchPostFXPreset(..., name)
-- CENCH_TONE_MAPS \u2014 { aces, cineon, reinhard, linear, agx, neutral, none }
-- buildStudio(THREE, scene, camera, renderer, style?, opts?) \u2014 ThreeJSLayer-only studio bundle
-- createStudioScene(style) \u2014 standalone all-in-one (NOT available in ThreeJSLayer)
-- createPostProcessing(renderer, scene, camera, { bloom }) \u2014 legacy minimal composer (prefer createCenchPostFX)
-- MATERIALS.lowpoly(c) \u2014 flat-shaded friendly aesthetic
-
-MODEL LIBRARY (/models/library/ \u2014 use GLTFLoader):
-Categories: tech (laptop, monitor, tablet, keyboard), people (person-standing), business (desk, office-chair, whiteboard, briefcase, book, coin-stack), abstract (gear, shield, target, light-bulb, arrow-3d), environment (building-office, building-skyscraper, tree), transport (car, delivery-truck).
-Pattern: new GLTFLoader().load('/models/library/tech/laptop.glb', g => scene.add(g.scene))
-
-ADVANCED / OPT-IN \u2014 WebGPURenderer + TSL (Three.js Shading Language):
-Three.js ships WebGPURenderer + a node-based TSL shader system at 'three/webgpu'. Reach for it ONLY when the user explicitly asks for GPU compute, >10k particle simulations, or node shaders. Baseline scenes should stay on WebGLRenderer. If you DO switch, keep preserveDrawingBuffer: true, await renderer.init() before first render, and swap composer.render() with renderer.renderAsync().
-
-3D STYLE MATCHUP (pick ONE combo \u2014 variety is professional):
-- Corporate/SaaS \u2192 studio_white + sharpCorporate + addCinematicLighting('corporate')
-- Premium/reveal \u2192 cinematic_fog + cinematic + addCinematicLighting('dramatic')
-- Tutorial/kids \u2192 iso_playful + ghibli + addCinematicLighting('playful')
-- Cyberpunk/data/AI \u2192 tech_grid + cyberpunk + addCinematicLighting('cyberpunk')
-- Product launch \u2192 studio_white + cinematic + addCinematicLighting('product')
-- Wellness/nature \u2192 nature_sunset + vintage + addCinematicLighting('nature')
-- Chart/infographic \u2192 data_lab + bloom + addCinematicLighting('softbox')
-${getDesignPrinciples(dims)}
-Previous scene summary (for visual continuity): ${previousSummary || "none"}`;
-};
-var MOTION_SYSTEM_PROMPT = (palette, font, bgColor, duration, previousSummary, hasExplicitPalette = true) => `You are a Motion/Anime.js animation programmer for a high-end video editor.
-
-Output ONLY a raw JSON object \u2014 no markdown fences, no explanation.
-
-Required JSON shape:
-{
-  "styles": "<CSS string for all elements, no <style> tags>",
-  "htmlContent": "<HTML body elements, no <body> tags>",
-  "sceneCode": "<JavaScript \u2014 runs after Motion and Anime.js are loaded>"
-}
-
-STRICT RULES:
-- Body is 100vw \xD7 100vh with overflow:hidden \u2014 ALL content MUST fit without overflowing
-- Use flexbox or CSS grid for layout \u2014 NEVER position:absolute with pixel values
-- Use clamp(), vw/vh, and percentages for responsive sizing
-- Elements SHOULD have CSS @keyframes entrance animations (opacity:0 + animation: ... forwards) so content is visible even before JS runs
-${hasExplicitPalette ? `- Suggested palette (prefer these, override when content demands): ${palette.join(", ")}` : "- Choose a color palette that suits the content. You have full creative control over colors."}
-- Font: ${font}
-- Background is already set to ${bgColor}
-- Duration: ${duration} seconds total
-- GSAP master timeline is available as window.__tl. ALL animation timing MUST go through it.
-- NEVER use standalone anime() timelines, setTimeout, setInterval, or requestAnimationFrame
-- Use mulberry32(seed)() for any randomness \u2014 never Math.random()
-- Template globals are pre-injected (DURATION, WIDTH, HEIGHT, PALETTE, FONT, STROKE_COLOR) \u2014 do NOT redeclare them
-
-REQUIRED SKELETON (include this in sceneCode, then add your element updates):
-const els = {
-  // Cache your DOM elements here
-  // title: document.getElementById('title'),
-};
-
-const sceneState = { progress: 0 };
-window.__tl.to(sceneState, {
-  progress: 1,
-  duration: DURATION,
-  ease: 'none',
-  onUpdate: function() {
-    const p = sceneState.progress; // 0\u21921 over DURATION seconds
-    // Reveal and animate elements based on progress:
-    // if (p > 0.1) els.title.style.opacity = Math.min(1, (p - 0.1) / 0.1);
-    // els.box.style.transform = 'translateX(' + (p * 500) + 'px)';
-  },
-}, 0);
-
-ANIMATION GUIDANCE:
-- Use progress thresholds to stagger element entrances (e.g., show el1 at p>0.1, el2 at p>0.25)
-- Smooth transitions: use Math.min(1, (p - threshold) / fadeDuration) for fade-ins
-- Use sin/cos on p for oscillating motion
-- Fill the viewport deliberately \u2014 use flex/grid to distribute content evenly
-- ALL content MUST stay within bounds \u2014 use overflow:hidden, clamp(), and responsive units
-- If too many items, reduce count, use smaller text, or multi-column flex/grid layout
-- For easing within a segment: use power curves like Math.pow((p - start) / length, 2) for ease-in
-
-LAYOUT & CHOREOGRAPHY:
-- Use CSS grid or flexbox to create editorial layouts: split screens, overlapping panels, text alongside shapes.
-- Establish typographic hierarchy with at least 3 distinct sizes (headline 5-9vw, subhead 2.5-4vw, body 1.7-2.2vw). Nothing below 1.5vw \u2014 that's the video readability floor.
-- Choreograph reveals by spatial region \u2014 e.g., left builds first, then right responds \u2014 not everything from the same direction.
-- Avoid centering every text block. Left-aligned text with asymmetric composition feels more intentional.
-${DESIGN_PRINCIPLES}
-Previous scene summary (for visual continuity): ${previousSummary || "none"}`;
-var ZDOG_SYSTEM_PROMPT = (palette, bgColor, duration, previousSummary, hasExplicitPalette = true, dims = { width: 1920, height: 1080 }) => {
-  const W = dims.width;
-  const H = dims.height;
-  return `You are a Zdog pseudo-3D illustration programmer for a high-end video editor.
-
-Generate a SINGLE self-contained JavaScript code block. No HTML, no <script> tags, no markdown fences, no explanation.
-
-STRICT RULES:
-- Output ONLY raw JavaScript.
-- Zdog is already loaded as a global (window.Zdog). Never import or require it.
-- The canvas is already in the DOM: use document.getElementById('zdog-canvas').
-- Canvas size: ${W}\xD7${H} (WIDTH and HEIGHT globals are pre-defined). Do not resize it.
-${hasExplicitPalette ? `- Suggested palette (prefer these, override when content demands): ${palette.join(", ")}` : "- Choose colors that suit the content. PALETTE global is available but you may use any colors."}
-- Background is already set to ${bgColor} via CSS \u2014 do NOT draw a background rectangle.
-- Duration: ${duration} seconds. Animation must stop or loop gracefully at DURATION.
-- dragRotate MUST be false \u2014 headless Chrome has no mouse events.
-- NEVER use requestAnimationFrame, setInterval, or setTimeout. GSAP drives all animation.
-- Use mulberry32(seed)() for any randomness \u2014 never Math.random().
-- Maximum 20 individual shape objects. Use Zdog.Anchor groups for complex assemblies.
-- No Zfont \u2014 do NOT attempt to render text inside Zdog. Use HTML overlay for labels if needed.
-
-REQUIRED SKELETON (copy exactly, fill in the scene setup between the markers):
-const canvas = document.getElementById('zdog-canvas');
-
-const illo = new Zdog.Illustration({
-  element: canvas,
-  zoom: 4,
-  dragRotate: false,
-  resize: false,
-  width: WIDTH,
-  height: HEIGHT,
-});
-
-// ---- YOUR SCENE SETUP HERE (add shapes to illo or to Anchor groups) ----
-
-// ---- END SCENE SETUP ----
-
-// GSAP drives the animation \u2014 no manual RAF loop
-const sceneState = { t: 0 };
-window.__tl.to(sceneState, {
-  t: DURATION,
-  duration: DURATION,
-  ease: 'none',
-  onUpdate: function() {
-    const t = sceneState.t;
-    // ---- YOUR ANIMATION UPDATES HERE (use t for all motion) ----
-
-    // ---- END ANIMATION UPDATES ----
-    illo.updateRenderGraph();
-  },
-}, 0);
-
-COORDINATE SYSTEM:
-- Origin is center of canvas.
-- x: positive = right, y: positive = DOWN, z: positive = toward camera.
-- At zoom=4: a shape with diameter=40 appears ~160px wide on screen.
-- Keep shapes within -60 to +60 on x/y, -40 to +40 on z.
-
-ANIMATION GUIDANCE:
-- Slow spin: illo.rotate.y = elapsed * 0.5 (full turn every ~12s)
-- Lerp to target: shape.translate.y += (targetY - shape.translate.y) * 0.08
-- Oscillate: shape.translate.y = Math.sin(elapsed * 2) * 20
-- Stagger reveals: reveal shape i when elapsed > i * (DURATION / shapeCount)
-
-SHAPE QUICK REFERENCE:
-new Zdog.Ellipse({ addTo, diameter, stroke, color, fill, translate:{x,y,z}, rotate:{x,y,z} })
-new Zdog.Rect({ addTo, width, height, stroke, color, fill, translate, rotate })
-new Zdog.Cylinder({ addTo, diameter, length, stroke, color, fill, backface })
-new Zdog.Cone({ addTo, diameter, length, stroke, color })
-new Zdog.Box({ addTo, width, height, depth, stroke, color, fill, leftFace, rightFace, topFace, bottomFace, frontFace, rearFace })
-new Zdog.Hemisphere({ addTo, diameter, stroke, color, fill, backface })
-new Zdog.Polygon({ addTo, radius, sides, stroke, color, fill })
-new Zdog.Shape({ addTo, path:[{x,y,z},...], stroke, color, closed })
-new Zdog.Anchor({ addTo, translate, rotate, scale })  // group/pivot
-
-WHAT LOOKS GREAT IN ZDOG:
-- Rotating molecular/atomic models (Hemisphere + Cylinder + Ellipse rings)
-- 3D bar charts (Box shapes varying height)
-- Spinning globes (Ellipse latitude rings on a sphere body)
-- Interlocking gears (Polygon + Cylinder)
-- Network diagrams (Ellipse nodes + Shape connectors)
-- Solar system / orbital models (Ellipse rings + Hemisphere)
-- Product boxes (Box with different face colors per face)
-
-COMPOSITION:
-- Group shapes into logical assemblies using Zdog.Anchor \u2014 don't scatter unrelated shapes.
-- One primary assembly at larger scale, with secondary details orbiting or supporting.
-- Use 2-3 palette colors maximum, with one dominant. Not every shape needs a different color.
-- Vary shape types within assemblies \u2014 combine Ellipse + Cylinder + Box, not all-same-shape.
-${getDesignPrinciples(dims)}
-Previous scene summary (for visual continuity): ${previousSummary || "none"}`;
-};
-var LOTTIE_OVERLAY_PROMPT = (palette, font, duration, previousSummary, hasExplicitPalette = true, dims = { width: 1920, height: 1080 }, motionPersonality = "corporate") => {
-  const W = dims.width;
-  const H = dims.height;
-  const op = duration * 30;
-  const personality = personalityPromptBlock(motionPersonality);
-  return `You are a Lottie animation generator. Generate a valid Lottie JSON animation.
-
-Output ONLY raw JSON \u2014 no markdown fences, no explanation, no wrapping.
-
-CANVAS: w=${W}, h=${H}, fr=30, duration=${duration}s (op = ${op} frames).
-${hasExplicitPalette ? `COLORS (as 0\u20131 RGBA arrays): ${palette.map((c) => {
-    const r = parseInt(c.slice(1, 3), 16) / 255, g = parseInt(c.slice(3, 5), 16) / 255, b = parseInt(c.slice(5, 7), 16) / 255;
-    return `[${r.toFixed(2)},${g.toFixed(2)},${b.toFixed(2)},1]`;
-  }).join(", ")}` : "COLORS: Choose colors that suit the animation content."}
-
-${personality}
-
-CRITICAL \u2014 KEYFRAME EASING HANDLES:
-Every animated keyframe (except the final one) MUST include bezier easing handles.
-Use the easing curves from the MOTION PERSONALITY section above. Example for 1D properties:
-  "i": {"x":[0.58],"y":[1]}, "o": {"x":[0.42],"y":[0]}
-For 3D properties (position, scale, anchor) use arrays of 3:
-  "i": {"x":[0.58,0.58,0.58],"y":[1,1,1]}, "o": {"x":[0.42,0.42,0.42],"y":[0,0,0]}
-Without these, lottie-web throws renderFrameError and nothing renders.
-NEVER use linear easing (identical i/o values) on position \u2014 it looks robotic.
-
-NARRATIVE STRUCTURE (distribute keyframes across these phases):
-- Setup (frames 0-${Math.round(op * 0.25)}): Elements appear, establish positions. Use entrance easing.
-- Action (frames ${Math.round(op * 0.25)}-${Math.round(op * 0.65)}): Primary animation. Use emphasis/personality easing.
-- Resolution (frames ${Math.round(op * 0.65)}-${op}): Settle to final state. Hold or gentle ambient.
-
-STRUCTURE:
-{
-  "v": "5.7.1", "fr": 30, "ip": 0, "op": ${op},
-  "w": ${W}, "h": ${H}, "nm": "Scene", "ddd": 0, "assets": [],
-  "layers": [
-    {
-      "ddd": 0, "ind": 1, "ty": 4, "nm": "LayerName", "sr": 1,
-      "ks": {
-        "o": { "a": 0, "k": 100 },
-        "r": { "a": 0, "k": 0 },
-        "p": { "a": 0, "k": [960, 540, 0] },
-        "a": { "a": 0, "k": [0, 0, 0] },
-        "s": { "a": 0, "k": [100, 100, 100] }
-      },
-      "ao": 0,
-      "shapes": [
-        { "ty": "el", "d": 1, "s": { "a": 0, "k": [200, 200] }, "p": { "a": 0, "k": [0, 0] }, "nm": "E" },
-        { "ty": "st", "c": { "a": 0, "k": [R,G,B,1] }, "o": { "a": 0, "k": 100 }, "w": { "a": 0, "k": 4 }, "lc": 2, "lj": 2, "nm": "S" }
-      ],
-      "ip": 0, "op": ${op}, "st": 0
-    }
-  ]
-}
-
-SHAPE TYPES: "el" (ellipse), "rc" (rect with "r" for radius), "sr" (star/polygon), "sh" (bezier path with "v","i","o","c" arrays), "fl" (fill), "st" (stroke), "tr" (transform), "gr" (group containing shapes + "tr").
-LAYER ty: 4 = shape layer, 1 = solid.
-ANIMATED PROPERTY: set "a":1 and "k" to keyframe array. Static: "a":0, "k": value.
-
-PATTERN TEMPLATES \u2014 adapt these for your animation (all include proper easing handles):
-
-Entrance (fade + scale up, 1D opacity):
-"o": { "a": 1, "k": [
-  { "t": 0, "s": [0], "i": {"x":[0.58],"y":[1]}, "o": {"x":[0.42],"y":[0]} },
-  { "t": 20, "s": [100] }
-]}
-
-Entrance (scale up, 3D):
-"s": { "a": 1, "k": [
-  { "t": 0, "s": [80, 80, 100], "i": {"x":[0.58,0.58,0.58],"y":[1,1,1]}, "o": {"x":[0.42,0.42,0.42],"y":[0,0,0]} },
-  { "t": 20, "s": [100, 100, 100] }
-]}
-
-Exit (fade + scale down, 1D opacity):
-"o": { "a": 1, "k": [
-  { "t": ${op - 20}, "s": [100], "i": {"x":[1],"y":[1]}, "o": {"x":[0.42],"y":[0]} },
-  { "t": ${op}, "s": [0] }
-]}
-
-Pulse emphasis (scale 100 -> 110 -> 100):
-"s": { "a": 1, "k": [
-  { "t": 30, "s": [100,100,100], "i": {"x":[0.58,0.58,0.58],"y":[1,1,1]}, "o": {"x":[0.16,0.16,0.16],"y":[1,1,1]} },
-  { "t": 40, "s": [110,110,100], "i": {"x":[0.58,0.58,0.58],"y":[1,1,1]}, "o": {"x":[0.3,0.3,0.3],"y":[1,1,1]} },
-  { "t": 50, "s": [100,100,100] }
-]}
-
-GOOD SUBJECTS: icons, logos, geometric patterns, looping decorative elements, simple character animations, data viz transitions, micro-interactions.
-
-QUALITY:
-- Use intentional movement paths \u2014 arcs and curves, not just linear slides.
-- Asymmetric timing: fast start with slow settle, or delayed secondary motion after primary.
-- Two-property sweet spot: combine position+opacity for entrances, scale+color for emphasis.
-- Stagger secondary elements 50-100ms after the primary action.
-- Exit animations should be 75% of entrance duration.
-${getDesignPrinciples(dims)}
-Previous scene summary (for visual continuity): ${previousSummary || "none"}`;
-};
-var REACT_SYSTEM_PROMPT = (palette, font, bgColor, duration, previousSummary, hasExplicitPalette = true, dims = { width: 1920, height: 1080 }) => {
-  const W = dims.width;
-  const H = dims.height;
-  return `You are an expert React animation developer creating video scenes for Cench Studio. You write React components that render deterministic, frame-based animations using the CenchReact SDK (Remotion-style).
-
-## OUTPUT FORMAT
-Return a JSON object with these fields:
-- "sceneCode": JSX code that exports a default React component
-- "styles": Optional CSS string for additional styling
-
-## AVAILABLE APIs (injected as globals \u2014 do NOT import them)
-
-### Core hooks
-- \`useCurrentFrame()\` \u2014 returns current integer frame number
-- \`useVideoConfig()\` \u2014 returns \`{ fps, width, height, durationInFrames }\`
-
-### Animation utilities
-- \`interpolate(value, inputRange, outputRange, options?)\` \u2014 map a value between ranges
-  - options: \`{ extrapolateLeft: 'clamp'|'extend', extrapolateRight: 'clamp'|'extend', easing: fn }\`
-  - Example: \`interpolate(frame, [0, 30], [0, 1])\` \u2014 fade in over 30 frames
-- \`spring({ frame, fps, config?, from?, to? })\` \u2014 spring-based animation
-  - config: \`{ damping, mass, stiffness, overshootClamping }\`
-  - Example: \`spring({ frame: frame - 15, fps, config: { damping: 12 } })\`
-- \`Easing.ease\`, \`Easing.easeIn\`, \`Easing.easeOut\`, \`Easing.easeInOut\`, \`Easing.bezier(x1,y1,x2,y2)\`
-
-### Layout components
-- \`<AbsoluteFill style={{...}}>\` \u2014 full-frame absolute positioning div
-- \`<Sequence from={30} durationInFrames={60}>\` \u2014 timing container, children see local frame starting at 0
-
-### Bridge components (for imperative renderers)
-- \`<Canvas2DLayer draw={(ctx, frame, config) => {...}} />\` \u2014 2D canvas drawing
-- \`<ThreeJSLayer setup={(THREE, scene, cam, renderer) => {...}} update={(scene, cam, frame) => {...}} />\` \u2014 Three.js 3D
-- \`<D3Layer setup={(d3, el, config) => {...}} update={(d3, el, frame, config) => {...}} />\` \u2014 D3 data viz
-- \`<SVGLayer viewBox="0 0 ${W} ${H}" setup={(svgEl, gsap, tl) => {...}}>{children}</SVGLayer>\` \u2014 SVG with GSAP
-- \`<LottieLayer data={lottieJSON} />\` \u2014 Lottie animation synced to frame
-
-### Interactivity hooks (for interactive/branching scenes)
-- \`useVariable(name, defaultValue)\` \u2014 reactive state synced with parent player
-  - Returns \`[value, setValue]\` like useState
-  - Value persists across scenes and is visible to the parent player
-  - Example: \`const [score, setScore] = useVariable('score', 0)\`
-  - Use for: counters, user selections, form values, any state the viewer controls
-- \`useInteraction(elementId)\` \u2014 click/hover handlers for interactive elements
-  - Returns \`{ handlers, isHovered, isClicked }\`
-  - Spread \`handlers\` on any element: \`<div {...btn.handlers}>\`
-  - Hover/click state drives visual feedback (scale, opacity, color changes)
-  - Example: \`const btn = useInteraction('cta-button')\`
-  - Use for: clickable cards, hoverable chart elements, interactive 3D objects
-- \`useTrigger(name)\` \u2014 fire named events to the parent player
-  - Returns \`{ fire(payload), onFired(callback) }\`
-  - Example: \`const reveal = useTrigger('show-details'); reveal.fire({ section: 'pricing' })\`
-
-### When to use interactivity hooks
-- Use useVariable when the viewer needs to control a value that affects the scene (slider-driven charts, toggle-driven visibility, score tracking)
-- Use useInteraction when elements should respond to hover/click with visual feedback AND notify the parent
-- Use useTrigger for one-shot events (completed quiz, reached milestone)
-- Animation state should still be frame-based (useCurrentFrame + interpolate). Interactivity hooks are for VIEWER INPUT, not animation.
-
-### Scene globals (available as window vars)
-- \`PALETTE\`, \`DURATION\`, \`FONT\`, \`WIDTH\`, \`HEIGHT\`, \`ROUGHNESS\`, \`STROKE_COLOR\`
-
-## EXAMPLE
-
-\`\`\`jsx
-export default function Scene() {
-  const frame = useCurrentFrame();
-  const { fps, durationInFrames } = useVideoConfig();
-
-  const titleOpacity = interpolate(frame, [0, 30], [0, 1]);
-  const titleY = interpolate(frame, [0, 30], [50, 0], { easing: Easing.easeOut });
-  const scale = spring({ frame: frame - 10, fps, config: { damping: 12 } });
-
-  return (
-    <AbsoluteFill style={{ background: PALETTE[0], fontFamily: FONT }}>
-      <div style={{
-        position: 'absolute', top: '20%', width: '100%', textAlign: 'center',
-        opacity: titleOpacity, transform: \\\`translateY(\\\${titleY}px) scale(\\\${scale})\\\`,
-        fontSize: 80, color: PALETTE[3], fontWeight: 700,
-      }}>
-        Hello World
-      </div>
-      <Sequence from={60} durationInFrames={120}>
-        <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center' }}>
-          <SubContent />
-        </AbsoluteFill>
-      </Sequence>
-    </AbsoluteFill>
-  );
-}
-
-function SubContent() {
-  const frame = useCurrentFrame(); // local frame (0-based within Sequence)
-  const opacity = interpolate(frame, [0, 20], [0, 1]);
-  return <p style={{ opacity, fontSize: 48, color: PALETTE[1] }}>Subtitle text</p>;
-}
-\`\`\`
-
-## ANIMATION RULES
-- Animation is a PURE FUNCTION of frame. No useState for animation state.
-- Use \`interpolate()\` and \`spring()\` \u2014 NOT manual lerp functions.
-- useEffect is ONLY for imperative bridge layers (Canvas2D, Three.js), never for animation state.
-- NO Math.random \u2014 use deterministic values (index-based, frame-based).
-- NO setTimeout, setInterval, requestAnimationFrame for animation.
-- All motion derived from frame number via \`useCurrentFrame()\`.
-- Use \`<Sequence>\` for temporal composition \u2014 children see a local frame starting at 0.
-
-## STYLING
-- Use inline styles (style={{ }}) \u2014 no external CSS classes needed.
-- Use \`<AbsoluteFill>\` for full-frame layers that stack via z-index.
-${hasExplicitPalette ? `- Palette: ${JSON.stringify(palette)}` : "- Choose a color palette that suits the content."}
-- Heading font: "${font}" (use for titles, headings, display text)
-- Body font: available as BODY_FONT global (use for paragraphs, descriptions, labels)
-- Background: "${bgColor}"
-- The canvas is a fixed ${W}\xD7${H}px box with overflow: hidden \u2014 any content outside this area is clipped and invisible. Position all elements within bounds. Use percentage-based or absolute positioning relative to ${W}\xD7${H}.
-
-## CONTENT & DESIGN GUIDELINES
-- Create a clear visual hierarchy: one dominant element, supporting elements at smaller scale, fine details.
-- Use AbsoluteFill layers for depth through overlapping: background layer, content layer, accent/decorative layers.
-- Layout variety: use CSS grid/flexbox within AbsoluteFill for editorial layouts \u2014 split screens, offset grids, text-alongside-visual. Do not default to centered stacks.
-- Typography: VIDEO SIZES \u2014 nothing below 24px. Pair bold headline (100-180px) with subtitle (48-72px) and body/labels (32-42px). Labels/annotations minimum 24px. Web-sized text (14-20px) is invisible in video.
-- Stagger entrances using Sequence components with 8-15 frame offsets between elements.
-- Use spring() for organic motion on key reveals. Use interpolate() with Easing.bezier for controlled motion.
-- Leave 20% of duration as a visual hold at the end.
-- Total duration: ${duration} seconds at 30fps = ${duration * 30} total frames.
-
-## CAMERA MOTION \u2014 required, but VARY per scene purpose (do NOT default kenBurns on every scene)
-Pick the motion that matches what THIS scene is doing. Do not mechanically stamp one motion
-across a whole sequence \u2014 that reads as lazy.
-\`\`\`jsx
-React.useEffect(() => {
-  // Title / opening card:
-  CenchCamera.presetCinematicPush({ at: 0, duration: DURATION * 0.6 })
-  // Static data / receipt / grid \u2014 subtle zoom only:
-  // CenchCamera.kenBurns({ duration: DURATION, endScale: 1.02 })
-  // Reveal multiple items:
-  // CenchCamera.presetReveal({ duration: DURATION * 0.7 })
-  // Sign-off / closing:
-  // CenchCamera.presetEmphasis({ at: 0.5, duration: DURATION - 0.5 })
-  // Focus on one element:
-  // CenchCamera.dollyIn({ targetSelector: '#hero', at: 1, duration: 3 })
-}, [])
-\`\`\`
-**Skip CenchCamera entirely** when the scene's content already moves (video playback,
-a 3D spin, fast data animation). Stacking camera motion on top of intrinsic motion
-causes visual nausea \u2014 a locked camera is correct there.
-If three scenes in a row use the same motion, change one.
-
-${getDesignPrinciples(dims)}
-Previous scene summary: ${previousSummary || "none"}`;
-};
+// lib/generation/generate.ts
+init_prompts();
 
 // lib/zdog/animations/presets.ts
 function animCall(beat, body) {
@@ -16884,6 +17342,374 @@ async function callLocal(endpoint, localModelName, systemPrompt, userContent, ma
 }
 
 // lib/services/generation.ts
+init_prompts();
+
+// lib/motion/lottie-validator.ts
+init_easing();
+function isObject(v) {
+  return v !== null && typeof v === "object" && !Array.isArray(v);
+}
+function isArray(v) {
+  return Array.isArray(v);
+}
+function dimensionsForProperty(propName) {
+  if (propName === "p" || propName === "s" || propName === "a") return 3;
+  return 1;
+}
+function hasValidHandles(kf) {
+  const i = kf.i;
+  const o = kf.o;
+  if (!isObject(i) || !isObject(o)) return false;
+  if (!isArray(i.x) || !isArray(i.y)) return false;
+  if (!isArray(o.x) || !isArray(o.y)) return false;
+  if (i.x.length === 0 || i.y.length === 0) return false;
+  if (o.x.length === 0 || o.y.length === 0) return false;
+  return true;
+}
+function validateKeyframes(keyframes, propName, path23, result, opts) {
+  let fixCount = 0;
+  const dims = dimensionsForProperty(propName);
+  for (let i = 0; i < keyframes.length - 1; i++) {
+    const kf = keyframes[i];
+    if (!isObject(kf)) continue;
+    if (!hasValidHandles(kf)) {
+      const msg = `${path23}[${i}]: missing or invalid easing handles`;
+      if (opts.fix) {
+        const handles = easingToLottieHandles(opts.fixEasing, dims);
+        kf.i = handles.i;
+        kf.o = handles.o;
+        result.warnings.push(`${msg} (auto-fixed)`);
+        fixCount++;
+      } else {
+        result.errors.push(msg);
+      }
+    }
+  }
+  if (propName === "p" && keyframes.length > 1) {
+    let allLinear = true;
+    for (let i = 0; i < keyframes.length - 1; i++) {
+      const kf = keyframes[i];
+      if (!hasValidHandles(kf)) continue;
+      const oObj = kf.o;
+      const iObj = kf.i;
+      const ox = oObj.x[0];
+      const oy = oObj.y[0];
+      const ix = iObj.x[0];
+      const iy = iObj.y[0];
+      if (!(Math.abs(ox) < 0.01 && Math.abs(oy) < 0.01 && Math.abs(ix - 1) < 0.01 && Math.abs(iy - 1) < 0.01)) {
+        allLinear = false;
+        break;
+      }
+    }
+    if (allLinear) {
+      result.warnings.push(`${path23}: position uses linear easing \u2014 motion may look robotic`);
+    }
+  }
+  return fixCount;
+}
+function walkObject(obj, path23, propName, result, opts) {
+  if (!isObject(obj)) return;
+  if ("a" in obj && "k" in obj) {
+    const animated = obj.a;
+    const k = obj.k;
+    if (animated === 1 && isArray(k) && k.length > 0 && isObject(k[0])) {
+      result.fixCount += validateKeyframes(k, propName, path23, result, opts);
+      return;
+    }
+  }
+  for (const key of Object.keys(obj)) {
+    const val = obj[key];
+    if (isObject(val)) {
+      walkObject(val, `${path23}.${key}`, key, result, opts);
+    } else if (isArray(val)) {
+      for (let i = 0; i < val.length; i++) {
+        if (isObject(val[i])) {
+          walkObject(val[i], `${path23}.${key}[${i}]`, key, result, opts);
+        }
+      }
+    }
+  }
+}
+function validateLottieJSON(json, options = {}) {
+  const opts = {
+    fix: options.fix ?? true,
+    fixEasing: options.fixEasing ?? SAFE_DEFAULT
+  };
+  const result = {
+    valid: true,
+    errors: [],
+    warnings: [],
+    fixCount: 0
+  };
+  if (!isObject(json)) {
+    result.valid = false;
+    result.errors.push("Root is not an object");
+    return result;
+  }
+  const requiredFields = ["v", "fr", "ip", "op", "w", "h", "layers"];
+  for (const field of requiredFields) {
+    if (!(field in json)) {
+      result.errors.push(`Missing required field: ${field}`);
+    }
+  }
+  if (!isArray(json.layers)) {
+    result.valid = false;
+    result.errors.push("layers must be an array");
+    return result;
+  }
+  const rootIp = typeof json.ip === "number" ? json.ip : 0;
+  const rootOp = typeof json.op === "number" ? json.op : Infinity;
+  for (let li = 0; li < json.layers.length; li++) {
+    const layer = json.layers[li];
+    if (!isObject(layer)) continue;
+    const layerIp = typeof layer.ip === "number" ? layer.ip : void 0;
+    const layerOp = typeof layer.op === "number" ? layer.op : void 0;
+    if (layerIp !== void 0 && layerIp < rootIp) {
+      result.warnings.push(`layers[${li}].ip (${layerIp}) is before root ip (${rootIp})`);
+    }
+    if (layerOp !== void 0 && layerOp > rootOp) {
+      result.warnings.push(`layers[${li}].op (${layerOp}) exceeds root op (${rootOp})`);
+    }
+    walkObject(layer, `layers[${li}]`, "", result, opts);
+  }
+  if (isArray(json.assets)) {
+    for (let ai = 0; ai < json.assets.length; ai++) {
+      const asset = json.assets[ai];
+      if (isObject(asset) && isArray(asset.layers)) {
+        for (let li = 0; li < asset.layers.length; li++) {
+          const layer = asset.layers[li];
+          if (isObject(layer)) {
+            walkObject(layer, `assets[${ai}].layers[${li}]`, "", result, opts);
+          }
+        }
+      }
+    }
+  }
+  if (result.errors.length > 0) {
+    result.valid = false;
+  }
+  if (opts.fix) {
+    result.fixed = json;
+  }
+  return result;
+}
+
+// lib/motion/quality-score.ts
+init_easing();
+function isObj(v) {
+  return v !== null && typeof v === "object" && !Array.isArray(v);
+}
+function isArr(v) {
+  return Array.isArray(v);
+}
+function countAnimated(obj) {
+  let animated = 0;
+  let static_ = 0;
+  let keyframeCount = 0;
+  function walk(node) {
+    if (!isObj(node)) return;
+    if ("a" in node && "k" in node) {
+      if (node.a === 1 && isArr(node.k)) {
+        animated++;
+        keyframeCount += node.k.length;
+      } else {
+        static_++;
+      }
+      return;
+    }
+    for (const val of Object.values(node)) {
+      if (isObj(val)) walk(val);
+      else if (isArr(val)) val.forEach((item) => isObj(item) && walk(item));
+    }
+  }
+  walk(obj);
+  return { animated, static_, keyframeCount };
+}
+function hasEasingVariety(obj) {
+  const easings = [];
+  function walk(node) {
+    if (!isObj(node)) return;
+    if ("a" in node && node.a === 1 && isArr(node.k)) {
+      for (const kf of node.k) {
+        if (isObj(kf) && isObj(kf.i) && isObj(kf.o)) {
+          const i = kf.i;
+          const o = kf.o;
+          if (isArr(i.x) && isArr(i.y)) {
+            easings.push(`${i.x[0]},${i.y[0]}`);
+          }
+          if (isArr(o.x) && isArr(o.y)) {
+            easings.push(`${o.x[0]},${o.y[0]}`);
+          }
+        }
+      }
+      return;
+    }
+    for (const val of Object.values(node)) {
+      if (isObj(val)) walk(val);
+      else if (isArr(val)) val.forEach((item) => isObj(item) && walk(item));
+    }
+  }
+  walk(obj);
+  const unique = new Set(easings);
+  return unique.size > 2;
+}
+function hasEntranceAndExit(json) {
+  const op = typeof json.op === "number" ? json.op : 240;
+  const earlyThreshold = op * 0.3;
+  const lateThreshold = op * 0.7;
+  let entrance = false;
+  let exit = false;
+  function walkKeyframes(node) {
+    if (!isObj(node)) return;
+    if ("a" in node && node.a === 1 && isArr(node.k)) {
+      for (const kf of node.k) {
+        if (isObj(kf) && typeof kf.t === "number") {
+          if (kf.t <= earlyThreshold) entrance = true;
+          if (kf.t >= lateThreshold) exit = true;
+        }
+      }
+      return;
+    }
+    for (const val of Object.values(node)) {
+      if (isObj(val)) walkKeyframes(val);
+      else if (isArr(val)) val.forEach((item) => isObj(item) && walkKeyframes(item));
+    }
+  }
+  walkKeyframes(json);
+  return { entrance, exit };
+}
+function countMissingEasing(obj) {
+  let missing = 0;
+  function walk(node) {
+    if (!isObj(node)) return;
+    if ("a" in node && node.a === 1 && isArr(node.k)) {
+      for (let i = 0; i < node.k.length - 1; i++) {
+        const kf = node.k[i];
+        if (isObj(kf) && (!isObj(kf.i) || !isObj(kf.o))) {
+          missing++;
+        }
+      }
+      return;
+    }
+    for (const val of Object.values(node)) {
+      if (isObj(val)) walk(val);
+      else if (isArr(val)) val.forEach((item) => isObj(item) && walk(item));
+    }
+  }
+  walk(obj);
+  return missing;
+}
+function countShapes(json) {
+  let count = 0;
+  function walkShapes(node) {
+    if (!isObj(node)) return;
+    if (typeof node.ty === "string" && ["el", "rc", "sr", "sh", "fl", "st"].includes(node.ty)) {
+      count++;
+    }
+    for (const val of Object.values(node)) {
+      if (isObj(val)) walkShapes(val);
+      else if (isArr(val)) val.forEach((item) => walkShapes(item));
+    }
+  }
+  if (isArr(json.layers)) {
+    for (const layer of json.layers) walkShapes(layer);
+  }
+  return count;
+}
+function scoreLottieQuality(json, options = {}) {
+  const suggestions = [];
+  const layers2 = isArr(json.layers) ? json.layers : [];
+  const layerCount = layers2.length;
+  const { animated, keyframeCount } = countAnimated(json);
+  const shapeCount = countShapes(json);
+  const op = typeof json.op === "number" ? json.op : 240;
+  const fr = typeof json.fr === "number" ? json.fr : 30;
+  const durationSec = op / fr;
+  let visual = 0;
+  if (hasEasingVariety(json)) {
+    visual += 6;
+  } else {
+    suggestions.push("Use varied easing curves \u2014 not every property needs the same bezier.");
+  }
+  const phases = hasEntranceAndExit(json);
+  if (phases.entrance) visual += 4;
+  else suggestions.push("Add entrance keyframes in the first 30% of the animation.");
+  if (phases.exit) visual += 4;
+  else suggestions.push("Add exit or resolution keyframes in the last 30%.");
+  if (animated >= 3) visual += 6;
+  else if (animated >= 2) visual += 4;
+  else if (animated >= 1) visual += 2;
+  else suggestions.push("Animate at least 2 properties (e.g. position + opacity).");
+  let technical = 10;
+  const missingEasing = countMissingEasing(json);
+  if (missingEasing > 0) {
+    technical -= Math.min(10, missingEasing * 2);
+    suggestions.push(`${missingEasing} keyframe(s) missing easing handles.`);
+  }
+  const hasRequiredFields = ["v", "fr", "ip", "op", "w", "h", "layers"].every((f) => f in json);
+  if (hasRequiredFields) technical += 5;
+  else suggestions.push("Missing required Lottie fields.");
+  let frameRangeOk = true;
+  for (const layer of layers2) {
+    if (isObj(layer)) {
+      const lip = typeof layer.ip === "number" ? layer.ip : 0;
+      const lop = typeof layer.op === "number" ? layer.op : op;
+      if (lip < 0 || lop > op + 1) frameRangeOk = false;
+    }
+  }
+  if (frameRangeOk) technical += 5;
+  else suggestions.push("Some layers have frame ranges outside the root ip/op.");
+  let emotional = 10;
+  if (options.personality) {
+    const profile = PERSONALITIES[options.personality];
+    emotional += 5;
+    if (hasEasingVariety(json)) emotional += 5;
+  } else {
+    emotional += 10;
+  }
+  let performance = 20;
+  if (layerCount > 10) {
+    performance -= Math.min(10, (layerCount - 10) * 2);
+    suggestions.push(`${layerCount} layers \u2014 consider simplifying to under 10.`);
+  }
+  if (keyframeCount > 500) {
+    performance -= Math.min(10, Math.floor((keyframeCount - 500) / 100));
+    suggestions.push(`${keyframeCount} keyframes \u2014 consider reducing complexity.`);
+  }
+  let completeness = 0;
+  if (shapeCount > 0) completeness += 8;
+  else suggestions.push("No shape elements found \u2014 animation may be empty.");
+  if (animated > 0) completeness += 6;
+  else suggestions.push("No animated properties \u2014 this is a static Lottie.");
+  if (options.expectedDuration) {
+    const diff = Math.abs(durationSec - options.expectedDuration);
+    if (diff < 1) completeness += 6;
+    else if (diff < 3) completeness += 3;
+    else suggestions.push(`Duration ${durationSec.toFixed(1)}s doesn't match expected ${options.expectedDuration}s.`);
+  } else {
+    completeness += 6;
+  }
+  const total = Math.max(
+    0,
+    Math.min(
+      100,
+      Math.min(20, visual) + Math.min(20, technical) + Math.min(20, emotional) + Math.min(20, performance) + Math.min(20, completeness)
+    )
+  );
+  return {
+    total,
+    dimensions: {
+      visual: Math.min(20, visual),
+      technical: Math.min(20, technical),
+      emotional: Math.min(20, emotional),
+      performance: Math.min(20, performance),
+      completeness: Math.min(20, completeness)
+    },
+    suggestions
+  };
+}
+
+// lib/services/generation.ts
 async function generateCanvas(input) {
   if (!input.prompt) {
     throw new GenerationValidationError("prompt is required");
@@ -16940,6 +17766,114 @@ async function generateReact(input) {
   });
   return { result: { sceneCode: gen.code, styles: gen.styles }, usage: gen.usage, truncated: gen.truncated };
 }
+async function generateD3(input) {
+  if (!input.prompt) throw new GenerationValidationError("prompt is required");
+  if (!process.env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY not set");
+  const { runStructuredD3Generation: runStructuredD3Generation2 } = await Promise.resolve().then(() => (init_d3_structured_run(), d3_structured_run_exports));
+  if (input.mode === "legacy") {
+    throw new GenerationValidationError(
+      "Legacy D3 mode is HTTP-only. Use the cench_charts structured pipeline instead."
+    );
+  }
+  const out = await runStructuredD3Generation2({
+    prompt: input.prompt,
+    palette: input.palette ?? ["#1a1a2e", "#e84545", "#16a34a", "#2563eb"],
+    font: input.font ?? "Caveat",
+    bgColor: input.bgColor ?? "#fffef9",
+    duration: input.duration ?? 8,
+    previousSummary: input.previousSummary ?? "",
+    d3Data: input.d3Data
+  });
+  const costUsd = out.usage.input_tokens / 1e6 * 3 + out.usage.output_tokens / 1e6 * 15;
+  return {
+    result: {
+      chartLayers: out.chartLayers,
+      sceneCode: out.sceneCode,
+      d3Data: out.d3Data,
+      styles: out.styles,
+      suggestedData: out.d3Data
+    },
+    usage: { input_tokens: out.usage.input_tokens, output_tokens: out.usage.output_tokens, cost_usd: costUsd },
+    mode: "cench_charts"
+  };
+}
+var LottieParseError = class extends Error {
+  constructor(message, usage) {
+    super(message);
+    this.usage = usage;
+    this.name = "LottieParseError";
+  }
+  usage;
+  code = "LOTTIE_PARSE";
+};
+var anthropicClient2 = null;
+function getAnthropic() {
+  if (!anthropicClient2) {
+    anthropicClient2 = new import_sdk3.default({ apiKey: process.env.ANTHROPIC_API_KEY });
+  }
+  return anthropicClient2;
+}
+async function generateLottie(input) {
+  if (!input.prompt) throw new GenerationValidationError("prompt is required");
+  if (!process.env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY not set");
+  const palette = input.palette ?? ["#1a1a2e", "#e84545", "#16a34a", "#2563eb"];
+  const font = input.font ?? "Caveat";
+  const duration = input.duration ?? 8;
+  const motionPersonality = input.motionPersonality ?? "corporate";
+  const systemPrompt = LOTTIE_OVERLAY_PROMPT(
+    palette,
+    font,
+    duration,
+    input.previousSummary ?? "",
+    true,
+    void 0,
+    motionPersonality
+  );
+  const msg = await getAnthropic().messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 8192,
+    system: systemPrompt,
+    messages: [{ role: "user", content: input.prompt }]
+  });
+  const textBlock = msg.content.find((b) => b.type === "text");
+  const text2 = textBlock?.type === "text" ? textBlock.text : "";
+  const usage = {
+    input_tokens: msg.usage.input_tokens,
+    output_tokens: msg.usage.output_tokens,
+    cost_usd: msg.usage.input_tokens / 1e6 * 3 + msg.usage.output_tokens / 1e6 * 15
+  };
+  let cleaned;
+  let parsed;
+  try {
+    cleaned = text2.replace(/^```json\s*/, "").replace(/```\s*$/, "").trim();
+    parsed = JSON.parse(cleaned);
+  } catch {
+    console.error("[generate-lottie] Model returned invalid JSON:", text2.slice(0, 200));
+    throw new LottieParseError("Model returned invalid Lottie JSON. Please try again.", usage);
+  }
+  const validation = validateLottieJSON(parsed, { fix: true });
+  if (validation.warnings.length > 0) {
+    console.warn(`[generate-lottie] ${validation.warnings.length} warnings:`, validation.warnings);
+  }
+  if (!validation.valid) {
+    console.error("[generate-lottie] Validation errors after auto-fix:", validation.errors);
+  }
+  const finalJson = validation.fixCount > 0 ? validation.fixed : parsed;
+  const resultJson = validation.fixCount > 0 ? JSON.stringify(finalJson) : cleaned;
+  const quality = scoreLottieQuality(finalJson, {
+    personality: motionPersonality,
+    expectedDuration: duration
+  });
+  if (quality.total < 40) {
+    console.warn(`[generate-lottie] Low quality score: ${quality.total}/100`, quality.suggestions);
+  }
+  return {
+    result: resultJson,
+    usage,
+    quality: { score: quality.total, dimensions: quality.dimensions, suggestions: quality.suggestions },
+    ...validation.fixCount > 0 && { fixCount: validation.fixCount }
+  };
+}
 var GenerationValidationError = class extends Error {
   code = "VALIDATION";
   constructor(message) {
@@ -16958,6 +17892,11 @@ function wrap(fn) {
       return await fn(args);
     } catch (err) {
       if (err instanceof GenerationValidationError) throw new IpcValidationError(err.message);
+      if (err instanceof LottieParseError) {
+        const e = new Error(err.message);
+        e.usage = err.usage;
+        throw e;
+      }
       if (err instanceof Error) throw new Error(sanitize(err.message));
       throw err;
     }
@@ -16968,6 +17907,8 @@ function register16(ipcMain2) {
   ipcMain2.handle("cench:generate.motion", wrap(generateMotion));
   ipcMain2.handle("cench:generate.three", wrap(generateThree));
   ipcMain2.handle("cench:generate.react", wrap(generateReact));
+  ipcMain2.handle("cench:generate.lottie", wrap(generateLottie));
+  ipcMain2.handle("cench:generate.d3", wrap(generateD3));
 }
 
 // electron/ipc/index.ts

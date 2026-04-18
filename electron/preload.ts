@@ -214,6 +214,23 @@ export type CenchApi = {
       usage: UsageResult
       truncated?: boolean
     }>
+    lottie: (args: GenerateBaseArgs & { font?: string; motionPersonality?: string }) => Promise<{
+      result: string
+      usage: UsageResult
+      quality: { score: number; dimensions: unknown; suggestions: unknown }
+      fixCount?: number
+    }>
+    d3: (args: GenerateBaseArgs & { font?: string; d3Data?: unknown }) => Promise<{
+      result: {
+        chartLayers: unknown[]
+        sceneCode: string
+        d3Data: unknown
+        styles: unknown
+        suggestedData: unknown
+      }
+      usage: UsageResult
+      mode: 'cench_charts' | 'legacy'
+    }>
   }
 }
 
@@ -318,6 +335,8 @@ const cenchApi: CenchApi = {
     motion: (args) => ipcRenderer.invoke('cench:generate.motion', args),
     three: (args) => ipcRenderer.invoke('cench:generate.three', args),
     react: (args) => ipcRenderer.invoke('cench:generate.react', args),
+    lottie: (args) => ipcRenderer.invoke('cench:generate.lottie', args),
+    d3: (args) => ipcRenderer.invoke('cench:generate.d3', args),
   },
 }
 
