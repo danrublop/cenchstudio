@@ -85,12 +85,16 @@ function AssetCard({ asset, onDelete, onAddToTimeline, onExtrude3D, onRegenerate
     if (editName.trim() && editName !== asset.name) {
       const ipc = typeof window !== 'undefined' ? window.cenchApi?.projects : undefined
       if (ipc) {
-        const { asset: updated } = await ipc.patchAsset({
-          projectId: project.id,
-          assetId: asset.id,
-          name: editName.trim(),
-        })
-        updateProjectAsset(asset.id, updated as unknown as ProjectAsset)
+        try {
+          const { asset: updated } = await ipc.patchAsset({
+            projectId: project.id,
+            assetId: asset.id,
+            name: editName.trim(),
+          })
+          updateProjectAsset(asset.id, updated as unknown as ProjectAsset)
+        } catch {
+          /* silent — matches HTTP fallback's res.ok gate */
+        }
       } else {
         const res = await fetch(`/api/projects/${project.id}/assets/${asset.id}`, {
           method: 'PATCH',
@@ -109,12 +113,16 @@ function AssetCard({ asset, onDelete, onAddToTimeline, onExtrude3D, onRegenerate
   const patchTags = async (newTags: string[]) => {
     const ipc = typeof window !== 'undefined' ? window.cenchApi?.projects : undefined
     if (ipc) {
-      const { asset: updated } = await ipc.patchAsset({
-        projectId: project.id,
-        assetId: asset.id,
-        tags: newTags,
-      })
-      updateProjectAsset(asset.id, updated as unknown as ProjectAsset)
+      try {
+        const { asset: updated } = await ipc.patchAsset({
+          projectId: project.id,
+          assetId: asset.id,
+          tags: newTags,
+        })
+        updateProjectAsset(asset.id, updated as unknown as ProjectAsset)
+      } catch {
+        /* silent — matches HTTP fallback's res.ok gate */
+      }
     } else {
       const res = await fetch(`/api/projects/${project.id}/assets/${asset.id}`, {
         method: 'PATCH',
