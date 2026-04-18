@@ -277,6 +277,33 @@ export function labelForKey(scene: Scene, key: StackKey): string {
     const s = (scene.audioLayer?.sfx ?? []).find((x) => x.id === id)
     return s?.name ?? 'SFX'
   }
+  if (kind === '3d' && id) {
+    const parts = id.split(':')
+    const sub = parts[0]
+    const subIdx = parseInt(parts[1] ?? '0', 10)
+    const wc = scene.worldConfig
+    if (sub === 'env') return `Env: ${wc?.environment ?? '—'}`
+    if (sub === 'obj') {
+      const o = wc?.objects?.[subIdx]
+      return o?.assetId
+        ? `Object: ${o.assetId.slice(0, 22)}${o.assetId.length > 22 ? '…' : ''}`
+        : `Object ${subIdx + 1}`
+    }
+    if (sub === 'panel') {
+      const p = wc?.panels?.[subIdx]
+      const preview = (p?.html ?? '').replace(/<[^>]+>/g, '').slice(0, 22)
+      return preview ? `Panel: ${preview}${(p?.html ?? '').length > 22 ? '…' : ''}` : `Panel ${subIdx + 1}`
+    }
+    if (sub === 'avatar') {
+      const a = wc?.avatars?.[subIdx]
+      return a?.mood ? `Avatar: ${a.mood}` : `Avatar ${subIdx + 1}`
+    }
+    if (sub === 'camera') {
+      const n = wc?.cameraPath?.length ?? 0
+      return `Camera path (${n})`
+    }
+    if (sub === 'preset') return `Preset: ${scene.threeEnvironmentPresetId ?? '—'}`
+  }
   return kind
 }
 
@@ -441,6 +468,16 @@ export function iconForKey(scene: Scene, key: StackKey) {
       return Music
     case 'sfx':
       return Volume2
+    case '3d': {
+      const sub = (id ?? '').split(':')[0]
+      if (sub === 'env') return Globe
+      if (sub === 'obj') return Box
+      if (sub === 'panel') return LayoutTemplate
+      if (sub === 'avatar') return User
+      if (sub === 'camera') return Camera
+      if (sub === 'preset') return Sparkles
+      return Globe
+    }
     default:
       return Layers
   }

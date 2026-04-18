@@ -12,6 +12,13 @@ import type {
   CameraMove,
   SceneStyleOverride,
   SceneVariable,
+  WorldConfig,
+  WorldObjectConfig,
+  WorldPanelConfig,
+  WorldAvatarConfig,
+  WorldCameraKeyframe,
+  WorldEnvironment,
+  AvatarMood,
 } from '@/lib/types'
 import { BG_STAGE_STACK_KEY, type LayerStackKey, parseLayerStackKey, pinLayerStackTail } from '@/lib/layer-stack-keys'
 import { useVideoStore } from '@/lib/store'
@@ -21,6 +28,7 @@ import type { SceneElement } from '@/lib/types/elements'
 import { getElementPropertyMap } from '@/lib/types/elements'
 import { patchElementInIframe } from '@/lib/scene-patcher'
 import { TRANSITION_UI_GROUPS, type TransitionType } from '@/lib/transitions'
+import { CENCH_THREE_ENVIRONMENTS } from '@/lib/three-environments/registry'
 import { ColorPicker } from '@/components/inspector/controls/ColorPicker'
 import { SliderInput } from '@/components/inspector/controls/SliderInput'
 import { SelectInput as InspectorSelect } from '@/components/inspector/controls/SelectInput'
@@ -32,7 +40,7 @@ let _nodeMapSaveTimer: ReturnType<typeof setTimeout> | null = null
 let _bgSaveTimer: ReturnType<typeof setTimeout> | null = null
 
 // Virtual rows appended to the drilled node-map stack for scene-level properties.
-const EXTRA_KINDS = new Set(['camera', 'transition', 'style', 'variables', 'tts', 'music', 'sfx'])
+const EXTRA_KINDS = new Set(['camera', 'transition', 'style', 'variables', 'tts', 'music', 'sfx', '3d'])
 
 function isExtraKind(key: string): boolean {
   const i = key.indexOf(':')
@@ -156,8 +164,27 @@ export default function NodeMapControls({
     }
     if (a?.music?.src) out.push('music' as LayerStackKey)
     for (const s of a?.sfx ?? []) out.push(`sfx:${s.id}` as LayerStackKey)
+    // 3D world sub-elements — editors write back to scene.worldConfig
+    const wc = scene.worldConfig
+    if (wc) {
+      out.push('3d:env' as LayerStackKey)
+      ;(wc.objects ?? []).forEach((_, i) => out.push(`3d:obj:${i}` as LayerStackKey))
+      ;(wc.panels ?? []).forEach((_, i) => out.push(`3d:panel:${i}` as LayerStackKey))
+      ;(wc.avatars ?? []).forEach((_, i) => out.push(`3d:avatar:${i}` as LayerStackKey))
+      if (wc.cameraPath && wc.cameraPath.length > 0) out.push('3d:camera' as LayerStackKey)
+    }
+    // Three.js preset (non-world scenes)
+    if (scene.threeEnvironmentPresetId && !wc) out.push('3d:preset' as LayerStackKey)
     return out
-  }, [scene.cameraMotion, scene.transition, scene.styleOverride, scene.variables, scene.audioLayer])
+  }, [
+    scene.cameraMotion,
+    scene.transition,
+    scene.styleOverride,
+    scene.variables,
+    scene.audioLayer,
+    scene.worldConfig,
+    scene.threeEnvironmentPresetId,
+  ])
 
   const orderedKeys = useMemo<LayerStackKey[]>(() => {
     if (extraKeys.length === 0) return stackOrderedKeys
@@ -1007,6 +1034,21 @@ function LayerSettings({
       )
     }
 
+    case '3d': {
+      const parts = (rowId ?? '').split(':')
+      const sub = parts[0] ?? ''
+      const subIdx = parseInt(parts[1] ?? '0', 10)
+      if (sub === 'preset') return <ThreePresetEditor scene={scene} upd={upd} />
+      const wc = scene.worldConfig
+      if (!wc) return <Muted>No 3D world configured</Muted>
+      if (sub === 'env') return <WorldEnvEditor wc={wc} upd={upd} />
+      if (sub === 'obj') return <WorldObjectEditor wc={wc} index={subIdx} upd={upd} updAndDelete={updAndDelete} />
+      if (sub === 'panel') return <WorldPanelEditor wc={wc} index={subIdx} upd={upd} updAndDelete={updAndDelete} />
+      if (sub === 'avatar') return <WorldAvatarEditor wc={wc} index={subIdx} upd={upd} updAndDelete={updAndDelete} />
+      if (sub === 'camera') return <WorldCameraEditor wc={wc} upd={upd} updAndDelete={updAndDelete} />
+      return <Muted>Unknown 3D sub-element</Muted>
+    }
+
     case 'scene':
       return (
         <div className="space-y-1">
@@ -1417,6 +1459,412 @@ function VariablesEditor({ scene, upd }: { scene: Scene; upd: (updates: Partial<
           <Plus size={10} /> Add variable
         </span>
       </div>
+    </div>
+  )
+}
+
+// ── 3D world editors ─────────────────────────────────────────────────────────
+
+type WorldUpd = (updates: Partial<Scene>) => void
+
+function updWorld(wc: WorldConfig, changes: Partial<WorldConfig>, upd: WorldUpd) {
+  upd({ worldConfig: { ...wc, ...changes } })
+}
+
+function Vec3Row({
+  label,
+  value,
+  onChange,
+  step = 0.1,
+  suffix,
+}: {
+  label: string
+  value: [number, number, number]
+  onChange: (v: [number, number, number]) => void
+  step?: number
+  suffix?: string
+}) {
+  return (
+    <FieldRow label={label}>
+      <div className="grid grid-cols-3 gap-1">
+        {(['x', 'y', 'z'] as const).map((axis, i) => (
+          <div key={axis} className="flex items-center gap-1">
+            <span
+              className="text-[9px] w-3 shrink-0 text-center font-medium"
+              style={{ color: 'var(--color-text-muted)' }}
+            >
+              {axis}
+            </span>
+            <input
+              className="flex-1 min-w-0 rounded border px-1.5 py-0.5 text-[10px] bg-transparent outline-none focus:border-[#e84545]/50"
+              style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
+              type="number"
+              value={value[i]}
+              step={step}
+              onChange={(e) => {
+                const next = [...value] as [number, number, number]
+                next[i] = parseFloat(e.target.value) || 0
+                onChange(next)
+              }}
+            />
+            {suffix && (
+              <span className="text-[8px] shrink-0" style={{ color: 'var(--color-text-muted)' }}>
+                {suffix}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+    </FieldRow>
+  )
+}
+
+const WORLD_ENVIRONMENTS: { value: WorldEnvironment; label: string }[] = [
+  { value: 'meadow', label: 'Meadow' },
+  { value: 'studio_room', label: 'Studio Room' },
+  { value: 'void_space', label: 'Void Space' },
+]
+
+function WorldEnvEditor({ wc, upd }: { wc: WorldConfig; upd: WorldUpd }) {
+  const set = (changes: Partial<WorldConfig>) => updWorld(wc, changes, upd)
+  return (
+    <div className="space-y-2">
+      <FieldRow label="Preset">
+        <SelectInput
+          value={wc.environment}
+          onChange={(v) => set({ environment: v as WorldEnvironment })}
+          options={WORLD_ENVIRONMENTS}
+        />
+      </FieldRow>
+      {wc.environment === 'meadow' && (
+        <>
+          <FieldRow label="Time">
+            <SelectInput
+              value={wc.timeOfDay ?? 'afternoon'}
+              onChange={(v) => set({ timeOfDay: v as WorldConfig['timeOfDay'] })}
+              options={[
+                { value: 'morning', label: 'Morning' },
+                { value: 'afternoon', label: 'Afternoon' },
+                { value: 'sunset', label: 'Sunset' },
+                { value: 'night', label: 'Night' },
+              ]}
+            />
+          </FieldRow>
+          <FieldRow label="Wind">
+            <NumberInput
+              value={wc.windStrength ?? 0.5}
+              onChange={(v) => set({ windStrength: v })}
+              min={0}
+              max={2}
+              step={0.05}
+            />
+          </FieldRow>
+          <FieldRow label="Grass">
+            <NumberInput
+              value={wc.grassDensity ?? 1}
+              onChange={(v) => set({ grassDensity: v })}
+              min={0}
+              max={3}
+              step={0.1}
+            />
+          </FieldRow>
+        </>
+      )}
+      {wc.environment === 'studio_room' && (
+        <FieldRow label="Style">
+          <SelectInput
+            value={wc.roomStyle ?? 'studio'}
+            onChange={(v) => set({ roomStyle: v as WorldConfig['roomStyle'] })}
+            options={[
+              { value: 'classroom', label: 'Classroom' },
+              { value: 'office', label: 'Office' },
+              { value: 'studio', label: 'Studio' },
+            ]}
+          />
+        </FieldRow>
+      )}
+      {wc.environment === 'void_space' && (
+        <FieldRow label="Layout">
+          <SelectInput
+            value={wc.spaceLayout ?? 'grid'}
+            onChange={(v) => set({ spaceLayout: v as WorldConfig['spaceLayout'] })}
+            options={[
+              { value: 'grid', label: 'Grid' },
+              { value: 'arc', label: 'Arc' },
+              { value: 'spiral', label: 'Spiral' },
+              { value: 'random', label: 'Random' },
+            ]}
+          />
+        </FieldRow>
+      )}
+    </div>
+  )
+}
+
+function WorldObjectEditor({
+  wc,
+  index,
+  upd,
+  updAndDelete,
+}: {
+  wc: WorldConfig
+  index: number
+  upd: WorldUpd
+  updAndDelete: WorldUpd
+}) {
+  const objs: WorldObjectConfig[] = wc.objects ?? []
+  const obj = objs[index]
+  if (!obj) return <Muted>Object not found</Muted>
+  const updObj = (changes: Partial<WorldObjectConfig>) => {
+    const next = objs.map((o, i) => (i === index ? { ...o, ...changes } : o))
+    updWorld(wc, { objects: next }, upd)
+  }
+  const remove = () => {
+    const next = objs.filter((_, i) => i !== index)
+    updAndDelete({ worldConfig: { ...wc, objects: next } })
+  }
+  return (
+    <div className="space-y-2">
+      <FieldRow label="Asset">
+        <TextInput
+          value={obj.assetId ?? ''}
+          onChange={(v) => updObj({ assetId: v })}
+          placeholder="model.glb or builtin id"
+        />
+      </FieldRow>
+      <SectionLabel>Transform</SectionLabel>
+      <Vec3Row label="Pos" value={obj.position ?? [0, 0, 0]} onChange={(v) => updObj({ position: v })} />
+      <Vec3Row
+        label="Rot"
+        value={obj.rotation ?? [0, 0, 0]}
+        onChange={(v) => updObj({ rotation: v })}
+        step={1}
+        suffix="°"
+      />
+      <FieldRow label="Scale">
+        <NumberInput value={obj.scale ?? 1} onChange={(v) => updObj({ scale: v })} min={0} step={0.05} />
+      </FieldRow>
+      <DeleteRow onDelete={remove} label="3D object" />
+    </div>
+  )
+}
+
+function WorldPanelEditor({
+  wc,
+  index,
+  upd,
+  updAndDelete,
+}: {
+  wc: WorldConfig
+  index: number
+  upd: WorldUpd
+  updAndDelete: WorldUpd
+}) {
+  const panels: WorldPanelConfig[] = wc.panels ?? []
+  const p = panels[index]
+  if (!p) return <Muted>Panel not found</Muted>
+  const updP = (changes: Partial<WorldPanelConfig>) => {
+    const next = panels.map((x, i) => (i === index ? { ...x, ...changes } : x))
+    updWorld(wc, { panels: next }, upd)
+  }
+  const remove = () => {
+    const next = panels.filter((_, i) => i !== index)
+    updAndDelete({ worldConfig: { ...wc, panels: next } })
+  }
+  return (
+    <div className="space-y-2">
+      <FieldRow label="HTML">
+        <TextInput
+          value={p.html ?? ''}
+          onChange={(v) => updP({ html: v })}
+          multiline
+          placeholder="<div>Panel content</div>"
+        />
+      </FieldRow>
+      <SectionLabel>Transform</SectionLabel>
+      <Vec3Row label="Pos" value={p.position ?? [0, 0, 0]} onChange={(v) => updP({ position: v })} />
+      <Vec3Row
+        label="Rot"
+        value={p.rotation ?? [0, 0, 0]}
+        onChange={(v) => updP({ rotation: v })}
+        step={1}
+        suffix="°"
+      />
+      <FieldRow label="Width">
+        <NumberInput value={p.width ?? 1} onChange={(v) => updP({ width: v })} min={0} step={0.1} />
+      </FieldRow>
+      <FieldRow label="Height">
+        <NumberInput value={p.height ?? 1} onChange={(v) => updP({ height: v })} min={0} step={0.1} />
+      </FieldRow>
+      <FieldRow label="Anim in">
+        <TextInput
+          value={p.animateIn ?? ''}
+          onChange={(v) => updP({ animateIn: v || undefined })}
+          placeholder="fade | slide-up | pop | none"
+        />
+      </FieldRow>
+      <FieldRow label="At">
+        <NumberInput value={p.animateAt ?? 0} onChange={(v) => updP({ animateAt: v })} min={0} step={0.1} unit="s" />
+      </FieldRow>
+      <DeleteRow onDelete={remove} label="panel" />
+    </div>
+  )
+}
+
+const AVATAR_MOODS: { value: AvatarMood; label: string }[] = [
+  { value: 'neutral', label: 'Neutral' },
+  { value: 'happy', label: 'Happy' },
+  { value: 'sad', label: 'Sad' },
+  { value: 'angry', label: 'Angry' },
+  { value: 'fear', label: 'Fear' },
+  { value: 'surprise', label: 'Surprise' },
+]
+
+function WorldAvatarEditor({
+  wc,
+  index,
+  upd,
+  updAndDelete,
+}: {
+  wc: WorldConfig
+  index: number
+  upd: WorldUpd
+  updAndDelete: WorldUpd
+}) {
+  const avatars: WorldAvatarConfig[] = wc.avatars ?? []
+  const av = avatars[index]
+  if (!av) return <Muted>Avatar not found</Muted>
+  const updAv = (changes: Partial<WorldAvatarConfig>) => {
+    const next = avatars.map((x, i) => (i === index ? { ...x, ...changes } : x))
+    updWorld(wc, { avatars: next }, upd)
+  }
+  const remove = () => {
+    const next = avatars.filter((_, i) => i !== index)
+    updAndDelete({ worldConfig: { ...wc, avatars: next } })
+  }
+  return (
+    <div className="space-y-2">
+      <FieldRow label="Mood">
+        <SelectInput
+          value={av.mood ?? 'neutral'}
+          onChange={(v) => updAv({ mood: v as AvatarMood })}
+          options={AVATAR_MOODS}
+        />
+      </FieldRow>
+      <FieldRow label="GLB URL">
+        <TextInput
+          value={av.glbUrl ?? ''}
+          onChange={(v) => updAv({ glbUrl: v || undefined })}
+          placeholder="https://…/avatar.glb"
+        />
+      </FieldRow>
+      <SectionLabel>Transform</SectionLabel>
+      <Vec3Row label="Pos" value={av.position ?? [0, 0, 0]} onChange={(v) => updAv({ position: v })} />
+      <Vec3Row
+        label="Rot"
+        value={av.rotation ?? [0, 0, 0]}
+        onChange={(v) => updAv({ rotation: v })}
+        step={1}
+        suffix="°"
+      />
+      <FieldRow label="Scale">
+        <NumberInput value={av.scale ?? 1} onChange={(v) => updAv({ scale: v })} min={0} step={0.05} />
+      </FieldRow>
+      <DeleteRow onDelete={remove} label="avatar" />
+    </div>
+  )
+}
+
+function WorldCameraEditor({ wc, upd, updAndDelete }: { wc: WorldConfig; upd: WorldUpd; updAndDelete: WorldUpd }) {
+  const keys: WorldCameraKeyframe[] = wc.cameraPath ?? []
+  const replace = (next: WorldCameraKeyframe[]) => {
+    updWorld(wc, { cameraPath: next.length > 0 ? next : undefined }, upd)
+  }
+  const updKey = (idx: number, changes: Partial<WorldCameraKeyframe>) => {
+    replace(keys.map((k, i) => (i === idx ? { ...k, ...changes } : k)))
+  }
+  const removeKey = (idx: number) => {
+    const next = keys.filter((_, i) => i !== idx)
+    updAndDelete({ worldConfig: { ...wc, cameraPath: next.length > 0 ? next : undefined } })
+  }
+  const addKey = () => {
+    const last = keys[keys.length - 1]
+    const nextT = last ? (last.t ?? 0) + 1 : 0
+    replace([...keys, { t: nextT, pos: last?.pos ?? [0, 2, 5], lookAt: last?.lookAt ?? [0, 0, 0] }])
+  }
+  return (
+    <div className="space-y-2">
+      {keys.length === 0 && <Muted>No camera keyframes. Add one below.</Muted>}
+      {keys.map((k, i) => (
+        <div
+          key={i}
+          className="space-y-1.5 rounded border px-2 py-1.5"
+          style={{ borderColor: 'var(--color-hairline)' }}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <span
+              className="text-[9px] font-semibold uppercase tracking-wider"
+              style={{ color: 'var(--color-text-muted)', opacity: 0.7 }}
+            >
+              Keyframe {i + 1}
+            </span>
+            <span
+              role="button"
+              tabIndex={0}
+              className="inline-flex items-center gap-1 text-[9px] cursor-pointer hover:opacity-80"
+              style={{ color: '#ef4444' }}
+              onClick={() => removeKey(i)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') removeKey(i)
+              }}
+            >
+              <Trash2 size={9} /> Remove
+            </span>
+          </div>
+          <FieldRow label="Time">
+            <NumberInput value={k.t ?? 0} onChange={(v) => updKey(i, { t: v })} min={0} step={0.1} unit="s" />
+          </FieldRow>
+          <Vec3Row label="Pos" value={k.pos ?? [0, 0, 0]} onChange={(v) => updKey(i, { pos: v })} />
+          <Vec3Row label="Look" value={k.lookAt ?? [0, 0, 0]} onChange={(v) => updKey(i, { lookAt: v })} />
+        </div>
+      ))}
+      <div className="pt-1">
+        <span
+          role="button"
+          tabIndex={0}
+          className="inline-flex items-center gap-1 text-[10px] cursor-pointer hover:opacity-80"
+          style={{ color: 'var(--color-accent)' }}
+          onClick={addKey}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') addKey()
+          }}
+        >
+          <Plus size={10} /> Add keyframe
+        </span>
+      </div>
+    </div>
+  )
+}
+
+function ThreePresetEditor({ scene, upd }: { scene: Scene; upd: WorldUpd }) {
+  const current = scene.threeEnvironmentPresetId ?? ''
+  return (
+    <div className="space-y-2">
+      <FieldRow label="Preset">
+        <SelectInput
+          value={current}
+          onChange={(v) => upd({ threeEnvironmentPresetId: v || null })}
+          options={[
+            { value: '', label: 'None' },
+            ...CENCH_THREE_ENVIRONMENTS.map((env) => ({ value: env.id, label: env.name })),
+          ]}
+        />
+      </FieldRow>
+      {current && (
+        <Muted className="text-[9px]">
+          {CENCH_THREE_ENVIRONMENTS.find((e) => e.id === current)?.description ?? ''}
+        </Muted>
+      )}
     </div>
   )
 }
