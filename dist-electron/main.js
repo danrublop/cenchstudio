@@ -13937,6 +13937,55 @@ function computeContentHash(buffer) {
   return import_crypto5.default.createHash("sha256").update(buffer).digest("hex").slice(0, 16);
 }
 
+// lib/security/url-guard.ts
+var UrlGuardError = class extends Error {
+  code = "URL_GUARD";
+  constructor(message) {
+    super(message);
+    this.name = "UrlGuardError";
+  }
+};
+function isLoopbackOrPrivateV4(hostname) {
+  if (hostname === "localhost" || hostname.endsWith(".localhost")) return true;
+  if (hostname.endsWith(".local")) return true;
+  if (hostname === "0.0.0.0") return true;
+  if (hostname === "127.0.0.1" || hostname.startsWith("127.")) return true;
+  if (hostname === "::1") return true;
+  if (hostname.startsWith("169.254.")) return true;
+  if (hostname.startsWith("10.")) return true;
+  if (hostname.startsWith("192.168.")) return true;
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(hostname)) return true;
+  return false;
+}
+function isPrivateV6(hostname) {
+  const bare = hostname.replace(/^\[/, "").replace(/\]$/, "").toLowerCase();
+  if (bare === "::" || bare === "::1") return true;
+  if (/^(fc|fd)[0-9a-f]{0,2}:/.test(bare)) return true;
+  if (/^fe[89ab][0-9a-f]?:/.test(bare)) return true;
+  if (/^::ffff:/.test(bare)) return true;
+  return false;
+}
+function assertPublicHttpUrl(urlString, opts = {}) {
+  const allowedSchemes = opts.allowedSchemes ?? ["http:", "https:"];
+  let parsed;
+  try {
+    parsed = new URL(urlString);
+  } catch {
+    throw new UrlGuardError("Invalid URL");
+  }
+  if (!allowedSchemes.includes(parsed.protocol)) {
+    throw new UrlGuardError(`Disallowed URL scheme: ${parsed.protocol}`);
+  }
+  const hostname = parsed.hostname.toLowerCase();
+  if (!hostname) {
+    throw new UrlGuardError("URL has no hostname");
+  }
+  if (isLoopbackOrPrivateV4(hostname) || isPrivateV6(hostname)) {
+    throw new UrlGuardError(`Internal address not allowed: ${hostname}`);
+  }
+  return parsed;
+}
+
 // lib/services/ingest.ts
 var execFileAsync3 = (0, import_node_util.promisify)(import_node_child_process.execFile);
 var UUID_RE3 = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -13973,9 +14022,10 @@ async function ingestUrl(input) {
     throw new IngestValidationError("url is required");
   }
   try {
-    new URL(input.url);
-  } catch {
-    throw new IngestValidationError("Invalid URL");
+    assertPublicHttpUrl(input.url);
+  } catch (e) {
+    if (e instanceof UrlGuardError) throw new IngestValidationError(e.message);
+    throw e;
   }
   assertProjectId(input.projectId);
   if (!input.formatId) {
@@ -14003,16 +14053,25 @@ async function ingestUrl(input) {
   await import_promises18.default.mkdir(uploadsDir2, { recursive: true });
   const storagePath = import_node_path9.default.join(uploadsDir2, `${assetId}.mp4`);
   let result;
+  let downloadSucceeded = false;
   try {
-    result = await download({
-      url: input.url,
-      destPath: storagePath,
-      formatId: input.formatId,
-      maxDurationSec: MAX_DURATION_SEC
-    });
-  } catch (e) {
-    if (e instanceof YtDlpNotInstalledError) throw new YtDlpMissingError(e.message);
-    throw new Error(`yt-dlp download failed: ${e.message}`);
+    try {
+      result = await download({
+        url: input.url,
+        destPath: storagePath,
+        formatId: input.formatId,
+        maxDurationSec: MAX_DURATION_SEC
+      });
+      downloadSucceeded = true;
+    } catch (e) {
+      if (e instanceof YtDlpNotInstalledError) throw new YtDlpMissingError(e.message);
+      throw new Error(`yt-dlp download failed: ${e.message}`);
+    }
+  } finally {
+    if (!downloadSucceeded) {
+      await import_promises18.default.unlink(storagePath).catch(() => {
+      });
+    }
   }
   const stat = await import_promises18.default.stat(storagePath);
   if (stat.size > MAX_FILE_SIZE_BYTES) {
@@ -14119,9 +14178,10 @@ async function ingestDirect(input) {
     throw new IngestValidationError("url is required");
   }
   try {
-    new URL(input.url);
-  } catch {
-    throw new IngestValidationError("Invalid URL");
+    assertPublicHttpUrl(input.url);
+  } catch (e) {
+    if (e instanceof UrlGuardError) throw new IngestValidationError(e.message);
+    throw e;
   }
   assertProjectId(input.projectId);
   const head = await fetch(input.url, { method: "HEAD" }).catch(() => null);

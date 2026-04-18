@@ -33,6 +33,7 @@ import { and, eq } from 'drizzle-orm'
 import { probe, download, YtDlpNotInstalledError } from '@/lib/ingest/yt-dlp'
 import { computeContentHash } from '@/lib/apis/media-cache'
 import { getUploadsDir, uploadsUrlFor } from '@/lib/uploads/paths'
+import { assertPublicHttpUrl, UrlGuardError } from '@/lib/security/url-guard'
 
 const execFileAsync = promisify(execFile)
 
@@ -111,10 +112,14 @@ export async function ingestUrl(input: IngestUrlInput): Promise<IngestUrlResult>
   if (!input.url || typeof input.url !== 'string') {
     throw new IngestValidationError('url is required')
   }
+  // SSRF guard — same as `ingestDirect`. yt-dlp won't meaningfully probe
+  // `file://` or localhost for public-video metadata anyway, so the loss
+  // of flexibility is zero.
   try {
-    new URL(input.url)
-  } catch {
-    throw new IngestValidationError('Invalid URL')
+    assertPublicHttpUrl(input.url)
+  } catch (e) {
+    if (e instanceof UrlGuardError) throw new IngestValidationError(e.message)
+    throw e
   }
   assertProjectId(input.projectId)
 
@@ -150,16 +155,28 @@ export async function ingestUrl(input: IngestUrlInput): Promise<IngestUrlResult>
   const storagePath = path.join(uploadsDir, `${assetId}.mp4`)
 
   let result
+  let downloadSucceeded = false
   try {
-    result = await download({
-      url: input.url,
-      destPath: storagePath,
-      formatId: input.formatId,
-      maxDurationSec: MAX_DURATION_SEC,
-    })
-  } catch (e) {
-    if (e instanceof YtDlpNotInstalledError) throw new YtDlpMissingError(e.message)
-    throw new Error(`yt-dlp download failed: ${(e as Error).message}`)
+    try {
+      result = await download({
+        url: input.url,
+        destPath: storagePath,
+        formatId: input.formatId,
+        maxDurationSec: MAX_DURATION_SEC,
+      })
+      downloadSucceeded = true
+    } catch (e) {
+      if (e instanceof YtDlpNotInstalledError) throw new YtDlpMissingError(e.message)
+      throw new Error(`yt-dlp download failed: ${(e as Error).message}`)
+    }
+  } finally {
+    // yt-dlp may leave a partial file on disk if it errors mid-download
+    // (e.g. network drop, source-side rate limit, SIGTERM). Without this
+    // cleanup the uploads dir accumulates orphan `<assetId>.mp4` files
+    // that never get a DB row and never get served.
+    if (!downloadSucceeded) {
+      await fs.unlink(storagePath).catch(() => {})
+    }
   }
 
   const stat = await fs.stat(storagePath)
@@ -303,10 +320,16 @@ export async function ingestDirect(input: IngestDirectInput): Promise<IngestDire
   if (!input.url || typeof input.url !== 'string') {
     throw new IngestValidationError('url is required')
   }
+  // SSRF guard: reject non-http(s) schemes and private/loopback hosts
+  // before any fetch. Does not protect against DNS rebinding —
+  // `public.attacker.com` resolving to 169.254.169.254 between HEAD
+  // and GET would still slip through. That would need IP pinning at
+  // the fetch layer; out of scope for this guard.
   try {
-    new URL(input.url)
-  } catch {
-    throw new IngestValidationError('Invalid URL')
+    assertPublicHttpUrl(input.url)
+  } catch (e) {
+    if (e instanceof UrlGuardError) throw new IngestValidationError(e.message)
+    throw e
   }
   assertProjectId(input.projectId)
 
