@@ -2183,7 +2183,15 @@ function generateWorldHTML(
 
   const environment = wc.environment || 'meadow'
   const worldHtmlFile = worldTemplateFilename(environment)
-  const configJSON = JSON.stringify(wc)
+  // Merge the TalkingHead TTS endpoint into worldConfig so the avatar overlay
+  // helper (public/worlds/world-avatar-overlay.js) can bake it into
+  // TalkingHead at boot. Null when no server TTS provider is configured —
+  // the helper falls back to fakeLipsync in that case.
+  const configWithAudio = {
+    ...wc,
+    ttsEndpoint: talkingHeadTtsEndpointForEmbed(audioSettings),
+  }
+  const configJSON = JSON.stringify(configWithAudio)
   const appBaseUrl = process.env.NEXT_PUBLIC_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
 
   // Server-side: read the world template from disk and inject __worldConfig

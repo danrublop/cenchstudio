@@ -14680,7 +14680,11 @@ function generateWorldHTML(scene, style, audioSettings, dims) {
   if (!wc) return "<!-- No worldConfig -->";
   const environment = wc.environment || "meadow";
   const worldHtmlFile = worldTemplateFilename(environment);
-  const configJSON = JSON.stringify(wc);
+  const configWithAudio = {
+    ...wc,
+    ttsEndpoint: talkingHeadTtsEndpointForEmbed(audioSettings)
+  };
+  const configJSON = JSON.stringify(configWithAudio);
   const appBaseUrl = process.env.NEXT_PUBLIC_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
   if (typeof window === "undefined") {
     try {
