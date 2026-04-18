@@ -428,7 +428,15 @@
     var timeRef = React.useRef(time)
 
     React.useEffect(function () {
+      // `mounted` is closed over by both the onSeek subscription and the
+      // GSAP onUpdate wrapper. The wrapper can't be cleanly spliced out of
+      // a chain of eventCallbacks (prevCb + our wrapper + possibly later
+      // wrappers), so instead we short-circuit it on unmount and drop its
+      // effect to a no-op. Prevents "setState on unmounted component" and
+      // lets the component closure be GC'd.
+      var mounted = true
       function update(t) {
+        if (!mounted) return
         if (t === timeRef.current) return
         timeRef.current = t
         setTime(t)
@@ -441,7 +449,7 @@
         var prevCb = tl.eventCallback('onUpdate')
         tl.eventCallback('onUpdate', function () {
           if (prevCb) prevCb()
-          update(tl.time())
+          if (mounted) update(tl.time())
         })
         return true
       }
@@ -463,6 +471,7 @@
         : null
 
       return function () {
+        mounted = false
         if (pollId) clearInterval(pollId)
         if (off) off()
       }
