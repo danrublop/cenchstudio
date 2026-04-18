@@ -29,6 +29,7 @@ import { getElementPropertyMap } from '@/lib/types/elements'
 import { patchElementInIframe } from '@/lib/scene-patcher'
 import { TRANSITION_UI_GROUPS, type TransitionType } from '@/lib/transitions'
 import { CENCH_THREE_ENVIRONMENTS } from '@/lib/three-environments/registry'
+import { patchReactCodeText, readReactCodeText, type PatchableKind } from '@/lib/react-extract'
 import { ColorPicker } from '@/components/inspector/controls/ColorPicker'
 import { SliderInput } from '@/components/inspector/controls/SliderInput'
 import { SelectInput as InspectorSelect } from '@/components/inspector/controls/SelectInput'
@@ -1067,16 +1068,19 @@ function LayerSettings({
       const matchedElement = matchRxToInspectorElement(rxKind, rxIdx, iframeElements)
 
       if (!matchedElement) {
+        // Source-level fallback: rewrite scene.reactCode / sceneCode directly for
+        // plain-text elements (heading / paragraph / image alt). Keeps the node
+        // editable when the runtime hasn't registered a matching DOM element.
+        if (rxKind === 'heading' || rxKind === 'paragraph' || rxKind === 'image') {
+          return <RxSourceTextEditor scene={scene} kind={rxKind} index={rxIdx} upd={upd} />
+        }
         const rxLabels: Record<string, string> = {
           three: 'Three.js bridge',
           canvas2d: 'Canvas 2D bridge',
           d3: 'D3 bridge',
           svg: 'SVG element',
           lottie: 'Lottie bridge',
-          heading: 'Heading',
-          paragraph: 'Text paragraph',
           text: 'Text element',
-          image: 'Image',
         }
         return (
           <div className="space-y-1.5">
@@ -1084,8 +1088,7 @@ function LayerSettings({
               <Muted>{rxLabels[rxKind] ?? rxKind}</Muted>
             </FieldRow>
             <Muted className="text-[9px]">
-              Loading element properties... If controls don't appear, try clicking the element in the preview to edit
-              via Inspector.
+              Bridge component — click the element in the preview to edit via Inspector, or edit scene code directly.
             </Muted>
           </div>
         )
@@ -1865,6 +1868,69 @@ function ThreePresetEditor({ scene, upd }: { scene: Scene; upd: WorldUpd }) {
           {CENCH_THREE_ENVIRONMENTS.find((e) => e.id === current)?.description ?? ''}
         </Muted>
       )}
+    </div>
+  )
+}
+
+// ── rx:* source-level fallback editor (when no iframe element matched) ──────
+
+function RxSourceTextEditor({
+  scene,
+  kind,
+  index,
+  upd,
+}: {
+  scene: Scene
+  kind: PatchableKind
+  index: number
+  upd: (updates: Partial<Scene>) => void
+}) {
+  // Pick the best source to patch. reactCode is primary; fall back to sceneCode
+  // for legacy Motion/Canvas2D scenes that also surface rx:* nodes.
+  const pickSource = (): { code: string; field: 'reactCode' | 'sceneCode' } | null => {
+    if (scene.reactCode?.trim()) return { code: scene.reactCode, field: 'reactCode' }
+    if (scene.sceneCode?.trim()) return { code: scene.sceneCode, field: 'sceneCode' }
+    return null
+  }
+  const source = pickSource()
+  const current = source ? readReactCodeText(source.code, kind, index) : null
+
+  const labels: Record<PatchableKind, string> = {
+    heading: 'Heading',
+    paragraph: 'Paragraph',
+    image: 'Alt text',
+  }
+
+  if (!source || current == null) {
+    return (
+      <div className="space-y-1.5">
+        <FieldRow label="Type">
+          <Muted>{labels[kind]}</Muted>
+        </FieldRow>
+        <Muted className="text-[9px]">
+          Couldn&apos;t locate this element in source code. Click it in the preview to edit via Inspector, or edit the
+          scene code directly.
+        </Muted>
+      </div>
+    )
+  }
+
+  const handleChange = (next: string) => {
+    if (next === current) return
+    const rewritten = patchReactCodeText(source.code, kind, index, next)
+    if (rewritten == null) return
+    upd({ [source.field]: rewritten } as Partial<Scene>)
+  }
+
+  return (
+    <div className="space-y-2">
+      <FieldRow label={labels[kind]}>
+        <TextInput value={current} onChange={handleChange} multiline placeholder={labels[kind]} />
+      </FieldRow>
+      <Muted className="text-[9px]">
+        Editing source at <strong>{source.field}</strong>. Characters like <code>&lt;</code>, <code>&#123;</code>,{' '}
+        <code>&#125;</code> are escaped automatically.
+      </Muted>
     </div>
   )
 }
