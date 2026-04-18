@@ -16898,6 +16898,48 @@ async function generateCanvas(input) {
   });
   return { result: gen.code, usage: gen.usage, truncated: gen.truncated };
 }
+async function generateMotion(input) {
+  if (!input.prompt) throw new GenerationValidationError("prompt is required");
+  const gen = await generateCode("motion", input.prompt, {
+    palette: input.palette,
+    bgColor: input.bgColor,
+    duration: input.duration,
+    previousSummary: input.previousSummary,
+    font: input.font,
+    modelId: input.modelId,
+    modelConfigs: input.modelConfigs
+  });
+  return {
+    result: { sceneCode: gen.code, styles: gen.styles, htmlContent: gen.htmlContent },
+    usage: gen.usage,
+    truncated: gen.truncated
+  };
+}
+async function generateThree(input) {
+  if (!input.prompt) throw new GenerationValidationError("prompt is required");
+  const gen = await generateCode("three", input.prompt, {
+    palette: input.palette,
+    bgColor: input.bgColor,
+    duration: input.duration,
+    previousSummary: input.previousSummary,
+    modelId: input.modelId,
+    modelConfigs: input.modelConfigs
+  });
+  return { result: { sceneCode: gen.code }, usage: gen.usage, truncated: gen.truncated };
+}
+async function generateReact(input) {
+  if (!input.prompt) throw new GenerationValidationError("prompt is required");
+  const gen = await generateCode("react", input.prompt, {
+    palette: input.palette,
+    bgColor: input.bgColor,
+    duration: input.duration,
+    previousSummary: input.previousSummary,
+    font: input.font,
+    modelId: input.modelId,
+    modelConfigs: input.modelConfigs
+  });
+  return { result: { sceneCode: gen.code, styles: gen.styles }, usage: gen.usage, truncated: gen.truncated };
+}
 var GenerationValidationError = class extends Error {
   code = "VALIDATION";
   constructor(message) {
@@ -16907,15 +16949,21 @@ var GenerationValidationError = class extends Error {
 };
 
 // electron/ipc/generate.ts
-function register16(ipcMain2) {
-  ipcMain2.handle("cench:generate.canvas", async (_e, args) => {
+function wrap(fn) {
+  return async (_e, args) => {
     try {
-      return await generateCanvas(args);
+      return await fn(args);
     } catch (err) {
       if (err instanceof GenerationValidationError) throw new IpcValidationError(err.message);
       throw err;
     }
-  });
+  };
+}
+function register16(ipcMain2) {
+  ipcMain2.handle("cench:generate.canvas", wrap(generateCanvas));
+  ipcMain2.handle("cench:generate.motion", wrap(generateMotion));
+  ipcMain2.handle("cench:generate.three", wrap(generateThree));
+  ipcMain2.handle("cench:generate.react", wrap(generateReact));
 }
 
 // electron/ipc/index.ts

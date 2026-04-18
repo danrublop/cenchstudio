@@ -57,6 +57,83 @@ export async function generateCanvas(input: GenerateCanvasInput): Promise<Genera
   return { result: gen.code, usage: gen.usage, truncated: gen.truncated }
 }
 
+// ── Motion ─────────────────────────────────────────────────────────────────
+
+export interface GenerateMotionInput extends GenerateCanvasInput {
+  font?: string
+}
+
+export interface GenerateMotionResult {
+  result: { sceneCode: string; styles?: unknown; htmlContent?: unknown }
+  usage: UsageShape
+  truncated?: boolean
+}
+
+export async function generateMotion(input: GenerateMotionInput): Promise<GenerateMotionResult> {
+  if (!input.prompt) throw new GenerationValidationError('prompt is required')
+  const gen = await generateCode('motion', input.prompt, {
+    palette: input.palette,
+    bgColor: input.bgColor,
+    duration: input.duration,
+    previousSummary: input.previousSummary,
+    font: input.font,
+    modelId: input.modelId,
+    modelConfigs: input.modelConfigs,
+  })
+  return {
+    result: { sceneCode: gen.code, styles: gen.styles, htmlContent: gen.htmlContent },
+    usage: gen.usage,
+    truncated: gen.truncated,
+  }
+}
+
+// ── Three ──────────────────────────────────────────────────────────────────
+
+export interface GenerateThreeInput extends GenerateCanvasInput {}
+
+export interface GenerateThreeResult {
+  result: { sceneCode: string }
+  usage: UsageShape
+  truncated?: boolean
+}
+
+export async function generateThree(input: GenerateThreeInput): Promise<GenerateThreeResult> {
+  if (!input.prompt) throw new GenerationValidationError('prompt is required')
+  const gen = await generateCode('three', input.prompt, {
+    palette: input.palette,
+    bgColor: input.bgColor,
+    duration: input.duration,
+    previousSummary: input.previousSummary,
+    modelId: input.modelId,
+    modelConfigs: input.modelConfigs,
+  })
+  return { result: { sceneCode: gen.code }, usage: gen.usage, truncated: gen.truncated }
+}
+
+// ── React ──────────────────────────────────────────────────────────────────
+
+export interface GenerateReactInput extends GenerateMotionInput {}
+
+export interface GenerateReactResult {
+  result: { sceneCode: string; styles?: unknown }
+  usage: UsageShape
+  truncated?: boolean
+}
+
+export async function generateReact(input: GenerateReactInput): Promise<GenerateReactResult> {
+  if (!input.prompt) throw new GenerationValidationError('prompt is required')
+  const gen = await generateCode('react', input.prompt, {
+    palette: input.palette,
+    bgColor: input.bgColor,
+    duration: input.duration,
+    previousSummary: input.previousSummary,
+    font: input.font,
+    modelId: input.modelId,
+    modelConfigs: input.modelConfigs,
+  })
+  return { result: { sceneCode: gen.code, styles: gen.styles }, usage: gen.usage, truncated: gen.truncated }
+}
+
 export class GenerationValidationError extends Error {
   readonly code = 'VALIDATION' as const
   constructor(message: string) {

@@ -194,20 +194,39 @@ export type CenchApi = {
     }) => Promise<Record<string, unknown>>
   }
   generate: {
-    canvas: (args: {
-      prompt: string
-      palette?: string[]
-      bgColor?: string
-      duration?: number
-      previousSummary?: string
-      modelId?: string
-      modelConfigs?: unknown[]
-    }) => Promise<{
+    canvas: (args: GenerateBaseArgs) => Promise<{
       result: string
-      usage: { input_tokens: number; output_tokens: number; cost_usd: number }
+      usage: UsageResult
+      truncated?: boolean
+    }>
+    motion: (args: GenerateBaseArgs & { font?: string }) => Promise<{
+      result: { sceneCode: string; styles?: unknown; htmlContent?: unknown }
+      usage: UsageResult
+      truncated?: boolean
+    }>
+    three: (args: GenerateBaseArgs) => Promise<{
+      result: { sceneCode: string }
+      usage: UsageResult
+      truncated?: boolean
+    }>
+    react: (args: GenerateBaseArgs & { font?: string }) => Promise<{
+      result: { sceneCode: string; styles?: unknown }
+      usage: UsageResult
       truncated?: boolean
     }>
   }
+}
+
+type UsageResult = { input_tokens: number; output_tokens: number; cost_usd: number }
+
+type GenerateBaseArgs = {
+  prompt: string
+  palette?: string[]
+  bgColor?: string
+  duration?: number
+  previousSummary?: string
+  modelId?: string
+  modelConfigs?: unknown[]
 }
 
 const cenchApi: CenchApi = {
@@ -296,6 +315,9 @@ const cenchApi: CenchApi = {
   },
   generate: {
     canvas: (args) => ipcRenderer.invoke('cench:generate.canvas', args),
+    motion: (args) => ipcRenderer.invoke('cench:generate.motion', args),
+    three: (args) => ipcRenderer.invoke('cench:generate.three', args),
+    react: (args) => ipcRenderer.invoke('cench:generate.react', args),
   },
 }
 

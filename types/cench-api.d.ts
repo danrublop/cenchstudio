@@ -335,24 +335,48 @@ export interface CenchApi {
   }
   generate: {
     /**
-     * Canvas2D scene code (raw JS string). Routes through
-     * `lib/generation/generate.ts` which picks Anthropic / OpenAI /
-     * Google / local based on `modelId` + `modelConfigs`.
+     * Scene-code generators. Each routes through `lib/generation/generate.ts`
+     * which picks Anthropic / OpenAI / Google / local based on `modelId` +
+     * `modelConfigs`. Response shapes match the HTTP routes they replaced
+     * so call sites can swap transports without adapting parse logic.
      */
-    canvas(args: {
-      prompt: string
-      palette?: string[]
-      bgColor?: string
-      duration?: number
-      previousSummary?: string
-      modelId?: string
-      modelConfigs?: unknown[]
-    }): Promise<{
-      result: string
-      usage: { input_tokens: number; output_tokens: number; cost_usd: number }
-      truncated?: boolean
-    }>
+    canvas(args: GenerateCodeArgs): Promise<GenerateCodeStringResult>
+    motion(
+      args: GenerateCodeArgs & { font?: string },
+    ): Promise<GenerateCodeStructuredResult<{ sceneCode: string; styles?: unknown; htmlContent?: unknown }>>
+    three(args: GenerateCodeArgs): Promise<GenerateCodeStructuredResult<{ sceneCode: string }>>
+    react(
+      args: GenerateCodeArgs & { font?: string },
+    ): Promise<GenerateCodeStructuredResult<{ sceneCode: string; styles?: unknown }>>
   }
+}
+
+interface GenerateCodeArgs {
+  prompt: string
+  palette?: string[]
+  bgColor?: string
+  duration?: number
+  previousSummary?: string
+  modelId?: string
+  modelConfigs?: unknown[]
+}
+
+interface GenerateCodeUsage {
+  input_tokens: number
+  output_tokens: number
+  cost_usd: number
+}
+
+interface GenerateCodeStringResult {
+  result: string
+  usage: GenerateCodeUsage
+  truncated?: boolean
+}
+
+interface GenerateCodeStructuredResult<R> {
+  result: R
+  usage: GenerateCodeUsage
+  truncated?: boolean
 }
 
 declare global {

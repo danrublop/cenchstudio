@@ -187,26 +187,31 @@ export function createGenerationActions(set: Set, get: Get) {
       get().updateScene(sceneId, { sceneCode: '', sceneHTML: '', sceneStyles: '' })
 
       try {
-        const response = await fetch('/api/generate-motion', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            prompt: scene.prompt,
-            palette: getResolvedStyle(globalStyle).palette,
-            font: getResolvedStyle(globalStyle).font,
-            bgColor: scene.bgColor,
-            duration: scene.duration || 8,
-            previousSummary,
-          }),
-        })
-
-        if (!response.ok) {
-          const err = await response.text()
-          throw new Error(err || 'Motion generation failed')
+        const ipc = typeof window !== 'undefined' ? window.cenchApi?.generate : undefined
+        const payload = {
+          prompt: scene.prompt,
+          palette: getResolvedStyle(globalStyle).palette,
+          font: getResolvedStyle(globalStyle).font,
+          bgColor: scene.bgColor,
+          duration: scene.duration || 8,
+          previousSummary,
         }
-
-        const data = await response.json()
-        const { result } = data
+        let data: { result?: { sceneCode?: string; htmlContent?: string; styles?: string }; usage?: SceneUsage }
+        if (ipc) {
+          data = (await ipc.motion(payload)) as typeof data
+        } else {
+          const response = await fetch('/api/generate-motion', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          })
+          if (!response.ok) {
+            const err = await response.text()
+            throw new Error(err || 'Motion generation failed')
+          }
+          data = await response.json()
+        }
+        const result = data.result ?? {}
         get().updateScene(sceneId, {
           sceneCode: result.sceneCode ?? '',
           sceneHTML: result.htmlContent ?? '',
@@ -234,26 +239,31 @@ export function createGenerationActions(set: Set, get: Get) {
       get().updateScene(sceneId, { reactCode: '', sceneStyles: '' })
 
       try {
-        const response = await fetch('/api/generate-react', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            prompt: scene.prompt,
-            palette: getResolvedStyle(globalStyle).palette,
-            font: getResolvedStyle(globalStyle).font,
-            bgColor: scene.bgColor,
-            duration: scene.duration || 8,
-            previousSummary,
-          }),
-        })
-
-        if (!response.ok) {
-          const err = await response.text()
-          throw new Error(err || 'React generation failed')
+        const ipc = typeof window !== 'undefined' ? window.cenchApi?.generate : undefined
+        const payload = {
+          prompt: scene.prompt,
+          palette: getResolvedStyle(globalStyle).palette,
+          font: getResolvedStyle(globalStyle).font,
+          bgColor: scene.bgColor,
+          duration: scene.duration || 8,
+          previousSummary,
         }
-
-        const data = await response.json()
-        const { result } = data
+        let data: { result?: { sceneCode?: string; styles?: string }; usage?: SceneUsage }
+        if (ipc) {
+          data = (await ipc.react(payload)) as typeof data
+        } else {
+          const response = await fetch('/api/generate-react', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          })
+          if (!response.ok) {
+            const err = await response.text()
+            throw new Error(err || 'React generation failed')
+          }
+          data = await response.json()
+        }
+        const result = data.result ?? {}
         get().updateScene(sceneId, {
           reactCode: result.sceneCode ?? '',
           sceneStyles: result.styles ?? '',
@@ -331,25 +341,30 @@ export function createGenerationActions(set: Set, get: Get) {
       get().updateScene(sceneId, { sceneCode: '' })
 
       try {
-        const response = await fetch('/api/generate-three', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            prompt: scene.prompt,
-            palette: getResolvedStyle(globalStyle).palette,
-            bgColor: scene.bgColor,
-            duration: scene.duration || 8,
-            previousSummary,
-          }),
-        })
-
-        if (!response.ok) {
-          const err = await response.text()
-          throw new Error(err || 'Three.js generation failed')
+        const ipc = typeof window !== 'undefined' ? window.cenchApi?.generate : undefined
+        const payload = {
+          prompt: scene.prompt,
+          palette: getResolvedStyle(globalStyle).palette,
+          bgColor: scene.bgColor,
+          duration: scene.duration || 8,
+          previousSummary,
         }
-
-        const data = await response.json()
-        const { result } = data
+        let data: { result?: { sceneCode?: string }; usage?: SceneUsage }
+        if (ipc) {
+          data = (await ipc.three(payload)) as typeof data
+        } else {
+          const response = await fetch('/api/generate-three', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          })
+          if (!response.ok) {
+            const err = await response.text()
+            throw new Error(err || 'Three.js generation failed')
+          }
+          data = await response.json()
+        }
+        const result = data.result ?? {}
         get().updateScene(sceneId, {
           sceneCode: result.sceneCode ?? '',
           usage: data.usage ?? null,
