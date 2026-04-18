@@ -3717,7 +3717,22 @@ var init_easing = __esm({
 });
 
 // lib/generation/prompts.ts
-var SVG_SYSTEM_PROMPT, CANVAS_SYSTEM_PROMPT, D3_SYSTEM_PROMPT, D3_STRUCTURED_CENCH_PROMPT, THREE_SYSTEM_PROMPT, MOTION_SYSTEM_PROMPT, ZDOG_SYSTEM_PROMPT, LOTTIE_OVERLAY_PROMPT, REACT_SYSTEM_PROMPT;
+var prompts_exports = {};
+__export(prompts_exports, {
+  CANVAS_SYSTEM_PROMPT: () => CANVAS_SYSTEM_PROMPT,
+  D3_STRUCTURED_CENCH_PROMPT: () => D3_STRUCTURED_CENCH_PROMPT,
+  D3_SYSTEM_PROMPT: () => D3_SYSTEM_PROMPT,
+  EDIT_SYSTEM_PROMPT: () => EDIT_SYSTEM_PROMPT,
+  ENHANCE_SYSTEM_PROMPT: () => ENHANCE_SYSTEM_PROMPT,
+  LOTTIE_OVERLAY_PROMPT: () => LOTTIE_OVERLAY_PROMPT,
+  MOTION_SYSTEM_PROMPT: () => MOTION_SYSTEM_PROMPT,
+  REACT_SYSTEM_PROMPT: () => REACT_SYSTEM_PROMPT,
+  SUMMARY_SYSTEM_PROMPT: () => SUMMARY_SYSTEM_PROMPT,
+  SVG_SYSTEM_PROMPT: () => SVG_SYSTEM_PROMPT,
+  THREE_SYSTEM_PROMPT: () => THREE_SYSTEM_PROMPT,
+  ZDOG_SYSTEM_PROMPT: () => ZDOG_SYSTEM_PROMPT
+});
+var SVG_SYSTEM_PROMPT, ENHANCE_SYSTEM_PROMPT, SUMMARY_SYSTEM_PROMPT, EDIT_SYSTEM_PROMPT, CANVAS_SYSTEM_PROMPT, D3_SYSTEM_PROMPT, D3_STRUCTURED_CENCH_PROMPT, THREE_SYSTEM_PROMPT, MOTION_SYSTEM_PROMPT, ZDOG_SYSTEM_PROMPT, LOTTIE_OVERLAY_PROMPT, REACT_SYSTEM_PROMPT;
 var init_prompts = __esm({
   "lib/generation/prompts.ts"() {
     "use strict";
@@ -3824,6 +3839,14 @@ COMPOSITION:
 ${getDesignPrinciples(dims)}
 Previous scene summary (for visual continuity): ${previousSummary || "none"}`;
     };
+    ENHANCE_SYSTEM_PROMPT = `You are a visual storytelling director. The user gives you a brief scene description.
+Rewrite it to be visually detailed, specific, and cinematic \u2014 suitable for instructing an SVG animation artist.
+Include: composition, key visual elements, mood, color hints, motion direction.
+Output ONLY the enhanced prompt. One paragraph, no preamble.`;
+    SUMMARY_SYSTEM_PROMPT = `You are summarizing a completed animation scene for context chaining.
+Given the original prompt and SVG content, write a single sentence (max 150 chars) describing what was drawn visually.
+Output ONLY the summary sentence. No preamble.`;
+    EDIT_SYSTEM_PROMPT = `You are editing an existing SVG animation. Make ONLY the changes described by the user. Return the COMPLETE modified <svg> element \u2014 preserve all existing animation classes, CSS variables, and element IDs that were not mentioned in the edit. Output raw <svg>...</svg> only.`;
     CANVAS_SYSTEM_PROMPT = (palette, bgColor, duration, previousSummary, hasExplicitPalette = true, dims = { width: 1920, height: 1080 }) => {
       const W = dims.width;
       const H = dims.height;
@@ -18643,6 +18666,158 @@ async function generateLottie(input) {
     ...validation.fixCount > 0 && { fixCount: validation.fixCount }
   };
 }
+async function callLocalSimple(modelId, modelConfigs, systemPrompt, userContent, maxTokens) {
+  const config6 = modelConfigs?.find((m) => m.id === modelId || m.modelId === modelId);
+  const endpoint = config6?.endpoint ?? process.env.OLLAMA_ENDPOINT ?? "http://localhost:11434";
+  const localModelName = config6?.localModelName ?? modelId;
+  const OpenAI = (await import("openai")).default;
+  const localClient = new OpenAI({ baseURL: `${endpoint}/v1`, apiKey: "ollama" });
+  const result = await localClient.chat.completions.create(
+    {
+      model: localModelName,
+      max_tokens: maxTokens,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userContent }
+      ]
+    },
+    { timeout: 12e4 }
+  );
+  return {
+    text: result.choices?.[0]?.message?.content ?? "",
+    usage: {
+      input_tokens: result.usage?.prompt_tokens ?? 0,
+      output_tokens: result.usage?.completion_tokens ?? 0,
+      cost_usd: 0
+    }
+  };
+}
+function isLocalModel(modelId, modelConfigs) {
+  if (!modelId) return false;
+  return getModelProvider(
+    modelId,
+    modelConfigs
+  ) !== "anthropic";
+}
+function calcAnthropicCost(usage) {
+  return usage.input_tokens / 1e6 * 3 + usage.output_tokens / 1e6 * 15;
+}
+function extractAnthropicText(content) {
+  const block = content.find((b) => b.type === "text");
+  return block?.type === "text" ? block.text : "";
+}
+async function generateSvg(input) {
+  if (!input.prompt) throw new GenerationValidationError("prompt is required");
+  if (isLocalModel(input.modelId, input.modelConfigs)) {
+    const gen = await generateCode("svg", input.prompt, {
+      palette: input.palette,
+      strokeWidth: input.strokeWidth,
+      font: input.font,
+      duration: input.duration,
+      previousSummary: input.previousSummary,
+      modelId: input.modelId,
+      modelConfigs: input.modelConfigs
+    });
+    return { result: gen.code, usage: gen.usage };
+  }
+  if (!process.env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY not set");
+  const { SVG_SYSTEM_PROMPT: SVG_SYSTEM_PROMPT2 } = await Promise.resolve().then(() => (init_prompts(), prompts_exports));
+  const systemPrompt = SVG_SYSTEM_PROMPT2(
+    input.palette ?? ["#1a1a2e", "#16213e", "#0f3460", "#e94560"],
+    input.strokeWidth ?? 2,
+    input.font ?? "Caveat",
+    input.duration ?? 8,
+    input.previousSummary ?? ""
+  );
+  const msg = await getAnthropic().messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 8192,
+    system: systemPrompt,
+    messages: [{ role: "user", content: input.prompt }]
+  });
+  const text2 = extractAnthropicText(msg.content);
+  return {
+    result: text2,
+    usage: {
+      input_tokens: msg.usage.input_tokens,
+      output_tokens: msg.usage.output_tokens,
+      cost_usd: calcAnthropicCost(msg.usage)
+    }
+  };
+}
+async function enhancePrompt(input) {
+  if (!input.prompt) throw new GenerationValidationError("prompt is required");
+  const { ENHANCE_SYSTEM_PROMPT: ENHANCE_SYSTEM_PROMPT2 } = await Promise.resolve().then(() => (init_prompts(), prompts_exports));
+  const userContent = `Enhance this scene description: "${input.prompt}"`;
+  if (isLocalModel(input.modelId, input.modelConfigs)) {
+    const r = await callLocalSimple(input.modelId, input.modelConfigs, ENHANCE_SYSTEM_PROMPT2, userContent, 512);
+    return { result: r.text, usage: r.usage };
+  }
+  if (!process.env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY not set");
+  const msg = await getAnthropic().messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 512,
+    system: ENHANCE_SYSTEM_PROMPT2,
+    messages: [{ role: "user", content: userContent }]
+  });
+  return {
+    result: extractAnthropicText(msg.content),
+    usage: {
+      input_tokens: msg.usage.input_tokens,
+      output_tokens: msg.usage.output_tokens,
+      cost_usd: calcAnthropicCost(msg.usage)
+    }
+  };
+}
+async function summarizeScene(input) {
+  const { SUMMARY_SYSTEM_PROMPT: SUMMARY_SYSTEM_PROMPT2 } = await Promise.resolve().then(() => (init_prompts(), prompts_exports));
+  const svgSnippet = (input.svgContent ?? "").slice(0, 2e3);
+  const userContent = `Original prompt: "${input.prompt ?? ""}"
+
+SVG content (truncated): ${svgSnippet}`;
+  if (isLocalModel(input.modelId, input.modelConfigs)) {
+    const r = await callLocalSimple(input.modelId, input.modelConfigs, SUMMARY_SYSTEM_PROMPT2, userContent, 200);
+    return { result: r.text };
+  }
+  if (!process.env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY not set");
+  const msg = await getAnthropic().messages.create({
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 200,
+    system: SUMMARY_SYSTEM_PROMPT2,
+    messages: [{ role: "user", content: userContent }]
+  });
+  return { result: extractAnthropicText(msg.content) };
+}
+async function editSvg(input) {
+  if (!input.svgContent || !input.editInstruction) {
+    throw new GenerationValidationError("svgContent and editInstruction required");
+  }
+  const { EDIT_SYSTEM_PROMPT: EDIT_SYSTEM_PROMPT2 } = await Promise.resolve().then(() => (init_prompts(), prompts_exports));
+  const userContent = `EXISTING SVG:
+${input.svgContent}
+
+EDIT INSTRUCTION:
+${input.editInstruction}`;
+  if (isLocalModel(input.modelId, input.modelConfigs)) {
+    const r = await callLocalSimple(input.modelId, input.modelConfigs, EDIT_SYSTEM_PROMPT2, userContent, 8192);
+    return { result: r.text, usage: r.usage };
+  }
+  if (!process.env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY not set");
+  const msg = await getAnthropic().messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 8192,
+    system: EDIT_SYSTEM_PROMPT2,
+    messages: [{ role: "user", content: userContent }]
+  });
+  return {
+    result: extractAnthropicText(msg.content),
+    usage: {
+      input_tokens: msg.usage.input_tokens,
+      output_tokens: msg.usage.output_tokens,
+      cost_usd: calcAnthropicCost(msg.usage)
+    }
+  };
+}
 async function pollHeygenStatus(videoId) {
   if (!videoId) throw new GenerationValidationError("videoId is required");
   const { getVideoStatus: getVideoStatus2, downloadVideo: downloadVideo3 } = await Promise.resolve().then(() => (init_heygen(), heygen_exports));
@@ -18662,9 +18837,7 @@ async function pollVideoStatus(input) {
   const { logSpend: logSpend2 } = await Promise.resolve().then(() => (init_db(), db_exports));
   const provider = input.providerId && input.providerId !== "auto" ? getVideoProvider2(input.providerId) : firstConfiguredVideoProvider2();
   if (!provider) {
-    throw new GenerationValidationError(
-      "No video provider configured. Add GOOGLE_AI_KEY, FAL_KEY, or RUNWAY_API_KEY."
-    );
+    throw new GenerationValidationError("No video provider configured. Add GOOGLE_AI_KEY, FAL_KEY, or RUNWAY_API_KEY.");
   }
   const result = await provider.pollStatus(input.operationName);
   if (result.done && result.videoUri) {
@@ -18761,6 +18934,10 @@ function register16(ipcMain2) {
   ipcMain2.handle("cench:generate.image", wrap(generateImageAsset));
   ipcMain2.handle("cench:generate.pollHeygen", wrap(pollHeygenStatus));
   ipcMain2.handle("cench:generate.pollVideo", wrap(pollVideoStatus));
+  ipcMain2.handle("cench:generate.svg", wrap(generateSvg));
+  ipcMain2.handle("cench:generate.enhancePrompt", wrap(enhancePrompt));
+  ipcMain2.handle("cench:generate.summarize", wrap(summarizeScene));
+  ipcMain2.handle("cench:generate.editSvg", wrap(editSvg));
 }
 
 // electron/ipc/index.ts

@@ -265,6 +265,26 @@ export type CenchApi = {
       provider?: string
       error?: string
     }>
+    svg: (args: GenerateBaseArgs & { strokeWidth?: number; font?: string }) => Promise<{
+      result: string
+      usage: UsageResult
+    }>
+    enhancePrompt: (args: { prompt: string; modelId?: string; modelConfigs?: unknown[] }) => Promise<{
+      result: string
+      usage: UsageResult
+    }>
+    summarize: (args: {
+      prompt: string
+      svgContent?: string
+      modelId?: string
+      modelConfigs?: unknown[]
+    }) => Promise<{ result: string }>
+    editSvg: (args: {
+      svgContent: string
+      editInstruction: string
+      modelId?: string
+      modelConfigs?: unknown[]
+    }) => Promise<{ result: string; usage: UsageResult }>
   }
 }
 
@@ -374,6 +394,10 @@ const cenchApi: CenchApi = {
     image: (args) => ipcRenderer.invoke('cench:generate.image', args),
     pollHeygen: (videoId) => ipcRenderer.invoke('cench:generate.pollHeygen', videoId),
     pollVideo: (args) => ipcRenderer.invoke('cench:generate.pollVideo', args),
+    svg: (args) => ipcRenderer.invoke('cench:generate.svg', args),
+    enhancePrompt: (args) => ipcRenderer.invoke('cench:generate.enhancePrompt', args),
+    summarize: (args) => ipcRenderer.invoke('cench:generate.summarize', args),
+    editSvg: (args) => ipcRenderer.invoke('cench:generate.editSvg', args),
   },
 }
 

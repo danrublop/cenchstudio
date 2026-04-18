@@ -20,6 +20,7 @@ import { LOTTIE_OVERLAY_PROMPT } from '@/lib/generation/prompts'
 import { validateLottieJSON } from '@/lib/motion/lottie-validator'
 import { scoreLottieQuality } from '@/lib/motion/quality-score'
 import type { MotionPersonality } from '@/lib/motion/easing'
+import { getModelProvider } from '@/lib/agents/types'
 
 export type UsageShape = {
   input_tokens: number
@@ -315,6 +316,220 @@ export async function generateLottie(input: GenerateLottieInput): Promise<Genera
     usage,
     quality: { score: quality.total, dimensions: quality.dimensions, suggestions: quality.suggestions },
     ...(validation.fixCount > 0 && { fixCount: validation.fixCount }),
+  }
+}
+
+// ── SVG main + enhance + summarize + edit ──────────────────────────────────
+// The default `/api/generate` route has four modes on one POST handler.
+// Each is its own service function so callers don't have to juggle body
+// flags. Local models route through `callLocalSimple()`; Anthropic gets
+// the scene-type SDK call.
+
+type ModelConfigLike = { id?: string; modelId?: string; endpoint?: string; localModelName?: string }
+
+/** OpenAI-compat shim for any configured local (Ollama-style) model. */
+async function callLocalSimple(
+  modelId: string,
+  modelConfigs: ModelConfigLike[] | undefined,
+  systemPrompt: string,
+  userContent: string,
+  maxTokens: number,
+): Promise<{ text: string; usage: UsageShape }> {
+  const config = modelConfigs?.find((m) => m.id === modelId || m.modelId === modelId)
+  const endpoint = config?.endpoint ?? process.env.OLLAMA_ENDPOINT ?? 'http://localhost:11434'
+  const localModelName = config?.localModelName ?? modelId
+  const OpenAI = (await import('openai')).default
+  const localClient = new OpenAI({ baseURL: `${endpoint}/v1`, apiKey: 'ollama' })
+  const result = await localClient.chat.completions.create(
+    {
+      model: localModelName,
+      max_tokens: maxTokens,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userContent },
+      ],
+    },
+    { timeout: 120_000 },
+  )
+  return {
+    text: result.choices?.[0]?.message?.content ?? '',
+    usage: {
+      input_tokens: result.usage?.prompt_tokens ?? 0,
+      output_tokens: result.usage?.completion_tokens ?? 0,
+      cost_usd: 0,
+    },
+  }
+}
+
+function isLocalModel(modelId: string | undefined, modelConfigs: ModelConfigLike[] | undefined): boolean {
+  if (!modelId) return false
+  // Match the Anthropic-check used by the original routes — any non-Anthropic
+  // provider (OpenAI/Google/local) routes through the local/provider-specific
+  // helper. `getModelProvider` is the source of truth.
+  return (
+    getModelProvider(
+      modelId as Parameters<typeof getModelProvider>[0],
+      modelConfigs as Parameters<typeof getModelProvider>[1],
+    ) !== 'anthropic'
+  )
+}
+
+function calcAnthropicCost(usage: { input_tokens: number; output_tokens: number }): number {
+  return (usage.input_tokens / 1_000_000) * 3 + (usage.output_tokens / 1_000_000) * 15
+}
+
+function extractAnthropicText(content: Anthropic.ContentBlock[]): string {
+  const block = content.find((b) => b.type === 'text')
+  return block?.type === 'text' ? block.text : ''
+}
+
+export interface GenerateSvgInput {
+  prompt: string
+  palette?: string[]
+  strokeWidth?: number
+  font?: string
+  duration?: number
+  previousSummary?: string
+  modelId?: string
+  modelConfigs?: ModelConfigLike[]
+}
+
+export async function generateSvg(input: GenerateSvgInput): Promise<{ result: string; usage: UsageShape }> {
+  if (!input.prompt) throw new GenerationValidationError('prompt is required')
+
+  if (isLocalModel(input.modelId, input.modelConfigs)) {
+    const gen = await generateCode('svg', input.prompt, {
+      palette: input.palette,
+      strokeWidth: input.strokeWidth,
+      font: input.font,
+      duration: input.duration,
+      previousSummary: input.previousSummary,
+      modelId: input.modelId as GenerateCodeOptions['modelId'],
+      modelConfigs: input.modelConfigs as GenerateCodeOptions['modelConfigs'],
+    })
+    return { result: gen.code, usage: gen.usage }
+  }
+
+  if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY not set')
+
+  const { SVG_SYSTEM_PROMPT } = await import('@/lib/generation/prompts')
+  const systemPrompt = SVG_SYSTEM_PROMPT(
+    input.palette ?? ['#1a1a2e', '#16213e', '#0f3460', '#e94560'],
+    input.strokeWidth ?? 2,
+    input.font ?? 'Caveat',
+    input.duration ?? 8,
+    input.previousSummary ?? '',
+  )
+  const msg = await getAnthropic().messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 8192,
+    system: systemPrompt,
+    messages: [{ role: 'user', content: input.prompt }],
+  })
+  const text = extractAnthropicText(msg.content)
+  return {
+    result: text,
+    usage: {
+      input_tokens: msg.usage.input_tokens,
+      output_tokens: msg.usage.output_tokens,
+      cost_usd: calcAnthropicCost(msg.usage),
+    },
+  }
+}
+
+export interface EnhancePromptInput {
+  prompt: string
+  modelId?: string
+  modelConfigs?: ModelConfigLike[]
+}
+
+export async function enhancePrompt(input: EnhancePromptInput): Promise<{ result: string; usage: UsageShape }> {
+  if (!input.prompt) throw new GenerationValidationError('prompt is required')
+  const { ENHANCE_SYSTEM_PROMPT } = await import('@/lib/generation/prompts')
+  const userContent = `Enhance this scene description: "${input.prompt}"`
+
+  if (isLocalModel(input.modelId, input.modelConfigs)) {
+    const r = await callLocalSimple(input.modelId!, input.modelConfigs, ENHANCE_SYSTEM_PROMPT, userContent, 512)
+    return { result: r.text, usage: r.usage }
+  }
+  if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY not set')
+
+  const msg = await getAnthropic().messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 512,
+    system: ENHANCE_SYSTEM_PROMPT,
+    messages: [{ role: 'user', content: userContent }],
+  })
+  return {
+    result: extractAnthropicText(msg.content),
+    usage: {
+      input_tokens: msg.usage.input_tokens,
+      output_tokens: msg.usage.output_tokens,
+      cost_usd: calcAnthropicCost(msg.usage),
+    },
+  }
+}
+
+export interface SummarizeSceneInput {
+  prompt: string
+  svgContent?: string
+  modelId?: string
+  modelConfigs?: ModelConfigLike[]
+}
+
+export async function summarizeScene(input: SummarizeSceneInput): Promise<{ result: string }> {
+  const { SUMMARY_SYSTEM_PROMPT } = await import('@/lib/generation/prompts')
+  const svgSnippet = (input.svgContent ?? '').slice(0, 2000)
+  const userContent = `Original prompt: "${input.prompt ?? ''}"\n\nSVG content (truncated): ${svgSnippet}`
+
+  if (isLocalModel(input.modelId, input.modelConfigs)) {
+    const r = await callLocalSimple(input.modelId!, input.modelConfigs, SUMMARY_SYSTEM_PROMPT, userContent, 200)
+    return { result: r.text }
+  }
+  if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY not set')
+
+  const msg = await getAnthropic().messages.create({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 200,
+    system: SUMMARY_SYSTEM_PROMPT,
+    messages: [{ role: 'user', content: userContent }],
+  })
+  return { result: extractAnthropicText(msg.content) }
+}
+
+export interface EditSvgInput {
+  svgContent: string
+  editInstruction: string
+  modelId?: string
+  modelConfigs?: ModelConfigLike[]
+}
+
+export async function editSvg(input: EditSvgInput): Promise<{ result: string; usage: UsageShape }> {
+  if (!input.svgContent || !input.editInstruction) {
+    throw new GenerationValidationError('svgContent and editInstruction required')
+  }
+  const { EDIT_SYSTEM_PROMPT } = await import('@/lib/generation/prompts')
+  const userContent = `EXISTING SVG:\n${input.svgContent}\n\nEDIT INSTRUCTION:\n${input.editInstruction}`
+
+  if (isLocalModel(input.modelId, input.modelConfigs)) {
+    const r = await callLocalSimple(input.modelId!, input.modelConfigs, EDIT_SYSTEM_PROMPT, userContent, 8192)
+    return { result: r.text, usage: r.usage }
+  }
+  if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY not set')
+
+  const msg = await getAnthropic().messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 8192,
+    system: EDIT_SYSTEM_PROMPT,
+    messages: [{ role: 'user', content: userContent }],
+  })
+  return {
+    result: extractAnthropicText(msg.content),
+    usage: {
+      input_tokens: msg.usage.input_tokens,
+      output_tokens: msg.usage.output_tokens,
+      cost_usd: calcAnthropicCost(msg.usage),
+    },
   }
 }
 

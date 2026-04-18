@@ -7,6 +7,10 @@ import {
   generateLottie,
   generateD3,
   generateImageAsset,
+  generateSvg,
+  enhancePrompt,
+  summarizeScene,
+  editSvg,
   pollHeygenStatus,
   pollVideoStatus,
   GenerationValidationError,
@@ -64,4 +68,8 @@ export function register(ipcMain: IpcMain): void {
   // wrapper handles fine since `Parameters<T>[0]` is the concrete type.
   ipcMain.handle('cench:generate.pollHeygen', wrap(pollHeygenStatus))
   ipcMain.handle('cench:generate.pollVideo', wrap(pollVideoStatus))
+  ipcMain.handle('cench:generate.svg', wrap(generateSvg))
+  ipcMain.handle('cench:generate.enhancePrompt', wrap(enhancePrompt))
+  ipcMain.handle('cench:generate.summarize', wrap(summarizeScene))
+  ipcMain.handle('cench:generate.editSvg', wrap(editSvg))
 }

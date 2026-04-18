@@ -28,24 +28,29 @@ export function createGenerationActions(set: Set, get: Get) {
       get().updateScene(sceneId, { svgContent: '' })
 
       try {
-        const response = await fetch('/api/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            prompt: scene.prompt,
-            palette: getResolvedStyle(globalStyle).palette,
-            font: getResolvedStyle(globalStyle).font,
-            duration: scene.duration || 8,
-            previousSummary,
-          }),
-        })
-
-        if (!response.ok) {
-          const err = await response.text()
-          throw new Error(err || 'Generation failed')
+        const ipc = typeof window !== 'undefined' ? window.cenchApi?.generate : undefined
+        const payload = {
+          prompt: scene.prompt,
+          palette: getResolvedStyle(globalStyle).palette,
+          font: getResolvedStyle(globalStyle).font,
+          duration: scene.duration || 8,
+          previousSummary,
         }
-
-        const data = await response.json()
+        let data: { result?: string; usage?: SceneUsage }
+        if (ipc) {
+          data = (await ipc.svg(payload)) as typeof data
+        } else {
+          const response = await fetch('/api/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          })
+          if (!response.ok) {
+            const err = await response.text()
+            throw new Error(err || 'Generation failed')
+          }
+          data = await response.json()
+        }
         const cleanedSvg: string = data.result ?? ''
         const usage: SceneUsage | null = data.usage ?? null
 
@@ -86,17 +91,18 @@ export function createGenerationActions(set: Set, get: Get) {
         await get().saveSceneHTML(sceneId)
 
         try {
-          const summaryRes = await fetch('/api/generate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              prompt: scene.prompt,
-              summarize: true,
-              svgContent: cleanedSvg,
-            }),
-          })
-          if (summaryRes.ok) {
-            const summaryData = await summaryRes.json()
+          const ipc2 = typeof window !== 'undefined' ? window.cenchApi?.generate : undefined
+          const summaryPayload = { prompt: scene.prompt, svgContent: cleanedSvg }
+          const summaryData = ipc2
+            ? await ipc2.summarize(summaryPayload)
+            : await (
+                await fetch('/api/generate', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ ...summaryPayload, summarize: true }),
+                })
+              ).json()
+          if (summaryData?.result) {
             get().updateScene(sceneId, { summary: (summaryData.result ?? '').trim().slice(0, 200) })
           }
         } catch {
@@ -152,17 +158,18 @@ export function createGenerationActions(set: Set, get: Get) {
         await get().saveSceneHTML(sceneId)
 
         try {
-          const summaryRes = await fetch('/api/generate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              prompt: scene.prompt,
-              summarize: true,
-              svgContent: cleanedCode.slice(0, 2000),
-            }),
-          })
-          if (summaryRes.ok) {
-            const summaryData = await summaryRes.json()
+          const ipc2 = typeof window !== 'undefined' ? window.cenchApi?.generate : undefined
+          const summaryPayload = { prompt: scene.prompt, svgContent: cleanedCode.slice(0, 2000) }
+          const summaryData = ipc2
+            ? await ipc2.summarize(summaryPayload)
+            : await (
+                await fetch('/api/generate', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ ...summaryPayload, summarize: true }),
+                })
+              ).json()
+          if (summaryData?.result) {
             get().updateScene(sceneId, { summary: (summaryData.result ?? '').trim().slice(0, 200) })
           }
         } catch {
@@ -449,22 +456,23 @@ export function createGenerationActions(set: Set, get: Get) {
       set({ isGenerating: true, generatingSceneId: sceneId, lastGenerationError: null })
 
       try {
-        const response = await fetch('/api/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            edit: true,
-            svgContent: scene.svgContent,
-            editInstruction: instruction,
-          }),
-        })
-
-        if (!response.ok) {
-          const err = await response.text()
-          throw new Error(err || 'Edit failed')
+        const ipc = typeof window !== 'undefined' ? window.cenchApi?.generate : undefined
+        const payload = { svgContent: scene.svgContent, editInstruction: instruction }
+        let data: { result?: string; usage?: SceneUsage }
+        if (ipc) {
+          data = (await ipc.editSvg(payload)) as typeof data
+        } else {
+          const response = await fetch('/api/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ edit: true, ...payload }),
+          })
+          if (!response.ok) {
+            const err = await response.text()
+            throw new Error(err || 'Edit failed')
+          }
+          data = await response.json()
         }
-
-        const data = await response.json()
         const cleanedSvg: string = data.result ?? ''
         const usage: SceneUsage | null = data.usage ?? null
 
@@ -502,17 +510,20 @@ export function createGenerationActions(set: Set, get: Get) {
       if (!scene || !scene.prompt.trim()) return
 
       try {
-        const response = await fetch('/api/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            prompt: scene.prompt,
-            enhance: true,
-          }),
-        })
-        if (!response.ok) return
-        const data = await response.json()
-        get().updateScene(sceneId, { prompt: (data.result ?? '').trim() })
+        const ipc = typeof window !== 'undefined' ? window.cenchApi?.generate : undefined
+        const payload = { prompt: scene.prompt }
+        const data = ipc
+          ? await ipc.enhancePrompt(payload)
+          : await (async () => {
+              const response = await fetch('/api/generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...payload, enhance: true }),
+              })
+              if (!response.ok) return null
+              return response.json()
+            })()
+        if (data?.result) get().updateScene(sceneId, { prompt: (data.result ?? '').trim() })
       } catch (err) {
         console.error('Enhance error:', err)
       }
@@ -612,25 +623,30 @@ export function createGenerationActions(set: Set, get: Get) {
       set({ isGenerating: true, generatingSceneId: sceneId, lastGenerationError: null })
 
       try {
-        const response = await fetch('/api/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            prompt,
-            palette: getResolvedStyle(globalStyle).palette,
-            strokeWidth: globalStyle.strokeWidth ?? 2,
-            font: getResolvedStyle(globalStyle).font,
-            duration: 8,
-            previousSummary: '',
-          }),
-        })
-
-        if (!response.ok) {
-          const err = await response.text()
-          throw new Error(err || 'Generation failed')
+        const ipc = typeof window !== 'undefined' ? window.cenchApi?.generate : undefined
+        const payload = {
+          prompt,
+          palette: getResolvedStyle(globalStyle).palette,
+          strokeWidth: globalStyle.strokeWidth ?? 2,
+          font: getResolvedStyle(globalStyle).font,
+          duration: 8,
+          previousSummary: '',
         }
-
-        const data = await response.json()
+        let data: { result?: string }
+        if (ipc) {
+          data = (await ipc.svg(payload)) as typeof data
+        } else {
+          const response = await fetch('/api/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          })
+          if (!response.ok) {
+            const err = await response.text()
+            throw new Error(err || 'Generation failed')
+          }
+          data = await response.json()
+        }
         const cleanedSvg: string = data.result ?? ''
         get().updateSvgObject(sceneId, objectId, { svgContent: cleanedSvg, prompt })
 

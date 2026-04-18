@@ -424,6 +424,30 @@ export interface CenchApi {
       provider?: string
       error?: string
     }>
+    /** Default SVG generation. */
+    svg(args: GenerateCodeArgs & { strokeWidth?: number; font?: string }): Promise<{
+      result: string
+      usage: GenerateCodeUsage
+    }>
+    /** One-shot enhancement of a scene prompt (~512 tokens). */
+    enhancePrompt(args: { prompt: string; modelId?: string; modelConfigs?: unknown[] }): Promise<{
+      result: string
+      usage: GenerateCodeUsage
+    }>
+    /** 200-token summary of a prompt + SVG content (used for `previousSummary` chaining). */
+    summarize(args: {
+      prompt: string
+      svgContent?: string
+      modelId?: string
+      modelConfigs?: unknown[]
+    }): Promise<{ result: string }>
+    /** Rewrite an existing SVG per a natural-language edit instruction. */
+    editSvg(args: {
+      svgContent: string
+      editInstruction: string
+      modelId?: string
+      modelConfigs?: unknown[]
+    }): Promise<{ result: string; usage: GenerateCodeUsage }>
   }
 }
 
