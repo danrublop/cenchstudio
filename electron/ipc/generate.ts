@@ -7,6 +7,8 @@ import {
   generateLottie,
   generateD3,
   generateImageAsset,
+  pollHeygenStatus,
+  pollVideoStatus,
   GenerationValidationError,
 } from '@/lib/services/generation'
 import { IpcValidationError } from './_helpers'
@@ -57,4 +59,9 @@ export function register(ipcMain: IpcMain): void {
   ipcMain.handle('cench:generate.lottie', wrap(generateLottie))
   ipcMain.handle('cench:generate.d3', wrap(generateD3))
   ipcMain.handle('cench:generate.image', wrap(generateImageAsset))
+  // Status pollers — same `wrap()` pattern. `pollHeygenStatus` takes a
+  // single `videoId` string rather than an options object, which the
+  // wrapper handles fine since `Parameters<T>[0]` is the concrete type.
+  ipcMain.handle('cench:generate.pollHeygen', wrap(pollHeygenStatus))
+  ipcMain.handle('cench:generate.pollVideo', wrap(pollVideoStatus))
 }

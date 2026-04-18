@@ -108,7 +108,9 @@ var cenchApi = {
     react: (args) => import_electron.ipcRenderer.invoke("cench:generate.react", args),
     lottie: (args) => import_electron.ipcRenderer.invoke("cench:generate.lottie", args),
     d3: (args) => import_electron.ipcRenderer.invoke("cench:generate.d3", args),
-    image: (args) => import_electron.ipcRenderer.invoke("cench:generate.image", args)
+    image: (args) => import_electron.ipcRenderer.invoke("cench:generate.image", args),
+    pollHeygen: (videoId) => import_electron.ipcRenderer.invoke("cench:generate.pollHeygen", videoId),
+    pollVideo: (args) => import_electron.ipcRenderer.invoke("cench:generate.pollVideo", args)
   }
 };
 import_electron.contextBridge.exposeInMainWorld("cenchApi", cenchApi);

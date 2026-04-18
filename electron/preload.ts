@@ -247,6 +247,24 @@ export type CenchApi = {
       height: number
       cost: number
     }>
+    pollHeygen: (videoId: string) => Promise<{
+      status: string
+      videoUrl?: string
+      thumbnailUrl?: string
+      error?: string
+    }>
+    pollVideo: (args: {
+      operationName: string
+      projectId?: string
+      prompt?: string
+      providerId?: string
+      reservationId?: string
+    }) => Promise<{
+      done: boolean
+      videoUrl?: string
+      provider?: string
+      error?: string
+    }>
   }
 }
 
@@ -354,6 +372,8 @@ const cenchApi: CenchApi = {
     lottie: (args) => ipcRenderer.invoke('cench:generate.lottie', args),
     d3: (args) => ipcRenderer.invoke('cench:generate.d3', args),
     image: (args) => ipcRenderer.invoke('cench:generate.image', args),
+    pollHeygen: (videoId) => ipcRenderer.invoke('cench:generate.pollHeygen', videoId),
+    pollVideo: (args) => ipcRenderer.invoke('cench:generate.pollVideo', args),
   },
 }
 

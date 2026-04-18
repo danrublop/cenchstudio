@@ -396,6 +396,34 @@ export interface CenchApi {
       height: number
       cost: number
     }>
+    /**
+     * Poll a HeyGen avatar video job. Returns `status: 'completed'` with
+     * `videoUrl` when the video is downloaded + cached; otherwise reports
+     * the upstream job status.
+     */
+    pollHeygen(videoId: string): Promise<{
+      status: string
+      videoUrl?: string
+      thumbnailUrl?: string
+      error?: string
+    }>
+    /**
+     * Poll a Veo3 / Kling / Runway text-to-video job. Returns
+     * `done: true, videoUrl` on success (after saving to cache +
+     * calling `logSpend`) or `done: false` if still processing.
+     */
+    pollVideo(args: {
+      operationName: string
+      projectId?: string
+      prompt?: string
+      providerId?: string
+      reservationId?: string
+    }): Promise<{
+      done: boolean
+      videoUrl?: string
+      provider?: string
+      error?: string
+    }>
   }
 }
 

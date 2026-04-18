@@ -752,8 +752,10 @@ export function createGenerationActions(set: Set, get: Get) {
     pollAvatarStatus: (sceneId: string, layerId: string, videoId: string) => {
       const poll = async () => {
         try {
-          const res = await fetch(`/api/generate-avatar?videoId=${encodeURIComponent(videoId)}`)
-          const data = await res.json()
+          const ipc = typeof window !== 'undefined' ? window.cenchApi?.generate : undefined
+          const data = ipc
+            ? await ipc.pollHeygen(videoId)
+            : await (await fetch(`/api/generate-avatar?videoId=${encodeURIComponent(videoId)}`)).json()
 
           if (data.status === 'completed') {
             get().updateAILayer(sceneId, layerId, {
@@ -782,11 +784,17 @@ export function createGenerationActions(set: Set, get: Get) {
     pollVeo3Status: (sceneId: string, layerId: string, operationName: string, projectId?: string, prompt?: string) => {
       const poll = async () => {
         try {
-          const params = new URLSearchParams({ operationName })
-          if (projectId) params.set('projectId', projectId)
-          if (prompt) params.set('prompt', prompt)
-          const res = await fetch(`/api/generate-video?${params}`)
-          const data = await res.json()
+          const ipc = typeof window !== 'undefined' ? window.cenchApi?.generate : undefined
+          let data: { done?: boolean; videoUrl?: string; error?: string }
+          if (ipc) {
+            data = await ipc.pollVideo({ operationName, projectId, prompt })
+          } else {
+            const params = new URLSearchParams({ operationName })
+            if (projectId) params.set('projectId', projectId)
+            if (prompt) params.set('prompt', prompt)
+            const res = await fetch(`/api/generate-video?${params}`)
+            data = await res.json()
+          }
 
           if (data.done && data.videoUrl) {
             get().updateAILayer(sceneId, layerId, {

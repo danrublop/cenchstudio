@@ -1617,6 +1617,135 @@ var init_crypto = __esm({
   }
 });
 
+// lib/apis/heygen.ts
+var heygen_exports = {};
+__export(heygen_exports, {
+  downloadVideo: () => downloadVideo,
+  generateAvatarVideo: () => generateAvatarVideo,
+  generateStarfishTTS: () => generateStarfishTTS,
+  getVideoStatus: () => getVideoStatus,
+  listAvatars: () => listAvatars,
+  listVoices: () => listVoices
+});
+async function heygenFetch(path24, options = {}) {
+  const response = await fetch(`${HEYGEN_BASE}${path24}`, {
+    ...options,
+    headers: {
+      "X-Api-Key": HEYGEN_KEY(),
+      "Content-Type": "application/json",
+      ...options.headers
+    }
+  });
+  const data = await response.json();
+  if (!response.ok || data.error) {
+    throw new Error(data.error?.message ?? data.message ?? `HeyGen API error: ${response.status}`);
+  }
+  return data.data ?? data;
+}
+async function listAvatars() {
+  if (avatarCache && Date.now() - avatarCache.fetchedAt < AVATAR_CACHE_TTL) {
+    return avatarCache.avatars;
+  }
+  const data = await heygenFetch("/avatars");
+  const avatars = (data.avatars ?? []).map((a) => ({
+    avatar_id: a.avatar_id,
+    avatar_name: a.avatar_name,
+    gender: a.gender,
+    preview_image_url: a.preview_image_url,
+    preview_video_url: a.preview_video_url
+  }));
+  avatarCache = { avatars, fetchedAt: Date.now() };
+  return avatars;
+}
+async function generateAvatarVideo(opts) {
+  const data = await heygenFetch("/video/generate", {
+    method: "POST",
+    body: JSON.stringify({
+      video_inputs: [
+        {
+          character: {
+            type: "avatar",
+            avatar_id: opts.avatarId,
+            avatar_style: "normal"
+          },
+          voice: {
+            type: "text",
+            input_text: opts.script,
+            voice_id: opts.voiceId
+          },
+          background: {
+            type: "color",
+            value: opts.bgColor ?? "#00FF00"
+            // green for chroma key
+          }
+        }
+      ],
+      dimension: {
+        width: opts.width ?? 512,
+        height: opts.height ?? 512
+      }
+    })
+  });
+  const wordCount = opts.script.split(/\s+/).length;
+  const estimatedSeconds = Math.ceil(wordCount / 150 * 60);
+  return {
+    videoId: data.video_id,
+    estimatedSeconds
+  };
+}
+async function getVideoStatus(videoId) {
+  const data = await heygenFetch(`/video_status.get?video_id=${videoId}`);
+  return {
+    status: data.status,
+    videoUrl: data.video_url,
+    thumbnailUrl: data.thumbnail_url,
+    error: data.error
+  };
+}
+async function downloadVideo(videoUrl) {
+  const response = await fetch(videoUrl);
+  if (!response.ok) throw new Error(`Failed to download HeyGen video: ${response.status}`);
+  return Buffer.from(await response.arrayBuffer());
+}
+async function listVoices() {
+  if (voiceCache && Date.now() - voiceCache.fetchedAt < VOICE_CACHE_TTL) {
+    return voiceCache.voices;
+  }
+  const data = await heygenFetch("/voices");
+  const voices = (data.voices ?? []).map((v) => ({
+    voice_id: v.voice_id,
+    language: v.language,
+    gender: v.gender,
+    name: v.name,
+    preview_audio: v.preview_audio ?? null
+  }));
+  voiceCache = { voices, fetchedAt: Date.now() };
+  return voices;
+}
+async function generateStarfishTTS(opts) {
+  const data = await heygenFetch("/tts", {
+    method: "POST",
+    body: JSON.stringify({
+      text: opts.text,
+      voice_id: opts.voiceId,
+      speed: opts.speed ?? 1
+    })
+  });
+  return { audioUrl: data.audio_url ?? data.url };
+}
+var HEYGEN_BASE, HEYGEN_KEY, avatarCache, AVATAR_CACHE_TTL, voiceCache, VOICE_CACHE_TTL;
+var init_heygen = __esm({
+  "lib/apis/heygen.ts"() {
+    "use strict";
+    HEYGEN_BASE = "https://api.heygen.com/v2";
+    HEYGEN_KEY = () => process.env.HEYGEN_API_KEY;
+    avatarCache = null;
+    AVATAR_CACHE_TTL = 24 * 60 * 60 * 1e3;
+    voiceCache = null;
+    VOICE_CACHE_TTL = 24 * 60 * 60 * 1e3;
+  }
+});
+
 // lib/audio/sanitize.ts
 function validateTextLength(text2) {
   if (text2.length > MAX_TTS_TEXT_LENGTH) {
@@ -3077,6 +3206,16 @@ var init_freesound_music = __esm({
 });
 
 // lib/apis/media-cache.ts
+var media_cache_exports = {};
+__export(media_cache_exports, {
+  checkCache: () => checkCache,
+  checkContentCache: () => checkContentCache,
+  computeCacheHash: () => computeCacheHash,
+  computeContentHash: () => computeContentHash,
+  downloadToBuffer: () => downloadToBuffer,
+  saveDownloadedMedia: () => saveDownloadedMedia,
+  saveToCache: () => saveToCache
+});
 function computeCacheHash(params) {
   const normalized = JSON.stringify(params, Object.keys(params).sort());
   return import_crypto5.default.createHash("sha256").update(normalized).digest("hex").slice(0, 16);
@@ -3128,6 +3267,41 @@ async function downloadToBuffer(url) {
 }
 function computeContentHash(buffer) {
   return import_crypto5.default.createHash("sha256").update(buffer).digest("hex").slice(0, 16);
+}
+async function checkContentCache(buffer) {
+  const contentHash = computeContentHash(buffer);
+  const cached = await getCachedMedia(contentHash);
+  if (!cached) return null;
+  const absPath = import_path11.default.join(process.cwd(), "public", cached.filePath);
+  try {
+    await import_promises17.default.access(absPath);
+  } catch {
+    return null;
+  }
+  return { filePath: cached.filePath, contentHash };
+}
+async function saveDownloadedMedia(opts) {
+  const { api, sourceUrl, buffer, ext, subdir, metadata } = opts;
+  const contentHash = computeContentHash(buffer);
+  const cached = await getCachedMedia(contentHash);
+  if (cached) {
+    const absPath = import_path11.default.join(process.cwd(), "public", cached.filePath);
+    try {
+      await import_promises17.default.access(absPath);
+      return { publicPath: cached.filePath, contentHash, alreadyCached: true };
+    } catch {
+    }
+  }
+  const subPath = subdir ? `research/${subdir}` : `research/${api}`;
+  const dir = import_path11.default.join(GENERATED_DIR, subPath);
+  await import_promises17.default.mkdir(dir, { recursive: true });
+  const filename = `${contentHash}.${ext}`;
+  const filePath = import_path11.default.join(dir, filename);
+  await import_promises17.default.writeFile(filePath, buffer);
+  const publicPath = `/generated/${subPath}/${filename}`;
+  const configObj = { sourceUrl, _metadata: metadata ?? {} };
+  await setCachedMedia(contentHash, api, publicPath, "", "", JSON.stringify(configObj));
+  return { publicPath, contentHash, alreadyCached: false };
 }
 var import_crypto5, import_promises17, import_path11, GENERATED_DIR;
 var init_media_cache = __esm({
@@ -4736,6 +4910,309 @@ var init_d3_structured_run = __esm({
     init_compile();
     init_structured_d3();
     init_prompts();
+  }
+});
+
+// lib/apis/video/kling.ts
+function getKey() {
+  const key = process.env.FAL_KEY;
+  if (!key) throw new Error("FAL_KEY not configured \u2014 add it to use Kling");
+  return key;
+}
+function getModel() {
+  return process.env.KLING_FAL_MODEL || DEFAULT_MODEL4;
+}
+var FAL_BASE, DEFAULT_MODEL4, klingProvider;
+var init_kling = __esm({
+  "lib/apis/video/kling.ts"() {
+    "use strict";
+    FAL_BASE = "https://queue.fal.run";
+    DEFAULT_MODEL4 = "fal-ai/kling-video/v2.1/standard/text-to-video";
+    klingProvider = {
+      id: "kling",
+      name: "Kling 2.1",
+      envKey: "FAL_KEY",
+      costPerCallUsd: 0.45,
+      async generate(opts) {
+        const key = getKey();
+        const model = getModel();
+        const body = {
+          prompt: opts.prompt,
+          duration: String(Math.max(5, Math.min(10, opts.durationSeconds))),
+          aspect_ratio: opts.aspectRatio
+        };
+        if (opts.negativePrompt) body.negative_prompt = opts.negativePrompt;
+        if (typeof opts.seed === "number") body.seed = opts.seed;
+        const res = await fetch(`${FAL_BASE}/${model}`, {
+          method: "POST",
+          headers: {
+            Authorization: `Key ${key}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.detail ?? data?.error ?? `Kling error: ${res.status}`);
+        const operationId = data.request_id;
+        if (!operationId) throw new Error("Kling response missing request_id");
+        return { operationId };
+      },
+      async pollStatus(operationId) {
+        const key = getKey();
+        const model = getModel();
+        const res = await fetch(`${FAL_BASE}/${model}/requests/${operationId}/status`, {
+          headers: { Authorization: `Key ${key}` }
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.detail ?? `Kling status error: ${res.status}`);
+        if (data.status === "COMPLETED") {
+          const out = await fetch(`${FAL_BASE}/${model}/requests/${operationId}`, {
+            headers: { Authorization: `Key ${key}` }
+          });
+          const final = await out.json();
+          const videoUri = final?.video?.url ?? final?.output?.video?.url;
+          if (!videoUri) {
+            return { done: true, error: "Kling completed without a video URL" };
+          }
+          return { done: true, videoUri };
+        }
+        if (data.status === "FAILED") {
+          return { done: true, error: data.logs?.[0]?.message ?? "Kling generation failed" };
+        }
+        return { done: false };
+      },
+      async download(uri) {
+        const res = await fetch(uri);
+        if (!res.ok) throw new Error(`Kling download failed: ${res.status}`);
+        return Buffer.from(await res.arrayBuffer());
+      }
+    };
+  }
+});
+
+// lib/apis/video/runway.ts
+function getKey2() {
+  const key = process.env.RUNWAY_API_KEY;
+  if (!key) throw new Error("RUNWAY_API_KEY not configured \u2014 add it to use Runway");
+  return key;
+}
+function runwayRatio(aspect) {
+  switch (aspect) {
+    case "16:9":
+      return "1280:720";
+    case "9:16":
+      return "720:1280";
+    case "1:1":
+      return "960:960";
+  }
+}
+var RUNWAY_BASE, DEFAULT_MODEL5, runwayProvider;
+var init_runway = __esm({
+  "lib/apis/video/runway.ts"() {
+    "use strict";
+    RUNWAY_BASE = "https://api.dev.runwayml.com/v1";
+    DEFAULT_MODEL5 = "gen4_turbo";
+    runwayProvider = {
+      id: "runway",
+      name: "Runway Gen-4",
+      envKey: "RUNWAY_API_KEY",
+      costPerCallUsd: 0.9,
+      async generate(opts) {
+        const key = getKey2();
+        const model = process.env.RUNWAY_MODEL || DEFAULT_MODEL5;
+        const res = await fetch(`${RUNWAY_BASE}/text_to_video`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${key}`,
+            "Content-Type": "application/json",
+            "X-Runway-Version": "2024-11-06"
+          },
+          body: JSON.stringify({
+            model,
+            promptText: opts.prompt,
+            ratio: runwayRatio(opts.aspectRatio),
+            duration: Math.max(5, Math.min(10, opts.durationSeconds)),
+            ...opts.seed !== void 0 ? { seed: opts.seed } : {}
+          })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error ?? `Runway error: ${res.status}`);
+        const operationId = data.id;
+        if (!operationId) throw new Error("Runway response missing task id");
+        return { operationId };
+      },
+      async pollStatus(operationId) {
+        const key = getKey2();
+        const res = await fetch(`${RUNWAY_BASE}/tasks/${operationId}`, {
+          headers: {
+            Authorization: `Bearer ${key}`,
+            "X-Runway-Version": "2024-11-06"
+          }
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error ?? `Runway status error: ${res.status}`);
+        if (data.status === "SUCCEEDED") {
+          const uri = data?.output?.[0];
+          if (!uri) return { done: true, error: "Runway completed without a video URL" };
+          return { done: true, videoUri: uri };
+        }
+        if (data.status === "FAILED") {
+          return { done: true, error: data.failure_reason ?? "Runway generation failed" };
+        }
+        return { done: false };
+      },
+      async download(uri) {
+        const res = await fetch(uri);
+        if (!res.ok) throw new Error(`Runway download failed: ${res.status}`);
+        return Buffer.from(await res.arrayBuffer());
+      }
+    };
+  }
+});
+
+// lib/apis/veo3.ts
+async function generateVeo3Video(opts) {
+  const response = await fetch(`${VEO3_BASE}/models/veo-3.0-generate-preview:generateVideo?key=${GOOGLE_AI_KEY()}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      prompt: { text: opts.prompt },
+      negativePrompt: opts.negativePrompt ? { text: opts.negativePrompt } : void 0,
+      generationConfig: {
+        mediaResolution: "MEDIA_RESOLUTION_HIGH",
+        aspectRatio: opts.aspectRatio,
+        durationSeconds: opts.durationSeconds
+      }
+    })
+  });
+  if (response.status === 403 || response.status === 429) {
+    throw new Error(
+      `Veo 3 is not available (${response.status}). You may need waitlist access. Consider using Canvas2D animations or existing video assets instead.`
+    );
+  }
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error?.message ?? `Veo 3 error: ${response.status}`);
+  }
+  return { operationName: data.name };
+}
+async function getVeo3Status(operationName) {
+  const response = await fetch(`${VEO3_BASE}/${operationName}?key=${GOOGLE_AI_KEY()}`);
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error?.message ?? `Veo 3 status error: ${response.status}`);
+  }
+  if (data.done) {
+    const video = data.response?.generatedSamples?.[0];
+    if (video?.video?.uri) {
+      return { done: true, videoUri: video.video.uri };
+    }
+    if (data.error) {
+      return { done: true, error: data.error.message };
+    }
+  }
+  return { done: false };
+}
+async function downloadVeo3Video(uri) {
+  const url = uri.startsWith("gs://") ? `https://storage.googleapis.com/${uri.slice(5)}` : uri;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Failed to download Veo 3 video: ${response.status}`);
+  return Buffer.from(await response.arrayBuffer());
+}
+async function enhanceVeo3Prompt(userPrompt) {
+  const { default: Anthropic4 } = await import("@anthropic-ai/sdk");
+  const client = new Anthropic4();
+  const response = await client.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 300,
+    messages: [
+      {
+        role: "user",
+        content: `Rewrite this video description into a detailed cinematic prompt for an AI video generator.
+Add camera movement, lighting, atmosphere, and visual quality terms. Keep it under 200 words.
+Do NOT output anything except the enhanced prompt text.
+
+User description: "${userPrompt}"`
+      }
+    ]
+  });
+  const text2 = response.content[0];
+  if (text2.type !== "text") return userPrompt;
+  return text2.text.trim();
+}
+var VEO3_BASE, GOOGLE_AI_KEY, VEO3_COST_ESTIMATE;
+var init_veo3 = __esm({
+  "lib/apis/veo3.ts"() {
+    "use strict";
+    VEO3_BASE = "https://generativelanguage.googleapis.com/v1beta";
+    GOOGLE_AI_KEY = () => process.env.GOOGLE_AI_KEY;
+    VEO3_COST_ESTIMATE = 1;
+  }
+});
+
+// lib/apis/video/veo3.ts
+var veo3Provider;
+var init_veo32 = __esm({
+  "lib/apis/video/veo3.ts"() {
+    "use strict";
+    init_veo3();
+    veo3Provider = {
+      id: "veo3",
+      name: "Google Veo 3",
+      envKey: "GOOGLE_AI_KEY",
+      costPerCallUsd: VEO3_COST_ESTIMATE,
+      async generate(opts) {
+        const finalPrompt = await enhanceVeo3Prompt(opts.prompt).catch(() => opts.prompt);
+        const duration = opts.durationSeconds >= 8 ? 8 : 5;
+        const { operationName } = await generateVeo3Video({
+          prompt: finalPrompt,
+          negativePrompt: opts.negativePrompt,
+          aspectRatio: opts.aspectRatio,
+          durationSeconds: duration
+        });
+        return { operationId: operationName, enhancedPrompt: finalPrompt };
+      },
+      async pollStatus(operationId) {
+        return getVeo3Status(operationId);
+      },
+      async download(uri) {
+        return downloadVeo3Video(uri);
+      }
+    };
+  }
+});
+
+// lib/apis/video/registry.ts
+var registry_exports = {};
+__export(registry_exports, {
+  VIDEO_PROVIDERS: () => VIDEO_PROVIDERS,
+  VIDEO_PROVIDER_FALLBACK_ORDER: () => VIDEO_PROVIDER_FALLBACK_ORDER,
+  firstConfiguredVideoProvider: () => firstConfiguredVideoProvider,
+  getVideoProvider: () => getVideoProvider
+});
+function getVideoProvider(id) {
+  return VIDEO_PROVIDERS[id] ?? null;
+}
+function firstConfiguredVideoProvider() {
+  for (const id of VIDEO_PROVIDER_FALLBACK_ORDER) {
+    const p = VIDEO_PROVIDERS[id];
+    if (p && process.env[p.envKey]) return p;
+  }
+  return null;
+}
+var VIDEO_PROVIDERS, VIDEO_PROVIDER_FALLBACK_ORDER;
+var init_registry2 = __esm({
+  "lib/apis/video/registry.ts"() {
+    "use strict";
+    init_kling();
+    init_runway();
+    init_veo32();
+    VIDEO_PROVIDERS = {
+      veo3: veo3Provider,
+      kling: klingProvider,
+      runway: runwayProvider
+    };
+    VIDEO_PROVIDER_FALLBACK_ORDER = ["veo3", "kling", "runway"];
   }
 });
 
@@ -10913,6 +11390,10 @@ var PLAYBACK_CONTROLLER = `
 
   window.addEventListener('message', function(event) {
     if (!event.data || event.data.target !== 'cench-scene') return;
+    // Only accept playback commands from the parent window (the editor / published host).
+    // Standalone scenes have parent === self, so same-frame messages still pass.
+    // Nested iframes (embedded videos, widgets) are rejected \u2014 they can't spoof play/pause/scrub.
+    if (event.source && event.source !== window.parent) return;
     // Ignore messages for other scenes
     if (
       event.data.sceneId &&
@@ -11009,8 +11490,11 @@ var PLAYBACK_CONTROLLER = `
               var totalFrames = inst.getDuration(true);
               var durSec = inst.getDuration(false);
               if (durSec > 0 && totalFrames > 0) {
-                var frame = Math.max(0, Math.min(totalFrames, (seekTime / durSec) * totalFrames));
-                inst.goToAndStop(frame, true);
+                // lottie-web uses 0-indexed frames; last valid frame is totalFrames - 1.
+                // Offset by firstFrame so segmented animations (non-zero start) seek correctly.
+                var firstFrame = typeof inst.firstFrame === 'number' ? inst.firstFrame : 0;
+                var rel = Math.max(0, Math.min(totalFrames - 1, (seekTime / durSec) * totalFrames));
+                inst.goToAndStop(firstFrame + rel, true);
               }
             } catch(e) {}
           });
@@ -15076,73 +15560,8 @@ var auroraProvider = {
   }
 };
 
-// lib/apis/heygen.ts
-var HEYGEN_BASE = "https://api.heygen.com/v2";
-var HEYGEN_KEY = () => process.env.HEYGEN_API_KEY;
-async function heygenFetch(path24, options = {}) {
-  const response = await fetch(`${HEYGEN_BASE}${path24}`, {
-    ...options,
-    headers: {
-      "X-Api-Key": HEYGEN_KEY(),
-      "Content-Type": "application/json",
-      ...options.headers
-    }
-  });
-  const data = await response.json();
-  if (!response.ok || data.error) {
-    throw new Error(data.error?.message ?? data.message ?? `HeyGen API error: ${response.status}`);
-  }
-  return data.data ?? data;
-}
-var AVATAR_CACHE_TTL = 24 * 60 * 60 * 1e3;
-async function generateAvatarVideo(opts) {
-  const data = await heygenFetch("/video/generate", {
-    method: "POST",
-    body: JSON.stringify({
-      video_inputs: [
-        {
-          character: {
-            type: "avatar",
-            avatar_id: opts.avatarId,
-            avatar_style: "normal"
-          },
-          voice: {
-            type: "text",
-            input_text: opts.script,
-            voice_id: opts.voiceId
-          },
-          background: {
-            type: "color",
-            value: opts.bgColor ?? "#00FF00"
-            // green for chroma key
-          }
-        }
-      ],
-      dimension: {
-        width: opts.width ?? 512,
-        height: opts.height ?? 512
-      }
-    })
-  });
-  const wordCount = opts.script.split(/\s+/).length;
-  const estimatedSeconds = Math.ceil(wordCount / 150 * 60);
-  return {
-    videoId: data.video_id,
-    estimatedSeconds
-  };
-}
-async function getVideoStatus(videoId) {
-  const data = await heygenFetch(`/video_status.get?video_id=${videoId}`);
-  return {
-    status: data.status,
-    videoUrl: data.video_url,
-    thumbnailUrl: data.thumbnail_url,
-    error: data.error
-  };
-}
-var VOICE_CACHE_TTL = 24 * 60 * 60 * 1e3;
-
 // lib/avatar/providers/heygen.ts
+init_heygen();
 var heygenProvider = {
   id: "heygen",
   name: "HeyGen (Premium)",
@@ -18224,6 +18643,50 @@ async function generateLottie(input) {
     ...validation.fixCount > 0 && { fixCount: validation.fixCount }
   };
 }
+async function pollHeygenStatus(videoId) {
+  if (!videoId) throw new GenerationValidationError("videoId is required");
+  const { getVideoStatus: getVideoStatus2, downloadVideo: downloadVideo3 } = await Promise.resolve().then(() => (init_heygen(), heygen_exports));
+  const { saveToCache: saveToCache2 } = await Promise.resolve().then(() => (init_media_cache(), media_cache_exports));
+  const status = await getVideoStatus2(videoId);
+  if (status.status === "completed" && status.videoUrl) {
+    const buffer = await downloadVideo3(status.videoUrl);
+    const publicPath = await saveToCache2("heygen", { videoId }, buffer, "mp4");
+    return { status: "completed", videoUrl: publicPath, thumbnailUrl: status.thumbnailUrl };
+  }
+  return { status: status.status, error: status.error };
+}
+async function pollVideoStatus(input) {
+  if (!input.operationName) throw new GenerationValidationError("operationName is required");
+  const { firstConfiguredVideoProvider: firstConfiguredVideoProvider2, getVideoProvider: getVideoProvider2 } = await Promise.resolve().then(() => (init_registry2(), registry_exports));
+  const { saveToCache: saveToCache2 } = await Promise.resolve().then(() => (init_media_cache(), media_cache_exports));
+  const { logSpend: logSpend2 } = await Promise.resolve().then(() => (init_db(), db_exports));
+  const provider = input.providerId && input.providerId !== "auto" ? getVideoProvider2(input.providerId) : firstConfiguredVideoProvider2();
+  if (!provider) {
+    throw new GenerationValidationError(
+      "No video provider configured. Add GOOGLE_AI_KEY, FAL_KEY, or RUNWAY_API_KEY."
+    );
+  }
+  const result = await provider.pollStatus(input.operationName);
+  if (result.done && result.videoUri) {
+    const buffer = await provider.download(result.videoUri);
+    const publicPath = await saveToCache2(provider.id, { operationName: input.operationName }, buffer, "mp4");
+    if (input.projectId) {
+      const api = provider.id === "veo3" || provider.id === "kling" || provider.id === "runway" ? provider.id : provider.id;
+      await logSpend2(
+        input.projectId,
+        api,
+        provider.costPerCallUsd,
+        `${provider.name}: ${(input.prompt ?? "").slice(0, 100)}`,
+        input.reservationId
+      );
+    }
+    return { done: true, videoUrl: publicPath, provider: provider.id };
+  }
+  if (result.done && result.error) {
+    return { done: true, error: result.error, provider: provider.id };
+  }
+  return { done: false, provider: provider.id };
+}
 async function generateImageAsset(input) {
   if (!input.prompt) throw new GenerationValidationError("prompt is required");
   const { generateImage: generateImage2 } = await Promise.resolve().then(() => (init_image_gen(), image_gen_exports));
@@ -18296,6 +18759,8 @@ function register16(ipcMain2) {
   ipcMain2.handle("cench:generate.lottie", wrap(generateLottie));
   ipcMain2.handle("cench:generate.d3", wrap(generateD3));
   ipcMain2.handle("cench:generate.image", wrap(generateImageAsset));
+  ipcMain2.handle("cench:generate.pollHeygen", wrap(pollHeygenStatus));
+  ipcMain2.handle("cench:generate.pollVideo", wrap(pollVideoStatus));
 }
 
 // electron/ipc/index.ts

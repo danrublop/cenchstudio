@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { generateAvatarVideo, getVideoStatus, downloadVideo } from '@/lib/apis/heygen'
-import { saveToCache } from '@/lib/apis/media-cache'
+import { generateAvatarVideo } from '@/lib/apis/heygen'
 import { logSpend } from '@/lib/db'
 
 export async function POST(req: NextRequest) {
@@ -42,49 +41,23 @@ export async function POST(req: NextRequest) {
     })
   } catch (error: any) {
     console.error('Avatar generation error:', error)
-    return NextResponse.json(
-      { error: error.message ?? 'Avatar generation failed' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: error.message ?? 'Avatar generation failed' }, { status: 500 })
   }
 }
 
-// GET: poll for avatar generation status
+// GET: poll for avatar generation status — thin wrapper around
+// `pollHeygenStatus` in `lib/services/generation.ts`.
 export async function GET(req: NextRequest) {
   const videoId = req.nextUrl.searchParams.get('videoId')
   if (!videoId) {
     return NextResponse.json({ error: 'videoId is required' }, { status: 400 })
   }
-
   try {
-    const status = await getVideoStatus(videoId)
-
-    if (status.status === 'completed' && status.videoUrl) {
-      // Download and cache
-      const buffer = await downloadVideo(status.videoUrl)
-      const publicPath = await saveToCache(
-        'heygen',
-        { videoId },
-        buffer,
-        'mp4'
-      )
-
-      return NextResponse.json({
-        status: 'completed',
-        videoUrl: publicPath,
-        thumbnailUrl: status.thumbnailUrl,
-      })
-    }
-
-    return NextResponse.json({
-      status: status.status,
-      error: status.error,
-    })
-  } catch (error: any) {
-    console.error('Avatar status poll error:', error)
-    return NextResponse.json(
-      { error: error.message ?? 'Failed to check avatar status' },
-      { status: 500 }
-    )
+    const { pollHeygenStatus } = await import('@/lib/services/generation')
+    const result = await pollHeygenStatus(videoId)
+    return NextResponse.json(result)
+  } catch (err) {
+    console.error('Avatar status poll error:', err)
+    return NextResponse.json({ error: (err as Error)?.message ?? 'Failed to check avatar status' }, { status: 500 })
   }
 }

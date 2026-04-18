@@ -318,6 +318,99 @@ export async function generateLottie(input: GenerateLottieInput): Promise<Genera
   }
 }
 
+// ── Avatar / video status polling ──────────────────────────────────────────
+// These are GET endpoints today. The renderer polls every 15s until the
+// underlying async job completes; moving them to IPC keeps packaged Electron
+// from hitting localhost for polling.
+
+export interface PollHeygenStatusResult {
+  status: 'completed' | 'processing' | 'failed' | string
+  videoUrl?: string
+  thumbnailUrl?: string
+  error?: string
+}
+
+/**
+ * Poll HeyGen for an in-flight avatar video. When complete, downloads
+ * the video to the media cache and returns the public path. Mirrors
+ * `GET /api/generate-avatar?videoId=...`.
+ */
+export async function pollHeygenStatus(videoId: string): Promise<PollHeygenStatusResult> {
+  if (!videoId) throw new GenerationValidationError('videoId is required')
+  const { getVideoStatus, downloadVideo } = await import('@/lib/apis/heygen')
+  const { saveToCache } = await import('@/lib/apis/media-cache')
+
+  const status = await getVideoStatus(videoId)
+  if (status.status === 'completed' && status.videoUrl) {
+    const buffer = await downloadVideo(status.videoUrl)
+    const publicPath = await saveToCache('heygen', { videoId }, buffer, 'mp4')
+    return { status: 'completed', videoUrl: publicPath, thumbnailUrl: status.thumbnailUrl }
+  }
+  return { status: status.status, error: status.error }
+}
+
+export interface PollVideoStatusInput {
+  operationName: string
+  projectId?: string
+  prompt?: string
+  providerId?: string
+  reservationId?: string
+}
+
+export interface PollVideoStatusResult {
+  done: boolean
+  videoUrl?: string
+  provider?: string
+  error?: string
+}
+
+/**
+ * Poll Veo3/Kling/Runway for an in-flight text-to-video job. On completion,
+ * downloads the video, saves to cache, and calls `logSpend` to commit the
+ * reserved cost. Mirrors `GET /api/generate-video?operationName=...`.
+ */
+export async function pollVideoStatus(input: PollVideoStatusInput): Promise<PollVideoStatusResult> {
+  if (!input.operationName) throw new GenerationValidationError('operationName is required')
+  const { firstConfiguredVideoProvider, getVideoProvider } = await import('@/lib/apis/video/registry')
+  const { saveToCache } = await import('@/lib/apis/media-cache')
+  const { logSpend } = await import('@/lib/db')
+
+  // Provider resolution: explicit id → registry lookup; otherwise first configured.
+  const provider =
+    input.providerId && input.providerId !== 'auto'
+      ? getVideoProvider(input.providerId)
+      : firstConfiguredVideoProvider()
+  if (!provider) {
+    throw new GenerationValidationError('No video provider configured. Add GOOGLE_AI_KEY, FAL_KEY, or RUNWAY_API_KEY.')
+  }
+
+  const result = await provider.pollStatus(input.operationName)
+  if (result.done && result.videoUri) {
+    const buffer = await provider.download(result.videoUri)
+    const publicPath = await saveToCache(provider.id, { operationName: input.operationName }, buffer, 'mp4')
+
+    if (input.projectId) {
+      // `providerId → apiName` matches what the HTTP route did: only the
+      // three known video APIs get logged against the per-API spend counter.
+      const api =
+        provider.id === 'veo3' || provider.id === 'kling' || provider.id === 'runway' ? provider.id : provider.id
+      await logSpend(
+        input.projectId,
+        api,
+        provider.costPerCallUsd,
+        `${provider.name}: ${(input.prompt ?? '').slice(0, 100)}`,
+        input.reservationId,
+      )
+    }
+    return { done: true, videoUrl: publicPath, provider: provider.id }
+  }
+
+  if (result.done && result.error) {
+    return { done: true, error: result.error, provider: provider.id }
+  }
+  return { done: false, provider: provider.id }
+}
+
 // ── Image generation ───────────────────────────────────────────────────────
 
 export interface GenerateImageInput {
