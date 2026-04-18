@@ -182,6 +182,14 @@
           "isarray/**",
           "lodash/**"
         ]
+      },
+      {
+        "from": ".claude/skills/cench",
+        "to": "skill-data/cench"
+      },
+      {
+        "from": "lib/skills/library",
+        "to": "skill-data/library"
       }
     ],
     "mac": {

@@ -3,8 +3,40 @@ import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { app, BrowserWindow, ipcMain, dialog, Menu, net, protocol, screen, session, shell } from 'electron'
 import fs from 'fs/promises'
+import fsSync from 'fs'
 import { pathToFileURL } from 'url'
+import { config as loadDotenv } from 'dotenv'
 import { registerAllIpc } from './ipc'
+
+// ── .env loading ────────────────────────────────────────────────────────────
+// The main process does not inherit the Next.js auto-dotenv behavior. Without
+// this, `process.env.DATABASE_URL`, `ANTHROPIC_API_KEY`, etc. are empty in the
+// packaged `.dmg` (no shell env) and `cench:settings.listProviders` /
+// `cench:conversations.*` both fail immediately.
+//
+// Resolution order:
+//   1. Dev: `<repoRoot>/.env.local`, then `<repoRoot>/.env`.
+//   2. Packaged: `<userData>/cench.env` (user-provided keys), then
+//      `<Resources>/.env.defaults` (bundled defaults, if any).
+// `.env.local` overrides `.env` the same way Next.js orders them.
+function loadEnvFiles(): void {
+  const attempted: string[] = []
+  const tryLoad = (p: string) => {
+    attempted.push(p)
+    if (fsSync.existsSync(p)) {
+      loadDotenv({ path: p, override: false })
+    }
+  }
+  if (app.isPackaged) {
+    tryLoad(path.join(app.getPath('userData'), 'cench.env'))
+    tryLoad(path.join(process.resourcesPath, '.env.defaults'))
+  } else {
+    const repoRoot = path.resolve(__dirname, '..')
+    tryLoad(path.join(repoRoot, '.env.local'))
+    tryLoad(path.join(repoRoot, '.env'))
+  }
+}
+loadEnvFiles()
 
 const execFileAsync = promisify(execFile)
 

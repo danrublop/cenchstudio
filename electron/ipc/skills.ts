@@ -54,8 +54,22 @@ async function readSkillFile(args: { source: string; file: string }): Promise<{
     throw new IpcValidationError('Invalid file path (path traversal)')
   }
 
+  // Parity with the `cench://` protocol handler: follow the symlink before
+  // trusting the prefix. A skill file replaced with a link out to `/etc/
+  // passwd` would otherwise leak arbitrary files through the renderer.
+  let finalPath = resolved
   try {
-    const content = await fs.readFile(resolved, 'utf-8')
+    finalPath = await fs.realpath(resolved)
+    if (!finalPath.startsWith(root + path.sep) && finalPath !== root) {
+      throw new IpcValidationError('Invalid file path (symlink escape)')
+    }
+  } catch (err) {
+    if (err instanceof IpcValidationError) throw err
+    // realpath throws on missing files — treat as NotFound below.
+  }
+
+  try {
+    const content = await fs.readFile(finalPath, 'utf-8')
     return { content, file: args.file, source: args.source }
   } catch {
     throw new IpcNotFoundError(`Skill file not found: ${args.source}/${args.file}`)

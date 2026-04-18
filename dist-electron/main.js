@@ -143,7 +143,9 @@ var import_child_process = require("child_process");
 var import_util = require("util");
 var import_electron2 = require("electron");
 var import_promises2 = __toESM(require("fs/promises"));
+var import_fs = __toESM(require("fs"));
 var import_url = require("url");
+var import_dotenv = require("dotenv");
 
 // electron/ipc/settings.ts
 function listProviders() {
@@ -1177,20 +1179,26 @@ function initDb() {
       "DATABASE_URL is not set.\nFor local mode: copy .env.example to .env.local and run npm run db:start\nFor cloud mode: add your Neon/Supabase connection string to .env.local"
     );
   }
-  _pool = new import_pg.Pool({
+  const pool = new import_pg.Pool({
     connectionString: url,
     max: process.env.STORAGE_MODE === "cloud" ? 10 : 5,
     idleTimeoutMillis: 3e4,
     connectionTimeoutMillis: 5e3,
     ssl: url.includes("localhost") || url.includes("127.0.0.1") ? false : { rejectUnauthorized: true }
   });
-  _pool.on("error", (err) => {
+  pool.on("error", (err) => {
     console.error("Unexpected Postgres pool error:", err);
   });
-  _db = (0, import_node_postgres.drizzle)(_pool, {
+  const database = (0, import_node_postgres.drizzle)(pool, {
     schema: schema_exports,
     logger: process.env.NODE_ENV === "development"
   });
+  if (_db) {
+    void pool.end();
+    return _db;
+  }
+  _pool = pool;
+  _db = database;
   return _db;
 }
 var db = new Proxy({}, {
@@ -1446,6 +1454,7 @@ async function upsertMessage(data) {
       agent_type = EXCLUDED.agent_type,
       model_used = EXCLUDED.model_used
     WHERE messages.status = 'streaming'
+      AND messages.conversation_id = ${data.conversationId}
   `);
 }
 async function updateMessageRating(conversationId, messageId, userRating) {
@@ -1917,18 +1926,24 @@ async function readSkillFile(args) {
   if (!resolved.startsWith(root + import_node_path.default.sep) && resolved !== root) {
     throw new IpcValidationError("Invalid file path (path traversal)");
   }
+  let finalPath = resolved;
   try {
-    const content = await import_promises.default.readFile(resolved, "utf-8");
+    finalPath = await import_promises.default.realpath(resolved);
+    if (!finalPath.startsWith(root + import_node_path.default.sep) && finalPath !== root) {
+      throw new IpcValidationError("Invalid file path (symlink escape)");
+    }
+  } catch (err) {
+    if (err instanceof IpcValidationError) throw err;
+  }
+  try {
+    const content = await import_promises.default.readFile(finalPath, "utf-8");
     return { content, file: args.file, source: args.source };
   } catch {
     throw new IpcNotFoundError(`Skill file not found: ${args.source}/${args.file}`);
   }
 }
 function register6(ipcMain2) {
-  ipcMain2.handle(
-    "cench:skills.readFile",
-    (_e, args) => readSkillFile(args)
-  );
+  ipcMain2.handle("cench:skills.readFile", (_e, args) => readSkillFile(args));
 }
 
 // electron/ipc/index.ts
@@ -1942,6 +1957,24 @@ function registerAllIpc(ipcMain2) {
 }
 
 // electron/main.ts
+function loadEnvFiles() {
+  const attempted = [];
+  const tryLoad = (p) => {
+    attempted.push(p);
+    if (import_fs.default.existsSync(p)) {
+      (0, import_dotenv.config)({ path: p, override: false });
+    }
+  };
+  if (import_electron2.app.isPackaged) {
+    tryLoad(import_path.default.join(import_electron2.app.getPath("userData"), "cench.env"));
+    tryLoad(import_path.default.join(process.resourcesPath, ".env.defaults"));
+  } else {
+    const repoRoot = import_path.default.resolve(__dirname, "..");
+    tryLoad(import_path.default.join(repoRoot, ".env.local"));
+    tryLoad(import_path.default.join(repoRoot, ".env"));
+  }
+}
+loadEnvFiles();
 var execFileAsync = (0, import_util.promisify)(import_child_process.execFile);
 function webZoomTargetWindow() {
   return import_electron2.BrowserWindow.getFocusedWindow() ?? import_electron2.BrowserWindow.getAllWindows()[0] ?? null;
