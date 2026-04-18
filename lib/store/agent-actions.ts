@@ -32,6 +32,29 @@ import { DEFAULT_AGENTS } from '../agents/agent-config'
 import type { Set, Get, UndoableState } from './types'
 import { MAX_UNDO, normalizeScene, sceneHasRenderableContent } from './helpers'
 
+/**
+ * Conversation IPC adapter. Prefers `window.cenchApi.conversations.*` when
+ * running inside Electron (both dev and packaged — preload always provides
+ * it). Falls back to the legacy `/api/conversations*` fetch path for pure
+ * browser preview and during the Week 2 migration window before every
+ * route is deleted.
+ *
+ * The adapter normalizes HTTP vs IPC error semantics: IPC handlers throw
+ * plain `Error`s on failure; legacy fetch returns `res.ok=false`. Both
+ * surface as thrown errors here so the caller's retry logic is uniform.
+ */
+function getConversationsIpc() {
+  return typeof window !== 'undefined' ? window.cenchApi?.conversations : undefined
+}
+async function fetchJsonOrThrow(url: string, init?: RequestInit): Promise<any> {
+  const res = await fetch(url, init)
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error ?? `HTTP ${res.status}`)
+  }
+  return res.json()
+}
+
 export function createAgentActions(set: Set, get: Get) {
   let switchConversationCounter = 0
   let renameDebounceTimer: ReturnType<typeof setTimeout> | null = null
@@ -46,10 +69,11 @@ export function createAgentActions(set: Set, get: Get) {
       }
       set({ conversationsLoading: true })
       try {
-        const res = await fetch(`/api/conversations?projectId=${projectId}`)
-        if (!res.ok) throw new Error('Failed to fetch conversations')
-        const data = await res.json()
-        const convs: ConversationSummary[] = data.conversations ?? []
+        const ipc = getConversationsIpc()
+        const data = ipc
+          ? await ipc.list(projectId)
+          : await fetchJsonOrThrow(`/api/conversations?projectId=${projectId}`)
+        const convs: ConversationSummary[] = (data.conversations ?? []) as ConversationSummary[]
         set({ conversations: convs, conversationsLoading: false })
 
         if (convs.length === 0) {
@@ -71,14 +95,15 @@ export function createAgentActions(set: Set, get: Get) {
 
     newConversation: async (projectId: string) => {
       try {
-        const res = await fetch('/api/conversations', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ projectId }),
-        })
-        if (!res.ok) throw new Error('Failed to create conversation')
-        const data = await res.json()
-        const conv: ConversationSummary = data.conversation
+        const ipc = getConversationsIpc()
+        const data = ipc
+          ? await ipc.create({ projectId })
+          : await fetchJsonOrThrow('/api/conversations', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ projectId }),
+            })
+        const conv: ConversationSummary = data.conversation as ConversationSummary
         set((state) => ({
           conversations: [conv, ...state.conversations],
           activeConversationId: conv.id,
@@ -104,11 +129,13 @@ export function createAgentActions(set: Set, get: Get) {
       // Only update the active ID — don't clear messages yet to avoid flash
       set({ activeConversationId: conversationId })
       try {
-        const res = await fetch(`/api/conversations/${conversationId}/messages`)
-        if (!res.ok) return
+        const ipc = getConversationsIpc()
+        const data = ipc
+          ? await ipc.listMessages(conversationId)
+          : await fetchJsonOrThrow(`/api/conversations/${conversationId}/messages`).catch(() => null)
+        if (!data) return
         // Bail if a newer switch happened while we were fetching
         if (requestId !== switchConversationCounter) return
-        const data = await res.json()
         // Map DB messages to ChatMessage format
         const orphanedIds: string[] = []
         const msgs: ChatMessage[] = (data.messages ?? []).map((m: any) => {
@@ -158,11 +185,16 @@ export function createAgentActions(set: Set, get: Get) {
           })
           // Background: mark orphaned 'streaming' messages as 'aborted' in DB
           for (const orphanId of orphanedIds) {
-            fetch(`/api/conversations/${conversationId}/messages`, {
-              method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ messageId: orphanId, status: 'aborted' }),
-            }).catch(() => {})
+            const ipcInner = getConversationsIpc()
+            if (ipcInner) {
+              ipcInner.updateMessage({ conversationId, messageId: orphanId, status: 'aborted' }).catch(() => {})
+            } else {
+              fetch(`/api/conversations/${conversationId}/messages`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ messageId: orphanId, status: 'aborted' }),
+              }).catch(() => {})
+            }
           }
         }
       } catch (err) {
@@ -183,11 +215,15 @@ export function createAgentActions(set: Set, get: Get) {
       if (renameDebounceTimer) clearTimeout(renameDebounceTimer)
       renameDebounceTimer = setTimeout(() => {
         renameDebounceTimer = null
-        fetch(`/api/conversations/${id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title }),
-        }).catch((err) => console.error('[Conversations] Failed to rename:', err))
+        const ipc = getConversationsIpc()
+        const op = ipc
+          ? ipc.update({ id, updates: { title } })
+          : fetch(`/api/conversations/${id}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ title }),
+            })
+        Promise.resolve(op).catch((err) => console.error('[Conversations] Failed to rename:', err))
       }, 400)
     },
 
@@ -195,19 +231,23 @@ export function createAgentActions(set: Set, get: Get) {
       set((state) => ({
         conversations: state.conversations.map((c) => (c.id === id ? { ...c, isPinned: pinned } : c)),
       }))
-      fetch(`/api/conversations/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isPinned: pinned }),
-      }).catch((err) => console.error('[Conversations] Failed to pin:', err))
+      const ipc = getConversationsIpc()
+      const op = ipc
+        ? ipc.update({ id, updates: { isPinned: pinned } })
+        : fetch(`/api/conversations/${id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ isPinned: pinned }),
+          })
+      Promise.resolve(op).catch((err) => console.error('[Conversations] Failed to pin:', err))
     },
 
     deleteConversation: async (id: string) => {
       const remaining = get().conversations.filter((c) => c.id !== id)
       set({ conversations: remaining })
-      fetch(`/api/conversations/${id}`, { method: 'DELETE' }).catch((err) =>
-        console.error('[Conversations] Failed to delete:', err),
-      )
+      const ipc = getConversationsIpc()
+      const op = ipc ? ipc.delete(id) : fetch(`/api/conversations/${id}`, { method: 'DELETE' })
+      Promise.resolve(op).catch((err) => console.error('[Conversations] Failed to delete:', err))
 
       if (get().activeConversationId === id) {
         if (remaining.length > 0) {
@@ -241,20 +281,26 @@ export function createAgentActions(set: Set, get: Get) {
       const textContent = typeof msg.content === 'string' ? msg.content : messageContentToText(msg.content)
       if (!textContent) return
       try {
-        const res = await fetch(`/api/conversations/${conversationId}/messages`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+        const ipc = getConversationsIpc()
+        if (ipc) {
+          await ipc.addMessage({
             id: msg.id,
+            conversationId,
             projectId,
             role: msg.role,
             content: textContent,
-          }),
-        })
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}))
-          console.warn(`[Chat] persistUserMessage failed (${res.status}): ${errData.error ?? res.statusText}`)
-          return
+          })
+        } else {
+          await fetchJsonOrThrow(`/api/conversations/${conversationId}/messages`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              id: msg.id,
+              projectId,
+              role: msg.role,
+              content: textContent,
+            }),
+          })
         }
         // Track that this message has been INSERTed
         const ids = new Set(get()._persistedMessageIds)
@@ -287,76 +333,72 @@ export function createAgentActions(set: Set, get: Get) {
       const textContent = typeof msg.content === 'string' ? msg.content : messageContentToText(msg.content)
       const persisted = get()._persistedMessageIds
 
-      const payload = persisted.has(id)
-        ? {
-            method: 'PATCH' as const,
-            body: {
-              messageId: id,
-              content: textContent || '',
-              status: opts?.status ?? 'complete',
-              agentType: msg.agentType,
-              modelUsed: msg.modelId,
-              thinkingContent: msg.thinking,
-              toolCalls: msg.toolCalls,
-              contentSegments: msg.contentSegments,
-              inputTokens: msg.usage?.inputTokens,
-              outputTokens: msg.usage?.outputTokens,
-              costUsd: msg.usage?.costUsd,
-              durationMs: msg.usage?.totalDurationMs,
-              apiCalls: msg.usage?.apiCalls,
-              generationLogId: msg.generationLogId,
-            },
-          }
-        : {
-            method: 'POST' as const,
-            body: {
-              id,
-              projectId,
-              role: msg.role,
-              content: textContent || '',
-              status: opts?.status ?? 'complete',
-              agentType: msg.agentType,
-              modelUsed: msg.modelId,
-              thinkingContent: msg.thinking,
-              toolCalls: msg.toolCalls,
-              contentSegments: msg.contentSegments,
-              inputTokens: msg.usage?.inputTokens,
-              outputTokens: msg.usage?.outputTokens,
-              costUsd: msg.usage?.costUsd,
-              durationMs: msg.usage?.totalDurationMs,
-              apiCalls: msg.usage?.apiCalls,
-              generationLogId: msg.generationLogId,
-            },
-          }
+      const isUpdate = persisted.has(id)
+      const insertBody = {
+        id,
+        conversationId,
+        projectId,
+        role: msg.role,
+        content: textContent || '',
+        status: opts?.status ?? 'complete',
+        agentType: msg.agentType,
+        modelUsed: msg.modelId,
+        thinkingContent: msg.thinking,
+        toolCalls: msg.toolCalls,
+        contentSegments: msg.contentSegments,
+        inputTokens: msg.usage?.inputTokens,
+        outputTokens: msg.usage?.outputTokens,
+        costUsd: msg.usage?.costUsd,
+        durationMs: msg.usage?.totalDurationMs,
+        apiCalls: msg.usage?.apiCalls,
+        generationLogId: msg.generationLogId,
+      }
+      const updateBody = {
+        conversationId,
+        messageId: id,
+        content: textContent || '',
+        status: opts?.status ?? 'complete',
+        agentType: msg.agentType,
+        modelUsed: msg.modelId,
+        thinkingContent: msg.thinking,
+        toolCalls: msg.toolCalls,
+        contentSegments: msg.contentSegments,
+        inputTokens: msg.usage?.inputTokens,
+        outputTokens: msg.usage?.outputTokens,
+        costUsd: msg.usage?.costUsd,
+        durationMs: msg.usage?.totalDurationMs,
+        apiCalls: msg.usage?.apiCalls,
+        generationLogId: msg.generationLogId,
+      }
 
-      const doFetch = () =>
-        fetch(`/api/conversations/${conversationId}/messages`, {
-          method: payload.method,
+      const doPersist = async () => {
+        const ipc = getConversationsIpc()
+        if (ipc) {
+          if (isUpdate) await ipc.updateMessage(updateBody)
+          else await ipc.addMessage(insertBody)
+          return
+        }
+        await fetchJsonOrThrow(`/api/conversations/${conversationId}/messages`, {
+          method: isUpdate ? 'PATCH' : 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload.body),
+          body: JSON.stringify(isUpdate ? updateBody : insertBody),
         })
+      }
 
       try {
-        let res = await doFetch()
-        // Retry once on failure — prevents message loss
-        if (!res.ok) {
-          console.warn(`[Chat] persistChatMessage ${payload.method} failed (${res.status}), retrying...`)
-          await new Promise((r) => setTimeout(r, 1000))
-          res = await doFetch()
-          if (!res.ok) console.error(`[Chat] persistChatMessage retry also failed (${res.status})`)
-        }
-        if (res.ok && !persisted.has(id)) {
+        await doPersist()
+        if (!persisted.has(id)) {
           const ids = new Set(get()._persistedMessageIds)
           ids.add(id)
           set({ _persistedMessageIds: ids })
         }
       } catch (err) {
-        // Retry once on network error
-        console.warn('[Chat] persistChatMessage network error, retrying...', err)
+        // Retry once — prevents message loss on transient DB or IPC hiccup.
+        console.warn('[Chat] persistChatMessage failed, retrying...', err)
         try {
           await new Promise((r) => setTimeout(r, 1000))
-          const res = await doFetch()
-          if (res.ok && !persisted.has(id)) {
+          await doPersist()
+          if (!persisted.has(id)) {
             const ids = new Set(get()._persistedMessageIds)
             ids.add(id)
             set({ _persistedMessageIds: ids })
@@ -376,9 +418,11 @@ export function createAgentActions(set: Set, get: Get) {
       set({ chatMessages: [], _persistedMessageIds: new Set<string>() })
       const conversationId = get().activeConversationId
       if (conversationId) {
-        fetch(`/api/conversations/${conversationId}/messages`, { method: 'DELETE' }).catch((err) =>
-          console.error('[Chat] Failed to clear messages:', err),
-        )
+        const ipc = getConversationsIpc()
+        const op = ipc
+          ? ipc.clearMessages(conversationId)
+          : fetch(`/api/conversations/${conversationId}/messages`, { method: 'DELETE' })
+        Promise.resolve(op).catch((err) => console.error('[Chat] Failed to clear messages:', err))
       }
     },
 

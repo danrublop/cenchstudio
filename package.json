@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build:electron": "tsc -p electron/tsconfig.json",
-    "dev:electron": "concurrently -k -n tsc,electron -c gray,magenta \"tsc -p electron/tsconfig.json -w\" \"wait-on http://localhost:3000 && wait-on dist-electron/main.js && ELECTRON_START_URL=http://localhost:3000 electron .\"",
+    "build:electron": "node electron/build.mjs",
+    "dev:electron": "concurrently -k -n esbuild,electron -c gray,magenta \"node electron/build.mjs --watch\" \"wait-on http://localhost:3000 && wait-on dist-electron/main.js && ELECTRON_START_URL=http://localhost:3000 electron .\"",
     "electron:dev": "npm run dev:electron",
     "build": "next build",
     "start": "next start",
@@ -130,6 +130,7 @@
     "electron": "^41.1.1",
     "electron-builder": "^26.8.1",
     "electron-icon-builder": "^2.0.1",
+    "esbuild": "^0.28.0",
     "eslint": "^10.2.0",
     "eslint-config-next": "^16.2.2",
     "eslint-config-prettier": "^10.1.8",

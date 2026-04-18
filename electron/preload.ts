@@ -18,11 +18,57 @@ export type CenchApi = {
   settings: {
     listProviders: () => Promise<ListProvidersResult>
   }
+  conversations: {
+    list: (projectId: string) => Promise<{ conversations: unknown[] }>
+    create: (args: { projectId: string; title?: string }) => Promise<{ conversation: unknown }>
+    get: (id: string) => Promise<{ conversation: unknown; messages: unknown[] }>
+    update: (args: {
+      id: string
+      updates: { title?: string; isPinned?: boolean; isArchived?: boolean }
+    }) => Promise<{ conversation: unknown }>
+    delete: (id: string) => Promise<{ success: true }>
+    listMessages: (id: string) => Promise<{ messages: unknown[] }>
+    addMessage: (args: Record<string, unknown>) => Promise<{ message?: unknown; success?: true }>
+    updateMessage: (args: Record<string, unknown>) => Promise<{ success: true }>
+    clearMessages: (id: string) => Promise<{ success: true }>
+  }
+  usage: {
+    getSummary: (projectId?: string) => Promise<Record<string, unknown>>
+  }
+  generationLog: {
+    update: (args: Record<string, unknown>) => Promise<{ success: true }>
+    list: (args: {
+      projectId?: string
+      sceneId?: string
+      limit?: number
+      offset?: number
+    }) => Promise<{ logs: unknown[] }>
+    listByDimension: (args: { dimension: string; projectId?: string }) => Promise<{ data: unknown }>
+  }
 }
 
 const cenchApi: CenchApi = {
   settings: {
     listProviders: () => ipcRenderer.invoke('cench:settings.listProviders'),
+  },
+  conversations: {
+    list: (projectId) => ipcRenderer.invoke('cench:conversations.list', projectId),
+    create: (args) => ipcRenderer.invoke('cench:conversations.create', args),
+    get: (id) => ipcRenderer.invoke('cench:conversations.get', id),
+    update: (args) => ipcRenderer.invoke('cench:conversations.update', args),
+    delete: (id) => ipcRenderer.invoke('cench:conversations.delete', id),
+    listMessages: (id) => ipcRenderer.invoke('cench:conversations.listMessages', id),
+    addMessage: (args) => ipcRenderer.invoke('cench:conversations.addMessage', args),
+    updateMessage: (args) => ipcRenderer.invoke('cench:conversations.updateMessage', args),
+    clearMessages: (id) => ipcRenderer.invoke('cench:conversations.clearMessages', id),
+  },
+  usage: {
+    getSummary: (projectId) => ipcRenderer.invoke('cench:usage.getSummary', projectId),
+  },
+  generationLog: {
+    update: (args) => ipcRenderer.invoke('cench:generationLog.update', args),
+    list: (args) => ipcRenderer.invoke('cench:generationLog.list', args),
+    listByDimension: (args) => ipcRenderer.invoke('cench:generationLog.listByDimension', args),
   },
 }
 

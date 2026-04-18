@@ -995,21 +995,33 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
 
       // Persist rating to generation log
       if (msg.generationLogId && rating > 0) {
-        fetch('/api/generation-log', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ logId: msg.generationLogId, userRating: rating }),
-        }).catch((err) => console.error('[AgentChat] Failed to send feedback:', err))
+        const logIpc = typeof window !== 'undefined' ? window.cenchApi?.generationLog : undefined
+        const op = logIpc
+          ? logIpc.update({ logId: msg.generationLogId, userRating: rating })
+          : fetch('/api/generation-log', {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ logId: msg.generationLogId, userRating: rating }),
+            })
+        Promise.resolve(op).catch((err) => console.error('[AgentChat] Failed to send feedback:', err))
       }
 
       // Persist rating to message in DB
       const conversationId = useVideoStore.getState().activeConversationId
       if (conversationId) {
-        fetch(`/api/conversations/${conversationId}/messages`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ messageId: msgId, userRating: effectiveRating ?? null }),
-        }).catch((err) => console.error('[AgentChat] Failed to persist rating:', err))
+        const convIpc = typeof window !== 'undefined' ? window.cenchApi?.conversations : undefined
+        const op = convIpc
+          ? convIpc.updateMessage({
+              conversationId,
+              messageId: msgId,
+              userRating: effectiveRating ?? null,
+            })
+          : fetch(`/api/conversations/${conversationId}/messages`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ messageId: msgId, userRating: effectiveRating ?? null }),
+            })
+        Promise.resolve(op).catch((err) => console.error('[AgentChat] Failed to persist rating:', err))
       }
     },
     [updateChatMessage],
@@ -1171,26 +1183,31 @@ export default function AgentChat({ scene, onOpenEditor }: Props) {
       if (!lastAssistant) return
       const textContent =
         typeof lastAssistant.content === 'string' ? lastAssistant.content : messageContentToText(lastAssistant.content)
-      navigator.sendBeacon(
-        `/api/conversations/${st.activeConversationId}/messages`,
-        new Blob(
-          [
-            JSON.stringify({
-              _method: 'PUT',
-              messageId: lastAssistant.id,
-              projectId: st.project.id,
-              role: 'assistant',
-              content: textContent || 'Interrupted — page closed during generation.',
-              status: 'aborted',
-              agentType: lastAssistant.agentType,
-              modelUsed: lastAssistant.modelId,
-              toolCalls: lastAssistant.toolCalls,
-              contentSegments: lastAssistant.contentSegments,
-            }),
-          ],
-          { type: 'application/json' },
-        ),
-      )
+      const payload = {
+        _method: 'PUT' as const,
+        messageId: lastAssistant.id,
+        conversationId: st.activeConversationId,
+        projectId: st.project.id,
+        role: 'assistant' as const,
+        content: textContent || 'Interrupted — page closed during generation.',
+        status: 'aborted' as const,
+        agentType: lastAssistant.agentType,
+        modelUsed: lastAssistant.modelId,
+        toolCalls: lastAssistant.toolCalls,
+        contentSegments: lastAssistant.contentSegments,
+      }
+      const convIpc = typeof window !== 'undefined' ? window.cenchApi?.conversations : undefined
+      if (convIpc) {
+        // Fire-and-forget: in Electron, beforeunload doesn't guarantee async
+        // completion, but the upsert is idempotent so a retry on next boot
+        // is safe. Better than losing the aborted-state flag entirely.
+        convIpc.addMessage(payload).catch(() => {})
+      } else {
+        navigator.sendBeacon(
+          `/api/conversations/${st.activeConversationId}/messages`,
+          new Blob([JSON.stringify(payload)], { type: 'application/json' }),
+        )
+      }
     }
     window.addEventListener('beforeunload', onBeforeUnload)
     return () => window.removeEventListener('beforeunload', onBeforeUnload)

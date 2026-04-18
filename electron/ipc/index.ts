@@ -1,5 +1,8 @@
 import type { IpcMain } from 'electron'
 import * as settings from './settings'
+import * as conversations from './conversations'
+import * as usage from './usage'
+import * as generationLog from './generation-log'
 
 /**
  * Central IPC registration. Each category module exports
@@ -13,4 +16,7 @@ import * as settings from './settings'
  */
 export function registerAllIpc(ipcMain: IpcMain): void {
   settings.register(ipcMain)
+  conversations.register(ipcMain)
+  usage.register(ipcMain)
+  generationLog.register(ipcMain)
 }
