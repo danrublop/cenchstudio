@@ -10,6 +10,7 @@ import * as workspaces from './workspaces'
 import * as publish from './publish'
 import * as scene from './scene'
 import * as media from './media'
+import * as avatarConfigs from './avatar-configs'
 
 /**
  * Central IPC registration. Each category module exports
@@ -33,4 +34,5 @@ export function registerAllIpc(ipcMain: IpcMain): void {
   publish.register(ipcMain)
   scene.register(ipcMain)
   media.register(ipcMain)
+  avatarConfigs.register(ipcMain)
 }

@@ -232,6 +232,32 @@ export interface CenchApi {
       originalName?: string
     }): Promise<{ url: string; filename: string }>
   }
+  avatarConfigs: {
+    /** List all avatar configs for a project + the registry of available providers. */
+    list(args: { projectId: string }): Promise<{
+      configs: Array<Record<string, unknown>>
+      providers: Array<Record<string, unknown>>
+    }>
+    /** Create a new config. `isDefault: true` clears siblings first (non-atomic). */
+    create(args: {
+      projectId: string
+      provider: string
+      name: string
+      config?: Record<string, unknown>
+      isDefault?: boolean
+    }): Promise<Record<string, unknown>>
+    /** Partial update. `isDefault: true` clears siblings first (non-atomic). */
+    update(args: {
+      projectId: string
+      configId: string
+      provider?: string
+      name?: string
+      config?: Record<string, unknown>
+      isDefault?: boolean
+      thumbnailUrl?: string
+    }): Promise<Record<string, unknown>>
+    delete(args: { projectId: string; configId: string }): Promise<{ success: true }>
+  }
 }
 
 declare global {

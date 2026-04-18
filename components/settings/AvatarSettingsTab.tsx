@@ -131,10 +131,12 @@ export function AvatarSettingsTab() {
     if (!projectId) return
     setLoading(true)
     try {
-      const res = await fetch(`/api/projects/${projectId}/avatar-configs`)
-      const data = await res.json()
-      setConfigs(data.configs ?? [])
-      const def = (data.configs ?? []).find((c: AvatarConfig) => c.isDefault)
+      const ipc = typeof window !== 'undefined' ? window.cenchApi?.avatarConfigs : undefined
+      const data = ipc
+        ? await ipc.list({ projectId })
+        : await (await fetch(`/api/projects/${projectId}/avatar-configs`)).json()
+      setConfigs((data.configs as AvatarConfig[]) ?? [])
+      const def = ((data.configs as AvatarConfig[]) ?? []).find((c: AvatarConfig) => c.isDefault)
       if (def) {
         setSelectedProvider(def.provider)
         setConfigName(def.name)
@@ -161,7 +163,14 @@ export function AvatarSettingsTab() {
         config: providerConfig,
         isDefault: true,
       }
-      if (existing) {
+      const ipc = typeof window !== 'undefined' ? window.cenchApi?.avatarConfigs : undefined
+      if (ipc) {
+        if (existing) {
+          await ipc.update({ projectId, configId: existing.id, ...body })
+        } else {
+          await ipc.create({ projectId, ...body })
+        }
+      } else if (existing) {
         await fetch(`/api/projects/${projectId}/avatar-configs/${existing.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
@@ -183,7 +192,12 @@ export function AvatarSettingsTab() {
 
   const deleteConfig = async (id: string) => {
     if (!projectId) return
-    await fetch(`/api/projects/${projectId}/avatar-configs/${id}`, { method: 'DELETE' })
+    const ipc = typeof window !== 'undefined' ? window.cenchApi?.avatarConfigs : undefined
+    if (ipc) {
+      await ipc.delete({ projectId, configId: id })
+    } else {
+      await fetch(`/api/projects/${projectId}/avatar-configs/${id}`, { method: 'DELETE' })
+    }
     await fetchConfigs()
   }
 

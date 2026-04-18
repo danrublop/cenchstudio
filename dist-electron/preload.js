@@ -76,6 +76,12 @@ var cenchApi = {
   },
   media: {
     upload: (args) => import_electron.ipcRenderer.invoke("cench:media.upload", args)
+  },
+  avatarConfigs: {
+    list: (args) => import_electron.ipcRenderer.invoke("cench:avatarConfigs.list", args),
+    create: (args) => import_electron.ipcRenderer.invoke("cench:avatarConfigs.create", args),
+    update: (args) => import_electron.ipcRenderer.invoke("cench:avatarConfigs.update", args),
+    delete: (args) => import_electron.ipcRenderer.invoke("cench:avatarConfigs.delete", args)
   }
 };
 import_electron.contextBridge.exposeInMainWorld("cenchApi", cenchApi);

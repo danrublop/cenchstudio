@@ -2552,9 +2552,9 @@ async function writeProjectScenesToTablesTx(tx, projectId, projectScenes, sceneG
       toSceneId: ee.toSceneId ?? "",
       condition: normalizeEdgeCondition(ee.condition)
     });
-    const list5 = existingBySemantic.get(key) ?? [];
-    list5.push(ee.id);
-    existingBySemantic.set(key, list5);
+    const list6 = existingBySemantic.get(key) ?? [];
+    list6.push(ee.id);
+    existingBySemantic.set(key, list6);
   }
   const edges = sceneGraph?.edges ?? [];
   const edgeRows = edges.map((e) => {
@@ -8896,13 +8896,13 @@ function generateLayerAnimationScript(layerId, imgId, anim, startAt) {
       props: `opacity:1, rotation:0, scale:1, duration:${dur}, ease:'${ease}'`
     }
   };
-  const config = animMap[anim.type];
-  if (!config) return "";
+  const config4 = animMap[anim.type];
+  if (!config4) return "";
   return `<script>
     window.addEventListener('load', function() {
       var el = document.getElementById('${imgId}');
       if (!el || !window.__tl) return;
-      window.__tl.to(el, { ${config.props} }, ${delay});
+      window.__tl.to(el, { ${config4.props} }, ${delay});
     });
   </script>`;
 }
@@ -11403,6 +11403,336 @@ function register11(ipcMain2) {
   ipcMain2.handle("cench:media.upload", (_e, args) => upload(args));
 }
 
+// electron/ipc/avatar-configs.ts
+var import_drizzle_orm11 = require("drizzle-orm");
+
+// lib/avatar/providers/talkinghead.ts
+var talkingHeadProvider = {
+  id: "talkinghead",
+  name: "Animated Character (Free)",
+  isFree: true,
+  requiresImage: false,
+  estimateCost: () => 0,
+  async generate(input, config4) {
+    const character = config4.characterFile || "friendly";
+    const idleAnimation = config4.idleAnimation || "idle";
+    const style = config4.style || "default";
+    const modelFromConfig = config4.avatarModelId || config4.model;
+    const model = typeof modelFromConfig === "string" && isTalkingHeadModelId(modelFromConfig) ? modelFromConfig : DEFAULT_TALKING_HEAD_MODEL_BY_CHARACTER[character] ?? "brunette";
+    const params = new URLSearchParams({
+      text: input.text,
+      audio: input.audioUrl,
+      character,
+      model,
+      idle: idleAnimation,
+      style
+    });
+    return {
+      videoUrl: `talkinghead://render?${params.toString()}`,
+      durationSeconds: input.durationSeconds,
+      costUsd: 0,
+      provider: "talkinghead"
+    };
+  }
+};
+
+// lib/avatar/providers/musetalk.ts
+var fal = __toESM(require("@fal-ai/serverless-client"));
+function configureFal() {
+  const key = process.env.FAL_KEY;
+  if (key) fal.config({ credentials: key });
+}
+var museTalkProvider = {
+  id: "musetalk",
+  name: "MuseTalk (Realistic)",
+  isFree: false,
+  requiresImage: true,
+  estimateCost: () => 0.04,
+  async generate(input, config4) {
+    configureFal();
+    const result = await fal.subscribe("fal-ai/musetalk", {
+      input: {
+        source_video_url: input.sourceImageUrl,
+        audio_url: input.audioUrl
+      }
+    });
+    return {
+      videoUrl: result.video.url,
+      durationSeconds: input.durationSeconds,
+      costUsd: 0.04,
+      provider: "musetalk"
+    };
+  }
+};
+
+// lib/avatar/providers/fabric.ts
+var fal2 = __toESM(require("@fal-ai/serverless-client"));
+function configureFal2() {
+  const key = process.env.FAL_KEY;
+  if (key) fal2.config({ credentials: key });
+}
+var fabricProvider = {
+  id: "fabric",
+  name: "Fabric 1.0 (Any Image Style)",
+  isFree: false,
+  requiresImage: true,
+  estimateCost: (duration) => duration * 0.08,
+  async generate(input, config4) {
+    configureFal2();
+    const resolution = config4.resolution || "480p";
+    const costPerSec = resolution === "720p" ? 0.15 : 0.08;
+    const result = await fal2.subscribe("veed/fabric-1.0", {
+      input: {
+        image_url: input.sourceImageUrl,
+        audio_url: input.audioUrl,
+        resolution
+      }
+    });
+    return {
+      videoUrl: result.video.url,
+      durationSeconds: input.durationSeconds,
+      costUsd: input.durationSeconds * costPerSec,
+      provider: "fabric"
+    };
+  }
+};
+
+// lib/avatar/providers/aurora.ts
+var fal3 = __toESM(require("@fal-ai/serverless-client"));
+function configureFal3() {
+  const key = process.env.FAL_KEY;
+  if (key) fal3.config({ credentials: key });
+}
+var auroraProvider = {
+  id: "aurora",
+  name: "Aurora (Studio Quality)",
+  isFree: false,
+  requiresImage: true,
+  estimateCost: (duration) => duration * 0.05,
+  async generate(input, config4) {
+    configureFal3();
+    const result = await fal3.subscribe("creatify/aurora", {
+      input: {
+        image_url: input.sourceImageUrl,
+        audio_url: input.audioUrl
+      }
+    });
+    return {
+      videoUrl: result.video.url,
+      durationSeconds: input.durationSeconds,
+      costUsd: input.durationSeconds * 0.05,
+      provider: "aurora"
+    };
+  }
+};
+
+// lib/apis/heygen.ts
+var HEYGEN_BASE = "https://api.heygen.com/v2";
+var HEYGEN_KEY = () => process.env.HEYGEN_API_KEY;
+async function heygenFetch(path8, options = {}) {
+  const response = await fetch(`${HEYGEN_BASE}${path8}`, {
+    ...options,
+    headers: {
+      "X-Api-Key": HEYGEN_KEY(),
+      "Content-Type": "application/json",
+      ...options.headers
+    }
+  });
+  const data = await response.json();
+  if (!response.ok || data.error) {
+    throw new Error(data.error?.message ?? data.message ?? `HeyGen API error: ${response.status}`);
+  }
+  return data.data ?? data;
+}
+var AVATAR_CACHE_TTL = 24 * 60 * 60 * 1e3;
+async function generateAvatarVideo(opts) {
+  const data = await heygenFetch("/video/generate", {
+    method: "POST",
+    body: JSON.stringify({
+      video_inputs: [
+        {
+          character: {
+            type: "avatar",
+            avatar_id: opts.avatarId,
+            avatar_style: "normal"
+          },
+          voice: {
+            type: "text",
+            input_text: opts.script,
+            voice_id: opts.voiceId
+          },
+          background: {
+            type: "color",
+            value: opts.bgColor ?? "#00FF00"
+            // green for chroma key
+          }
+        }
+      ],
+      dimension: {
+        width: opts.width ?? 512,
+        height: opts.height ?? 512
+      }
+    })
+  });
+  const wordCount = opts.script.split(/\s+/).length;
+  const estimatedSeconds = Math.ceil(wordCount / 150 * 60);
+  return {
+    videoId: data.video_id,
+    estimatedSeconds
+  };
+}
+async function getVideoStatus(videoId) {
+  const data = await heygenFetch(`/video_status.get?video_id=${videoId}`);
+  return {
+    status: data.status,
+    videoUrl: data.video_url,
+    thumbnailUrl: data.thumbnail_url,
+    error: data.error
+  };
+}
+var VOICE_CACHE_TTL = 24 * 60 * 60 * 1e3;
+
+// lib/avatar/providers/heygen.ts
+var heygenProvider = {
+  id: "heygen",
+  name: "HeyGen (Premium)",
+  isFree: false,
+  requiresImage: false,
+  estimateCost: (duration) => duration * 0.1,
+  async generate(input, config4) {
+    const avatarId = config4.avatarId;
+    const voiceId = config4.voiceId;
+    if (!avatarId || !voiceId) {
+      throw new Error("HeyGen provider requires avatarId and voiceId in config");
+    }
+    const { videoId, estimatedSeconds } = await generateAvatarVideo({
+      avatarId,
+      voiceId,
+      script: input.text,
+      bgColor: config4.bgColor ?? "#00FF00",
+      width: config4.width ?? 512,
+      height: config4.height ?? 512
+    });
+    const maxAttempts = 60;
+    const pollInterval = 5e3;
+    for (let i = 0; i < maxAttempts; i++) {
+      await new Promise((resolve) => setTimeout(resolve, pollInterval));
+      const status = await getVideoStatus(videoId);
+      if (status.status === "completed" && status.videoUrl) {
+        return {
+          videoUrl: status.videoUrl,
+          durationSeconds: estimatedSeconds,
+          costUsd: estimatedSeconds * 0.1,
+          provider: "heygen"
+        };
+      }
+      if (status.status === "failed") {
+        throw new Error(`HeyGen generation failed: ${status.error ?? "unknown error"}`);
+      }
+    }
+    throw new Error("HeyGen generation timed out after 5 minutes");
+  }
+};
+
+// lib/avatar/index.ts
+var PROVIDERS = {
+  talkinghead: talkingHeadProvider,
+  musetalk: museTalkProvider,
+  fabric: fabricProvider,
+  aurora: auroraProvider,
+  heygen: heygenProvider
+};
+var AvatarService = class {
+  static getProvider(providerId) {
+    const provider = PROVIDERS[providerId];
+    if (!provider) throw new Error(`Unknown avatar provider: ${providerId}`);
+    return provider;
+  }
+  static async generate(input, avatarConfig) {
+    const provider = this.getProvider(avatarConfig.provider);
+    if (provider.requiresImage && !input.sourceImageUrl) {
+      const configImage = avatarConfig.config?.sourceImageUrl;
+      if (!configImage) {
+        throw new Error(`Provider ${provider.id} requires a source image. Upload one in avatar settings.`);
+      }
+      input.sourceImageUrl = configImage;
+    }
+    return provider.generate(input, avatarConfig.config);
+  }
+  static getAllProviders() {
+    return Object.values(PROVIDERS).map((p) => ({
+      id: p.id,
+      name: p.name,
+      isFree: p.isFree,
+      requiresImage: p.requiresImage
+    }));
+  }
+  static estimateCost(providerId, durationSeconds) {
+    const provider = PROVIDERS[providerId];
+    return provider ? provider.estimateCost(durationSeconds) : 0;
+  }
+};
+
+// electron/ipc/avatar-configs.ts
+async function list5(args) {
+  assertValidUuid(args.projectId, "projectId");
+  await loadProjectOrThrow(args.projectId);
+  const configs = await db.select().from(avatarConfigs).where((0, import_drizzle_orm11.eq)(avatarConfigs.projectId, args.projectId)).orderBy(avatarConfigs.createdAt);
+  return { configs, providers: AvatarService.getAllProviders() };
+}
+async function create4(args) {
+  assertValidUuid(args.projectId, "projectId");
+  await loadProjectOrThrow(args.projectId);
+  if (!args.provider || typeof args.provider !== "string") {
+    throw new IpcValidationError("provider is required");
+  }
+  if (!args.name || typeof args.name !== "string") {
+    throw new IpcValidationError("name is required");
+  }
+  if (args.isDefault) {
+    await db.update(avatarConfigs).set({ isDefault: false }).where((0, import_drizzle_orm11.eq)(avatarConfigs.projectId, args.projectId));
+  }
+  const [created] = await db.insert(avatarConfigs).values({
+    projectId: args.projectId,
+    provider: args.provider,
+    name: args.name,
+    config: args.config ?? {},
+    isDefault: args.isDefault ?? false
+  }).returning();
+  return created;
+}
+async function update5(args) {
+  assertValidUuid(args.projectId, "projectId");
+  assertValidUuid(args.configId, "configId");
+  await loadProjectOrThrow(args.projectId);
+  if (args.isDefault) {
+    await db.update(avatarConfigs).set({ isDefault: false }).where((0, import_drizzle_orm11.eq)(avatarConfigs.projectId, args.projectId));
+  }
+  const updates = {};
+  if (args.provider !== void 0) updates.provider = args.provider;
+  if (args.name !== void 0) updates.name = args.name;
+  if (args.config !== void 0) updates.config = args.config;
+  if (args.isDefault !== void 0) updates.isDefault = args.isDefault;
+  if (args.thumbnailUrl !== void 0) updates.thumbnailUrl = args.thumbnailUrl;
+  const [updated] = await db.update(avatarConfigs).set(updates).where((0, import_drizzle_orm11.and)((0, import_drizzle_orm11.eq)(avatarConfigs.id, args.configId), (0, import_drizzle_orm11.eq)(avatarConfigs.projectId, args.projectId))).returning();
+  if (!updated) throw new IpcNotFoundError(`Config ${args.configId} not found`);
+  return updated;
+}
+async function remove4(args) {
+  assertValidUuid(args.projectId, "projectId");
+  assertValidUuid(args.configId, "configId");
+  await loadProjectOrThrow(args.projectId);
+  const [deleted] = await db.delete(avatarConfigs).where((0, import_drizzle_orm11.and)((0, import_drizzle_orm11.eq)(avatarConfigs.id, args.configId), (0, import_drizzle_orm11.eq)(avatarConfigs.projectId, args.projectId))).returning();
+  if (!deleted) throw new IpcNotFoundError(`Config ${args.configId} not found`);
+  return { success: true };
+}
+function register12(ipcMain2) {
+  ipcMain2.handle("cench:avatarConfigs.list", (_e, args) => list5(args));
+  ipcMain2.handle("cench:avatarConfigs.create", (_e, args) => create4(args));
+  ipcMain2.handle("cench:avatarConfigs.update", (_e, args) => update5(args));
+  ipcMain2.handle("cench:avatarConfigs.delete", (_e, args) => remove4(args));
+}
+
 // electron/ipc/index.ts
 function registerAllIpc(ipcMain2) {
   register(ipcMain2);
@@ -11416,6 +11746,7 @@ function registerAllIpc(ipcMain2) {
   register9(ipcMain2);
   register10(ipcMain2);
   register11(ipcMain2);
+  register12(ipcMain2);
 }
 
 // electron/main.ts

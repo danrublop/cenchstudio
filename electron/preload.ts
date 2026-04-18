@@ -116,6 +116,29 @@ export type CenchApi = {
       originalName?: string
     }) => Promise<{ url: string; filename: string }>
   }
+  avatarConfigs: {
+    list: (args: { projectId: string }) => Promise<{
+      configs: Array<Record<string, unknown>>
+      providers: Array<Record<string, unknown>>
+    }>
+    create: (args: {
+      projectId: string
+      provider: string
+      name: string
+      config?: Record<string, unknown>
+      isDefault?: boolean
+    }) => Promise<Record<string, unknown>>
+    update: (args: {
+      projectId: string
+      configId: string
+      provider?: string
+      name?: string
+      config?: Record<string, unknown>
+      isDefault?: boolean
+      thumbnailUrl?: string
+    }) => Promise<Record<string, unknown>>
+    delete: (args: { projectId: string; configId: string }) => Promise<{ success: true }>
+  }
 }
 
 const cenchApi: CenchApi = {
@@ -177,6 +200,12 @@ const cenchApi: CenchApi = {
   },
   media: {
     upload: (args) => ipcRenderer.invoke('cench:media.upload', args),
+  },
+  avatarConfigs: {
+    list: (args) => ipcRenderer.invoke('cench:avatarConfigs.list', args),
+    create: (args) => ipcRenderer.invoke('cench:avatarConfigs.create', args),
+    update: (args) => ipcRenderer.invoke('cench:avatarConfigs.update', args),
+    delete: (args) => ipcRenderer.invoke('cench:avatarConfigs.delete', args),
   },
 }
 
