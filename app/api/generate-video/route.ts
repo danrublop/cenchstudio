@@ -158,9 +158,12 @@ export async function GET(req: NextRequest) {
   if (!operationName) {
     return NextResponse.json({ error: 'operationName is required' }, { status: 400 })
   }
+  // Hoist the service import so the catch block can instanceof-check without
+  // a second `await import`. Node's module cache would make the second cheap,
+  // but the pattern reads awkward.
+  const svc = await import('@/lib/services/generation')
   try {
-    const { pollVideoStatus, GenerationValidationError } = await import('@/lib/services/generation')
-    const result = await pollVideoStatus({
+    const result = await svc.pollVideoStatus({
       operationName,
       projectId: req.nextUrl.searchParams.get('projectId') ?? undefined,
       prompt: req.nextUrl.searchParams.get('prompt') ?? undefined,
@@ -169,8 +172,7 @@ export async function GET(req: NextRequest) {
     })
     return NextResponse.json(result)
   } catch (err) {
-    const { GenerationValidationError } = await import('@/lib/services/generation')
-    if (err instanceof GenerationValidationError) {
+    if (err instanceof svc.GenerationValidationError) {
       return NextResponse.json({ error: err.message }, { status: 400 })
     }
     console.error('Video status poll error:', err)

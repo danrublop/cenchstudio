@@ -18844,10 +18844,9 @@ async function pollVideoStatus(input) {
     const buffer = await provider.download(result.videoUri);
     const publicPath = await saveToCache2(provider.id, { operationName: input.operationName }, buffer, "mp4");
     if (input.projectId) {
-      const api = provider.id === "veo3" || provider.id === "kling" || provider.id === "runway" ? provider.id : provider.id;
       await logSpend2(
         input.projectId,
-        api,
+        provider.id,
         provider.costPerCallUsd,
         `${provider.name}: ${(input.prompt ?? "").slice(0, 100)}`,
         input.reservationId

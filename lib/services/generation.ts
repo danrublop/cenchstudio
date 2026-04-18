@@ -605,13 +605,15 @@ export async function pollVideoStatus(input: PollVideoStatusInput): Promise<Poll
     const publicPath = await saveToCache(provider.id, { operationName: input.operationName }, buffer, 'mp4')
 
     if (input.projectId) {
-      // `providerId → apiName` matches what the HTTP route did: only the
-      // three known video APIs get logged against the per-API spend counter.
-      const api =
-        provider.id === 'veo3' || provider.id === 'kling' || provider.id === 'runway' ? provider.id : provider.id
+      // Log spend against `provider.id` directly. The HTTP route had a
+      // `providerToApiName` helper that returned the APIName for the three
+      // known video APIs (veo3/kling/runway) or null → caller then did
+      // `api ?? provider.id`. Both branches collapse to `provider.id`, so
+      // drop the helper. For unknown providers, `logSpend` just keys against
+      // the raw id string, matching pre-existing behavior.
       await logSpend(
         input.projectId,
-        api,
+        provider.id,
         provider.costPerCallUsd,
         `${provider.name}: ${(input.prompt ?? '').slice(0, 100)}`,
         input.reservationId,
