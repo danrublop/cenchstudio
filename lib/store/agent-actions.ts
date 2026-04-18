@@ -644,7 +644,9 @@ export function createAgentActions(set: Set, get: Get) {
                   try {
                     await sceneIpc.writeHtml({ id: scene.id, html: scene.sceneHTML })
                   } catch (retryErr) {
-                    throw new Error(`Save failed for scene ${scene.id}: ${(retryErr as Error).message}`)
+                    throw new Error(`Save failed for scene ${scene.id}: ${(retryErr as Error).message}`, {
+                      cause: retryErr,
+                    })
                   }
                 }
               })()
