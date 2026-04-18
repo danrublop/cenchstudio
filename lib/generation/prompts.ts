@@ -981,6 +981,14 @@ Return a JSON object with these fields:
   - Returns \`{ fire(payload), onFired(callback) }\`
   - Example: \`const reveal = useTrigger('show-details'); reveal.fire({ section: 'pricing' })\`
 
+### Scrub hooks (for components that animate outside useCurrentFrame)
+- \`useCenchSeek(cb)\` — fires on every timeline seek/scrub with the scene time in seconds
+  - Example: \`useCenchSeek((t) => setPosition(t * 100))\`
+  - Use when your animation state is kept outside the GSAP master timeline and you need it to reflect scrubs
+- \`useCenchTime()\` — returns current scene time in seconds, kept in sync with playback AND scrub
+  - Example: \`const t = useCenchTime(); const x = interpolate(t, [0, DURATION], [0, 500])\`
+  - Prefer \`useCurrentFrame()\` for frame-accurate work; use \`useCenchTime()\` when you want continuous seconds
+
 ### When to use interactivity hooks
 - Use useVariable when the viewer needs to control a value that affects the scene (slider-driven charts, toggle-driven visibility, score tracking)
 - Use useInteraction when elements should respond to hover/click with visual feedback AND notify the parent

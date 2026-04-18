@@ -16813,8 +16813,8 @@ async function designVoice(input) {
       provider: "voxcpm"
     };
   } catch (err) {
-    const message = err instanceof Error ? sanitizeErrorMessage(err.message) : "Voice design failed";
-    throw new Error(message, { cause: err });
+    const message = sanitizeErrorMessage(err);
+    throw new Error(message === "Audio operation failed" ? "Voice design failed" : message, { cause: err });
   }
 }
 

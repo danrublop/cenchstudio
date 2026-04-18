@@ -157,6 +157,18 @@ export default function PixiPreviewCanvas({
     }
   }, [currentTime])
 
+  // Mirror scrub_start/scrub_end events to the compositor bridge.
+  useEffect(() => {
+    const onCmd = (event: Event) => {
+      const custom = event as CustomEvent<{ action?: string }>
+      const action = custom.detail?.action
+      if (action === 'scrub_start') previewRef.current?.startScrub()
+      else if (action === 'scrub_end') previewRef.current?.endScrub()
+    }
+    window.addEventListener('cench-preview-command', onCmd as EventListener)
+    return () => window.removeEventListener('cench-preview-command', onCmd as EventListener)
+  }, [])
+
   return (
     <canvas
       ref={canvasRef}

@@ -395,6 +395,82 @@
     return { fire: fire, onFired: onFired }
   }
 
+  // ── useCenchSeek ─────────────────────────────────────────────────────────
+  // Fires on every timeline seek/scrub with the target time in seconds.
+  // Use this for React components that animate outside the GSAP timeline
+  // and need to reflect the scrubbed position.
+  // Usage: useCenchSeek(function(t) { setPosition(t * 100) })
+
+  function useCenchSeek(cb) {
+    var cbRef = React.useRef(cb)
+    React.useEffect(function () { cbRef.current = cb }, [cb])
+    React.useEffect(function () {
+      if (!window.__cench || typeof window.__cench.onSeek !== 'function') return
+      var off = window.__cench.onSeek(function (t) {
+        if (cbRef.current) cbRef.current(t)
+      })
+      return off
+    }, [])
+  }
+
+  // ── useCenchTime ─────────────────────────────────────────────────────────
+  // Returns current scene time in seconds, kept in sync with playback AND scrub.
+  // Piggybacks on the GSAP master timeline's onUpdate (fires on both play tick
+  // and seek re-eval) and also subscribes to explicit seek events for safety.
+  // Usage: var t = useCenchTime(); var x = interpolate(t, [0, 1, 2], [0, 50, 100])
+
+  function useCenchTime() {
+    var _s = React.useState(function () {
+      return window.__tl && typeof window.__tl.time === 'function' ? window.__tl.time() : 0
+    })
+    var time = _s[0]
+    var setTime = _s[1]
+    var timeRef = React.useRef(time)
+
+    React.useEffect(function () {
+      function update(t) {
+        if (t === timeRef.current) return
+        timeRef.current = t
+        setTime(t)
+      }
+
+      // Hook GSAP master timeline onUpdate (covers play + seek)
+      function hookTimeline() {
+        var tl = window.__tl
+        if (!tl || typeof tl.eventCallback !== 'function') return false
+        var prevCb = tl.eventCallback('onUpdate')
+        tl.eventCallback('onUpdate', function () {
+          if (prevCb) prevCb()
+          update(tl.time())
+        })
+        return true
+      }
+      var pollId = null
+      if (!hookTimeline()) {
+        var attempts = 0
+        pollId = setInterval(function () {
+          attempts++
+          if (hookTimeline() || attempts > 50) {
+            clearInterval(pollId)
+            pollId = null
+          }
+        }, 50)
+      }
+
+      // Also subscribe to the scrub registry for scenes where GSAP onUpdate is absent
+      var off = (window.__cench && typeof window.__cench.onSeek === 'function')
+        ? window.__cench.onSeek(update)
+        : null
+
+      return function () {
+        if (pollId) clearInterval(pollId)
+        if (off) off()
+      }
+    }, [])
+
+    return time
+  }
+
   // ── Enhanced CenchComposition (wraps with VariableContext) ───────────────
 
   var _OriginalComposition = CenchComposition
@@ -422,6 +498,9 @@
     useVariable: useVariable,
     useInteraction: useInteraction,
     useTrigger: useTrigger,
+    // Scrub hooks
+    useCenchSeek: useCenchSeek,
+    useCenchTime: useCenchTime,
     // Internal contexts
     _FrameContext: FrameContext,
     _VariableContext: VariableContext,

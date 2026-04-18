@@ -87,6 +87,10 @@ export class PixiPreview {
   private videoPool = new VideoPool()
   private activeVideoClips: ActiveVideoClip[] = []
   private timeline: Timeline | null = null
+  private scrubbing = false
+  /** Monotonic counter incremented on every start/end scrub. Used to invalidate
+   * async post-loadScene setMuted calls when the user releases mid-await. */
+  private scrubGeneration = 0
 
   constructor(opts: PixiPreviewOptions) {
     this.opts = opts
@@ -153,10 +157,31 @@ export class PixiPreview {
     this.globalTime = Math.max(0, globalTime)
     const sceneIdx = this.findSceneAt(this.globalTime)
     if (sceneIdx !== this.currentSceneIndex && sceneIdx >= 0) {
+      // Snapshot scrub generation before the async gap so we can detect release during await.
+      const gen = this.scrubGeneration
       await this.loadScene(sceneIdx)
+      // Crossing a scene boundary during scrub: new bridge starts unmuted.
+      // Only re-mute if we're still scrubbing AND no start/end toggled during the await.
+      if (this.scrubbing && this.scrubGeneration === gen) {
+        this.loadedScene?.bridge?.setMuted(true)
+      }
     }
     this.renderFrame(this.globalTime)
     this.opts.onTimeUpdate?.(this.globalTime)
+  }
+
+  /** Enter scrub mode — mutes bridge iframe audio for the duration of the drag. */
+  startScrub(): void {
+    this.scrubbing = true
+    this.scrubGeneration++
+    this.loadedScene?.bridge?.setMuted(true)
+  }
+
+  /** Exit scrub mode — restores bridge iframe audio. */
+  endScrub(): void {
+    this.scrubbing = false
+    this.scrubGeneration++
+    this.loadedScene?.bridge?.setMuted(false)
   }
 
   isPlaying(): boolean {

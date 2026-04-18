@@ -39,16 +39,27 @@ interface Props {
   currentTime: number
   totalDuration: number
   onSeek: (time: number) => void
+  onScrubStart?: () => void
+  onScrubEnd?: () => void
   trackHeight?: number
 }
 
-export default function Timeline({ currentTime, totalDuration, onSeek, trackHeight = 200 }: Props) {
+export default function Timeline({
+  currentTime,
+  totalDuration,
+  onSeek,
+  onScrubStart,
+  onScrubEnd,
+  trackHeight = 200,
+}: Props) {
   const {
     scenes,
     project,
     timelineScrollX,
     timelineAutoScroll,
+    timelineFollowPaused,
     setTimelineScrollX,
+    setTimelineFollowPaused,
     initTimeline,
     syncTimelineFromScenes,
     moveClip,
@@ -56,6 +67,7 @@ export default function Timeline({ currentTime, totalDuration, onSeek, trackHeig
     selectedClipIds,
     setSelectedClipIds,
     isAgentRunning,
+    timelineTransport,
   } = useVideoStore()
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -107,10 +119,26 @@ export default function Timeline({ currentTime, totalDuration, onSeek, trackHeig
     containerRef,
     sceneBoundaries,
     onSeek,
+    onScrubStart,
+    onScrubEnd,
   })
 
+  // Re-engage auto-follow each time playback transitions from paused -> playing.
+  const prevIsPlayingRef = useRef(timelineTransport.isPlaying)
   useEffect(() => {
-    if (!timelineAutoScroll || isPlayheadDragging) return
+    if (!prevIsPlayingRef.current && timelineTransport.isPlaying) {
+      setTimelineFollowPaused(false)
+    }
+    prevIsPlayingRef.current = timelineTransport.isPlaying
+  }, [timelineTransport.isPlaying, setTimelineFollowPaused])
+
+  // Auto-scroll only reacts to playhead advancement; do not fight user-initiated scrolls.
+  const prevCurrentTimeRef = useRef(currentTime)
+  useEffect(() => {
+    const timeAdvanced = currentTime !== prevCurrentTimeRef.current
+    prevCurrentTimeRef.current = currentTime
+    if (!timeAdvanced) return
+    if (!timelineAutoScroll || isPlayheadDragging || timelineFollowPaused) return
     const playheadX = currentTime * pps
     const viewLeft = timelineScrollX
     if (playheadX >= viewLeft && playheadX <= viewLeft + usableWidth) {
@@ -125,6 +153,7 @@ export default function Timeline({ currentTime, totalDuration, onSeek, trackHeig
     usableWidth,
     timelineAutoScroll,
     isPlayheadDragging,
+    timelineFollowPaused,
     timelineScrollX,
     maxScrollX,
     setTimelineScrollX,

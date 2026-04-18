@@ -630,7 +630,11 @@ export default function PreviewPlayer() {
     if (player) player.seek(idleT)
   }, [])
 
-  const handleSeek = useCallback(
+  const isScrubbingRef = useRef(false)
+  const scrubRAFRef = useRef<number | null>(null)
+  const pendingScrubTimeRef = useRef<number | null>(null)
+
+  const applySeekImmediate = useCallback(
     (globalT: number) => {
       // Cancel polling loop immediately to prevent stale time overwriting the seek
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current)
@@ -669,6 +673,69 @@ export default function PreviewPlayer() {
     [pauseAllScenes],
   )
 
+  const handleSeek = useCallback(
+    (globalT: number) => {
+      // During active scrub, coalesce rapid pointermove seeks into one per rAF
+      if (isScrubbingRef.current) {
+        pendingScrubTimeRef.current = globalT
+        if (scrubRAFRef.current != null) return
+        scrubRAFRef.current = requestAnimationFrame(() => {
+          scrubRAFRef.current = null
+          const t = pendingScrubTimeRef.current
+          pendingScrubTimeRef.current = null
+          if (t != null) applySeekImmediate(t)
+        })
+        return
+      }
+      applySeekImmediate(globalT)
+    },
+    [applySeekImmediate],
+  )
+
+  const handleScrubStart = useCallback(() => {
+    if (isScrubbingRef.current) return
+    isScrubbingRef.current = true
+    // Mute audio on every loaded scene (crossing boundaries may hit several)
+    Object.values(playerMapRef.current).forEach((p) => {
+      try {
+        p.startScrub()
+      } catch {}
+    })
+  }, [])
+
+  const handleScrubEnd = useCallback(() => {
+    if (!isScrubbingRef.current) return
+    isScrubbingRef.current = false
+    // Flush any pending coalesced seek
+    if (scrubRAFRef.current != null) {
+      cancelAnimationFrame(scrubRAFRef.current)
+      scrubRAFRef.current = null
+    }
+    const pending = pendingScrubTimeRef.current
+    pendingScrubTimeRef.current = null
+    if (pending != null) applySeekImmediate(pending)
+    // Unmute audio on every loaded scene
+    Object.values(playerMapRef.current).forEach((p) => {
+      try {
+        p.endScrub()
+      } catch {}
+    })
+  }, [applySeekImmediate])
+
+  // If PreviewPlayer unmounts while a scrub is in progress (tab switch, project
+  // reload), broadcast scrub_end so iframes don't stay muted forever.
+  useEffect(() => {
+    return () => {
+      if (isScrubbingRef.current) {
+        Object.values(playerMapRef.current).forEach((p) => {
+          try {
+            p.endScrub()
+          } catch {}
+        })
+      }
+    }
+  }, [])
+
   // Commands from app header controls and TransportBar
   useEffect(() => {
     const onPreviewCommand = (event: Event) => {
@@ -704,6 +771,14 @@ export default function PreviewPlayer() {
         handleSeek(custom.detail.time)
         return
       }
+      if (action === 'scrub_start') {
+        handleScrubStart()
+        return
+      }
+      if (action === 'scrub_end') {
+        handleScrubEnd()
+        return
+      }
       if (action === 'step_back') {
         stepFrame(-1)
         return
@@ -715,7 +790,7 @@ export default function PreviewPlayer() {
     }
     window.addEventListener('cench-preview-command', onPreviewCommand as EventListener)
     return () => window.removeEventListener('cench-preview-command', onPreviewCommand as EventListener)
-  }, [undo, redo, zoomIn, zoomOut, resetView, play, pause, handleSeek, stepFrame])
+  }, [undo, redo, zoomIn, zoomOut, resetView, play, pause, handleSeek, handleScrubStart, handleScrubEnd, stepFrame])
 
   // ── Scene load handler ────────────────────────────────────────────────────
   const handleSceneLoad = useCallback(
