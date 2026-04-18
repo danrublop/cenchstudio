@@ -219,12 +219,1470 @@ var init_crypto = __esm({
   }
 });
 
+// lib/audio/sanitize.ts
+function validateTextLength(text2) {
+  if (text2.length > MAX_TTS_TEXT_LENGTH) {
+    throw new Error(`Text too long: ${text2.length} characters (max ${MAX_TTS_TEXT_LENGTH})`);
+  }
+}
+function validateQueryLength(query) {
+  if (query.length > MAX_SEARCH_QUERY_LENGTH) {
+    throw new Error(`Query too long: ${query.length} characters (max ${MAX_SEARCH_QUERY_LENGTH})`);
+  }
+}
+function sanitizeSceneId(sceneId) {
+  return sceneId.replace(/[^a-zA-Z0-9\-]/g, "");
+}
+function safeAudioFilename(prefix, sceneId, ext = "mp3") {
+  const safe = sanitizeSceneId(sceneId);
+  const rand = import_crypto3.default.randomBytes(4).toString("hex");
+  return `${prefix}-${safe}-${Date.now()}-${rand}.${ext}`;
+}
+var import_crypto3, MAX_TTS_TEXT_LENGTH, MAX_SEARCH_QUERY_LENGTH;
+var init_sanitize = __esm({
+  "lib/audio/sanitize.ts"() {
+    "use strict";
+    import_crypto3 = __toESM(require("crypto"));
+    MAX_TTS_TEXT_LENGTH = 1e4;
+    MAX_SEARCH_QUERY_LENGTH = 500;
+  }
+});
+
+// lib/audio/captions.ts
+function charAlignmentToWords(align) {
+  const words = [];
+  const n = align.characters.length;
+  if (n === 0) return words;
+  let buf = "";
+  let start = align.character_start_times_seconds[0];
+  let end = align.character_end_times_seconds[0];
+  const flush = () => {
+    const trimmed = buf.trim();
+    if (trimmed.length > 0) {
+      words.push({ text: trimmed, start, end });
+    }
+    buf = "";
+  };
+  for (let i = 0; i < n; i++) {
+    const ch = align.characters[i];
+    const charStart = align.character_start_times_seconds[i];
+    const charEnd = align.character_end_times_seconds[i];
+    if (/\s/.test(ch)) {
+      flush();
+      start = charEnd;
+      end = charEnd;
+      continue;
+    }
+    if (buf.length === 0) {
+      start = charStart;
+      end = charEnd;
+    } else {
+      end = charEnd;
+    }
+    buf += ch;
+  }
+  flush();
+  return words;
+}
+function groupWordsIntoCues(words, opts = {}) {
+  const maxWords = opts.maxWordsPerCue ?? 7;
+  const maxSeconds = opts.maxSecondsPerCue ?? 3.5;
+  const maxGap = opts.maxGapSeconds ?? 0.5;
+  const cues = [];
+  let current = null;
+  let wordCount = 0;
+  for (const w of words) {
+    if (!current) {
+      current = { ...w };
+      wordCount = 1;
+      continue;
+    }
+    const wouldExceedWords = wordCount + 1 > maxWords;
+    const wouldExceedTime = w.end - current.start > maxSeconds;
+    const wouldExceedGap = w.start - current.end > maxGap;
+    const endsSentence = /[.!?]$/.test(current.text);
+    if (wouldExceedWords || wouldExceedTime || wouldExceedGap || endsSentence) {
+      cues.push(current);
+      current = { ...w };
+      wordCount = 1;
+    } else {
+      current.text += ` ${w.text}`;
+      current.end = w.end;
+      wordCount += 1;
+    }
+  }
+  if (current) cues.push(current);
+  return cues;
+}
+function pad(n, width) {
+  return n.toString().padStart(width, "0");
+}
+function formatSrtTimestamp(seconds) {
+  const total = Math.max(0, seconds);
+  const hours = Math.floor(total / 3600);
+  const mins = Math.floor(total % 3600 / 60);
+  const secs = Math.floor(total % 60);
+  const ms = Math.round((total - Math.floor(total)) * 1e3);
+  return `${pad(hours, 2)}:${pad(mins, 2)}:${pad(secs, 2)},${pad(ms, 3)}`;
+}
+function formatVttTimestamp(seconds) {
+  return formatSrtTimestamp(seconds).replace(",", ".");
+}
+function buildSrt(cues) {
+  return cues.map((cue, i) => `${i + 1}
+${formatSrtTimestamp(cue.start)} --> ${formatSrtTimestamp(cue.end)}
+${cue.text}`).join("\n\n") + "\n";
+}
+function buildVtt(cues) {
+  const body = cues.map((cue) => `${formatVttTimestamp(cue.start)} --> ${formatVttTimestamp(cue.end)}
+${cue.text}`).join("\n\n");
+  return `WEBVTT
+
+${body}
+`;
+}
+function buildCaptionBundle(align, opts) {
+  const words = charAlignmentToWords(align);
+  const cues = groupWordsIntoCues(words, opts);
+  return {
+    srt: buildSrt(cues),
+    vtt: buildVtt(cues),
+    words,
+    cues
+  };
+}
+function buildNaiveCaptions(text2, durationSeconds, opts) {
+  const tokens = text2.split(/\s+/).filter((w) => w.length > 0);
+  if (tokens.length === 0 || !isFinite(durationSeconds) || durationSeconds <= 0) {
+    return { srt: "", vtt: "WEBVTT\n\n", words: [], cues: [] };
+  }
+  const perWord = durationSeconds / tokens.length;
+  const words = tokens.map((t, i) => ({
+    text: t,
+    start: i * perWord,
+    end: (i + 1) * perWord
+  }));
+  const cues = groupWordsIntoCues(words, opts);
+  return {
+    srt: buildSrt(cues),
+    vtt: buildVtt(cues),
+    words,
+    cues
+  };
+}
+var init_captions = __esm({
+  "lib/audio/captions.ts"() {
+    "use strict";
+  }
+});
+
+// lib/audio/paths.ts
+function getAudioDir() {
+  return process.env.CENCH_AUDIO_DIR || import_node_path7.default.join(process.cwd(), "public", "audio");
+}
+function audioUrlFor(filename) {
+  const base = process.env.CENCH_AUDIO_URL_BASE || "/audio/";
+  return `${base}${filename}`;
+}
+function isLocalAudioUrl(url) {
+  return url.startsWith("/audio/") || url.startsWith("cench://audio/");
+}
+var import_node_path7;
+var init_paths = __esm({
+  "lib/audio/paths.ts"() {
+    "use strict";
+    import_node_path7 = __toESM(require("node:path"));
+  }
+});
+
+// lib/audio/providers/elevenlabs-tts.ts
+var elevenlabs_tts_exports = {};
+__export(elevenlabs_tts_exports, {
+  elevenlabsTTS: () => elevenlabsTTS
+});
+function getApiKey() {
+  const key = process.env.ELEVENLABS_API_KEY;
+  if (!key) throw new Error("ELEVENLABS_API_KEY is not set");
+  return key;
+}
+var import_promises6, import_path, API_BASE, DEFAULT_VOICE_ID, DEFAULT_MODEL, elevenlabsTTS;
+var init_elevenlabs_tts = __esm({
+  "lib/audio/providers/elevenlabs-tts.ts"() {
+    "use strict";
+    import_promises6 = __toESM(require("fs/promises"));
+    import_path = __toESM(require("path"));
+    init_sanitize();
+    init_captions();
+    init_paths();
+    API_BASE = "https://api.elevenlabs.io/v1";
+    DEFAULT_VOICE_ID = "21m00Tcm4TlvDq8ikWAM";
+    DEFAULT_MODEL = "eleven_turbo_v2_5";
+    elevenlabsTTS = {
+      id: "elevenlabs",
+      name: "ElevenLabs",
+      type: "server",
+      requiresKey: "ELEVENLABS_API_KEY",
+      async generate(params) {
+        const apiKey = getApiKey();
+        const voiceId = params.voiceId || DEFAULT_VOICE_ID;
+        const model = params.model || DEFAULT_MODEL;
+        const response = await fetch(`${API_BASE}/text-to-speech/${voiceId}/with-timestamps`, {
+          method: "POST",
+          headers: {
+            "xi-api-key": apiKey,
+            "Content-Type": "application/json",
+            Accept: "application/json"
+          },
+          body: JSON.stringify({
+            text: params.text,
+            model_id: model,
+            voice_settings: {
+              stability: 0.5,
+              similarity_boost: 0.75
+            }
+          })
+        });
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`ElevenLabs TTS error (${response.status}): ${errorText}`);
+        }
+        const payload = await response.json();
+        const audioBuffer = Buffer.from(payload.audio_base64, "base64");
+        const audioDir = getAudioDir();
+        await import_promises6.default.mkdir(audioDir, { recursive: true });
+        const filename = safeAudioFilename("tts", params.sceneId, "mp3");
+        const filePath = import_path.default.join(audioDir, filename);
+        await import_promises6.default.writeFile(filePath, audioBuffer);
+        const durationEstimate = audioBuffer.length * 8 / (128 * 1e3);
+        const result = {
+          audioUrl: audioUrlFor(filename),
+          duration: Math.round(durationEstimate * 10) / 10,
+          provider: "elevenlabs"
+        };
+        const alignment = payload.normalized_alignment ?? payload.alignment;
+        if (alignment && alignment.characters.length > 0) {
+          const bundle = buildCaptionBundle(alignment);
+          const base = filename.replace(/\.mp3$/, "");
+          const srtName = `${base}.srt`;
+          const vttName = `${base}.vtt`;
+          await Promise.all([
+            import_promises6.default.writeFile(import_path.default.join(audioDir, srtName), bundle.srt, "utf8"),
+            import_promises6.default.writeFile(import_path.default.join(audioDir, vttName), bundle.vtt, "utf8")
+          ]);
+          result.captions = {
+            srtUrl: audioUrlFor(srtName),
+            vttUrl: audioUrlFor(vttName),
+            kind: "aligned",
+            words: bundle.words
+          };
+        }
+        return result;
+      },
+      async listVoices() {
+        const apiKey = getApiKey();
+        const response = await fetch(`${API_BASE}/voices`, {
+          headers: {
+            "xi-api-key": apiKey
+          }
+        });
+        if (!response.ok) {
+          throw new Error(`ElevenLabs voices error (${response.status}): ${await response.text()}`);
+        }
+        const data = await response.json();
+        return data.voices.map((v) => ({
+          id: v.voice_id,
+          name: v.name,
+          language: v.labels?.language || "en",
+          gender: v.labels?.gender,
+          previewUrl: v.preview_url || null
+        }));
+      }
+    };
+  }
+});
+
+// lib/audio/providers/openai-tts.ts
+var openai_tts_exports = {};
+__export(openai_tts_exports, {
+  openaiTTS: () => openaiTTS
+});
+function getApiKey2() {
+  const key = process.env.OPENAI_API_KEY;
+  if (!key) throw new Error("OPENAI_API_KEY is not set");
+  return key;
+}
+var import_promises7, import_path2, API_URL, DEFAULT_MODEL2, DEFAULT_VOICE, VOICES, openaiTTS;
+var init_openai_tts = __esm({
+  "lib/audio/providers/openai-tts.ts"() {
+    "use strict";
+    import_promises7 = __toESM(require("fs/promises"));
+    import_path2 = __toESM(require("path"));
+    init_sanitize();
+    init_paths();
+    API_URL = "https://api.openai.com/v1/audio/speech";
+    DEFAULT_MODEL2 = "tts-1";
+    DEFAULT_VOICE = "alloy";
+    VOICES = [
+      { id: "alloy", name: "Alloy", language: "en", gender: "neutral" },
+      { id: "ash", name: "Ash", language: "en", gender: "male" },
+      { id: "ballad", name: "Ballad", language: "en", gender: "male" },
+      { id: "coral", name: "Coral", language: "en", gender: "female" },
+      { id: "echo", name: "Echo", language: "en", gender: "male" },
+      { id: "fable", name: "Fable", language: "en", gender: "male" },
+      { id: "nova", name: "Nova", language: "en", gender: "female" },
+      { id: "onyx", name: "Onyx", language: "en", gender: "male" },
+      { id: "sage", name: "Sage", language: "en", gender: "female" },
+      { id: "shimmer", name: "Shimmer", language: "en", gender: "female" }
+    ];
+    openaiTTS = {
+      id: "openai-tts",
+      name: "OpenAI TTS",
+      type: "server",
+      requiresKey: "OPENAI_API_KEY",
+      async generate(params) {
+        const apiKey = getApiKey2();
+        const model = params.model || DEFAULT_MODEL2;
+        const voice = params.voiceId || DEFAULT_VOICE;
+        const body = {
+          model,
+          voice,
+          input: params.text,
+          response_format: "mp3"
+        };
+        if (params.instructions && model === "gpt-4o-mini-tts") {
+          body.instructions = params.instructions;
+        }
+        const response = await fetch(API_URL, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(body)
+        });
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`OpenAI TTS error (${response.status}): ${errorText}`);
+        }
+        const audioBuffer = Buffer.from(await response.arrayBuffer());
+        const audioDir = getAudioDir();
+        await import_promises7.default.mkdir(audioDir, { recursive: true });
+        const filename = safeAudioFilename("tts", params.sceneId, "mp3");
+        const filePath = import_path2.default.join(audioDir, filename);
+        await import_promises7.default.writeFile(filePath, audioBuffer);
+        const durationEstimate = audioBuffer.length * 8 / (128 * 1e3);
+        return {
+          audioUrl: audioUrlFor(filename),
+          duration: Math.round(durationEstimate * 10) / 10,
+          provider: "openai-tts"
+        };
+      },
+      async listVoices() {
+        return VOICES;
+      }
+    };
+  }
+});
+
+// lib/audio/providers/gemini-tts.ts
+var gemini_tts_exports = {};
+__export(gemini_tts_exports, {
+  geminiTTS: () => geminiTTS
+});
+function createWavHeader(pcmDataLength, sampleRate, numChannels, bitsPerSample) {
+  const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
+  const blockAlign = numChannels * (bitsPerSample / 8);
+  const dataSize = pcmDataLength;
+  const headerSize = 44;
+  const buffer = Buffer.alloc(headerSize);
+  buffer.write("RIFF", 0);
+  buffer.writeUInt32LE(dataSize + headerSize - 8, 4);
+  buffer.write("WAVE", 8);
+  buffer.write("fmt ", 12);
+  buffer.writeUInt32LE(16, 16);
+  buffer.writeUInt16LE(1, 20);
+  buffer.writeUInt16LE(numChannels, 22);
+  buffer.writeUInt32LE(sampleRate, 24);
+  buffer.writeUInt32LE(byteRate, 28);
+  buffer.writeUInt16LE(blockAlign, 32);
+  buffer.writeUInt16LE(bitsPerSample, 34);
+  buffer.write("data", 36);
+  buffer.writeUInt32LE(dataSize, 40);
+  return buffer;
+}
+async function generateViaGeminiAPI(params, apiKey) {
+  const model = params.model || DEFAULT_MODEL3;
+  const voiceName = params.voiceId || DEFAULT_VOICE2;
+  let inputText = params.text;
+  if (params.instructions) {
+    inputText = `[${params.instructions}] ${params.text}`;
+  }
+  const body = {
+    contents: [{ parts: [{ text: inputText }] }],
+    generationConfig: {
+      response_modalities: ["AUDIO"],
+      speechConfig: {
+        voiceConfig: {
+          prebuiltVoiceConfig: {
+            voiceName
+          }
+        }
+      }
+    }
+  };
+  if (params.speakers && params.speakers.length > 0) {
+    const speakerVoiceConfigs = params.speakers.map((s) => ({
+      speaker: s.speaker,
+      voiceConfig: {
+        prebuiltVoiceConfig: {
+          voiceName: s.voiceName
+        }
+      }
+    }));
+    body.generationConfig.speechConfig = {
+      multiSpeakerVoiceConfig: {
+        speakerVoiceConfigs
+      }
+    };
+  }
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Gemini TTS error (${response.status}): ${errorText}`);
+  }
+  const data = await response.json();
+  const audioPart = data.candidates?.[0]?.content?.parts?.find((p) => p.inlineData);
+  if (!audioPart?.inlineData) {
+    throw new Error("Gemini TTS returned no audio data");
+  }
+  const pcmData = Buffer.from(audioPart.inlineData.data, "base64");
+  const sampleRate = 24e3;
+  const numChannels = 1;
+  const bitsPerSample = 16;
+  const wavHeader = createWavHeader(pcmData.length, sampleRate, numChannels, bitsPerSample);
+  return Buffer.concat([wavHeader, pcmData]);
+}
+async function generateViaGoogleCloudTTS(params, apiKey) {
+  const voiceId = params.voiceId || "en-US-Studio-O";
+  const languageCode = voiceId.split("-").slice(0, 2).join("-") || "en-US";
+  let inputText = params.text;
+  if (params.instructions) {
+    inputText = `[${params.instructions}] ${params.text}`;
+  }
+  const response = await fetch(`https://texttospeech.googleapis.com/v1beta1/text:synthesize?key=${apiKey}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      input: { text: inputText },
+      voice: {
+        languageCode,
+        name: voiceId
+      },
+      audioConfig: {
+        audioEncoding: "MP3"
+      }
+    })
+  });
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Google Cloud TTS (Gemini) error (${response.status}): ${errorText}`);
+  }
+  const data = await response.json();
+  return Buffer.from(data.audioContent, "base64");
+}
+var import_promises8, import_path3, DEFAULT_MODEL3, DEFAULT_VOICE2, GEMINI_VOICES, geminiTTS;
+var init_gemini_tts = __esm({
+  "lib/audio/providers/gemini-tts.ts"() {
+    "use strict";
+    import_promises8 = __toESM(require("fs/promises"));
+    import_path3 = __toESM(require("path"));
+    init_sanitize();
+    init_paths();
+    DEFAULT_MODEL3 = "gemini-2.5-flash-preview-tts";
+    DEFAULT_VOICE2 = "Kore";
+    GEMINI_VOICES = [
+      { id: "Kore", name: "Kore", language: "en", gender: "female" },
+      { id: "Charon", name: "Charon", language: "en", gender: "male" },
+      { id: "Fenrir", name: "Fenrir", language: "en", gender: "male" },
+      { id: "Aoede", name: "Aoede", language: "en", gender: "female" },
+      { id: "Puck", name: "Puck", language: "en", gender: "male" },
+      { id: "Leda", name: "Leda", language: "en", gender: "female" },
+      { id: "Orus", name: "Orus", language: "en", gender: "male" }
+    ];
+    geminiTTS = {
+      id: "gemini-tts",
+      name: "Gemini TTS",
+      type: "server",
+      requiresKey: "GEMINI_API_KEY",
+      async generate(params) {
+        const geminiKey = process.env.GEMINI_API_KEY;
+        const googleKey = process.env.GOOGLE_TTS_API_KEY;
+        if (!geminiKey && !googleKey) {
+          throw new Error("Either GEMINI_API_KEY or GOOGLE_TTS_API_KEY must be set for Gemini TTS");
+        }
+        const audioDir = getAudioDir();
+        await import_promises8.default.mkdir(audioDir, { recursive: true });
+        let audioBuffer;
+        let extension;
+        if (geminiKey) {
+          audioBuffer = await generateViaGeminiAPI(params, geminiKey);
+          extension = "wav";
+        } else {
+          audioBuffer = await generateViaGoogleCloudTTS(params, googleKey);
+          extension = "mp3";
+        }
+        const filename = safeAudioFilename("tts", params.sceneId, extension);
+        const filePath = import_path3.default.join(audioDir, filename);
+        await import_promises8.default.writeFile(filePath, audioBuffer);
+        let durationEstimate;
+        if (extension === "wav") {
+          const pcmBytes = audioBuffer.length - 44;
+          const bytesPerSecond = 24e3 * 1 * 2;
+          durationEstimate = pcmBytes / bytesPerSecond;
+        } else {
+          durationEstimate = audioBuffer.length * 8 / (128 * 1e3);
+        }
+        return {
+          audioUrl: audioUrlFor(filename),
+          duration: Math.round(durationEstimate * 10) / 10,
+          provider: "gemini-tts"
+        };
+      },
+      async listVoices() {
+        return GEMINI_VOICES;
+      }
+    };
+  }
+});
+
+// lib/audio/providers/google-tts.ts
+var google_tts_exports = {};
+__export(google_tts_exports, {
+  googleTTS: () => googleTTS
+});
+function getApiKey3() {
+  const key = process.env.GOOGLE_TTS_API_KEY;
+  if (!key) throw new Error("GOOGLE_TTS_API_KEY is not set");
+  return key;
+}
+var import_promises9, import_path4, API_BASE2, DEFAULT_VOICE3, DEFAULT_LANGUAGE, googleTTS;
+var init_google_tts = __esm({
+  "lib/audio/providers/google-tts.ts"() {
+    "use strict";
+    import_promises9 = __toESM(require("fs/promises"));
+    import_path4 = __toESM(require("path"));
+    init_sanitize();
+    init_paths();
+    API_BASE2 = "https://texttospeech.googleapis.com/v1";
+    DEFAULT_VOICE3 = "en-US-Neural2-F";
+    DEFAULT_LANGUAGE = "en-US";
+    googleTTS = {
+      id: "google-tts",
+      name: "Google Cloud TTS",
+      type: "server",
+      requiresKey: "GOOGLE_TTS_API_KEY",
+      async generate(params) {
+        const apiKey = getApiKey3();
+        const voiceId = params.voiceId || DEFAULT_VOICE3;
+        const languageCode = voiceId.split("-").slice(0, 2).join("-") || DEFAULT_LANGUAGE;
+        const response = await fetch(`${API_BASE2}/text:synthesize?key=${apiKey}`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            input: { text: params.text },
+            voice: {
+              languageCode,
+              name: voiceId
+            },
+            audioConfig: {
+              audioEncoding: "MP3"
+            }
+          })
+        });
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`Google TTS error (${response.status}): ${errorText}`);
+        }
+        const data = await response.json();
+        const audioBuffer = Buffer.from(data.audioContent, "base64");
+        const audioDir = getAudioDir();
+        await import_promises9.default.mkdir(audioDir, { recursive: true });
+        const filename = safeAudioFilename("tts", params.sceneId, "mp3");
+        const filePath = import_path4.default.join(audioDir, filename);
+        await import_promises9.default.writeFile(filePath, audioBuffer);
+        const durationEstimate = audioBuffer.length * 8 / (128 * 1e3);
+        return {
+          audioUrl: audioUrlFor(filename),
+          duration: Math.round(durationEstimate * 10) / 10,
+          provider: "google-tts"
+        };
+      },
+      async listVoices() {
+        const apiKey = getApiKey3();
+        const response = await fetch(`${API_BASE2}/voices?key=${apiKey}`);
+        if (!response.ok) {
+          throw new Error(`Google TTS voices error (${response.status}): ${await response.text()}`);
+        }
+        const data = await response.json();
+        return data.voices.map((v) => ({
+          id: v.name,
+          name: v.name,
+          language: v.languageCodes[0] || "en-US",
+          gender: v.ssmlGender?.toLowerCase()
+        }));
+      }
+    };
+  }
+});
+
+// lib/audio/providers/openai-edge-tts.ts
+var openai_edge_tts_exports = {};
+__export(openai_edge_tts_exports, {
+  openaiEdgeTTS: () => openaiEdgeTTS
+});
+function getBaseUrl() {
+  return process.env.EDGE_TTS_URL || "http://localhost:5050";
+}
+var import_promises10, import_path5, DEFAULT_VOICE4, EDGE_VOICES, openaiEdgeTTS;
+var init_openai_edge_tts = __esm({
+  "lib/audio/providers/openai-edge-tts.ts"() {
+    "use strict";
+    import_promises10 = __toESM(require("fs/promises"));
+    import_path5 = __toESM(require("path"));
+    init_sanitize();
+    init_paths();
+    DEFAULT_VOICE4 = "en-US-AndrewNeural";
+    EDGE_VOICES = [
+      { id: "en-US-AndrewNeural", name: "Andrew", language: "en-US", gender: "male" },
+      { id: "en-US-AriaNeural", name: "Aria", language: "en-US", gender: "female" },
+      { id: "en-US-AvaNeural", name: "Ava", language: "en-US", gender: "female" },
+      { id: "en-US-BrianNeural", name: "Brian", language: "en-US", gender: "male" },
+      { id: "en-US-ChristopherNeural", name: "Christopher", language: "en-US", gender: "male" },
+      { id: "en-US-EmmaNeural", name: "Emma", language: "en-US", gender: "female" },
+      { id: "en-US-EricNeural", name: "Eric", language: "en-US", gender: "male" },
+      { id: "en-US-GuyNeural", name: "Guy", language: "en-US", gender: "male" },
+      { id: "en-US-JennyNeural", name: "Jenny", language: "en-US", gender: "female" },
+      { id: "en-US-MichelleNeural", name: "Michelle", language: "en-US", gender: "female" },
+      { id: "en-US-RogerNeural", name: "Roger", language: "en-US", gender: "male" },
+      { id: "en-US-SteffanNeural", name: "Steffan", language: "en-US", gender: "male" },
+      { id: "en-GB-RyanNeural", name: "Ryan (UK)", language: "en-GB", gender: "male" },
+      { id: "en-GB-SoniaNeural", name: "Sonia (UK)", language: "en-GB", gender: "female" },
+      { id: "en-GB-LibbyNeural", name: "Libby (UK)", language: "en-GB", gender: "female" },
+      { id: "en-AU-NatashaNeural", name: "Natasha (AU)", language: "en-AU", gender: "female" },
+      { id: "en-AU-WilliamNeural", name: "William (AU)", language: "en-AU", gender: "male" }
+    ];
+    openaiEdgeTTS = {
+      id: "openai-edge-tts",
+      name: "Edge TTS (Local)",
+      type: "server",
+      requiresKey: null,
+      async generate(params) {
+        const baseUrl = getBaseUrl();
+        const voice = params.voiceId || DEFAULT_VOICE4;
+        const response = await fetch(`${baseUrl}/v1/audio/speech`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            model: "tts-1",
+            voice,
+            input: params.text
+          })
+        });
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`Edge TTS error (${response.status}): ${errorText}`);
+        }
+        const audioBuffer = Buffer.from(await response.arrayBuffer());
+        const audioDir = getAudioDir();
+        await import_promises10.default.mkdir(audioDir, { recursive: true });
+        const filename = safeAudioFilename("tts", params.sceneId, "mp3");
+        const filePath = import_path5.default.join(audioDir, filename);
+        await import_promises10.default.writeFile(filePath, audioBuffer);
+        const durationEstimate = audioBuffer.length * 8 / (128 * 1e3);
+        return {
+          audioUrl: audioUrlFor(filename),
+          duration: Math.round(durationEstimate * 10) / 10,
+          provider: "openai-edge-tts"
+        };
+      },
+      async listVoices() {
+        const baseUrl = getBaseUrl();
+        try {
+          const response = await fetch(`${baseUrl}/v1/voices`, {
+            signal: AbortSignal.timeout(3e3)
+          });
+          if (response.ok) {
+            const data = await response.json();
+            if (Array.isArray(data) && data.length > 0) {
+              return data.map((v) => ({
+                id: v.ShortName || v.id || v.name || "",
+                name: v.name || v.ShortName || v.id || "",
+                language: v.Locale || "en-US",
+                gender: v.Gender?.toLowerCase()
+              }));
+            }
+          }
+        } catch {
+        }
+        return EDGE_VOICES;
+      }
+    };
+  }
+});
+
+// lib/audio/providers/pocket-tts.ts
+var pocket_tts_exports = {};
+__export(pocket_tts_exports, {
+  pocketTTS: () => pocketTTS
+});
+function getBaseUrl2() {
+  return process.env.POCKET_TTS_URL || "http://localhost:8000";
+}
+var import_promises11, import_path6, DEFAULT_VOICE5, POCKET_VOICES, VOICE_URLS, pocketTTS;
+var init_pocket_tts = __esm({
+  "lib/audio/providers/pocket-tts.ts"() {
+    "use strict";
+    import_promises11 = __toESM(require("fs/promises"));
+    import_path6 = __toESM(require("path"));
+    init_sanitize();
+    init_paths();
+    DEFAULT_VOICE5 = "alba";
+    POCKET_VOICES = [
+      { id: "alba", name: "Alba", language: "en", gender: "female" },
+      { id: "marius", name: "Marius", language: "en", gender: "male" },
+      { id: "javert", name: "Javert", language: "en", gender: "male" },
+      { id: "jean", name: "Jean", language: "en", gender: "male" },
+      { id: "fantine", name: "Fantine", language: "en", gender: "female" },
+      { id: "cosette", name: "Cosette", language: "en", gender: "female" },
+      { id: "eponine", name: "Eponine", language: "en", gender: "female" },
+      { id: "azelma", name: "Azelma", language: "en", gender: "female" }
+    ];
+    VOICE_URLS = {
+      alba: "hf://kyutai/tts-voices/alba.wav",
+      marius: "hf://kyutai/tts-voices/marius.wav",
+      javert: "hf://kyutai/tts-voices/javert.wav",
+      jean: "hf://kyutai/tts-voices/jean.wav",
+      fantine: "hf://kyutai/tts-voices/fantine.wav",
+      cosette: "hf://kyutai/tts-voices/cosette.wav",
+      eponine: "hf://kyutai/tts-voices/eponine.wav",
+      azelma: "hf://kyutai/tts-voices/azelma.wav"
+    };
+    pocketTTS = {
+      id: "pocket-tts",
+      name: "Pocket TTS (Local)",
+      type: "server",
+      requiresKey: null,
+      async generate(params) {
+        const baseUrl = getBaseUrl2();
+        const voice = params.voiceId || DEFAULT_VOICE5;
+        const formData = new FormData();
+        formData.append("text", params.text);
+        const isBuiltIn = voice in VOICE_URLS;
+        if (!isBuiltIn && voice) {
+          formData.append("voice_url", voice);
+        }
+        const response = await fetch(`${baseUrl}/tts`, {
+          method: "POST",
+          body: formData
+        });
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`Pocket TTS error (${response.status}): ${errorText}`);
+        }
+        const audioBuffer = Buffer.from(await response.arrayBuffer());
+        const audioDir = getAudioDir();
+        await import_promises11.default.mkdir(audioDir, { recursive: true });
+        const filename = safeAudioFilename("tts", params.sceneId, "wav");
+        const filePath = import_path6.default.join(audioDir, filename);
+        await import_promises11.default.writeFile(filePath, audioBuffer);
+        const headerSize = 44;
+        const durationEstimate = Math.max(0, audioBuffer.length - headerSize) / 48e3;
+        return {
+          audioUrl: audioUrlFor(filename),
+          duration: Math.round(durationEstimate * 10) / 10,
+          provider: "pocket-tts"
+        };
+      },
+      async listVoices() {
+        return POCKET_VOICES;
+      },
+      async cloneVoice(params) {
+        const audioDir = import_path6.default.join(getAudioDir(), "voices");
+        await import_promises11.default.mkdir(audioDir, { recursive: true });
+        const voiceId = `cloned-${Date.now().toString(36)}`;
+        const voicePath = import_path6.default.join(audioDir, `${voiceId}.wav`);
+        await import_promises11.default.writeFile(voicePath, params.audioBuffer);
+        return {
+          voiceId,
+          name: params.name
+        };
+      }
+    };
+  }
+});
+
+// lib/audio/providers/voxcpm-tts.ts
+var voxcpm_tts_exports = {};
+__export(voxcpm_tts_exports, {
+  voxcpmTTS: () => voxcpmTTS
+});
+function getBaseUrl3() {
+  return process.env.VOXCPM_URL || "http://localhost:8100";
+}
+var import_promises12, import_path7, DEFAULT_VOICE6, voxcpmTTS;
+var init_voxcpm_tts = __esm({
+  "lib/audio/providers/voxcpm-tts.ts"() {
+    "use strict";
+    import_promises12 = __toESM(require("fs/promises"));
+    import_path7 = __toESM(require("path"));
+    init_sanitize();
+    init_paths();
+    DEFAULT_VOICE6 = "default";
+    voxcpmTTS = {
+      id: "voxcpm",
+      name: "VoxCPM2 (Local GPU)",
+      type: "server",
+      requiresKey: null,
+      async generate(params) {
+        const baseUrl = getBaseUrl3();
+        const voice = params.voiceId || DEFAULT_VOICE6;
+        const response = await fetch(`${baseUrl}/v1/audio/speech`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text: params.text,
+            voice_id: voice,
+            mode: "standard",
+            language: "en"
+          })
+        });
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`VoxCPM error (${response.status}): ${errorText}`);
+        }
+        const audioBuffer = Buffer.from(await response.arrayBuffer());
+        const audioDir = getAudioDir();
+        await import_promises12.default.mkdir(audioDir, { recursive: true });
+        const filename = safeAudioFilename("tts", params.sceneId, "mp3");
+        const filePath = import_path7.default.join(audioDir, filename);
+        await import_promises12.default.writeFile(filePath, audioBuffer);
+        const durationEstimate = audioBuffer.length * 8 / (128 * 1e3);
+        return {
+          audioUrl: audioUrlFor(filename),
+          duration: Math.round(durationEstimate * 10) / 10,
+          provider: "voxcpm"
+        };
+      },
+      async listVoices() {
+        const baseUrl = getBaseUrl3();
+        try {
+          const response = await fetch(`${baseUrl}/v1/voices`, {
+            signal: AbortSignal.timeout(3e3)
+          });
+          if (response.ok) {
+            const data = await response.json();
+            if (Array.isArray(data) && data.length > 0) {
+              return data.map((v) => ({
+                id: v.voice_id || v.id || v.name || "",
+                name: v.name || v.id || "",
+                language: v.language || "en",
+                gender: v.gender?.toLowerCase()
+              }));
+            }
+          }
+        } catch {
+        }
+        return [];
+      },
+      async cloneVoice(params) {
+        const baseUrl = getBaseUrl3();
+        const formData = new FormData();
+        formData.append("name", params.name);
+        formData.append("audio", new Blob([new Uint8Array(params.audioBuffer)]), "reference.wav");
+        if (params.transcript) formData.append("transcript", params.transcript);
+        formData.append("mode", params.mode || "controllable");
+        const response = await fetch(`${baseUrl}/v1/voices/clone`, {
+          method: "POST",
+          body: formData
+        });
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`VoxCPM clone error (${response.status}): ${errorText}`);
+        }
+        const data = await response.json();
+        return {
+          voiceId: data.voice_id || params.name,
+          name: data.name || params.name
+        };
+      },
+      async designVoice(params) {
+        const baseUrl = getBaseUrl3();
+        const response = await fetch(`${baseUrl}/v1/voices/design`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            description: params.description,
+            sample_text: params.sampleText
+          })
+        });
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`VoxCPM voice design error (${response.status}): ${errorText}`);
+        }
+        const data = await response.json();
+        return {
+          voiceId: data.voice_id || "designed-voice",
+          name: data.name || "Designed Voice",
+          previewUrl: data.preview_url
+        };
+      }
+    };
+  }
+});
+
+// lib/audio/providers/native-tts.ts
+var native_tts_exports = {};
+__export(native_tts_exports, {
+  nativeTTS: () => nativeTTS
+});
+function sanitizeText(text2) {
+  return text2.replace(/[\x00-\x1f]/g, " ");
+}
+function sanitizeVoiceId(id) {
+  const cleaned = id.replace(/[^a-zA-Z0-9 \-_.]/g, "");
+  if (cleaned !== id) {
+    console.warn(`[native-tts] Stripped unsafe characters from voiceId: "${id}" -> "${cleaned}"`);
+  }
+  return cleaned;
+}
+async function ffmpegConvert(input, output) {
+  await execFileAsync("ffmpeg", ["-y", "-i", input, "-ar", "44100", "-ac", "1", "-b:a", "128k", output], {
+    timeout: 3e4
+  });
+}
+function estimateDuration(mp3Bytes) {
+  return Math.round(mp3Bytes * 8 / (128 * 1e3) * 10) / 10;
+}
+async function generateMac(params, outMp3) {
+  const voice = sanitizeVoiceId(params.voiceId || "Samantha");
+  const tmpAiff = import_path8.default.join(import_os.default.tmpdir(), `native-tts-${Date.now()}.aiff`);
+  try {
+    await execFileAsync("say", ["-v", voice, "-o", tmpAiff, sanitizeText(params.text)], { timeout: 6e4 });
+    await ffmpegConvert(tmpAiff, outMp3);
+    const stat = await import_promises13.default.stat(outMp3);
+    return estimateDuration(stat.size);
+  } finally {
+    await import_promises13.default.unlink(tmpAiff).catch(() => {
+    });
+  }
+}
+async function listVoicesMac() {
+  const { stdout } = await execFileAsync("say", ["-v", "?"], { timeout: 1e4 });
+  return stdout.split("\n").filter(Boolean).map((line) => {
+    const match = line.match(/^(.+?)\s{2,}(\S+)\s+#\s*(.*)$/);
+    if (!match) return null;
+    const [, name, langRaw, description] = match;
+    const lang = langRaw.replace("_", "-");
+    return {
+      id: name.trim(),
+      name: `${name.trim()} \u2014 ${description.trim()}`,
+      language: lang
+    };
+  }).filter((v) => v !== null);
+}
+async function generateWin(params, outMp3) {
+  const voice = sanitizeVoiceId(params.voiceId || "");
+  const tmpWav = import_path8.default.join(import_os.default.tmpdir(), `native-tts-${Date.now()}.wav`);
+  const escapedText = sanitizeText(params.text).replace(/'/g, "''");
+  const selectVoice = voice ? `$synth.SelectVoice('${voice.replace(/'/g, "''")}')` : "";
+  const ps = [
+    "Add-Type -AssemblyName System.Speech",
+    "$synth = New-Object System.Speech.Synthesis.SpeechSynthesizer",
+    selectVoice,
+    `$synth.SetOutputToWaveFile('${tmpWav.replace(/'/g, "''")}')`,
+    `$synth.Speak('${escapedText}')`,
+    "$synth.Dispose()"
+  ].filter(Boolean).join("; ");
+  try {
+    await execFileAsync("powershell", ["-NoProfile", "-Command", ps], { timeout: 6e4 });
+    await ffmpegConvert(tmpWav, outMp3);
+    const stat = await import_promises13.default.stat(outMp3);
+    return estimateDuration(stat.size);
+  } finally {
+    await import_promises13.default.unlink(tmpWav).catch(() => {
+    });
+  }
+}
+async function listVoicesWin() {
+  const ps = [
+    "Add-Type -AssemblyName System.Speech",
+    "$synth = New-Object System.Speech.Synthesis.SpeechSynthesizer",
+    "$synth.GetInstalledVoices() | ForEach-Object {",
+    "  $v = $_.VoiceInfo",
+    '  "$($v.Name)|$($v.Culture.Name)|$($v.Gender)"',
+    "}",
+    "$synth.Dispose()"
+  ].join("; ");
+  const { stdout } = await execFileAsync("powershell", ["-NoProfile", "-Command", ps], { timeout: 1e4 });
+  return stdout.split("\n").map((l) => l.trim()).filter(Boolean).map((line) => {
+    const [name, lang, gender] = line.split("|");
+    return {
+      id: name,
+      name,
+      language: lang || "en-US",
+      gender: gender?.toLowerCase()
+    };
+  });
+}
+var import_child_process, import_util, import_promises13, import_path8, import_os, execFileAsync, nativeTTS;
+var init_native_tts = __esm({
+  "lib/audio/providers/native-tts.ts"() {
+    "use strict";
+    import_child_process = require("child_process");
+    import_util = require("util");
+    import_promises13 = __toESM(require("fs/promises"));
+    import_path8 = __toESM(require("path"));
+    import_os = __toESM(require("os"));
+    init_sanitize();
+    init_paths();
+    execFileAsync = (0, import_util.promisify)(import_child_process.execFile);
+    nativeTTS = {
+      id: "native-tts",
+      name: "System Voice",
+      type: "server",
+      requiresKey: null,
+      async generate(params) {
+        const platform = process.platform;
+        if (platform !== "darwin" && platform !== "win32") {
+          throw new Error("Native TTS is only available on macOS and Windows");
+        }
+        const audioDir = getAudioDir();
+        await import_promises13.default.mkdir(audioDir, { recursive: true });
+        const filename = safeAudioFilename("tts", params.sceneId, "mp3");
+        const outMp3 = import_path8.default.join(audioDir, filename);
+        const duration = platform === "darwin" ? await generateMac(params, outMp3) : await generateWin(params, outMp3);
+        return {
+          audioUrl: audioUrlFor(filename),
+          duration,
+          provider: "native-tts"
+        };
+      },
+      async listVoices() {
+        if (process.platform === "darwin") return listVoicesMac();
+        if (process.platform === "win32") return listVoicesWin();
+        return [];
+      }
+    };
+  }
+});
+
+// lib/audio/providers/web-speech.ts
+var web_speech_exports = {};
+__export(web_speech_exports, {
+  webSpeechTTS: () => webSpeechTTS
+});
+var webSpeechTTS;
+var init_web_speech = __esm({
+  "lib/audio/providers/web-speech.ts"() {
+    "use strict";
+    webSpeechTTS = {
+      id: "web-speech",
+      name: "Web Speech API",
+      type: "client",
+      requiresKey: null,
+      async generate(params) {
+        const text2 = encodeURIComponent(params.text);
+        const voiceId = params.voiceId ? encodeURIComponent(params.voiceId) : "";
+        const url = voiceId ? `web-speech://${text2}?voice=${voiceId}` : `web-speech://${text2}`;
+        return {
+          audioUrl: url,
+          duration: null,
+          provider: "web-speech"
+        };
+      },
+      async listVoices() {
+        return [];
+      }
+    };
+  }
+});
+
+// lib/audio/providers/puter-tts.ts
+var puter_tts_exports = {};
+__export(puter_tts_exports, {
+  puterTTS: () => puterTTS
+});
+var OPENAI_VOICES, puterTTS;
+var init_puter_tts = __esm({
+  "lib/audio/providers/puter-tts.ts"() {
+    "use strict";
+    OPENAI_VOICES = [
+      { id: "alloy", name: "Alloy", gender: "neutral" },
+      { id: "echo", name: "Echo", gender: "male" },
+      { id: "nova", name: "Nova", gender: "female" },
+      { id: "shimmer", name: "Shimmer", gender: "female" },
+      { id: "fable", name: "Fable", gender: "male" },
+      { id: "onyx", name: "Onyx", gender: "male" }
+    ];
+    puterTTS = {
+      id: "puter",
+      name: "Puter TTS",
+      type: "client",
+      requiresKey: null,
+      async generate(params) {
+        const text2 = encodeURIComponent(params.text);
+        const provider = params.model || "openai";
+        const voiceId = params.voiceId || "nova";
+        const url = `puter-tts://${text2}?provider=${encodeURIComponent(provider)}&voice=${encodeURIComponent(voiceId)}`;
+        return {
+          audioUrl: url,
+          duration: null,
+          provider: "puter"
+        };
+      },
+      async listVoices() {
+        return OPENAI_VOICES.map((v) => ({
+          id: v.id,
+          name: v.name,
+          language: "en",
+          gender: v.gender,
+          previewUrl: null
+        }));
+      }
+    };
+  }
+});
+
+// lib/audio/providers/elevenlabs-sfx.ts
+var elevenlabs_sfx_exports = {};
+__export(elevenlabs_sfx_exports, {
+  elevenlabsSFX: () => elevenlabsSFX
+});
+function getApiKey4() {
+  const key = process.env.ELEVENLABS_API_KEY;
+  if (!key) throw new Error("ELEVENLABS_API_KEY is not set");
+  return key;
+}
+async function generateSFX(prompt, duration) {
+  const apiKey = getApiKey4();
+  const response = await fetch(`${API_BASE3}/sound-generation`, {
+    method: "POST",
+    headers: {
+      "xi-api-key": apiKey,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      text: prompt,
+      duration_seconds: duration || 3,
+      prompt_influence: 0.3
+    })
+  });
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`ElevenLabs SFX generation error (${response.status}): ${errorText}`);
+  }
+  const audioBuffer = Buffer.from(await response.arrayBuffer());
+  const audioDir = getAudioDir();
+  await import_promises14.default.mkdir(audioDir, { recursive: true });
+  const timestamp2 = Date.now();
+  const rand = import_crypto4.default.randomBytes(4).toString("hex");
+  const filename = `sfx-generated-${timestamp2}-${rand}.mp3`;
+  const filePath = import_path9.default.join(audioDir, filename);
+  await import_promises14.default.writeFile(filePath, audioBuffer);
+  const durationEstimate = audioBuffer.length * 8 / (128 * 1e3);
+  const localUrl = audioUrlFor(filename);
+  return {
+    id: `elevenlabs-sfx-${timestamp2}`,
+    name: prompt,
+    audioUrl: localUrl,
+    duration: Math.round(durationEstimate * 10) / 10,
+    provider: "elevenlabs-sfx",
+    previewUrl: localUrl
+  };
+}
+var import_promises14, import_path9, import_crypto4, API_BASE3, elevenlabsSFX;
+var init_elevenlabs_sfx = __esm({
+  "lib/audio/providers/elevenlabs-sfx.ts"() {
+    "use strict";
+    import_promises14 = __toESM(require("fs/promises"));
+    import_path9 = __toESM(require("path"));
+    import_crypto4 = __toESM(require("crypto"));
+    init_paths();
+    API_BASE3 = "https://api.elevenlabs.io/v1";
+    elevenlabsSFX = {
+      id: "elevenlabs-sfx",
+      name: "ElevenLabs Sound Effects",
+      requiresKey: "ELEVENLABS_API_KEY",
+      async search(query, _limit, _options) {
+        const result = await generateSFX(query);
+        return [result];
+      },
+      generate: generateSFX
+    };
+  }
+});
+
+// lib/audio/sfx-license.ts
+function isCommercialFriendlyFreesoundLicense(license) {
+  if (!license || typeof license !== "string") return false;
+  const l = license.toLowerCase();
+  if (l.includes("noncommercial") || l.includes("non-commercial") || l.includes("by-nc") || l.includes("/by-nc")) {
+    return false;
+  }
+  if (l.includes("sampling+") || l.includes("sampling plus")) return false;
+  if (l.includes("publicdomain/zero") || l.includes("creativecommons.org/publicdomain/zero") || l.includes("creative commons 0") || l === "cc0") {
+    return true;
+  }
+  if (l.includes("creativecommons.org/licenses/by/") && !l.includes("nc")) return true;
+  return false;
+}
+var PIXABAY_SFX_LICENSE_NOTE, FREESOUND_LICENSE_NOTE;
+var init_sfx_license = __esm({
+  "lib/audio/sfx-license.ts"() {
+    "use strict";
+    PIXABAY_SFX_LICENSE_NOTE = "Pixabay License \u2014 free for commercial use; see https://pixabay.com/service/license/";
+    FREESOUND_LICENSE_NOTE = "Freesound: we only list CC0 and CC BY sounds here for commercial-friendly use; CC BY requires attribution to the author. Verify on the sound\u2019s Freesound page before shipping.";
+  }
+});
+
+// lib/audio/providers/freesound.ts
+var freesound_exports = {};
+__export(freesound_exports, {
+  freesoundSFX: () => freesoundSFX
+});
+function getApiKey5() {
+  const key = process.env.FREESOUND_API_KEY;
+  if (!key) throw new Error("FREESOUND_API_KEY is not set");
+  return key;
+}
+var API_BASE4, freesoundSFX;
+var init_freesound = __esm({
+  "lib/audio/providers/freesound.ts"() {
+    "use strict";
+    init_sfx_license();
+    API_BASE4 = "https://freesound.org/apiv2";
+    freesoundSFX = {
+      id: "freesound",
+      name: "Freesound",
+      requiresKey: "FREESOUND_API_KEY",
+      async search(query, limit = 10, options) {
+        const apiKey = getApiKey5();
+        const commercialOnly = options?.commercialOnly ?? false;
+        const page = Math.max(1, options?.page ?? 1);
+        const pageSize = Math.min(150, Math.max(limit * (commercialOnly ? 4 : 1), limit));
+        const params = new URLSearchParams({
+          query,
+          page: String(page),
+          page_size: String(pageSize),
+          fields: "id,name,previews,duration,license",
+          token: apiKey
+        });
+        const response = await fetch(`${API_BASE4}/search/text/?${params}`);
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`Freesound search error (${response.status}): ${errorText}`);
+        }
+        const data = await response.json();
+        let mapped = data.results.map((result) => ({
+          id: String(result.id),
+          name: result.name,
+          audioUrl: result.previews["preview-hq-mp3"],
+          duration: Math.round(result.duration * 10) / 10,
+          provider: "freesound",
+          previewUrl: result.previews["preview-hq-mp3"],
+          license: result.license
+        }));
+        if (commercialOnly) {
+          mapped = mapped.filter((r) => isCommercialFriendlyFreesoundLicense(r.license));
+        }
+        return mapped.slice(0, limit);
+      }
+    };
+  }
+});
+
+// lib/audio/providers/pixabay.ts
+var pixabay_exports = {};
+__export(pixabay_exports, {
+  pixabaySFX: () => pixabaySFX
+});
+function getApiKey6() {
+  const key = process.env.PIXABAY_API_KEY;
+  if (!key) throw new Error("PIXABAY_API_KEY is not set");
+  return key;
+}
+var API_BASE5, pixabaySFX;
+var init_pixabay = __esm({
+  "lib/audio/providers/pixabay.ts"() {
+    "use strict";
+    init_sfx_license();
+    API_BASE5 = "https://pixabay.com/api/audio/";
+    pixabaySFX = {
+      id: "pixabay",
+      name: "Pixabay SFX",
+      requiresKey: "PIXABAY_API_KEY",
+      async search(query, limit = 10, options) {
+        const apiKey = getApiKey6();
+        const perPage = Math.min(200, limit || 10);
+        const page = Math.max(1, options?.page ?? 1);
+        const params = new URLSearchParams({
+          key: apiKey,
+          q: query,
+          per_page: String(perPage),
+          page: String(page),
+          safesearch: "true",
+          audio_type: "sfx"
+        });
+        try {
+          const response = await fetch(`${API_BASE5}?${params}`);
+          if (!response.ok) {
+            if (response.status === 400 || response.status === 404) {
+              return [];
+            }
+            const errorText = await response.text();
+            throw new Error(`Pixabay SFX search error (${response.status}): ${errorText}`);
+          }
+          const data = await response.json();
+          return data.hits.map((hit) => ({
+            id: String(hit.id),
+            name: hit.title,
+            audioUrl: hit.audio,
+            duration: hit.duration,
+            provider: "pixabay",
+            previewUrl: hit.audio,
+            license: PIXABAY_SFX_LICENSE_NOTE
+          }));
+        } catch (err) {
+          if (err instanceof TypeError && err.message.includes("fetch")) {
+            return [];
+          }
+          throw err;
+        }
+      }
+    };
+  }
+});
+
+// lib/audio/providers/pixabay-music.ts
+var pixabay_music_exports = {};
+__export(pixabay_music_exports, {
+  pixabayMusic: () => pixabayMusic
+});
+function getApiKey7() {
+  const key = process.env.PIXABAY_API_KEY;
+  if (!key) throw new Error("PIXABAY_API_KEY is not set");
+  return key;
+}
+var API_BASE6, pixabayMusic;
+var init_pixabay_music = __esm({
+  "lib/audio/providers/pixabay-music.ts"() {
+    "use strict";
+    API_BASE6 = "https://pixabay.com/api/audio/";
+    pixabayMusic = {
+      id: "pixabay-music",
+      name: "Pixabay Music",
+      requiresKey: "PIXABAY_API_KEY",
+      async search(query, limit) {
+        const apiKey = getApiKey7();
+        const perPage = limit || 10;
+        const params = new URLSearchParams({
+          key: apiKey,
+          q: query,
+          per_page: String(perPage),
+          safesearch: "true"
+        });
+        try {
+          const response = await fetch(`${API_BASE6}?${params}`);
+          if (!response.ok) {
+            if (response.status === 400 || response.status === 404) {
+              return [];
+            }
+            const errorText = await response.text();
+            throw new Error(`Pixabay Music search error (${response.status}): ${errorText}`);
+          }
+          const data = await response.json();
+          return data.hits.map((hit) => ({
+            id: String(hit.id),
+            name: hit.title,
+            audioUrl: hit.audio,
+            duration: hit.duration,
+            provider: "pixabay-music",
+            previewUrl: hit.audio
+          }));
+        } catch (err) {
+          if (err instanceof TypeError && err.message.includes("fetch")) {
+            return [];
+          }
+          throw err;
+        }
+      }
+    };
+  }
+});
+
+// lib/audio/providers/freesound-music.ts
+var freesound_music_exports = {};
+__export(freesound_music_exports, {
+  freesoundMusic: () => freesoundMusic
+});
+function getApiKey8() {
+  const key = process.env.FREESOUND_API_KEY;
+  if (!key) throw new Error("FREESOUND_API_KEY is not set");
+  return key;
+}
+var API_BASE7, freesoundMusic;
+var init_freesound_music = __esm({
+  "lib/audio/providers/freesound-music.ts"() {
+    "use strict";
+    API_BASE7 = "https://freesound.org/apiv2";
+    freesoundMusic = {
+      id: "freesound-music",
+      name: "Freesound Music",
+      requiresKey: "FREESOUND_API_KEY",
+      async search(query, limit) {
+        const apiKey = getApiKey8();
+        const pageSize = limit || 10;
+        const params = new URLSearchParams({
+          query: `${query} music background`,
+          page_size: String(pageSize),
+          filter: "duration:[30 TO 300]",
+          fields: "id,name,previews,duration,license",
+          token: apiKey
+        });
+        const response = await fetch(`${API_BASE7}/search/text/?${params}`);
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`Freesound Music search error (${response.status}): ${errorText}`);
+        }
+        const data = await response.json();
+        return data.results.map((result) => ({
+          id: String(result.id),
+          name: result.name,
+          audioUrl: result.previews["preview-hq-mp3"],
+          duration: Math.round(result.duration * 10) / 10,
+          provider: "freesound-music",
+          previewUrl: result.previews["preview-hq-mp3"]
+        }));
+      }
+    };
+  }
+});
+
 // electron/main.ts
-var import_path = __toESM(require("path"));
-var import_child_process = require("child_process");
-var import_util = require("util");
+var import_path11 = __toESM(require("path"));
+var import_child_process2 = require("child_process");
+var import_util2 = require("util");
 var import_electron7 = require("electron");
-var import_promises6 = __toESM(require("fs/promises"));
+var import_promises17 = __toESM(require("fs/promises"));
 var import_fs = __toESM(require("fs"));
 var import_url = require("url");
 var import_dotenv = require("dotenv");
@@ -10192,10 +11650,10 @@ function generateWorldHTML(scene, style, audioSettings, dims) {
   const appBaseUrl = process.env.NEXT_PUBLIC_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
   if (typeof window === "undefined") {
     try {
-      const fs7 = require("fs");
+      const fs18 = require("fs");
       const pathMod = require("path");
       const templatePath = pathMod.join(process.cwd(), "public", "worlds", worldHtmlFile);
-      let templateHTML = fs7.readFileSync(templatePath, "utf-8");
+      let templateHTML = fs18.readFileSync(templatePath, "utf-8");
       const configScript = `<script>
     window.__worldConfig = ${configJSON};
     window.DURATION = ${scene.duration ?? 10};
@@ -11532,8 +12990,8 @@ var auroraProvider = {
 // lib/apis/heygen.ts
 var HEYGEN_BASE = "https://api.heygen.com/v2";
 var HEYGEN_KEY = () => process.env.HEYGEN_API_KEY;
-async function heygenFetch(path8, options = {}) {
-  const response = await fetch(`${HEYGEN_BASE}${path8}`, {
+async function heygenFetch(path20, options = {}) {
+  const response = await fetch(`${HEYGEN_BASE}${path20}`, {
     ...options,
     headers: {
       "X-Api-Key": HEYGEN_KEY(),
@@ -11832,6 +13290,556 @@ function register13(ipcMain2) {
   ipcMain2.handle("cench:zdogLibrary.delete", (_e, args) => remove5(args));
 }
 
+// lib/services/audio.ts
+var import_promises16 = __toESM(require("node:fs/promises"));
+var import_node_path8 = __toESM(require("node:path"));
+
+// lib/audio/router.ts
+var ttsProviders = {
+  elevenlabs: () => Promise.resolve().then(() => (init_elevenlabs_tts(), elevenlabs_tts_exports)).then((m) => m.elevenlabsTTS),
+  "openai-tts": () => Promise.resolve().then(() => (init_openai_tts(), openai_tts_exports)).then((m) => m.openaiTTS),
+  "gemini-tts": () => Promise.resolve().then(() => (init_gemini_tts(), gemini_tts_exports)).then((m) => m.geminiTTS),
+  "google-tts": () => Promise.resolve().then(() => (init_google_tts(), google_tts_exports)).then((m) => m.googleTTS),
+  "openai-edge-tts": () => Promise.resolve().then(() => (init_openai_edge_tts(), openai_edge_tts_exports)).then((m) => m.openaiEdgeTTS),
+  "pocket-tts": () => Promise.resolve().then(() => (init_pocket_tts(), pocket_tts_exports)).then((m) => m.pocketTTS),
+  voxcpm: () => Promise.resolve().then(() => (init_voxcpm_tts(), voxcpm_tts_exports)).then((m) => m.voxcpmTTS),
+  "native-tts": () => Promise.resolve().then(() => (init_native_tts(), native_tts_exports)).then((m) => m.nativeTTS),
+  "web-speech": () => Promise.resolve().then(() => (init_web_speech(), web_speech_exports)).then((m) => m.webSpeechTTS),
+  puter: () => Promise.resolve().then(() => (init_puter_tts(), puter_tts_exports)).then((m) => m.puterTTS)
+};
+var sfxProviders = {
+  "elevenlabs-sfx": () => Promise.resolve().then(() => (init_elevenlabs_sfx(), elevenlabs_sfx_exports)).then((m) => m.elevenlabsSFX),
+  freesound: () => Promise.resolve().then(() => (init_freesound(), freesound_exports)).then((m) => m.freesoundSFX),
+  pixabay: () => Promise.resolve().then(() => (init_pixabay(), pixabay_exports)).then((m) => m.pixabaySFX)
+};
+var musicProviders = {
+  "pixabay-music": () => Promise.resolve().then(() => (init_pixabay_music(), pixabay_music_exports)).then((m) => m.pixabayMusic),
+  "freesound-music": () => Promise.resolve().then(() => (init_freesound_music(), freesound_music_exports)).then((m) => m.freesoundMusic)
+};
+function getBestSFXProvider(settings) {
+  if (settings?.defaultSFXProvider && settings.defaultSFXProvider !== "auto") {
+    return settings.defaultSFXProvider;
+  }
+  if (process.env.ELEVENLABS_API_KEY) return "elevenlabs-sfx";
+  if (process.env.FREESOUND_API_KEY) return "freesound";
+  if (process.env.PIXABAY_API_KEY) return "pixabay";
+  return "freesound";
+}
+function getBestMusicProvider(settings) {
+  if (settings?.defaultMusicProvider && settings.defaultMusicProvider !== "auto") {
+    return settings.defaultMusicProvider;
+  }
+  if (process.env.PIXABAY_API_KEY) return "pixabay-music";
+  return "freesound-music";
+}
+async function getTTSProvider(id) {
+  const loader = ttsProviders[id];
+  if (!loader) throw new Error(`Unknown TTS provider: ${id}`);
+  return loader();
+}
+async function getSFXProvider(id) {
+  const loader = sfxProviders[id];
+  if (!loader) throw new Error(`Unknown SFX provider: ${id}`);
+  return loader();
+}
+async function getMusicProvider(id) {
+  const loader = musicProviders[id];
+  if (!loader) throw new Error(`Unknown music provider: ${id}`);
+  return loader();
+}
+
+// lib/audio/download.ts
+var import_promises15 = __toESM(require("fs/promises"));
+var import_path10 = __toESM(require("path"));
+init_paths();
+var ALLOWED_HOSTS = /* @__PURE__ */ new Set([
+  "freesound.org",
+  "www.freesound.org",
+  "cdn.freesound.org",
+  "pixabay.com",
+  "cdn.pixabay.com",
+  "api.elevenlabs.io",
+  "storage.googleapis.com"
+]);
+var MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024;
+function validateDownloadUrl(remoteUrl) {
+  let parsed;
+  try {
+    parsed = new URL(remoteUrl);
+  } catch {
+    throw new Error("Invalid download URL");
+  }
+  if (parsed.protocol !== "https:") {
+    throw new Error("Only HTTPS download URLs are allowed");
+  }
+  const hostname = parsed.hostname.toLowerCase();
+  if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1" || hostname === "0.0.0.0" || hostname.endsWith(".local") || hostname.startsWith("169.254.") || hostname.startsWith("10.") || hostname.startsWith("192.168.") || /^172\.(1[6-9]|2\d|3[01])\./.test(hostname)) {
+    throw new Error("Download from internal addresses is not allowed");
+  }
+  if (!ALLOWED_HOSTS.has(hostname)) {
+    throw new Error(`Download not allowed from host: ${hostname}`);
+  }
+}
+async function downloadToLocal(remoteUrl, prefix = "dl") {
+  if (isLocalAudioUrl(remoteUrl) || remoteUrl.startsWith("/uploads/") || remoteUrl.startsWith("cench://uploads/") || remoteUrl.startsWith("/sfx-library/")) {
+    return remoteUrl;
+  }
+  if (remoteUrl.startsWith("web-speech://") || remoteUrl.startsWith("puter-tts://")) {
+    return remoteUrl;
+  }
+  validateDownloadUrl(remoteUrl);
+  const audioDir = getAudioDir();
+  await import_promises15.default.mkdir(audioDir, { recursive: true });
+  let ext = ".mp3";
+  try {
+    const urlPath = new URL(remoteUrl).pathname;
+    ext = import_path10.default.extname(urlPath) || ".mp3";
+  } catch {
+  }
+  const filename = `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`;
+  const filePath = import_path10.default.join(audioDir, filename);
+  const res = await fetch(remoteUrl);
+  if (!res.ok) {
+    throw new Error(`Failed to download audio: ${res.status} ${res.statusText}`);
+  }
+  const contentLength = res.headers.get("content-length");
+  if (contentLength && parseInt(contentLength, 10) > MAX_DOWNLOAD_BYTES) {
+    throw new Error("Audio file too large to download");
+  }
+  const buffer = Buffer.from(await res.arrayBuffer());
+  if (buffer.length > MAX_DOWNLOAD_BYTES) {
+    throw new Error("Audio file too large to download");
+  }
+  await import_promises15.default.writeFile(filePath, buffer);
+  return audioUrlFor(filename);
+}
+
+// lib/services/audio.ts
+init_sanitize();
+init_captions();
+
+// lib/audio/sfx-zzfx-presets.ts
+var ZZFX_SFX_CATEGORIES = [
+  {
+    id: "ui",
+    label: "UI & clicks",
+    presets: [
+      { id: "ui-tick", name: "Soft tick", zzfx: [1, , 880, 0.01, 0.01, 0.08, 0, 1.2] },
+      { id: "ui-click", name: "Click", zzfx: [1.2, , 1200, 2e-3, 0.01, 0.06, 1, 0.8] },
+      { id: "ui-toggle", name: "Toggle", zzfx: [0.9, , 600, 5e-3, 0.02, 0.12, 2, 1.5] },
+      { id: "ui-beep-hi", name: "Beep high", zzfx: [0.8, , 1400, 1e-3, 0.02, 0.1, 0, 1] },
+      { id: "ui-beep-lo", name: "Beep low", zzfx: [0.8, , 220, 2e-3, 0.03, 0.15, 0, 1] },
+      { id: "ui-chime", name: "Chime", zzfx: [1, , 990, 0.02, 0.08, 0.25, 0, 1.4, , , , , , , , 0.2] },
+      { id: "ui-swipe", name: "Swipe", zzfx: [0.85, , 600, 0.04, 0.06, 0.18, 0, 2.2, 40] },
+      { id: "ui-success", name: "Success", zzfx: [1.1, , 520, 0.01, 0.08, 0.22, 1, 1.4, 6, 2] },
+      { id: "ui-deny", name: "Denied", zzfx: [1, , 140, 0.04, 0.12, 0.35, 1, 0.6, -12] },
+      { id: "ui-hover", name: "Hover", zzfx: [0.45, , 920, 3e-3, 0.015, 0.07, 0, 1.3] },
+      { id: "ui-tap", name: "Tap", zzfx: [1, , 1050, 1e-3, 0.012, 0.055, 1, 0.9] },
+      { id: "ui-send", name: "Send / submit", zzfx: [1, , 680, 8e-3, 0.04, 0.16, 1, 1.5, 4] },
+      { id: "ui-open", name: "Panel open", zzfx: [0.95, , 340, 0.02, 0.08, 0.28, 0, 1.8, 35] },
+      { id: "ui-close", name: "Panel close", zzfx: [0.9, , 420, 0.02, 0.06, 0.22, 0, 1.6, -28] },
+      { id: "ui-menu", name: "Menu fold", zzfx: [0.85, , 240, 0.015, 0.05, 0.2, 2, 1.4] },
+      { id: "ui-type", name: "Type key", zzfx: [0.55, , 1600, 1e-3, 8e-3, 0.04, 4, 2.2, , , , 0.35] },
+      { id: "ui-bright", name: "Bright ping", zzfx: [1.1, , 1100, 4e-3, 0.03, 0.14, 2, 2.2, , 12] }
+    ]
+  },
+  {
+    id: "impacts",
+    label: "Impacts & hits",
+    presets: [
+      { id: "impact-punch", name: "Punch", zzfx: [1.4, , 150, 0.01, 0.04, 0.35, 4, 2.5, , , , , , , , 0.15] },
+      { id: "impact-thud", name: "Thud", zzfx: [1.2, , 80, 0.02, 0.06, 0.4, 3, 1.2] },
+      { id: "impact-slam", name: "Slam", zzfx: [1.5, , 55, 5e-3, 0.02, 0.55, 4, 3] },
+      { id: "impact-metal", name: "Metal hit", zzfx: [1.1, , 320, 0.01, 0.03, 0.2, 3, 2, , , , 0.3, , , 0.4] },
+      { id: "impact-glass", name: "Glass tap", zzfx: [0.9, , 1800, 1e-3, 0.02, 0.18, 5, 3] },
+      { id: "impact-body", name: "Body fall", zzfx: [1, , 95, 0.03, 0.1, 0.45, 2, 1.8] },
+      { id: "impact-sword", name: "Sword clang", zzfx: [1.2, , 420, 2e-3, 0.02, 0.28, 3, 2.8, , , , 0.15] },
+      { id: "impact-wood", name: "Wood knock", zzfx: [1, , 180, 0.01, 0.05, 0.32, 2, 1.6] },
+      { id: "impact-rubber", name: "Rubber slap", zzfx: [1.1, , 95, 0.02, 0.12, 0.38, 2, 2.2, -25] },
+      { id: "impact-gravel", name: "Gravel hit", zzfx: [1.2, , 140, 0.01, 0.06, 0.32, 4, 1.8, , , , 0.55] },
+      { id: "impact-sand", name: "Sand thump", zzfx: [0.95, , 110, 0.02, 0.1, 0.38, 3, 1.5, , , , 0.4] },
+      { id: "impact-ice", name: "Ice crack", zzfx: [0.85, , 2e3, 1e-3, 0.025, 0.2, 5, 3, , , , 0.2] },
+      { id: "impact-bubble", name: "Wet slap", zzfx: [1, , 160, 0.03, 0.14, 0.32, 3, 1.6, , , , 0.35] },
+      { id: "impact-ceramic", name: "Ceramic clink", zzfx: [0.9, , 2400, 1e-3, 0.015, 0.16, 5, 3.5] },
+      { id: "impact-chain", name: "Chain rattle", zzfx: [1, , 280, 8e-3, 0.04, 0.28, 4, 2.2, , , , 0.45] }
+    ]
+  },
+  {
+    id: "explosions",
+    label: "Explosions",
+    presets: [
+      { id: "ex-small", name: "Small blast", zzfx: [1.3, , 55, 0.02, 0.25, 0.5, 3, 2, 0.5] },
+      { id: "ex-med", name: "Medium blast", zzfx: [1.5, , 40, 0.03, 0.35, 0.65, 4, 2.5, 0.8] },
+      { id: "ex-noise", name: "Noisy burst", zzfx: [1.2, , 70, 0.02, 0.2, 0.55, 4, 1, 2, 0, 0, 0, 0.6] },
+      { id: "ex-crunch", name: "Crunch boom", zzfx: [1.4, , 65, 0.015, 0.15, 0.45, 3, 2.2, , , , 0.45] },
+      { id: "ex-electric", name: "Electric pop", zzfx: [1.1, , 200, 2e-3, 0.06, 0.22, 4, 3, , , , 0.5] },
+      { id: "ex-underwater", name: "Muffled boom", zzfx: [1.2, , 45, 0.04, 0.4, 0.7, 3, 1.5, , , , 0.35] },
+      { id: "ex-spark", name: "Spark burst", zzfx: [0.9, , 1200, 1e-3, 0.04, 0.14, 5, 4, , , , 0.4] },
+      { id: "ex-tail", name: "Long tail boom", zzfx: [1.2, , 48, 0.04, 0.5, 0.85, 3, 2, , , , 0.5] },
+      { id: "ex-compact", name: "Compact burst", zzfx: [1.4, , 90, 8e-3, 0.08, 0.22, 3, 2.5, , , , 0.25] },
+      { id: "ex-sizzle", name: "Sizzle burst", zzfx: [1, , 180, 0.01, 0.12, 0.4, 4, 2, , , , 0.65] },
+      { id: "ex-ring", name: "Shock ring", zzfx: [1.1, , 75, 0.02, 0.18, 0.55, 1, 2.2, 15] },
+      { id: "ex-flare", name: "Flare pop", zzfx: [1.3, , 320, 3e-3, 0.05, 0.2, 2, 3, -40] }
+    ]
+  },
+  {
+    id: "pickups",
+    label: "Pickups & rewards",
+    presets: [
+      { id: "coin", name: "Coin", zzfx: [1, , 500, 0.01, 0.04, 0.15, 1, 0.6, , 3] },
+      { id: "powerup", name: "Power-up", zzfx: [1.1, , 740, 0.02, 0.06, 0.22, 1, 1.8, -4, 4] },
+      { id: "heart", name: "Heart / life", zzfx: [, , 537, 0.02, 0.02, 0.22, 1, 1.59, -6.98, 4.97] },
+      { id: "star", name: "Star sparkle", zzfx: [0.9, , 1200, 5e-3, 0.03, 0.2, 2, 2.5, , 8] },
+      { id: "level-up", name: "Level up", zzfx: [1.2, , 400, 0.01, 0.1, 0.35, 1, 1.2, , 12, -0.2] },
+      { id: "gem", name: "Gem", zzfx: [1, , 880, 3e-3, 0.05, 0.18, 2, 2.2, , 10] },
+      { id: "key", name: "Key / unlock", zzfx: [1.1, , 620, 8e-3, 0.04, 0.2, 1, 1.6, 5] },
+      { id: "multi", name: "Combo ping", zzfx: [1, , 700, 4e-3, 0.03, 0.14, 1, 1.8, , 6] },
+      { id: "treasure", name: "Treasure chest", zzfx: [1.2, , 280, 0.02, 0.1, 0.4, 2, 1.4, , 8] },
+      { id: "orb", name: "Orb collect", zzfx: [1, , 720, 6e-3, 0.05, 0.2, 2, 2, , 8] },
+      { id: "ring-collect", name: "Ring collect", zzfx: [1.1, , 900, 4e-3, 0.035, 0.16, 1, 1.9, , 5] },
+      { id: "bonus", name: "Bonus wave", zzfx: [1.2, , 380, 0.02, 0.08, 0.35, 1, 1.6, , 14] },
+      { id: "streak", name: "Streak tick", zzfx: [0.75, , 560, 2e-3, 0.02, 0.09, 1, 1.3, , 4] },
+      { id: "magic-flourish", name: "Magic flourish", zzfx: [1, , 520, 0.03, 0.12, 0.45, 2, 2.2, , 20] }
+    ]
+  },
+  {
+    id: "alarms",
+    label: "Alarms & alerts",
+    presets: [
+      { id: "alarm-fast", name: "Fast beep", zzfx: [1, , 880, 5e-3, 0.02, 0.08, 1, 1, , , , 120] },
+      { id: "alarm-slow", name: "Slow alarm", zzfx: [1.1, , 220, 0.02, 0.15, 0.35, 1, 1, , , , 200] },
+      { id: "buzzer", name: "Buzzer", zzfx: [1.2, , 150, 0.01, 0.2, 0.4, 2, 1, , , , 80] },
+      { id: "wrong", name: "Wrong / error", zzfx: [1, , 180, 0.05, 0.1, 0.3, 1, 0.5, -8] },
+      { id: "alarm-urgent", name: "Urgent pulse", zzfx: [1.2, , 440, 4e-3, 0.03, 0.1, 1, 1, , , , 90] },
+      { id: "chime-soft", name: "Soft chime", zzfx: [0.65, , 1320, 0.02, 0.1, 0.35, 0, 1.5, , , , 0.08] },
+      { id: "attention", name: "Attention ding", zzfx: [1, , 770, 0.01, 0.05, 0.22, 1, 1.4, 3] },
+      { id: "countdown", name: "Countdown tick", zzfx: [0.9, , 260, 8e-3, 0.02, 0.1, 1, 1.1] }
+    ]
+  },
+  {
+    id: "sci-fi",
+    label: "Sci\u2011fi",
+    presets: [
+      { id: "laser", name: "Laser shot", zzfx: [0.9, , 1200, 1e-3, 0.06, 0.12, 3, 4, -50] },
+      { id: "laser-big", name: "Heavy laser", zzfx: [1.2, , 180, 0.01, 0.08, 0.35, 3, 3, -20] },
+      { id: "warp", name: "Warp", zzfx: [1, , 200, 0.05, 0.2, 0.6, 0, 2, 40, 0, 0, 0, 0.15] },
+      { id: "scanner", name: "Scanner", zzfx: [0.7, , 800, 2e-3, 0.04, 0.25, 1, 3, , 15] },
+      { id: "alien", name: "Alien ping", zzfx: [1, , 400, 0.02, 0.12, 0.4, 4, 2.5, , 6] },
+      { id: "teleport", name: "Teleport", zzfx: [1, , 300, 0.06, 0.25, 0.55, 0, 2.5, 180, , , , 0.2] },
+      { id: "shield", name: "Shield hum", zzfx: [0.75, , 220, 0.08, 0.35, 0.5, 0, 1.2, , , , 150] },
+      { id: "charge", name: "Charge up", zzfx: [1, , 90, 0.12, 0.45, 0.65, 0, 1.8, 220] },
+      { id: "hologram", name: "Hologram flicker", zzfx: [0.6, , 1400, 2e-3, 0.02, 0.12, 4, 3, , , , 0.25] },
+      { id: "drone-pass", name: "Fly-by drone", zzfx: [0.8, , 95, 0.06, 0.25, 0.55, 0, 2, -60] },
+      { id: "servo", name: "Servo motor", zzfx: [0.7, , 210, 0.04, 0.2, 0.45, 1, 1.5, , , , 120] },
+      { id: "plasma", name: "Plasma hiss", zzfx: [0.85, , 350, 0.02, 0.15, 0.42, 4, 2.5, , , , 0.5] },
+      { id: "cpu-beep", name: "CPU beep", zzfx: [0.55, , 2e3, 2e-3, 0.015, 0.08, 1, 1.2] },
+      { id: "datagram", name: "Data blip", zzfx: [0.6, , 1600, 1e-3, 0.012, 0.07, 3, 2.8, , , , 0.3] },
+      { id: "airlock", name: "Airlock seal", zzfx: [1.1, , 60, 0.03, 0.2, 0.55, 3, 1.8, , , , 0.2] }
+    ]
+  },
+  {
+    id: "cartoon",
+    label: "Cartoon",
+    presets: [
+      { id: "boing", name: "Boing", zzfx: [1.2, , 180, 0.02, 0.15, 0.45, 2, 3, -30, 2] },
+      { id: "pop", name: "Pop", zzfx: [1, , 600, 5e-3, 0.03, 0.12, 2, 2] },
+      { id: "slide", name: "Slide whistle", zzfx: [1, , 300, 0.03, 0.2, 0.5, 0, 3, 80] },
+      { id: "squish", name: "Squish", zzfx: [1.1, , 90, 0.04, 0.2, 0.35, 3, 1.5, , , , 0.5] },
+      { id: "bonk", name: "Bonk", zzfx: [1.3, , 140, 8e-3, 0.04, 0.28, 2, 2.5, -15] },
+      { id: "stretch", name: "Stretch", zzfx: [1, , 120, 0.05, 0.25, 0.55, 0, 2.5, 95] },
+      { id: "whee", name: "Whee up", zzfx: [1.1, , 200, 0.04, 0.18, 0.5, 0, 3, 150] },
+      { id: "zip", name: "Zip", zzfx: [0.95, , 500, 0.02, 0.05, 0.18, 0, 2.5, 200] },
+      { id: "crunch-soft", name: "Soft crunch", zzfx: [1, , 85, 0.02, 0.12, 0.38, 3, 1.7, , , , 0.45] },
+      { id: "spring", name: "Spring", zzfx: [1.2, , 320, 0.015, 0.1, 0.38, 2, 3, -45, 2] }
+    ]
+  },
+  {
+    id: "percussion",
+    label: "Drums & rhythm",
+    presets: [
+      { id: "drum", name: "Drum hit", zzfx: [, , 129, 0.01, , 0.15, , , , , , , 5] },
+      { id: "kick", name: "Kick", zzfx: [1.3, , 55, 5e-3, 0.02, 0.25, 3, 2] },
+      { id: "snare", name: "Snare-ish", zzfx: [1, , 200, 2e-3, 0.02, 0.15, 4, 2, , , , 0.35] },
+      { id: "hat", name: "Hi-hat", zzfx: [0.6, , 8e3, 1e-3, 0.01, 0.05, 4, 4, , , , 0.8] },
+      { id: "tom", name: "Tom", zzfx: [1.2, , 100, 8e-3, 0.03, 0.35, 3, 2.2] },
+      { id: "clap", name: "Clap", zzfx: [1, , 180, 2e-3, 0.02, 0.18, 4, 2.5, , , , 0.5] },
+      { id: "rim", name: "Rim shot", zzfx: [1.1, , 450, 1e-3, 0.015, 0.12, 3, 2.8] },
+      { id: "ride", name: "Ride bell", zzfx: [0.75, , 600, 3e-3, 0.04, 0.22, 2, 2, , , , 0.15] },
+      { id: "shaker", name: "Shaker", zzfx: [0.5, , 3e3, 0.02, 0.08, 0.25, 4, 2, , , , 0.75] }
+    ]
+  },
+  {
+    id: "transitions",
+    label: "Transitions",
+    presets: [
+      { id: "whoosh", name: "Whoosh", zzfx: [0.9, , 400, 0.08, 0.15, 0.55, 0, 2, 120] },
+      { id: "sweep-up", name: "Sweep up", zzfx: [1, , 120, 0.1, 0.2, 0.45, 0, 2, 200] },
+      { id: "riser", name: "Riser", zzfx: [1.1, , 80, 0.15, 0.35, 0.7, 0, 1.5, 150] },
+      { id: "downer", name: "Downer", zzfx: [1, , 500, 0.05, 0.25, 0.55, 0, 2, -120] },
+      { id: "tape-stop", name: "Tape stop", zzfx: [1, , 300, 0.02, 0.15, 0.45, 0, 2, -200] },
+      { id: "reverse-suck", name: "Reverse suck", zzfx: [0.95, , 250, 0.1, 0.2, 0.5, 0, 2, -90] },
+      { id: "glitch-in", name: "Glitch in", zzfx: [0.85, , 800, 0.01, 0.06, 0.22, 4, 3, , , , 0.55] },
+      { id: "glitch-out", name: "Glitch out", zzfx: [0.85, , 600, 0.01, 0.08, 0.28, 4, 2.5, , , , 0.6] },
+      { id: "soft-in", name: "Soft fade in", zzfx: [0.7, , 200, 0.15, 0.25, 0.5, 0, 1.2, 40] },
+      { id: "hard-cut", name: "Hard cut", zzfx: [1.2, , 150, 1e-3, 0.02, 0.08, 2, 2] }
+    ]
+  },
+  {
+    id: "sfxr",
+    label: "Retro game",
+    presets: [
+      { id: "sfxr-jump", name: "Jump", zzfx: [1, , 300, 0.02, 0.05, 0.15, 0, 2, 50] },
+      { id: "sfxr-shoot", name: "Shoot / pew", zzfx: [0.9, , 800, 1e-3, 0.02, 0.1, 3, 3, -15] },
+      { id: "sfxr-hurt", name: "Hurt", zzfx: [1.2, , 120, 0.01, 0.08, 0.25, 4, 1.5, , -20] },
+      { id: "sfxr-bling", name: "Pickup bling", zzfx: [1, , 600, 5e-3, 0.04, 0.12, 1, 2, 8] },
+      { id: "sfxr-tiny-pop", name: "Tiny pop", zzfx: [0.8, , 400, 2e-3, 0.03, 0.08, 2, 2] },
+      { id: "sfxr-stab", name: "Synth stab", zzfx: [1.1, , 110, 0.01, 0.12, 0.3, 1, 1.8] },
+      { id: "sfxr-noise", name: "Noise burst", zzfx: [1, , 100, 0.01, 0.1, 0.35, 4, 1, , , , 0.7] },
+      { id: "sfxr-tone", name: "Simple tone", zzfx: [0.7, , 440, 0.05, 0.2, 0.25, 0, 1] },
+      { id: "sfxr-wobble", name: "Wobble", zzfx: [1, , 200, 0.03, 0.15, 0.4, 2, 2, , , 90] },
+      { id: "sfxr-slide", name: "Pitch slide", zzfx: [1, , 150, 0.05, 0.2, 0.5, 0, 2, 100] },
+      { id: "sfxr-zap", name: "Zap", zzfx: [1.2, , 900, 1e-3, 0.03, 0.1, 3, 4, -80] },
+      { id: "sfxr-thump", name: "Land thump", zzfx: [1.3, , 70, 8e-3, 0.03, 0.3, 3, 2.5] },
+      { id: "sfxr-8bit-run", name: "8-bit run", zzfx: [0.5, , 320, 2e-3, 0.015, 0.06, 1, 1.2, , , 40] },
+      { id: "sfxr-game-start", name: "Game start", zzfx: [1.2, , 200, 0.02, 0.15, 0.45, 1, 1.5, , 18] },
+      { id: "sfxr-powerdown", name: "Power down", zzfx: [1, , 280, 0.04, 0.2, 0.55, 0, 1.5, -140] },
+      { id: "sfxr-laser-charge", name: "Laser charge", zzfx: [0.9, , 120, 0.08, 0.35, 0.6, 0, 1.8, 180] },
+      { id: "sfxr-mutate", name: "Mutate", zzfx: [1.1, , 160, 0.02, 0.12, 0.42, 4, 2, , , , 0.55] },
+      { id: "sfxr-lift", name: "Lift / spring up", zzfx: [1, , 250, 0.02, 0.1, 0.38, 2, 2.8, 55] },
+      { id: "sfxr-coin-slot", name: "Coin slot", zzfx: [1, , 480, 6e-3, 0.04, 0.18, 3, 2.2] },
+      { id: "sfxr-enemy-die", name: "Enemy poof", zzfx: [1.2, , 180, 0.015, 0.1, 0.35, 4, 2, , , , 0.4] },
+      { id: "sfxr-bubble", name: "Bubble pop", zzfx: [0.85, , 650, 4e-3, 0.03, 0.14, 2, 2] },
+      { id: "sfxr-motor", name: "Motor loop-ish", zzfx: [0.6, , 95, 0.06, 0.3, 0.5, 1, 1.2, , , , 200] },
+      { id: "sfxr-blip-up", name: "Blip up", zzfx: [1, , 380, 0.02, 0.06, 0.2, 0, 1.8, 90] },
+      { id: "sfxr-blip-down", name: "Blip down", zzfx: [1, , 420, 0.02, 0.06, 0.2, 0, 1.6, -85] },
+      { id: "sfxr-double-jump", name: "Double jump", zzfx: [1.1, , 380, 0.015, 0.04, 0.14, 0, 2.2, 70] }
+    ]
+  },
+  {
+    id: "ambient",
+    label: "Ambient & drones",
+    presets: [
+      { id: "amb-wind", name: "Soft wind", zzfx: [0.35, , 180, 0.25, 0.55, 0.85, 3, 0.6, , , , 0.25] },
+      { id: "amb-pad", name: "Warm pad", zzfx: [0.4, , 110, 0.15, 0.6, 0.9, 0, 1.1, , , , 0.12] },
+      { id: "amb-space", name: "Space drone", zzfx: [0.3, , 55, 0.3, 0.7, 1.1, 0, 0.8, , , , 0.2] },
+      { id: "amb-rumble", name: "Low rumble", zzfx: [0.55, , 40, 0.08, 0.45, 0.75, 3, 1.2, , , , 0.35] },
+      { id: "amb-crystal", name: "Crystal bed", zzfx: [0.25, , 1200, 0.1, 0.4, 0.7, 2, 1.5, , , , 0.15] },
+      { id: "amb-pulse", name: "Slow pulse", zzfx: [0.45, , 90, 0.2, 0.5, 0.8, 1, 1, , , , 180] },
+      { id: "amb-horror", name: "Tense drone", zzfx: [0.4, , 70, 0.12, 0.55, 0.95, 4, 1.3, , , , 0.3] },
+      { id: "amb-rain", name: "Rain texture", zzfx: [0.2, , 2400, 0.05, 0.2, 0.45, 4, 2, , , , 0.85] },
+      { id: "amb-dark", name: "Dark hum", zzfx: [0.3, , 48, 0.2, 0.65, 1, 0, 0.85, , , , 0.25] },
+      { id: "amb-choir", name: "Airy pad", zzfx: [0.28, , 280, 0.12, 0.55, 0.9, 0, 1, , , , 0.1] },
+      { id: "amb-glass", name: "Glass tone bed", zzfx: [0.22, , 880, 0.15, 0.45, 0.75, 2, 1.6, , , , 0.12] },
+      { id: "amb-machine", name: "Machine room", zzfx: [0.35, , 65, 0.1, 0.5, 0.85, 3, 1.1, , , , 0.4] }
+    ]
+  },
+  {
+    id: "misc",
+    label: "Classic ZzFX demos",
+    presets: [
+      { id: "game-over", name: "Game over", zzfx: [, , 925, 0.04, 0.3, 0.6, 1, 0.3, , 6.27, -184, 0.09, 0.17] },
+      { id: "piano", name: "Piano pluck", zzfx: [1.5, 0.8, 270, , 0.1, , 1, 1.5, , , , , , , , 0.1, 0.01] },
+      { id: "blip", name: "Blip", zzfx: [1, , 999, 2e-3, 0.02, 0.1, 0, 1.5] },
+      { id: "notify", name: "Notification", zzfx: [1, , 660, 0.01, 0.06, 0.2, 1, 1.2, , 5] },
+      { id: "sparkle-short", name: "Sparkle", zzfx: [0.9, , 1400, 3e-3, 0.025, 0.14, 2, 2.5, , 15] },
+      { id: "digital-glitch", name: "Digital glitch", zzfx: [0.75, , 600, 8e-3, 0.04, 0.2, 4, 2.8, , , , 0.5] },
+      { id: "confirm-deep", name: "Confirm deep", zzfx: [1.1, , 180, 0.02, 0.12, 0.4, 1, 1.5, -5] },
+      { id: "cancel-soft", name: "Cancel soft", zzfx: [0.8, , 220, 0.04, 0.15, 0.38, 1, 0.7, -10] },
+      { id: "timer-done", name: "Timer done", zzfx: [1.2, , 520, 0.01, 0.08, 0.3, 1, 1.3, , 8] },
+      { id: "typing", name: "Typing burst", zzfx: [0.45, , 1400, 2e-3, 0.01, 0.05, 4, 2.5, , , , 0.4] }
+    ]
+  }
+];
+var SFX_LIBRARY_CATEGORIES = ZZFX_SFX_CATEGORIES.map(({ id, label }) => ({
+  id,
+  label
+}));
+function getZzfxCategory(id) {
+  if (!id) return void 0;
+  return ZZFX_SFX_CATEGORIES.find((c) => c.id === id);
+}
+
+// lib/services/audio.ts
+init_sfx_license();
+init_paths();
+var AudioValidationError = class extends Error {
+  code = "VALIDATION";
+  constructor(message) {
+    super(message);
+    this.name = "AudioValidationError";
+  }
+};
+var SCENE_ID_RE2 = /^[a-zA-Z0-9\-]+$/;
+async function synthesizeTTS(input) {
+  if (!input.text) throw new AudioValidationError("text is required");
+  if (!input.sceneId || typeof input.sceneId !== "string") {
+    throw new AudioValidationError("sceneId is required");
+  }
+  if (!SCENE_ID_RE2.test(input.sceneId)) {
+    throw new AudioValidationError("Invalid sceneId format");
+  }
+  try {
+    validateTextLength(input.text);
+  } catch {
+    throw new AudioValidationError(`Text exceeds maximum length of ${MAX_TTS_TEXT_LENGTH} characters`);
+  }
+  const selectedProvider = input.provider ?? getBestTTSProvider(null, input.localMode);
+  if (selectedProvider === "web-speech" || selectedProvider === "puter") {
+    return {
+      mode: "client",
+      provider: selectedProvider,
+      text: input.text,
+      voiceId: input.voiceId ?? null
+    };
+  }
+  const impl = await getTTSProvider(selectedProvider);
+  const result = await impl.generate({
+    text: input.text,
+    sceneId: input.sceneId,
+    voiceId: input.voiceId,
+    model: input.model,
+    instructions: input.instructions
+  });
+  if (!result.captions && result.duration && isLocalAudioUrl(result.audioUrl)) {
+    const bundle = buildNaiveCaptions(input.text, result.duration);
+    if (bundle.words.length > 0 && bundle.srt.length > 0) {
+      try {
+        const audioDir = getAudioDir();
+        await import_promises16.default.mkdir(audioDir, { recursive: true });
+        const base = result.audioUrl.replace(/^(cench:\/\/audio\/|\/audio\/)/, "").replace(/\.[a-z0-9]+$/i, "");
+        const srtName = `${base}.srt`;
+        const vttName = `${base}.vtt`;
+        await Promise.all([
+          import_promises16.default.writeFile(import_node_path8.default.join(audioDir, srtName), bundle.srt, "utf8"),
+          import_promises16.default.writeFile(import_node_path8.default.join(audioDir, vttName), bundle.vtt, "utf8")
+        ]);
+        result.captions = {
+          srtUrl: audioUrlFor(srtName),
+          vttUrl: audioUrlFor(vttName),
+          kind: "naive",
+          words: bundle.words
+        };
+      } catch (captionErr) {
+        console.warn("[audio-service] naive caption write failed:", captionErr);
+      }
+    }
+  }
+  return {
+    url: result.audioUrl,
+    duration: result.duration,
+    provider: result.provider,
+    captions: result.captions ? {
+      srtUrl: result.captions.srtUrl,
+      vttUrl: result.captions.vttUrl,
+      kind: result.captions.kind,
+      words: result.captions.words
+    } : null
+  };
+}
+async function searchSFX(input) {
+  const limit = Math.min(Math.max(Number(input.limit) || 10, 1), 50);
+  const page = Math.max(1, Number(input.page) || 1);
+  const isLibrary = input.mode === "library";
+  if (isLibrary) {
+    const cat = getZzfxCategory(input.categoryId);
+    const category = cat ? { id: cat.id, label: cat.label } : { id: SFX_LIBRARY_CATEGORIES[0].id, label: SFX_LIBRARY_CATEGORIES[0].label };
+    return {
+      results: [],
+      provider: "pixabay",
+      mode: "library",
+      category,
+      page,
+      licenseNote: "The editor Sound effects library uses ZzFX (MIT) in the browser. Use search mode for remote Pixabay/Freesound when API keys are configured."
+    };
+  }
+  const searchQuery = input.query || input.prompt;
+  if (!searchQuery) throw new AudioValidationError("query or prompt is required");
+  try {
+    if (input.query) validateQueryLength(input.query);
+    if (input.prompt) validateQueryLength(input.prompt);
+  } catch {
+    throw new AudioValidationError("Query or prompt too long");
+  }
+  const providerId = input.provider ?? getBestSFXProvider();
+  const impl = await getSFXProvider(providerId);
+  if (input.prompt && impl.generate) {
+    const result = await impl.generate(input.prompt, input.duration);
+    return { results: [result], provider: providerId, mode: "generated" };
+  }
+  const commercialOnly = input.commercialOnly !== void 0 ? Boolean(input.commercialOnly) : providerId === "freesound" ? true : false;
+  const searchOpts = commercialOnly || page > 1 ? { page, commercialOnly: providerId === "freesound" ? commercialOnly : false } : void 0;
+  const results = await impl.search(searchQuery, limit, searchOpts);
+  if (input.download && results.length > 0) {
+    const localResults = await Promise.all(
+      results.map(async (r) => {
+        if (r.audioUrl.startsWith("http")) {
+          const localUrl = await downloadToLocal(r.audioUrl, "sfx");
+          return { ...r, audioUrl: localUrl, previewUrl: r.previewUrl || r.audioUrl };
+        }
+        return r;
+      })
+    );
+    return { results: localResults, provider: providerId, mode: "search" };
+  }
+  return {
+    results,
+    provider: providerId,
+    mode: "search",
+    licenseNote: providerId === "pixabay" ? PIXABAY_SFX_LICENSE_NOTE : FREESOUND_LICENSE_NOTE
+  };
+}
+async function searchMusic(input) {
+  if (!input.query) throw new AudioValidationError("query is required");
+  try {
+    validateQueryLength(input.query);
+  } catch {
+    throw new AudioValidationError("Query too long");
+  }
+  const limit = Math.min(Math.max(Number(input.limit) || 10, 1), 50);
+  const providerId = input.provider ?? getBestMusicProvider();
+  const impl = await getMusicProvider(providerId);
+  const results = await impl.search(input.query, limit);
+  if (input.download && results.length > 0) {
+    const localResults = await Promise.all(
+      results.map(async (r) => {
+        if (r.audioUrl.startsWith("http")) {
+          const localUrl = await downloadToLocal(r.audioUrl, "music");
+          return { ...r, audioUrl: localUrl, previewUrl: r.previewUrl || r.audioUrl };
+        }
+        return r;
+      })
+    );
+    return { results: localResults, provider: providerId };
+  }
+  return { results, provider: providerId };
+}
+
+// electron/ipc/audio.ts
+function rethrowValidation(fn) {
+  return (async (...args) => {
+    try {
+      return await fn(...args);
+    } catch (err) {
+      if (err instanceof AudioValidationError) throw new IpcValidationError(err.message);
+      throw err;
+    }
+  });
+}
+function register14(ipcMain2) {
+  ipcMain2.handle(
+    "cench:tts.synthesize",
+    rethrowValidation((_e, args) => synthesizeTTS(args))
+  );
+  ipcMain2.handle(
+    "cench:sfx.search",
+    rethrowValidation((_e, args) => searchSFX(args))
+  );
+  ipcMain2.handle(
+    "cench:music.search",
+    rethrowValidation((_e, args) => searchMusic(args))
+  );
+}
+
 // electron/ipc/index.ts
 function registerAllIpc(ipcMain2) {
   register(ipcMain2);
@@ -11847,6 +13855,7 @@ function registerAllIpc(ipcMain2) {
   register11(ipcMain2);
   register12(ipcMain2);
   register13(ipcMain2);
+  register14(ipcMain2);
 }
 
 // electron/main.ts
@@ -11859,12 +13868,12 @@ function loadEnvFiles() {
     }
   };
   if (import_electron7.app.isPackaged) {
-    tryLoad(import_path.default.join(import_electron7.app.getPath("userData"), "cench.env"));
-    tryLoad(import_path.default.join(process.resourcesPath, ".env.defaults"));
+    tryLoad(import_path11.default.join(import_electron7.app.getPath("userData"), "cench.env"));
+    tryLoad(import_path11.default.join(process.resourcesPath, ".env.defaults"));
   } else {
-    const repoRoot = import_path.default.resolve(__dirname, "..");
-    tryLoad(import_path.default.join(repoRoot, ".env.local"));
-    tryLoad(import_path.default.join(repoRoot, ".env"));
+    const repoRoot = import_path11.default.resolve(__dirname, "..");
+    tryLoad(import_path11.default.join(repoRoot, ".env.local"));
+    tryLoad(import_path11.default.join(repoRoot, ".env"));
   }
 }
 loadEnvFiles();
@@ -11872,7 +13881,7 @@ if (import_electron7.app.isPackaged) {
   process.env.CENCH_AUDIO_DIR = getUserAudioDir();
   process.env.CENCH_AUDIO_URL_BASE = "cench://audio/";
 }
-var execFileAsync = (0, import_util.promisify)(import_child_process.execFile);
+var execFileAsync2 = (0, import_util2.promisify)(import_child_process2.execFile);
 function webZoomTargetWindow() {
   return import_electron7.BrowserWindow.getFocusedWindow() ?? import_electron7.BrowserWindow.getAllWindows()[0] ?? null;
 }
@@ -11890,13 +13899,13 @@ import_electron7.protocol.registerSchemesAsPrivileged([
   }
 ]);
 async function registerCenchProtocol() {
-  const staticDir = import_path.default.resolve(getStaticAppDir());
-  const scenesDir = import_path.default.resolve(getUserScenesDir());
-  const uploadsDir2 = import_path.default.resolve(getUserUploadsDir());
-  const audioDir = import_path.default.resolve(getUserAudioDir());
-  await import_promises6.default.mkdir(scenesDir, { recursive: true });
-  await import_promises6.default.mkdir(uploadsDir2, { recursive: true });
-  await import_promises6.default.mkdir(audioDir, { recursive: true });
+  const staticDir = import_path11.default.resolve(getStaticAppDir());
+  const scenesDir = import_path11.default.resolve(getUserScenesDir());
+  const uploadsDir2 = import_path11.default.resolve(getUserUploadsDir());
+  const audioDir = import_path11.default.resolve(getUserAudioDir());
+  await import_promises17.default.mkdir(scenesDir, { recursive: true });
+  await import_promises17.default.mkdir(uploadsDir2, { recursive: true });
+  await import_promises17.default.mkdir(audioDir, { recursive: true });
   import_electron7.protocol.handle("cench", async (request) => {
     try {
       const url = new URL(request.url);
@@ -11914,26 +13923,26 @@ async function registerCenchProtocol() {
       } else {
         return new Response(`Unknown cench:// host "${host}"`, { status: 404 });
       }
-      let filePath = import_path.default.resolve(baseDir, rawPath || "index.html");
-      if (!filePath.startsWith(baseDir + import_path.default.sep) && filePath !== baseDir) {
+      let filePath = import_path11.default.resolve(baseDir, rawPath || "index.html");
+      if (!filePath.startsWith(baseDir + import_path11.default.sep) && filePath !== baseDir) {
         return new Response("Forbidden", { status: 403 });
       }
       try {
-        const stat = await import_promises6.default.stat(filePath);
-        if (stat.isDirectory()) filePath = import_path.default.join(filePath, "index.html");
+        const stat = await import_promises17.default.stat(filePath);
+        if (stat.isDirectory()) filePath = import_path11.default.join(filePath, "index.html");
       } catch {
         if (!filePath.endsWith(".html")) {
           const htmlVariant = `${filePath}.html`;
           try {
-            await import_promises6.default.access(htmlVariant);
+            await import_promises17.default.access(htmlVariant);
             filePath = htmlVariant;
           } catch {
           }
         }
       }
       try {
-        const realPath = await import_promises6.default.realpath(filePath);
-        if (!realPath.startsWith(baseDir + import_path.default.sep) && realPath !== baseDir) {
+        const realPath = await import_promises17.default.realpath(filePath);
+        if (!realPath.startsWith(baseDir + import_path11.default.sep) && realPath !== baseDir) {
           return new Response("Forbidden (symlink escape)", { status: 403 });
         }
         filePath = realPath;
@@ -11958,7 +13967,7 @@ function createWindow() {
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 12, y: 16 },
     webPreferences: {
-      preload: import_path.default.join(__dirname, "preload.js"),
+      preload: import_path11.default.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
       autoplayPolicy: "no-user-gesture-required"
@@ -12104,12 +14113,12 @@ import_electron7.app.whenReady().then(async () => {
     }
     const cwd = process.cwd();
     try {
-      const { stdout: branchOut } = await execFileAsync("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
+      const { stdout: branchOut } = await execFileAsync2("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
         cwd,
         timeout: 8e3,
         maxBuffer: 1024 * 1024
       });
-      const { stdout: por } = await execFileAsync("git", ["status", "--porcelain"], {
+      const { stdout: por } = await execFileAsync2("git", ["status", "--porcelain"], {
         cwd,
         timeout: 8e3,
         maxBuffer: 1024 * 1024
@@ -12166,8 +14175,8 @@ import_electron7.app.whenReady().then(async () => {
     return { canceled: res.canceled, filePath: res.filePath ?? null };
   });
   import_electron7.ipcMain.handle("cench:writeFile", async (_evt, args) => {
-    await import_promises6.default.mkdir(import_path.default.dirname(args.filePath), { recursive: true });
-    await import_promises6.default.writeFile(args.filePath, Buffer.from(args.bytes));
+    await import_promises17.default.mkdir(import_path11.default.dirname(args.filePath), { recursive: true });
+    await import_promises17.default.writeFile(args.filePath, Buffer.from(args.bytes));
     return { ok: true };
   });
   import_electron7.ipcMain.handle(
@@ -12175,11 +14184,11 @@ import_electron7.app.whenReady().then(async () => {
     async (_evt, args) => {
       const extRaw = (args.extension || "webm").toLowerCase().replace(/[^a-z0-9]/g, "");
       const ext = extRaw || "webm";
-      const dir = import_path.default.join(import_electron7.app.getPath("userData"), "recordings");
-      await import_promises6.default.mkdir(dir, { recursive: true });
+      const dir = import_path11.default.join(import_electron7.app.getPath("userData"), "recordings");
+      await import_promises17.default.mkdir(dir, { recursive: true });
       const safeBase = sanitizeFilename(args.nameHint || "");
-      const filePath = import_path.default.join(dir, `${safeBase}-${Date.now()}.${ext}`);
-      await import_promises6.default.writeFile(filePath, Buffer.from(args.bytes));
+      const filePath = import_path11.default.join(dir, `${safeBase}-${Date.now()}.${ext}`);
+      await import_promises17.default.writeFile(filePath, Buffer.from(args.bytes));
       const fileUrl = (0, import_url.pathToFileURL)(filePath).href;
       return { ok: true, filePath, fileUrl };
     }
@@ -12190,16 +14199,16 @@ import_electron7.app.whenReady().then(async () => {
       const inputs = (args.inputs ?? []).filter(Boolean);
       if (inputs.length === 0) throw new Error("concatMp4: no input files");
       if (inputs.length === 1) {
-        await import_promises6.default.copyFile(inputs[0], args.output);
+        await import_promises17.default.copyFile(inputs[0], args.output);
         if (args.cleanup) {
-          await import_promises6.default.unlink(inputs[0]).catch(() => {
+          await import_promises17.default.unlink(inputs[0]).catch(() => {
           });
         }
         return { ok: true };
       }
       const transitions = args.transitions ?? [];
       try {
-        const stitcherPath = import_electron7.app.isPackaged ? import_path.default.join(process.resourcesPath, "render-server", "stitcher.js") : import_path.default.join(process.cwd(), "render-server", "stitcher.js");
+        const stitcherPath = import_electron7.app.isPackaged ? import_path11.default.join(process.resourcesPath, "render-server", "stitcher.js") : import_path11.default.join(process.cwd(), "render-server", "stitcher.js");
         const mod = await import((0, import_url.pathToFileURL)(stitcherPath).href);
         const stitchScenes = mod?.stitchScenes;
         if (typeof stitchScenes !== "function") {
@@ -12212,7 +14221,7 @@ import_electron7.app.whenReady().then(async () => {
         await stitchScenes(inputs, stitchedTransitions, args.output);
       } finally {
         if (args.cleanup) {
-          await Promise.all(inputs.map((p) => import_promises6.default.unlink(p).catch(() => {
+          await Promise.all(inputs.map((p) => import_promises17.default.unlink(p).catch(() => {
           })));
         }
       }
@@ -12262,14 +14271,14 @@ import_electron7.app.whenReady().then(async () => {
       if (!args.screenBytes || args.screenBytes.byteLength === 0) {
         throw new Error("Screen recording is empty \u2014 nothing to save");
       }
-      const dir = import_path.default.join(import_electron7.app.getPath("userData"), "recordings");
-      await import_promises6.default.mkdir(dir, { recursive: true });
+      const dir = import_path11.default.join(import_electron7.app.getPath("userData"), "recordings");
+      await import_promises17.default.mkdir(dir, { recursive: true });
       const ts = Date.now();
       const safeBase = sanitizeFilename(args.nameHint || "");
       const writtenFiles = [];
       try {
-        const screenPath = import_path.default.join(dir, `${safeBase}-${ts}.webm`);
-        await import_promises6.default.writeFile(screenPath, Buffer.from(args.screenBytes));
+        const screenPath = import_path11.default.join(dir, `${safeBase}-${ts}.webm`);
+        await import_promises17.default.writeFile(screenPath, Buffer.from(args.screenBytes));
         writtenFiles.push(screenPath);
         const result = {
           screenVideoPath: screenPath,
@@ -12277,17 +14286,17 @@ import_electron7.app.whenReady().then(async () => {
           createdAt: ts
         };
         if (args.webcamBytes && args.webcamBytes.byteLength > 0) {
-          const webcamPath = import_path.default.join(dir, `${safeBase}-${ts}-webcam.webm`);
-          await import_promises6.default.writeFile(webcamPath, Buffer.from(args.webcamBytes));
+          const webcamPath = import_path11.default.join(dir, `${safeBase}-${ts}-webcam.webm`);
+          await import_promises17.default.writeFile(webcamPath, Buffer.from(args.webcamBytes));
           writtenFiles.push(webcamPath);
           result.webcamVideoPath = webcamPath;
           result.webcamVideoUrl = (0, import_url.pathToFileURL)(webcamPath).href;
         }
-        const manifestPath = import_path.default.join(dir, `${safeBase}-${ts}.session.json`);
-        await import_promises6.default.writeFile(manifestPath, JSON.stringify(result, null, 2));
+        const manifestPath = import_path11.default.join(dir, `${safeBase}-${ts}.session.json`);
+        await import_promises17.default.writeFile(manifestPath, JSON.stringify(result, null, 2));
         return result;
       } catch (err) {
-        await Promise.all(writtenFiles.map((f) => import_promises6.default.unlink(f).catch(() => {
+        await Promise.all(writtenFiles.map((f) => import_promises17.default.unlink(f).catch(() => {
         })));
         throw err;
       }

@@ -28,13 +28,17 @@ export function MusicSearchPopover({ onSelect, onClose }: MusicSearchPopoverProp
     if (!query.trim()) return
     setLoading(true)
     try {
-      const res = await fetch('/api/music/search', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, limit: 8 }),
-      })
-      const data = await res.json()
-      setResults(data.results || [])
+      const ipc = typeof window !== 'undefined' ? window.cenchApi?.music : undefined
+      const data = ipc
+        ? await ipc.search({ query, limit: 8 })
+        : await (
+            await fetch('/api/music/search', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ query, limit: 8 }),
+            })
+          ).json()
+      setResults((data.results as MusicResult[]) || [])
     } catch {
       setResults([])
     }

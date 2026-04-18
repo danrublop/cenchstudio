@@ -87,6 +87,15 @@ var cenchApi = {
     list: (args) => import_electron.ipcRenderer.invoke("cench:zdogLibrary.list", args),
     save: (args) => import_electron.ipcRenderer.invoke("cench:zdogLibrary.save", args),
     delete: (args) => import_electron.ipcRenderer.invoke("cench:zdogLibrary.delete", args)
+  },
+  tts: {
+    synthesize: (args) => import_electron.ipcRenderer.invoke("cench:tts.synthesize", args)
+  },
+  sfx: {
+    search: (args) => import_electron.ipcRenderer.invoke("cench:sfx.search", args)
+  },
+  music: {
+    search: (args) => import_electron.ipcRenderer.invoke("cench:music.search", args)
   }
 };
 import_electron.contextBridge.exposeInMainWorld("cenchApi", cenchApi);

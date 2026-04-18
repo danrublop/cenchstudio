@@ -272,6 +272,47 @@ export interface CenchApi {
     }): Promise<{ success: true; asset: Record<string, unknown> }>
     delete(args: { projectId: string; id: string }): Promise<{ success: true }>
   }
+  tts: {
+    /**
+     * Server-side TTS synthesis. Returns either `{mode: 'client', ...}`
+     * (web-speech / puter — renderer speaks) or `{url, duration, provider, captions}`
+     * (MP3/WAV written to the audio dir; URL is `/audio/<name>` in dev
+     * or `cench://audio/<name>` in packaged).
+     */
+    synthesize(args: {
+      text: string
+      sceneId: string
+      voiceId?: string
+      provider?: string
+      model?: string
+      instructions?: string
+      localMode?: boolean
+    }): Promise<Record<string, unknown>>
+  }
+  sfx: {
+    /** Search Freesound/Pixabay or generate via ElevenLabs when `prompt` is set. */
+    search(args: {
+      query?: string
+      prompt?: string
+      provider?: string
+      limit?: number
+      duration?: number
+      download?: boolean
+      mode?: 'search' | 'library' | 'generated'
+      categoryId?: string
+      page?: number
+      commercialOnly?: boolean
+    }): Promise<Record<string, unknown>>
+  }
+  music: {
+    /** Search Pixabay-music/Freesound-music. Set `download: true` to pull remote tracks to the local audio dir. */
+    search(args: {
+      query: string
+      provider?: string
+      limit?: number
+      download?: boolean
+    }): Promise<Record<string, unknown>>
+  }
 }
 
 declare global {

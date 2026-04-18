@@ -12,6 +12,7 @@ import * as scene from './scene'
 import * as media from './media'
 import * as avatarConfigs from './avatar-configs'
 import * as zdogLibrary from './zdog-library'
+import * as audio from './audio'
 
 /**
  * Central IPC registration. Each category module exports
@@ -37,4 +38,5 @@ export function registerAllIpc(ipcMain: IpcMain): void {
   media.register(ipcMain)
   avatarConfigs.register(ipcMain)
   zdogLibrary.register(ipcMain)
+  audio.register(ipcMain)
 }

@@ -604,13 +604,21 @@ export function NarrationPanel({ scene }: Props) {
       return
     }
     try {
-      const res = await fetch('/api/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, sceneId: scene.id }),
-      })
-      if (!res.ok) throw new Error('TTS failed')
-      const { url } = await res.json()
+      const ipc = typeof window !== 'undefined' ? window.cenchApi?.tts : undefined
+      const payload = { text, sceneId: scene.id }
+      const data = ipc
+        ? await ipc.synthesize(payload)
+        : await (async () => {
+            const res = await fetch('/api/tts', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload),
+            })
+            if (!res.ok) throw new Error('TTS failed')
+            return res.json()
+          })()
+      const url = data.url as string | undefined
+      if (!url) return
       updateScene(scene.id, { audioLayer: { ...scene.audioLayer, src: url, enabled: true } })
       await saveSceneHTML(scene.id)
     } catch {

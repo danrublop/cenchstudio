@@ -133,13 +133,18 @@ export function SfxLibraryPanel({ onSelect, className = '', style: rootStyle }: 
     if (!query.trim()) return
     setLoading(true)
     try {
-      const res = await fetch('/api/sfx', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, limit: 48, commercialOnly: true }),
-      })
-      const data = await res.json()
-      setResults(data.results || [])
+      const ipc = typeof window !== 'undefined' ? window.cenchApi?.sfx : undefined
+      const payload = { query, limit: 48, commercialOnly: true }
+      const data = ipc
+        ? await ipc.search(payload)
+        : await (
+            await fetch('/api/sfx', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload),
+            })
+          ).json()
+      setResults((data.results as typeof results) || [])
     } catch {
       setResults([])
     }
@@ -310,9 +315,8 @@ export function SfxLibraryPanel({ onSelect, className = '', style: rootStyle }: 
           >
             ZzFX
           </a>{' '}
-          (MIT) and bundled WAVs under{' '}
-          <code className="rounded bg-white/5 px-0.5 text-[9px]">/sfx-library/</code>. Remote search needs API keys
-          (commercial-friendly Freesound filters when enabled).
+          (MIT) and bundled WAVs under <code className="rounded bg-white/5 px-0.5 text-[9px]">/sfx-library/</code>.
+          Remote search needs API keys (commercial-friendly Freesound filters when enabled).
         </p>
 
         {zzfxEntries.length > 0 && (
@@ -419,60 +423,60 @@ export function SfxLibraryPanel({ onSelect, className = '', style: rootStyle }: 
               Procedural (live ZzFX)
             </p>
             <div className="grid grid-cols-2 gap-2.5">
-            {librarySlice.map((preset) => {
-              const key = `zzfx-${preset.id}`
-              const thumb = picsumThumb('zzfx', preset.id)
-              const isAdding = addingId === preset.id
-              const catLabel = 'categoryLabel' in preset ? preset.categoryLabel : undefined
-              return (
-                <div key={key} className="group sfx-card text-left">
-                  <button
-                    type="button"
-                    disabled={isAdding}
-                    className="w-full rounded-lg text-left outline-none transition-transform focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-panel)] disabled:opacity-50"
-                    onMouseEnter={() => {
-                      playZzfxPreview(preset)
-                    }}
-                    onClick={() => void handleZzfxPick(preset)}
-                  >
-                    <div className="relative aspect-video w-full overflow-hidden rounded-lg bg-[#0d0d0f] shadow-inner ring-1 ring-white/10">
-                      <img
-                        src={thumb}
-                        alt=""
-                        className="pointer-events-none absolute inset-0 h-full w-full select-none object-cover"
-                        draggable={false}
-                      />
-                      <div className="absolute inset-0 flex items-center justify-center bg-black/35 opacity-0 transition-opacity group-hover:opacity-100">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-black/55 text-white ring-1 ring-white/25">
-                          {isAdding ? (
-                            <Loader2 size={18} className="animate-spin" />
-                          ) : (
-                            <Play size={18} className="ml-0.5" />
-                          )}
+              {librarySlice.map((preset) => {
+                const key = `zzfx-${preset.id}`
+                const thumb = picsumThumb('zzfx', preset.id)
+                const isAdding = addingId === preset.id
+                const catLabel = 'categoryLabel' in preset ? preset.categoryLabel : undefined
+                return (
+                  <div key={key} className="group sfx-card text-left">
+                    <button
+                      type="button"
+                      disabled={isAdding}
+                      className="w-full rounded-lg text-left outline-none transition-transform focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-panel)] disabled:opacity-50"
+                      onMouseEnter={() => {
+                        playZzfxPreview(preset)
+                      }}
+                      onClick={() => void handleZzfxPick(preset)}
+                    >
+                      <div className="relative aspect-video w-full overflow-hidden rounded-lg bg-[#0d0d0f] shadow-inner ring-1 ring-white/10">
+                        <img
+                          src={thumb}
+                          alt=""
+                          className="pointer-events-none absolute inset-0 h-full w-full select-none object-cover"
+                          draggable={false}
+                        />
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/35 opacity-0 transition-opacity group-hover:opacity-100">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-black/55 text-white ring-1 ring-white/25">
+                            {isAdding ? (
+                              <Loader2 size={18} className="animate-spin" />
+                            ) : (
+                              <Play size={18} className="ml-0.5" />
+                            )}
+                          </div>
                         </div>
-                      </div>
-                      <div className="absolute bottom-1.5 right-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-black/55 text-white/95 ring-1 ring-white/20">
-                        <Plus size={14} strokeWidth={2.5} />
-                      </div>
-                      <span className="absolute bottom-1.5 left-1.5 rounded bg-black/50 px-1 py-0.5 text-[9px] font-medium uppercase tracking-wide text-white/90">
-                        {licenseBadgeLabel('MIT (ZzFX)', 'zzfx')}
-                      </span>
-                    </div>
-                    <div className="mt-1.5 flex flex-col gap-0.5 px-0.5">
-                      <div className="flex items-start gap-1">
-                        <Volume2 size={12} className="mt-0.5 shrink-0 text-[#c678dd] opacity-80" />
-                        <span className="line-clamp-2 min-h-[2.25rem] text-[11px] font-medium leading-tight text-[var(--color-text-primary)]">
-                          {preset.name}
+                        <div className="absolute bottom-1.5 right-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-black/55 text-white/95 ring-1 ring-white/20">
+                          <Plus size={14} strokeWidth={2.5} />
+                        </div>
+                        <span className="absolute bottom-1.5 left-1.5 rounded bg-black/50 px-1 py-0.5 text-[9px] font-medium uppercase tracking-wide text-white/90">
+                          {licenseBadgeLabel('MIT (ZzFX)', 'zzfx')}
                         </span>
                       </div>
-                      {libraryCategoryId === CATEGORY_ALL_ID && catLabel && (
-                        <span className="pl-[18px] text-[9px] text-[var(--color-text-muted)]">{catLabel}</span>
-                      )}
-                    </div>
-                  </button>
-                </div>
-              )
-            })}
+                      <div className="mt-1.5 flex flex-col gap-0.5 px-0.5">
+                        <div className="flex items-start gap-1">
+                          <Volume2 size={12} className="mt-0.5 shrink-0 text-[#c678dd] opacity-80" />
+                          <span className="line-clamp-2 min-h-[2.25rem] text-[11px] font-medium leading-tight text-[var(--color-text-primary)]">
+                            {preset.name}
+                          </span>
+                        </div>
+                        {libraryCategoryId === CATEGORY_ALL_ID && catLabel && (
+                          <span className="pl-[18px] text-[9px] text-[var(--color-text-muted)]">{catLabel}</span>
+                        )}
+                      </div>
+                    </button>
+                  </div>
+                )
+              })}
             </div>
           </div>
         )}
@@ -490,60 +494,60 @@ export function SfxLibraryPanel({ onSelect, className = '', style: rootStyle }: 
               Remote results
             </p>
             <div className="grid grid-cols-2 gap-2.5">
-            {results.map((r) => {
-              const key = `${r.provider ?? 'x'}-${r.id}`
-              const thumb = picsumThumb(r.provider, r.id)
-              const isPlaying = playing === r.id
-              return (
-                <div key={key} className="group sfx-card text-left">
-                  <button
-                    type="button"
-                    className="w-full rounded-lg text-left outline-none transition-transform focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-panel)]"
-                    onMouseEnter={() => playPreview(r)}
-                    onMouseLeave={() => stopPreview()}
-                    onClick={() => {
-                      stopPreview()
-                      onSelect(r, triggerAt)
-                    }}
-                  >
-                    <div className="relative aspect-video w-full overflow-hidden rounded-lg bg-[#0d0d0f] shadow-inner ring-1 ring-white/10">
-                      <img
-                        src={thumb}
-                        alt=""
-                        className="pointer-events-none absolute inset-0 h-full w-full select-none object-cover"
-                        draggable={false}
-                      />
-                      <div
-                        className={`absolute inset-0 flex items-center justify-center bg-black/35 transition-opacity ${
-                          isPlaying ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-                        }`}
-                      >
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-black/55 text-white ring-1 ring-white/25">
-                          {isPlaying ? <Pause size={18} /> : <Play size={18} className="ml-0.5" />}
+              {results.map((r) => {
+                const key = `${r.provider ?? 'x'}-${r.id}`
+                const thumb = picsumThumb(r.provider, r.id)
+                const isPlaying = playing === r.id
+                return (
+                  <div key={key} className="group sfx-card text-left">
+                    <button
+                      type="button"
+                      className="w-full rounded-lg text-left outline-none transition-transform focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-panel)]"
+                      onMouseEnter={() => playPreview(r)}
+                      onMouseLeave={() => stopPreview()}
+                      onClick={() => {
+                        stopPreview()
+                        onSelect(r, triggerAt)
+                      }}
+                    >
+                      <div className="relative aspect-video w-full overflow-hidden rounded-lg bg-[#0d0d0f] shadow-inner ring-1 ring-white/10">
+                        <img
+                          src={thumb}
+                          alt=""
+                          className="pointer-events-none absolute inset-0 h-full w-full select-none object-cover"
+                          draggable={false}
+                        />
+                        <div
+                          className={`absolute inset-0 flex items-center justify-center bg-black/35 transition-opacity ${
+                            isPlaying ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                          }`}
+                        >
+                          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-black/55 text-white ring-1 ring-white/25">
+                            {isPlaying ? <Pause size={18} /> : <Play size={18} className="ml-0.5" />}
+                          </div>
                         </div>
-                      </div>
-                      <div className="absolute bottom-1.5 right-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-black/55 text-white/95 ring-1 ring-white/20">
-                        <Plus size={14} strokeWidth={2.5} />
-                      </div>
-                      {r.duration != null && (
-                        <span className="absolute left-1.5 top-1.5 rounded bg-black/55 px-1.5 py-0.5 font-mono text-[9px] text-white/95">
-                          {r.duration.toFixed(1)}s
+                        <div className="absolute bottom-1.5 right-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-black/55 text-white/95 ring-1 ring-white/20">
+                          <Plus size={14} strokeWidth={2.5} />
+                        </div>
+                        {r.duration != null && (
+                          <span className="absolute left-1.5 top-1.5 rounded bg-black/55 px-1.5 py-0.5 font-mono text-[9px] text-white/95">
+                            {r.duration.toFixed(1)}s
+                          </span>
+                        )}
+                        <span className="absolute left-1.5 bottom-1.5 rounded bg-black/50 px-1 py-0.5 text-[9px] font-medium uppercase tracking-wide text-white/90">
+                          {licenseBadgeLabel(r.license, r.provider)}
                         </span>
-                      )}
-                      <span className="absolute left-1.5 bottom-1.5 rounded bg-black/50 px-1 py-0.5 text-[9px] font-medium uppercase tracking-wide text-white/90">
-                        {licenseBadgeLabel(r.license, r.provider)}
-                      </span>
-                    </div>
-                    <div className="mt-1.5 flex items-start gap-1 px-0.5">
-                      <Volume2 size={12} className="mt-0.5 shrink-0 text-[#c678dd] opacity-80" />
-                      <span className="line-clamp-2 min-h-[2.25rem] text-[11px] font-medium leading-tight text-[var(--color-text-primary)]">
-                        {r.name}
-                      </span>
-                    </div>
-                  </button>
-                </div>
-              )
-            })}
+                      </div>
+                      <div className="mt-1.5 flex items-start gap-1 px-0.5">
+                        <Volume2 size={12} className="mt-0.5 shrink-0 text-[#c678dd] opacity-80" />
+                        <span className="line-clamp-2 min-h-[2.25rem] text-[11px] font-medium leading-tight text-[var(--color-text-primary)]">
+                          {r.name}
+                        </span>
+                      </div>
+                    </button>
+                  </div>
+                )
+              })}
             </div>
           </div>
         )}

@@ -1,6 +1,6 @@
 'use client'
 
-import type { SFXTrack, MusicTrack } from '../types'
+import type { SFXTrack, MusicTrack, TTSProvider } from '../types'
 import { normalizeAudioLayer } from '../audio/normalize'
 import type { Set, Get } from './types'
 
@@ -69,19 +69,33 @@ export function createAudioActions(set: Set, get: Get) {
       })
 
       try {
-        const res = await fetch('/api/tts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            text,
-            sceneId,
-            voiceId,
-            provider: provider === 'auto' ? undefined : provider,
-            instructions,
-          }),
-        })
-        if (!res.ok) throw new Error('TTS failed')
-        const data = await res.json()
+        const ipc = typeof window !== 'undefined' ? window.cenchApi?.tts : undefined
+        const payload = {
+          text,
+          sceneId,
+          voiceId,
+          provider: provider === 'auto' ? undefined : provider,
+          instructions,
+        }
+        type TTSResponse = {
+          mode?: 'client'
+          url?: string
+          duration?: number | null
+          provider: TTSProvider
+          captions?: unknown
+        }
+        let data: TTSResponse
+        if (ipc) {
+          data = (await ipc.synthesize(payload)) as TTSResponse
+        } else {
+          const res = await fetch('/api/tts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          })
+          if (!res.ok) throw new Error('TTS failed')
+          data = (await res.json()) as TTSResponse
+        }
 
         const currentScene = get().scenes.find((s) => s.id === sceneId)
         if (!currentScene) return
@@ -108,12 +122,12 @@ export function createAudioActions(set: Set, get: Get) {
             audioLayer: {
               ...currentAL,
               enabled: true,
-              src: data.url,
+              src: data.url ?? null,
               tts: {
                 text,
                 provider: data.provider,
                 voiceId: voiceId || null,
-                src: data.url,
+                src: data.url ?? null,
                 status: 'ready',
                 duration: data.duration || null,
                 instructions: instructions || null,

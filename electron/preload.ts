@@ -151,6 +151,39 @@ export type CenchApi = {
     }) => Promise<{ success: true; asset: Record<string, unknown> }>
     delete: (args: { projectId: string; id: string }) => Promise<{ success: true }>
   }
+  tts: {
+    synthesize: (args: {
+      text: string
+      sceneId: string
+      voiceId?: string
+      provider?: string
+      model?: string
+      instructions?: string
+      localMode?: boolean
+    }) => Promise<Record<string, unknown>>
+  }
+  sfx: {
+    search: (args: {
+      query?: string
+      prompt?: string
+      provider?: string
+      limit?: number
+      duration?: number
+      download?: boolean
+      mode?: 'search' | 'library' | 'generated'
+      categoryId?: string
+      page?: number
+      commercialOnly?: boolean
+    }) => Promise<Record<string, unknown>>
+  }
+  music: {
+    search: (args: {
+      query: string
+      provider?: string
+      limit?: number
+      download?: boolean
+    }) => Promise<Record<string, unknown>>
+  }
 }
 
 const cenchApi: CenchApi = {
@@ -223,6 +256,15 @@ const cenchApi: CenchApi = {
     list: (args) => ipcRenderer.invoke('cench:zdogLibrary.list', args),
     save: (args) => ipcRenderer.invoke('cench:zdogLibrary.save', args),
     delete: (args) => ipcRenderer.invoke('cench:zdogLibrary.delete', args),
+  },
+  tts: {
+    synthesize: (args) => ipcRenderer.invoke('cench:tts.synthesize', args),
+  },
+  sfx: {
+    search: (args) => ipcRenderer.invoke('cench:sfx.search', args),
+  },
+  music: {
+    search: (args) => ipcRenderer.invoke('cench:music.search', args),
   },
 }
 
