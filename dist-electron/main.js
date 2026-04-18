@@ -2205,6 +2205,13 @@ function safeAudioFilename(prefix, sceneId, ext = "mp3") {
   const rand = import_crypto4.default.randomBytes(4).toString("hex");
   return `${prefix}-${safe}-${Date.now()}-${rand}.${ext}`;
 }
+function sanitizeErrorMessage(err) {
+  if (!(err instanceof Error)) return "Audio operation failed";
+  const msg = err.message;
+  let sanitized = msg.replace(/[a-zA-Z0-9_\-]{20,}/g, "[REDACTED]");
+  sanitized = sanitized.replace(/https?:\/\/\S+/g, "[URL]");
+  return sanitized;
+}
 var import_crypto4, MAX_TTS_TEXT_LENGTH, MAX_SEARCH_QUERY_LENGTH;
 var init_sanitize = __esm({
   "lib/audio/sanitize.ts"() {
@@ -16617,6 +16624,7 @@ function getZzfxCategory(id) {
 // lib/services/audio.ts
 init_sfx_license();
 init_paths();
+init_sanitize();
 var AudioValidationError = class extends Error {
   code = "VALIDATION";
   constructor(message) {
@@ -16768,6 +16776,47 @@ async function searchMusic(input) {
   }
   return { results, provider: providerId };
 }
+var voiceCache2 = /* @__PURE__ */ new Map();
+var VOICE_CACHE_TTL2 = 60 * 60 * 1e3;
+async function listVoices2(provider) {
+  if (!provider) throw new AudioValidationError("provider is required");
+  const cached = voiceCache2.get(provider);
+  if (cached && Date.now() - cached.timestamp < VOICE_CACHE_TTL2) {
+    return { voices: cached.voices, provider };
+  }
+  const impl = await getTTSProvider(provider);
+  if (!impl.listVoices) return { voices: [], provider };
+  const voices = await impl.listVoices();
+  voiceCache2.set(provider, { voices, timestamp: Date.now() });
+  return { voices, provider };
+}
+async function designVoice(input) {
+  if (!input.description || typeof input.description !== "string") {
+    throw new AudioValidationError("description is required");
+  }
+  if (input.description.length > 500) {
+    throw new AudioValidationError("description must be under 500 characters");
+  }
+  const impl = await getTTSProvider("voxcpm");
+  if (!impl.designVoice) {
+    throw new AudioValidationError("VoxCPM provider does not support voice design");
+  }
+  try {
+    const result = await impl.designVoice({
+      description: input.description,
+      sampleText: input.sampleText || void 0
+    });
+    return {
+      voiceId: result.voiceId,
+      name: result.name,
+      previewUrl: result.previewUrl ?? null,
+      provider: "voxcpm"
+    };
+  } catch (err) {
+    const message = err instanceof Error ? sanitizeErrorMessage(err.message) : "Voice design failed";
+    throw new Error(message, { cause: err });
+  }
+}
 
 // electron/ipc/audio.ts
 function rethrowValidation(fn) {
@@ -16792,6 +16841,14 @@ function register14(ipcMain2) {
   ipcMain2.handle(
     "cench:music.search",
     rethrowValidation((_e, args) => searchMusic(args))
+  );
+  ipcMain2.handle(
+    "cench:tts.listVoices",
+    rethrowValidation((_e, provider) => listVoices2(provider))
+  );
+  ipcMain2.handle(
+    "cench:tts.designVoice",
+    rethrowValidation((_e, args) => designVoice(args))
   );
 }
 

@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import type { TTSProvider } from '@/lib/types'
-import { getTTSProvider } from '@/lib/audio/router'
-
-const voiceCache = new Map<string, { voices: unknown[]; timestamp: number }>()
-const CACHE_TTL = 60 * 60 * 1000 // 1 hour
+import { listVoices, AudioValidationError } from '@/lib/services/audio'
 
 export async function GET(req: NextRequest) {
   const provider = req.nextUrl.searchParams.get('provider') as TTSProvider | null
@@ -12,23 +9,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'provider param required' }, { status: 400 })
   }
 
-  // Check cache
-  const cached = voiceCache.get(provider)
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-    return NextResponse.json({ voices: cached.voices, provider })
-  }
-
   try {
-    const impl = await getTTSProvider(provider)
-    if (!impl.listVoices) {
-      return NextResponse.json({ voices: [], provider })
-    }
-
-    const voices = await impl.listVoices()
-    voiceCache.set(provider, { voices, timestamp: Date.now() })
-
-    return NextResponse.json({ voices, provider })
-  } catch (err: unknown) {
+    const result = await listVoices(provider)
+    return NextResponse.json(result)
+  } catch (err) {
+    if (err instanceof AudioValidationError) return NextResponse.json({ error: err.message }, { status: 400 })
     console.error('Voice list error:', err)
     const message = err instanceof Error ? err.message : 'Failed to list voices'
     return NextResponse.json({ error: message }, { status: 500 })

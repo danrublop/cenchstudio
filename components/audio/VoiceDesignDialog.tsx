@@ -12,7 +12,7 @@ export function VoiceDesignDialog({ onClose, onDesigned }: VoiceDesignDialogProp
   const [sampleText, setSampleText] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [result, setResult] = useState<{ voiceId: string; name: string; previewUrl?: string } | null>(null)
+  const [result, setResult] = useState<{ voiceId: string; name: string; previewUrl?: string | null } | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
@@ -23,22 +23,35 @@ export function VoiceDesignDialog({ onClose, onDesigned }: VoiceDesignDialogProp
     setResult(null)
 
     try {
-      const res = await fetch('/api/tts/design-voice', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          description: description.trim(),
-          sampleText: sampleText.trim() || undefined,
-        }),
-      })
-      const data = await res.json()
+      const ipc = typeof window !== 'undefined' ? window.cenchApi?.tts : undefined
+      if (ipc) {
+        try {
+          const data = await ipc.designVoice({
+            description: description.trim(),
+            sampleText: sampleText.trim() || undefined,
+          })
+          setResult({ voiceId: data.voiceId, name: data.name, previewUrl: data.previewUrl })
+        } catch (e) {
+          setError(e instanceof Error ? e.message : 'Voice design failed')
+        }
+      } else {
+        const res = await fetch('/api/tts/design-voice', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            description: description.trim(),
+            sampleText: sampleText.trim() || undefined,
+          }),
+        })
+        const data = await res.json()
 
-      if (!res.ok) {
-        setError(data.error || 'Voice design failed')
-        return
+        if (!res.ok) {
+          setError(data.error || 'Voice design failed')
+          return
+        }
+
+        setResult({ voiceId: data.voiceId, name: data.name, previewUrl: data.previewUrl })
       }
-
-      setResult({ voiceId: data.voiceId, name: data.name, previewUrl: data.previewUrl })
     } catch {
       setError('Failed to connect to server')
     } finally {

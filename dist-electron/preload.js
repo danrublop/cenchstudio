@@ -93,7 +93,9 @@ var cenchApi = {
     delete: (args) => import_electron.ipcRenderer.invoke("cench:zdogLibrary.delete", args)
   },
   tts: {
-    synthesize: (args) => import_electron.ipcRenderer.invoke("cench:tts.synthesize", args)
+    synthesize: (args) => import_electron.ipcRenderer.invoke("cench:tts.synthesize", args),
+    listVoices: (provider) => import_electron.ipcRenderer.invoke("cench:tts.listVoices", provider),
+    designVoice: (args) => import_electron.ipcRenderer.invoke("cench:tts.designVoice", args)
   },
   sfx: {
     search: (args) => import_electron.ipcRenderer.invoke("cench:sfx.search", args)

@@ -184,6 +184,13 @@ export type CenchApi = {
       instructions?: string
       localMode?: boolean
     }) => Promise<Record<string, unknown>>
+    listVoices: (provider: string) => Promise<{ voices: unknown[]; provider: string }>
+    designVoice: (args: { description: string; sampleText?: string }) => Promise<{
+      voiceId: string
+      name: string
+      previewUrl: string | null
+      provider: 'voxcpm'
+    }>
   }
   sfx: {
     search: (args: {
@@ -400,6 +407,8 @@ const cenchApi: CenchApi = {
   },
   tts: {
     synthesize: (args) => ipcRenderer.invoke('cench:tts.synthesize', args),
+    listVoices: (provider) => ipcRenderer.invoke('cench:tts.listVoices', provider),
+    designVoice: (args) => ipcRenderer.invoke('cench:tts.designVoice', args),
   },
   sfx: {
     search: (args) => ipcRenderer.invoke('cench:sfx.search', args),

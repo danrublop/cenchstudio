@@ -30,6 +30,7 @@ import { buildNaiveCaptions } from '@/lib/audio/captions'
 import { getZzfxCategory, SFX_LIBRARY_CATEGORIES } from '@/lib/audio/sfx-zzfx-presets'
 import { FREESOUND_LICENSE_NOTE, PIXABAY_SFX_LICENSE_NOTE } from '@/lib/audio/sfx-license'
 import { getAudioDir, audioUrlFor, isLocalAudioUrl } from '@/lib/audio/paths'
+import { sanitizeErrorMessage } from '@/lib/audio/sanitize'
 
 // ── Service errors ─────────────────────────────────────────────────────────
 // Plain Error subclasses so callers can distinguish user-input validation
@@ -283,4 +284,74 @@ export async function searchMusic(input: MusicSearchInput): Promise<{
   }
 
   return { results, provider: providerId }
+}
+
+// ── TTS voice directory ────────────────────────────────────────────────────
+
+const voiceCache = new Map<string, { voices: unknown[]; timestamp: number }>()
+const VOICE_CACHE_TTL = 60 * 60 * 1000 // 1 hour
+
+export interface ListVoicesResult {
+  voices: unknown[]
+  provider: TTSProvider
+}
+
+export async function listVoices(provider: TTSProvider): Promise<ListVoicesResult> {
+  if (!provider) throw new AudioValidationError('provider is required')
+
+  const cached = voiceCache.get(provider)
+  if (cached && Date.now() - cached.timestamp < VOICE_CACHE_TTL) {
+    return { voices: cached.voices, provider }
+  }
+
+  const impl = await getTTSProvider(provider)
+  if (!impl.listVoices) return { voices: [], provider }
+
+  const voices = await impl.listVoices()
+  voiceCache.set(provider, { voices, timestamp: Date.now() })
+  return { voices, provider }
+}
+
+// ── TTS voice design (VoxCPM) ──────────────────────────────────────────────
+
+export interface DesignVoiceInput {
+  description: string
+  sampleText?: string
+}
+
+export interface DesignVoiceResult {
+  voiceId: string
+  name: string
+  previewUrl: string | null
+  provider: 'voxcpm'
+}
+
+export async function designVoice(input: DesignVoiceInput): Promise<DesignVoiceResult> {
+  if (!input.description || typeof input.description !== 'string') {
+    throw new AudioValidationError('description is required')
+  }
+  if (input.description.length > 500) {
+    throw new AudioValidationError('description must be under 500 characters')
+  }
+
+  const impl = await getTTSProvider('voxcpm')
+  if (!impl.designVoice) {
+    throw new AudioValidationError('VoxCPM provider does not support voice design')
+  }
+
+  try {
+    const result = await impl.designVoice({
+      description: input.description,
+      sampleText: input.sampleText || undefined,
+    })
+    return {
+      voiceId: result.voiceId,
+      name: result.name,
+      previewUrl: result.previewUrl ?? null,
+      provider: 'voxcpm',
+    }
+  } catch (err) {
+    const message = err instanceof Error ? sanitizeErrorMessage(err.message) : 'Voice design failed'
+    throw new Error(message, { cause: err })
+  }
 }

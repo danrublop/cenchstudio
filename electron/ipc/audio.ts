@@ -1,5 +1,12 @@
 import type { IpcMain } from 'electron'
-import { synthesizeTTS, searchSFX, searchMusic, AudioValidationError } from '@/lib/services/audio'
+import {
+  synthesizeTTS,
+  searchSFX,
+  searchMusic,
+  listVoices,
+  designVoice,
+  AudioValidationError,
+} from '@/lib/services/audio'
 import { IpcValidationError } from './_helpers'
 
 /**
@@ -38,5 +45,13 @@ export function register(ipcMain: IpcMain): void {
   ipcMain.handle(
     'cench:music.search',
     rethrowValidation((_e, args: Parameters<typeof searchMusic>[0]) => searchMusic(args)),
+  )
+  ipcMain.handle(
+    'cench:tts.listVoices',
+    rethrowValidation((_e, provider: Parameters<typeof listVoices>[0]) => listVoices(provider)),
+  )
+  ipcMain.handle(
+    'cench:tts.designVoice',
+    rethrowValidation((_e, args: Parameters<typeof designVoice>[0]) => designVoice(args)),
   )
 }

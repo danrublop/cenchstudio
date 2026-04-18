@@ -324,6 +324,13 @@ export interface CenchApi {
       instructions?: string
       localMode?: boolean
     }): Promise<Record<string, unknown>>
+    /** List available voices for a TTS provider (cached 1h in main). */
+    listVoices(provider: TTSProviderId): Promise<{ voices: unknown[]; provider: TTSProviderId }>
+    /** VoxCPM-only: synthesize a voice from a text description and persist it as a reusable voiceId. */
+    designVoice(args: {
+      description: string
+      sampleText?: string
+    }): Promise<{ voiceId: string; name: string; previewUrl: string | null; provider: 'voxcpm' }>
   }
   sfx: {
     /** Search Freesound/Pixabay or generate via ElevenLabs when `prompt` is set. */
