@@ -56,15 +56,14 @@ export function createImageVideoToolHandler(deps: {
         })
         if (permErr) return permErr
         try {
-          const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-          const response = await fetch(
-            `${baseUrl}/api/search-images?query=${encodeURIComponent(query)}&count=${count || 5}`,
-          )
-          if (!response.ok) return { success: false, error: `Image search failed: ${response.statusText}` }
-          const data = await response.json()
+          // Direct call to the Unsplash provider. The old path hit
+          // `/api/search-images` which was never implemented, so every
+          // agent `search_images` call 404'd silently until now.
+          const { unsplashImageSearch } = await import('@/lib/research/providers/unsplash')
+          const data = await unsplashImageSearch({ query, count: count ?? 5 })
           return { success: true, affectedSceneId: null, data }
         } catch (e) {
-          return { success: false, error: `Image search error: ${String(e)}` }
+          return { success: false, error: `Image search error: ${(e as Error).message}` }
         }
       }
 

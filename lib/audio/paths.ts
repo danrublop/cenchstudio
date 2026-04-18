@@ -21,7 +21,11 @@ export function getAudioDir(): string {
 }
 
 export function audioUrlFor(filename: string): string {
-  const base = process.env.CENCH_AUDIO_URL_BASE || '/audio/'
+  const raw = process.env.CENCH_AUDIO_URL_BASE || '/audio/'
+  // Defensive: tolerate configs without a trailing slash
+  // (`cench://audio` vs `cench://audio/`). Without this, a future
+  // caller could produce a URL like `cench://audioxxx.mp3`.
+  const base = raw.endsWith('/') ? raw : `${raw}/`
   return `${base}${filename}`
 }
 

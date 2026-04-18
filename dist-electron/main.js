@@ -381,7 +381,8 @@ function getAudioDir() {
   return process.env.CENCH_AUDIO_DIR || import_node_path7.default.join(process.cwd(), "public", "audio");
 }
 function audioUrlFor(filename) {
-  const base = process.env.CENCH_AUDIO_URL_BASE || "/audio/";
+  const raw = process.env.CENCH_AUDIO_URL_BASE || "/audio/";
+  const base = raw.endsWith("/") ? raw : `${raw}/`;
   return `${base}${filename}`;
 }
 function isLocalAudioUrl(url) {
@@ -14173,6 +14174,18 @@ import_electron7.app.whenReady().then(async () => {
       filters: [{ name: "MP4 Video", extensions: ["mp4"] }]
     });
     return { canceled: res.canceled, filePath: res.filePath ?? null };
+  });
+  import_electron7.ipcMain.handle("cench:chooseDirectory", async (_evt, defaultPath) => {
+    const res = await import_electron7.dialog.showOpenDialog({
+      title: "Choose export folder",
+      defaultPath: defaultPath || import_electron7.app.getPath("downloads"),
+      properties: ["openDirectory", "createDirectory"]
+    });
+    const dirPath = res.canceled || res.filePaths.length === 0 ? null : res.filePaths[0];
+    return { canceled: res.canceled, dirPath };
+  });
+  import_electron7.ipcMain.handle("cench:getDefaultExportDir", async () => {
+    return { dirPath: import_electron7.app.getPath("downloads") };
   });
   import_electron7.ipcMain.handle("cench:writeFile", async (_evt, args) => {
     await import_promises17.default.mkdir(import_path11.default.dirname(args.filePath), { recursive: true });
