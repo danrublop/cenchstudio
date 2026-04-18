@@ -12,7 +12,10 @@ import {
   type PlatformProfileId,
 } from '@/lib/export/platform-profiles'
 import { mergeProjectCaptions, type SceneCaptionInput } from '@/lib/audio/captions'
+import { createLogger } from '@/lib/logger'
 import { CenchLogo } from './icons/CenchLogo'
+
+const log = createLogger('export-panel')
 
 type OSType = 'mac' | 'windows' | 'linux' | 'unknown'
 
@@ -198,7 +201,7 @@ export default function ExportPanel({ onClose, inTab = false }: ExportPanelProps
       },
     })
     saveProjectToDb().catch((err) => {
-      console.warn('[ExportPanel] failed to persist aspect change', err)
+      log.warn('failed to persist aspect change', { error: err })
     })
   }
 

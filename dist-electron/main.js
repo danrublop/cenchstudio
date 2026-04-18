@@ -6139,10 +6139,10 @@ async function getQualityByDimension(dimension, projectId) {
 }
 
 // lib/generation-logs/score.ts
-function computeQualityScore(log) {
-  if (!log.userAction) return -1;
+function computeQualityScore(log2) {
+  if (!log2.userAction) return -1;
   let score = 0.5;
-  switch (log.userAction) {
+  switch (log2.userAction) {
     case "kept":
       score += 0.3;
       break;
@@ -6156,27 +6156,27 @@ function computeQualityScore(log) {
       score -= 0.5;
       break;
   }
-  if (log.timeToActionMs != null) {
-    if (log.userAction === "regenerated" && log.timeToActionMs < 5e3) {
+  if (log2.timeToActionMs != null) {
+    if (log2.userAction === "regenerated" && log2.timeToActionMs < 5e3) {
       score -= 0.2;
     }
-    if (log.userAction === "kept" && log.timeToActionMs > 3e4) {
+    if (log2.userAction === "kept" && log2.timeToActionMs > 3e4) {
       score += 0.1;
     }
   }
-  if (log.editDistance != null && log.generatedCodeLength) {
-    const relativeEdit = log.editDistance / log.generatedCodeLength;
+  if (log2.editDistance != null && log2.generatedCodeLength) {
+    const relativeEdit = log2.editDistance / log2.generatedCodeLength;
     if (relativeEdit > 0.6)
       score -= 0.4;
     else if (relativeEdit > 0.3)
       score -= 0.2;
     else if (relativeEdit < 0.05) score += 0.1;
   }
-  if (log.userRating != null) {
-    score += (log.userRating - 3) * 0.1;
+  if (log2.userRating != null) {
+    score += (log2.userRating - 3) * 0.1;
   }
-  if (log.exportSucceeded === false) score -= 0.3;
-  if (log.exportSucceeded === true) score += 0.1;
+  if (log2.exportSucceeded === false) score -= 0.3;
+  if (log2.exportSucceeded === true) score += 0.1;
   return Math.max(0, Math.min(1, score));
 }
 
@@ -19489,7 +19489,69 @@ ${hint}`
   return cachedStatus;
 }
 
+// lib/logger.ts
+var defaultDebugGate = () => {
+  if (typeof process !== "undefined" && process.env && process.env.DEBUG) {
+    return /cench|\*/.test(process.env.DEBUG);
+  }
+  if (typeof window !== "undefined") {
+    try {
+      return window.localStorage?.getItem("debug") === "1";
+    } catch {
+      return false;
+    }
+  }
+  return false;
+};
+var debugGate = defaultDebugGate;
+var errorTransport = null;
+function emitConsole(level, namespace, message, ctx) {
+  const prefix = `[${namespace}]`;
+  const payload = [prefix, message];
+  if (ctx?.extra) payload.push(ctx.extra);
+  if (ctx?.error) payload.push(ctx.error);
+  const target = level === "error" ? console.error : level === "warn" ? console.warn : console.log;
+  target.apply(console, payload);
+}
+function build(namespace) {
+  return {
+    namespace,
+    debug(message, ctx) {
+      if (!debugGate()) return;
+      emitConsole("debug", namespace, message, ctx);
+    },
+    info(message, ctx) {
+      emitConsole("info", namespace, message, ctx);
+    },
+    warn(message, ctx) {
+      emitConsole("warn", namespace, message, ctx);
+      if (errorTransport) {
+        try {
+          errorTransport(namespace, message, ctx ?? {});
+        } catch {
+        }
+      }
+    },
+    error(message, ctx) {
+      emitConsole("error", namespace, message, ctx);
+      if (errorTransport) {
+        try {
+          errorTransport(namespace, message, ctx ?? {});
+        } catch {
+        }
+      }
+    },
+    child(suffix) {
+      return build(`${namespace}:${suffix}`);
+    }
+  };
+}
+function createLogger(namespace) {
+  return build(namespace);
+}
+
 // electron/main.ts
+var log = createLogger("electron.main");
 function loadEnvFiles() {
   const attempted = [];
   const tryLoad = (p) => {
@@ -19583,7 +19645,7 @@ async function registerCenchProtocol() {
       }
       return import_electron6.net.fetch((0, import_url.pathToFileURL)(filePath).toString());
     } catch (err) {
-      console.error("[cench-protocol] failed to serve", request.url, err);
+      log.error("cench-protocol: failed to serve", { extra: { url: request.url }, error: err });
       return new Response("Internal error", { status: 500 });
     }
   });
@@ -19973,7 +20035,7 @@ import_electron6.app.whenReady().then(async () => {
   createWindow();
   const deps = validateExportDeps();
   if (!deps.ok) {
-    console.error("[Electron] export dependency check failed:", deps.missing.join(", "));
+    log.error("export dependency check failed", { extra: { missing: deps.missing } });
     import_electron6.dialog.showMessageBox({
       type: "warning",
       title: "Export setup incomplete",
@@ -19984,16 +20046,19 @@ import_electron6.app.whenReady().then(async () => {
     });
   }
   import_electron6.session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
-    console.log("[Electron] setDisplayMediaRequestHandler called");
-    console.log("[Electron]   videoRequested:", !!request.videoRequested);
-    console.log("[Electron]   audioRequested:", !!request.audioRequested);
-    console.log("[Electron]   frame:", request.frame?.url?.slice(0, 80));
+    log.debug("setDisplayMediaRequestHandler", {
+      extra: {
+        video: !!request.videoRequested,
+        audio: !!request.audioRequested,
+        frame: request.frame?.url?.slice(0, 80)
+      }
+    });
     try {
       ;
       callback({}, { useSystemPicker: true });
-      console.log("[Electron]   callback invoked with useSystemPicker: true");
+      log.debug("display-media callback invoked with useSystemPicker");
     } catch (err) {
-      console.error("[Electron]   callback error:", err.message);
+      log.error("display-media callback error", { error: err });
       callback(null);
     }
   });

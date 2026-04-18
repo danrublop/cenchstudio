@@ -17,6 +17,9 @@ import {
   getStitcherPath,
   validateExportDeps,
 } from './paths'
+import { createLogger } from '../lib/logger'
+
+const log = createLogger('electron.main')
 
 // ── .env loading ────────────────────────────────────────────────────────────
 // The main process does not inherit the Next.js auto-dotenv behavior. Without
@@ -155,7 +158,7 @@ async function registerCenchProtocol(): Promise<void> {
 
       return net.fetch(pathToFileURL(filePath).toString())
     } catch (err) {
-      console.error('[cench-protocol] failed to serve', request.url, err)
+      log.error('cench-protocol: failed to serve', { extra: { url: request.url }, error: err })
       return new Response('Internal error', { status: 500 })
     }
   })
@@ -624,7 +627,7 @@ app.whenReady().then(async () => {
   // picks up the same status without re-hitting disk.
   const deps = validateExportDeps()
   if (!deps.ok) {
-    console.error('[Electron] export dependency check failed:', deps.missing.join(', '))
+    log.error('export dependency check failed', { extra: { missing: deps.missing } })
     dialog.showMessageBox({
       type: 'warning',
       title: 'Export setup incomplete',
@@ -638,15 +641,18 @@ app.whenReady().then(async () => {
   // ── Allow screen/window capture via getDisplayMedia in renderer ────
   // Use the native macOS system picker (desktopCapturer.getSources is broken in Electron 41)
   session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
-    console.log('[Electron] setDisplayMediaRequestHandler called')
-    console.log('[Electron]   videoRequested:', !!request.videoRequested)
-    console.log('[Electron]   audioRequested:', !!request.audioRequested)
-    console.log('[Electron]   frame:', request.frame?.url?.slice(0, 80))
+    log.debug('setDisplayMediaRequestHandler', {
+      extra: {
+        video: !!request.videoRequested,
+        audio: !!request.audioRequested,
+        frame: request.frame?.url?.slice(0, 80),
+      },
+    })
     try {
       ;(callback as any)({}, { useSystemPicker: true })
-      console.log('[Electron]   callback invoked with useSystemPicker: true')
+      log.debug('display-media callback invoked with useSystemPicker')
     } catch (err: any) {
-      console.error('[Electron]   callback error:', err.message)
+      log.error('display-media callback error', { error: err })
       ;(callback as any)(null)
     }
   })
