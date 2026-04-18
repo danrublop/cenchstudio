@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "predev": "npm run validate-env",
     "dev": "next dev",
+    "prebuild": "npm run validate-env",
     "build:electron": "node electron/build.mjs",
     "dev:electron": "concurrently -k -n esbuild,electron -c gray,magenta \"node electron/build.mjs --watch\" \"wait-on http://localhost:3000 && wait-on dist-electron/main.js && ELECTRON_START_URL=http://localhost:3000 electron .\"",
     "electron:dev": "npm run dev:electron",

@@ -12,6 +12,18 @@
  *   1 — one or more required missing (also when run with --strict and any warning hits)
  */
 
+// Mirror Next.js env loading order so `predev`/`prebuild` hooks see the same
+// values `next` will see. Without this the script runs before Next auto-loads
+// `.env.local`, so required keys look missing even when they're set.
+import { config as loadDotenv } from 'dotenv'
+import { existsSync } from 'node:fs'
+import path from 'node:path'
+
+for (const name of ['.env.local', '.env']) {
+  const abs = path.resolve(process.cwd(), name)
+  if (existsSync(abs)) loadDotenv({ path: abs, override: false })
+}
+
 type EnvCheck = {
   key: string
   required: boolean
