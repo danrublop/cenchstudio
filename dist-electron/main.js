@@ -29,6 +29,977 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
+// lib/db/schema.ts
+var schema_exports = {};
+__export(schema_exports, {
+  accounts: () => accounts,
+  accountsRelations: () => accountsRelations,
+  agentTypeEnum: () => agentTypeEnum,
+  agentUsage: () => agentUsage,
+  analyticsEvents: () => analyticsEvents,
+  apiSpend: () => apiSpend,
+  assets: () => assets,
+  avatarConfigs: () => avatarConfigs,
+  avatarConfigsRelations: () => avatarConfigsRelations,
+  avatarVideos: () => avatarVideos,
+  avatarVideosRelations: () => avatarVideosRelations,
+  clipSourceTypeEnum: () => clipSourceTypeEnum,
+  conversations: () => conversations,
+  conversationsRelations: () => conversationsRelations,
+  generatedMedia: () => generatedMedia,
+  generationLogs: () => generationLogs,
+  githubLinks: () => githubLinks,
+  githubLinksRelations: () => githubLinksRelations,
+  interactions: () => interactions,
+  layerTypeEnum: () => layerTypeEnum,
+  layers: () => layers,
+  layersRelations: () => layersRelations,
+  mediaCache: () => mediaCache,
+  mediaStatusEnum: () => mediaStatusEnum,
+  messages: () => messages,
+  messagesRelations: () => messagesRelations,
+  outputModeEnum: () => outputModeEnum,
+  permissionRules: () => permissionRules,
+  permissionRulesRelations: () => permissionRulesRelations,
+  permissionSessions: () => permissionSessions,
+  planEnum: () => planEnum,
+  projectAssets: () => projectAssets,
+  projectAssetsRelations: () => projectAssetsRelations,
+  projects: () => projects,
+  projectsRelations: () => projectsRelations,
+  publishedProjects: () => publishedProjects,
+  sceneEdges: () => sceneEdges,
+  sceneNodes: () => sceneNodes,
+  sceneNodesRelations: () => sceneNodesRelations,
+  sceneTemplates: () => sceneTemplates,
+  scenes: () => scenes,
+  scenesRelations: () => scenesRelations,
+  sessions: () => sessions,
+  sessionsRelations: () => sessionsRelations,
+  snapshots: () => snapshots,
+  storageModeEnum: () => storageModeEnum,
+  threeDComponents: () => threeDComponents,
+  timelineClips: () => timelineClips,
+  timelineClipsRelations: () => timelineClipsRelations,
+  timelineTracks: () => timelineTracks,
+  timelineTracksRelations: () => timelineTracksRelations,
+  trackTypeEnum: () => trackTypeEnum,
+  userMemory: () => userMemory,
+  userMemoryRelations: () => userMemoryRelations,
+  users: () => users,
+  usersRelations: () => usersRelations,
+  verificationTokens: () => verificationTokens,
+  workspaces: () => workspaces,
+  workspacesRelations: () => workspacesRelations
+});
+var import_pg_core, import_drizzle_orm, outputModeEnum, storageModeEnum, layerTypeEnum, agentTypeEnum, mediaStatusEnum, planEnum, users, accounts, sessions, verificationTokens, userMemory, workspaces, projects, projectAssets, scenes, generatedMedia, layers, sceneEdges, sceneNodes, interactions, assets, threeDComponents, sceneTemplates, snapshots, apiSpend, publishedProjects, analyticsEvents, conversations, messages, mediaCache, permissionSessions, agentUsage, generationLogs, avatarConfigs, avatarVideos, permissionRules, userMemoryRelations, permissionRulesRelations, workspacesRelations, projectsRelations, projectAssetsRelations, scenesRelations, sceneNodesRelations, layersRelations, conversationsRelations, messagesRelations, avatarConfigsRelations, avatarVideosRelations, clipSourceTypeEnum, trackTypeEnum, timelineTracks, timelineClips, timelineTracksRelations, timelineClipsRelations, githubLinks, githubLinksRelations, usersRelations, accountsRelations, sessionsRelations;
+var init_schema = __esm({
+  "lib/db/schema.ts"() {
+    "use strict";
+    import_pg_core = require("drizzle-orm/pg-core");
+    import_drizzle_orm = require("drizzle-orm");
+    outputModeEnum = (0, import_pg_core.pgEnum)("output_mode", ["mp4", "interactive"]);
+    storageModeEnum = (0, import_pg_core.pgEnum)("storage_mode", ["local", "cloud"]);
+    layerTypeEnum = (0, import_pg_core.pgEnum)("layer_type", [
+      "canvas2d",
+      "svg",
+      "d3",
+      "three",
+      "zdog",
+      "lottie",
+      "html",
+      "assets",
+      "group",
+      "avatar",
+      "veo3",
+      "image",
+      "sticker"
+    ]);
+    agentTypeEnum = (0, import_pg_core.pgEnum)("agent_type", ["router", "director", "scene-maker", "editor", "dop", "planner"]);
+    mediaStatusEnum = (0, import_pg_core.pgEnum)("media_status", ["pending", "generating", "processing", "ready", "error"]);
+    planEnum = (0, import_pg_core.pgEnum)("plan", ["free", "pro", "team"]);
+    users = (0, import_pg_core.pgTable)("users", {
+      id: (0, import_pg_core.uuid)("id").primaryKey().defaultRandom(),
+      email: (0, import_pg_core.text)("email").notNull().unique(),
+      name: (0, import_pg_core.text)("name"),
+      emailVerified: (0, import_pg_core.timestamp)("email_verified", { mode: "date" }),
+      image: (0, import_pg_core.text)("image"),
+      avatarUrl: (0, import_pg_core.text)("avatar_url"),
+      plan: planEnum("plan").default("free"),
+      defaultStorageMode: storageModeEnum("default_storage_mode").default("local"),
+      preferences: (0, import_pg_core.jsonb)("preferences").default({}),
+      createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull(),
+      updatedAt: (0, import_pg_core.timestamp)("updated_at").defaultNow().notNull()
+    });
+    accounts = (0, import_pg_core.pgTable)(
+      "accounts",
+      {
+        userId: (0, import_pg_core.uuid)("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+        type: (0, import_pg_core.text)("type").$type().notNull(),
+        provider: (0, import_pg_core.text)("provider").notNull(),
+        providerAccountId: (0, import_pg_core.text)("provider_account_id").notNull(),
+        refresh_token: (0, import_pg_core.text)("refresh_token"),
+        access_token: (0, import_pg_core.text)("access_token"),
+        expires_at: (0, import_pg_core.integer)("expires_at"),
+        token_type: (0, import_pg_core.text)("token_type"),
+        scope: (0, import_pg_core.text)("scope"),
+        id_token: (0, import_pg_core.text)("id_token"),
+        session_state: (0, import_pg_core.text)("session_state")
+      },
+      (t) => ({
+        compoundKey: (0, import_pg_core.primaryKey)({ columns: [t.provider, t.providerAccountId] })
+      })
+    );
+    sessions = (0, import_pg_core.pgTable)("sessions", {
+      sessionToken: (0, import_pg_core.text)("session_token").primaryKey(),
+      userId: (0, import_pg_core.uuid)("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+      expires: (0, import_pg_core.timestamp)("expires", { mode: "date" }).notNull()
+    });
+    verificationTokens = (0, import_pg_core.pgTable)(
+      "verification_tokens",
+      {
+        identifier: (0, import_pg_core.text)("identifier").notNull(),
+        token: (0, import_pg_core.text)("token").notNull(),
+        expires: (0, import_pg_core.timestamp)("expires", { mode: "date" }).notNull()
+      },
+      (t) => ({
+        compoundKey: (0, import_pg_core.primaryKey)({ columns: [t.identifier, t.token] })
+      })
+    );
+    userMemory = (0, import_pg_core.pgTable)(
+      "user_memory",
+      {
+        id: (0, import_pg_core.uuid)("id").primaryKey().defaultRandom(),
+        userId: (0, import_pg_core.uuid)("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+        category: (0, import_pg_core.text)("category").notNull(),
+        key: (0, import_pg_core.text)("key").notNull(),
+        value: (0, import_pg_core.text)("value").notNull(),
+        confidence: (0, import_pg_core.real)("confidence").default(0.5).notNull(),
+        sourceRunId: (0, import_pg_core.text)("source_run_id"),
+        createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull(),
+        updatedAt: (0, import_pg_core.timestamp)("updated_at").defaultNow().notNull()
+      },
+      (t) => ({
+        userIdx: (0, import_pg_core.index)("user_memory_user_idx").on(t.userId),
+        userKeyIdx: (0, import_pg_core.uniqueIndex)("user_memory_user_key_idx").on(t.userId, t.category, t.key)
+      })
+    );
+    workspaces = (0, import_pg_core.pgTable)(
+      "workspaces",
+      {
+        id: (0, import_pg_core.uuid)("id").primaryKey().defaultRandom(),
+        userId: (0, import_pg_core.uuid)("user_id").references(() => users.id, { onDelete: "cascade" }),
+        name: (0, import_pg_core.text)("name").notNull(),
+        description: (0, import_pg_core.text)("description"),
+        color: (0, import_pg_core.text)("color"),
+        icon: (0, import_pg_core.text)("icon"),
+        brandKit: (0, import_pg_core.jsonb)("brand_kit").$type().default(null),
+        globalStyle: (0, import_pg_core.jsonb)("global_style").$type().default(null),
+        settings: (0, import_pg_core.jsonb)("settings").$type().default({}),
+        isDefault: (0, import_pg_core.boolean)("is_default").default(false),
+        isArchived: (0, import_pg_core.boolean)("is_archived").default(false),
+        createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull(),
+        updatedAt: (0, import_pg_core.timestamp)("updated_at").defaultNow().notNull()
+      },
+      (t) => ({
+        userIdx: (0, import_pg_core.index)("workspaces_user_idx").on(t.userId),
+        defaultIdx: (0, import_pg_core.index)("workspaces_default_idx").on(t.userId, t.isDefault)
+      })
+    );
+    projects = (0, import_pg_core.pgTable)(
+      "projects",
+      {
+        id: (0, import_pg_core.uuid)("id").primaryKey().defaultRandom(),
+        userId: (0, import_pg_core.uuid)("user_id").references(() => users.id, { onDelete: "cascade" }),
+        workspaceId: (0, import_pg_core.uuid)("workspace_id").references(() => workspaces.id, { onDelete: "set null" }),
+        name: (0, import_pg_core.text)("name").notNull(),
+        description: (0, import_pg_core.text)("description"),
+        sceneGraphStartSceneId: (0, import_pg_core.uuid)("scene_graph_start_scene_id"),
+        outputMode: outputModeEnum("output_mode").default("mp4"),
+        storageMode: storageModeEnum("storage_mode").default("local"),
+        globalStyle: (0, import_pg_core.jsonb)("global_style").$type().default({
+          presetId: null,
+          paletteOverride: null,
+          bgColorOverride: null,
+          fontOverride: null,
+          bodyFontOverride: null,
+          strokeColorOverride: null
+        }),
+        // Planner / storyboard review durability (Cursor-like plan review)
+        storyboardProposed: (0, import_pg_core.jsonb)("storyboard_proposed").$type().default(null),
+        storyboardEdited: (0, import_pg_core.jsonb)("storyboard_edited").$type().default(null),
+        storyboardApplied: (0, import_pg_core.jsonb)("storyboard_applied").$type().default(null),
+        pausedAgentRun: (0, import_pg_core.jsonb)("paused_agent_run").$type().default(null),
+        /** Full run checkpoint for resuming interrupted multi-scene builds */
+        runCheckpoint: (0, import_pg_core.jsonb)("run_checkpoint").$type().default(null),
+        /** Per-project agent configuration (model, tools, hooks, permissions overrides) */
+        agentConfig: (0, import_pg_core.jsonb)("agent_config").$type().default(null),
+        mp4Settings: (0, import_pg_core.jsonb)("mp4_settings").$type().default({
+          resolution: "1080p",
+          fps: 30,
+          format: "mp4",
+          aspectRatio: "16:9"
+        }),
+        interactiveSettings: (0, import_pg_core.jsonb)("interactive_settings").$type().default({
+          playerTheme: "dark",
+          showProgressBar: true,
+          showSceneNav: false,
+          allowFullscreen: true,
+          brandColor: "#e84545",
+          customDomain: null,
+          password: null
+        }),
+        apiPermissions: (0, import_pg_core.jsonb)("api_permissions").default({}),
+        audioSettings: (0, import_pg_core.jsonb)("audio_settings").$type().default({
+          defaultTTSProvider: "auto",
+          defaultSFXProvider: "auto",
+          defaultMusicProvider: "auto",
+          defaultVoiceId: null,
+          defaultVoiceName: null,
+          webSpeechVoice: null,
+          puterProvider: "openai",
+          openaiTTSModel: "tts-1",
+          openaiTTSVoice: "alloy",
+          geminiTTSModel: "gemini-2.5-flash-preview-tts",
+          geminiVoice: null,
+          edgeTTSUrl: null,
+          pocketTTSUrl: null,
+          voxcpmUrl: null,
+          globalMusicDucking: true,
+          globalMusicDuckLevel: 0.2
+        }),
+        audioProviderEnabled: (0, import_pg_core.jsonb)("audio_provider_enabled").$type().default({}),
+        mediaGenEnabled: (0, import_pg_core.jsonb)("media_gen_enabled").$type().default({}),
+        watermark: (0, import_pg_core.jsonb)("watermark").$type().default(null),
+        brandKit: (0, import_pg_core.jsonb)("brand_kit").$type().default(null),
+        version: (0, import_pg_core.integer)("version").default(1).notNull(),
+        thumbnailUrl: (0, import_pg_core.text)("thumbnail_url"),
+        isArchived: (0, import_pg_core.boolean)("is_archived").default(false),
+        lastOpenedAt: (0, import_pg_core.timestamp)("last_opened_at").defaultNow(),
+        createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull(),
+        updatedAt: (0, import_pg_core.timestamp)("updated_at").defaultNow().notNull()
+      },
+      (t) => ({
+        userIdx: (0, import_pg_core.index)("projects_user_idx").on(t.userId),
+        archivedIdx: (0, import_pg_core.index)("projects_archived_idx").on(t.userId, t.isArchived),
+        updatedIdx: (0, import_pg_core.index)("projects_updated_idx").on(t.userId, t.updatedAt),
+        workspaceIdx: (0, import_pg_core.index)("projects_workspace_idx").on(t.workspaceId)
+      })
+    );
+    projectAssets = (0, import_pg_core.pgTable)(
+      "project_assets",
+      {
+        id: (0, import_pg_core.uuid)("id").primaryKey().defaultRandom(),
+        projectId: (0, import_pg_core.uuid)("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+        filename: (0, import_pg_core.text)("filename").notNull(),
+        storagePath: (0, import_pg_core.text)("storage_path").notNull(),
+        publicUrl: (0, import_pg_core.text)("public_url").notNull(),
+        type: (0, import_pg_core.text)("type").notNull(),
+        // 'image' | 'video' | 'svg'
+        mimeType: (0, import_pg_core.text)("mime_type").notNull(),
+        sizeBytes: (0, import_pg_core.integer)("size_bytes").notNull(),
+        width: (0, import_pg_core.integer)("width"),
+        height: (0, import_pg_core.integer)("height"),
+        durationSeconds: (0, import_pg_core.real)("duration_seconds"),
+        name: (0, import_pg_core.text)("name").notNull(),
+        tags: (0, import_pg_core.text)("tags").array().notNull().default([]),
+        thumbnailUrl: (0, import_pg_core.text)("thumbnail_url"),
+        extractedColors: (0, import_pg_core.text)("extracted_colors").array().notNull().default([]),
+        // Generation provenance — nullable; only populated for AI-generated assets.
+        // Why: enables query_media_library / reuse_asset / regenerate_asset and powers
+        // the Gallery "generated" filter with prompt + cost tooltips.
+        source: (0, import_pg_core.text)("source").default("upload").notNull(),
+        // 'upload' | 'generated'
+        prompt: (0, import_pg_core.text)("prompt"),
+        provider: (0, import_pg_core.text)("provider"),
+        model: (0, import_pg_core.text)("model"),
+        costCents: (0, import_pg_core.integer)("cost_cents"),
+        parentAssetId: (0, import_pg_core.uuid)("parent_asset_id"),
+        referenceAssetIds: (0, import_pg_core.jsonb)("reference_asset_ids").$type(),
+        enhanceTags: (0, import_pg_core.jsonb)("enhance_tags").$type(),
+        // Content-hash dedup + provenance for ingested / research-sourced media.
+        /** SHA256(file bytes), first 16 hex chars. Lets us dedupe repeat uploads and research-downloaded assets. */
+        contentHash: (0, import_pg_core.text)("content_hash"),
+        /** Original URL when the asset was pulled from the web (Pexels, yt-dlp, Archive.org, etc). */
+        sourceUrl: (0, import_pg_core.text)("source_url"),
+        /** Timestamp of last CLIP classification pass (Phase B). Null = not yet indexed. */
+        classificationTimestamp: (0, import_pg_core.timestamp)("classification_timestamp"),
+        createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull()
+      },
+      (t) => ({
+        projectIdx: (0, import_pg_core.index)("project_assets_project_idx").on(t.projectId),
+        typeIdx: (0, import_pg_core.index)("project_assets_type_idx").on(t.projectId, t.type),
+        sourceIdx: (0, import_pg_core.index)("project_assets_source_idx").on(t.projectId, t.source),
+        contentHashIdx: (0, import_pg_core.index)("project_assets_content_hash_idx").on(t.contentHash)
+      })
+    );
+    scenes = (0, import_pg_core.pgTable)(
+      "scenes",
+      {
+        id: (0, import_pg_core.uuid)("id").primaryKey().defaultRandom(),
+        projectId: (0, import_pg_core.uuid)("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+        name: (0, import_pg_core.text)("name"),
+        position: (0, import_pg_core.integer)("position").notNull(),
+        duration: (0, import_pg_core.real)("duration").default(8).notNull(),
+        bgColor: (0, import_pg_core.text)("bg_color").default("#fffef9"),
+        styleOverride: (0, import_pg_core.jsonb)("style_override").$type().default({}),
+        transition: (0, import_pg_core.jsonb)("transition").$type().default({
+          type: "none",
+          duration: 0.5
+        }),
+        audioLayer: (0, import_pg_core.jsonb)("audio_layer").$type(),
+        videoLayer: (0, import_pg_core.jsonb)("video_layer").$type(),
+        thumbnailUrl: (0, import_pg_core.text)("thumbnail_url"),
+        gridConfig: (0, import_pg_core.jsonb)("grid_config"),
+        cameraMotion: (0, import_pg_core.jsonb)("camera_motion"),
+        worldConfig: (0, import_pg_core.jsonb)("world_config"),
+        sceneBlob: (0, import_pg_core.jsonb)("scene_blob").$type().default(null),
+        avatarConfigId: (0, import_pg_core.uuid)("avatar_config_id").references(() => avatarConfigs.id, { onDelete: "set null" }),
+        createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull(),
+        updatedAt: (0, import_pg_core.timestamp)("updated_at").defaultNow().notNull()
+      },
+      (t) => ({
+        projectIdx: (0, import_pg_core.index)("scenes_project_idx").on(t.projectId),
+        positionIdx: (0, import_pg_core.index)("scenes_position_idx").on(t.projectId, t.position)
+      })
+    );
+    generatedMedia = (0, import_pg_core.pgTable)(
+      "generated_media",
+      {
+        id: (0, import_pg_core.uuid)("id").primaryKey().defaultRandom(),
+        userId: (0, import_pg_core.uuid)("user_id").references(() => users.id),
+        type: (0, import_pg_core.text)("type").notNull(),
+        promptHash: (0, import_pg_core.text)("prompt_hash").notNull(),
+        prompt: (0, import_pg_core.text)("prompt"),
+        model: (0, import_pg_core.text)("model"),
+        url: (0, import_pg_core.text)("url"),
+        status: mediaStatusEnum("status").default("pending"),
+        metadata: (0, import_pg_core.jsonb)("metadata").default({}),
+        costUsd: (0, import_pg_core.real)("cost_usd"),
+        externalJobId: (0, import_pg_core.text)("external_job_id"),
+        createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull()
+      },
+      (t) => ({
+        hashIdx: (0, import_pg_core.uniqueIndex)("media_hash_idx").on(t.promptHash),
+        userIdx: (0, import_pg_core.index)("media_user_idx").on(t.userId),
+        statusIdx: (0, import_pg_core.index)("media_status_idx").on(t.status)
+      })
+    );
+    layers = (0, import_pg_core.pgTable)(
+      "layers",
+      {
+        id: (0, import_pg_core.uuid)("id").primaryKey().defaultRandom(),
+        sceneId: (0, import_pg_core.uuid)("scene_id").notNull().references(() => scenes.id, { onDelete: "cascade" }),
+        parentLayerId: (0, import_pg_core.uuid)("parent_layer_id"),
+        type: layerTypeEnum("type").notNull(),
+        label: (0, import_pg_core.text)("label"),
+        zIndex: (0, import_pg_core.integer)("z_index").default(0).notNull(),
+        visible: (0, import_pg_core.boolean)("visible").default(true).notNull(),
+        opacity: (0, import_pg_core.real)("opacity").default(1).notNull(),
+        blendMode: (0, import_pg_core.text)("blend_mode").default("normal"),
+        startAt: (0, import_pg_core.real)("start_at").default(0).notNull(),
+        duration: (0, import_pg_core.real)("duration"),
+        generatedCode: (0, import_pg_core.text)("generated_code"),
+        elements: (0, import_pg_core.jsonb)("elements").$type().default([]),
+        assetPlacements: (0, import_pg_core.jsonb)("asset_placements").$type().default([]),
+        prompt: (0, import_pg_core.text)("prompt"),
+        modelUsed: (0, import_pg_core.text)("model_used"),
+        generatedAt: (0, import_pg_core.timestamp)("generated_at"),
+        layerConfig: (0, import_pg_core.jsonb)("layer_config"),
+        mediaId: (0, import_pg_core.uuid)("media_id").references(() => generatedMedia.id, { onDelete: "set null" }),
+        createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull(),
+        updatedAt: (0, import_pg_core.timestamp)("updated_at").defaultNow().notNull()
+      },
+      (t) => ({
+        sceneIdx: (0, import_pg_core.index)("layers_scene_idx").on(t.sceneId),
+        typeIdx: (0, import_pg_core.index)("layers_type_idx").on(t.sceneId, t.type),
+        zIndexIdx: (0, import_pg_core.index)("layers_zindex_idx").on(t.sceneId, t.zIndex)
+      })
+    );
+    sceneEdges = (0, import_pg_core.pgTable)(
+      "scene_edges",
+      {
+        id: (0, import_pg_core.uuid)("id").primaryKey().defaultRandom(),
+        projectId: (0, import_pg_core.uuid)("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+        fromSceneId: (0, import_pg_core.uuid)("from_scene_id").references(() => scenes.id, { onDelete: "cascade" }),
+        toSceneId: (0, import_pg_core.uuid)("to_scene_id").references(() => scenes.id, { onDelete: "cascade" }),
+        condition: (0, import_pg_core.jsonb)("condition").$type().default({
+          type: "auto",
+          interactionId: null,
+          variableName: null,
+          variableValue: null
+        }),
+        position: (0, import_pg_core.jsonb)("position")
+      },
+      (t) => ({
+        projectIdx: (0, import_pg_core.index)("edges_project_idx").on(t.projectId)
+      })
+    );
+    sceneNodes = (0, import_pg_core.pgTable)(
+      "scene_nodes",
+      {
+        id: (0, import_pg_core.uuid)("id").primaryKey().defaultRandom(),
+        projectId: (0, import_pg_core.uuid)("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+        sceneId: (0, import_pg_core.uuid)("scene_id").notNull().references(() => scenes.id, { onDelete: "cascade" }),
+        position: (0, import_pg_core.jsonb)("position").notNull()
+      },
+      (t) => ({
+        projectIdx: (0, import_pg_core.index)("nodes_project_idx").on(t.projectId),
+        sceneUniqueIdx: (0, import_pg_core.uniqueIndex)("nodes_project_scene_unique_idx").on(t.projectId, t.sceneId)
+      })
+    );
+    interactions = (0, import_pg_core.pgTable)(
+      "interactions",
+      {
+        id: (0, import_pg_core.uuid)("id").primaryKey().defaultRandom(),
+        sceneId: (0, import_pg_core.uuid)("scene_id").notNull().references(() => scenes.id, { onDelete: "cascade" }),
+        type: (0, import_pg_core.text)("type").notNull(),
+        config: (0, import_pg_core.jsonb)("config").$type().notNull(),
+        createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull()
+      },
+      (t) => ({
+        sceneIdx: (0, import_pg_core.index)("interactions_scene_idx").on(t.sceneId)
+      })
+    );
+    assets = (0, import_pg_core.pgTable)(
+      "assets",
+      {
+        id: (0, import_pg_core.text)("id").primaryKey(),
+        name: (0, import_pg_core.text)("name").notNull(),
+        category: (0, import_pg_core.text)("category"),
+        tags: (0, import_pg_core.jsonb)("tags").$type().default([]),
+        description: (0, import_pg_core.text)("description"),
+        type: (0, import_pg_core.text)("type").default("canvas"),
+        canvasDrawFn: (0, import_pg_core.text)("canvas_draw_fn"),
+        svgData: (0, import_pg_core.text)("svg_data"),
+        defaultWidth: (0, import_pg_core.integer)("default_width").default(200),
+        defaultHeight: (0, import_pg_core.integer)("default_height").default(200),
+        bounds: (0, import_pg_core.jsonb)("bounds"),
+        thumbnailUrl: (0, import_pg_core.text)("thumbnail_url"),
+        isBuiltIn: (0, import_pg_core.boolean)("is_built_in").default(true),
+        isPublic: (0, import_pg_core.boolean)("is_public").default(false),
+        userId: (0, import_pg_core.uuid)("user_id").references(() => users.id),
+        useCount: (0, import_pg_core.integer)("use_count").default(0),
+        createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull()
+      },
+      (t) => ({
+        categoryIdx: (0, import_pg_core.index)("assets_category_idx").on(t.category),
+        publicIdx: (0, import_pg_core.index)("assets_public_idx").on(t.isPublic),
+        searchIdx: (0, import_pg_core.index)("assets_search_idx").using(
+          "gin",
+          import_drizzle_orm.sql`to_tsvector('english', ${t.name} || ' ' || coalesce(${t.description}, ''))`
+        )
+      })
+    );
+    threeDComponents = (0, import_pg_core.pgTable)("three_d_components", {
+      id: (0, import_pg_core.text)("id").primaryKey(),
+      name: (0, import_pg_core.text)("name").notNull(),
+      category: (0, import_pg_core.text)("category"),
+      tags: (0, import_pg_core.jsonb)("tags").$type().default([]),
+      description: (0, import_pg_core.text)("description"),
+      buildFn: (0, import_pg_core.text)("build_fn"),
+      thumbnailUrl: (0, import_pg_core.text)("thumbnail_url"),
+      animates: (0, import_pg_core.boolean)("animates").default(true),
+      isBuiltIn: (0, import_pg_core.boolean)("is_built_in").default(true),
+      createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull()
+    });
+    sceneTemplates = (0, import_pg_core.pgTable)(
+      "scene_templates",
+      {
+        id: (0, import_pg_core.uuid)("id").primaryKey().defaultRandom(),
+        name: (0, import_pg_core.text)("name").notNull(),
+        description: (0, import_pg_core.text)("description"),
+        category: (0, import_pg_core.text)("category"),
+        tags: (0, import_pg_core.jsonb)("tags").$type().default([]),
+        layers: (0, import_pg_core.jsonb)("layers").$type().default([]),
+        duration: (0, import_pg_core.real)("duration").default(8),
+        styleOverride: (0, import_pg_core.jsonb)("style_override").$type().default({}),
+        placeholders: (0, import_pg_core.jsonb)("placeholders").$type().default([]),
+        thumbnailUrl: (0, import_pg_core.text)("thumbnail_url"),
+        isBuiltIn: (0, import_pg_core.boolean)("is_built_in").default(false),
+        isPublic: (0, import_pg_core.boolean)("is_public").default(false),
+        userId: (0, import_pg_core.uuid)("user_id").references(() => users.id),
+        useCount: (0, import_pg_core.integer)("use_count").default(0),
+        createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull()
+      },
+      (t) => ({
+        categoryIdx: (0, import_pg_core.index)("templates_category_idx").on(t.category),
+        publicIdx: (0, import_pg_core.index)("templates_public_idx").on(t.isPublic)
+      })
+    );
+    snapshots = (0, import_pg_core.pgTable)(
+      "snapshots",
+      {
+        id: (0, import_pg_core.uuid)("id").primaryKey().defaultRandom(),
+        projectId: (0, import_pg_core.uuid)("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+        operation: (0, import_pg_core.text)("operation").notNull(),
+        diff: (0, import_pg_core.jsonb)("diff").notNull(),
+        agentMessage: (0, import_pg_core.text)("agent_message"),
+        agentType: agentTypeEnum("agent_type"),
+        stackIndex: (0, import_pg_core.integer)("stack_index").notNull(),
+        createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull()
+      },
+      (t) => ({
+        projectIdx: (0, import_pg_core.index)("snapshots_project_idx").on(t.projectId),
+        stackIdx: (0, import_pg_core.index)("snapshots_stack_idx").on(t.projectId, t.stackIndex)
+      })
+    );
+    apiSpend = (0, import_pg_core.pgTable)(
+      "api_spend",
+      {
+        id: (0, import_pg_core.uuid)("id").primaryKey().defaultRandom(),
+        userId: (0, import_pg_core.uuid)("user_id").references(() => users.id),
+        projectId: (0, import_pg_core.text)("project_id"),
+        api: (0, import_pg_core.text)("api").notNull(),
+        costUsd: (0, import_pg_core.real)("cost_usd").notNull(),
+        description: (0, import_pg_core.text)("description"),
+        metadata: (0, import_pg_core.jsonb)("metadata").default({}),
+        createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull()
+      },
+      (t) => ({
+        userIdx: (0, import_pg_core.index)("spend_user_idx").on(t.userId),
+        monthIdx: (0, import_pg_core.index)("spend_month_idx").on(t.userId, import_drizzle_orm.sql`date_trunc('month', ${t.createdAt})`),
+        apiCreatedIdx: (0, import_pg_core.index)("spend_api_created_idx").on(t.api, t.createdAt)
+      })
+    );
+    publishedProjects = (0, import_pg_core.pgTable)(
+      "published_projects",
+      {
+        id: (0, import_pg_core.text)("id").primaryKey(),
+        projectId: (0, import_pg_core.uuid)("project_id").references(() => projects.id, { onDelete: "cascade" }),
+        userId: (0, import_pg_core.uuid)("user_id").references(() => users.id),
+        manifest: (0, import_pg_core.jsonb)("manifest").$type(),
+        version: (0, import_pg_core.integer)("version").default(1).notNull(),
+        isPasswordProtected: (0, import_pg_core.boolean)("is_password_protected").default(false),
+        passwordHash: (0, import_pg_core.text)("password_hash"),
+        isActive: (0, import_pg_core.boolean)("is_active").default(true),
+        viewCount: (0, import_pg_core.integer)("view_count").default(0),
+        customDomain: (0, import_pg_core.text)("custom_domain"),
+        createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull(),
+        updatedAt: (0, import_pg_core.timestamp)("updated_at").defaultNow().notNull()
+      },
+      (t) => ({
+        projectIdx: (0, import_pg_core.index)("published_project_idx").on(t.projectId),
+        activeIdx: (0, import_pg_core.index)("published_active_idx").on(t.isActive)
+      })
+    );
+    analyticsEvents = (0, import_pg_core.pgTable)(
+      "analytics_events",
+      {
+        id: (0, import_pg_core.uuid)("id").primaryKey().defaultRandom(),
+        publishedProjectId: (0, import_pg_core.text)("published_project_id").references(() => publishedProjects.id, { onDelete: "cascade" }),
+        sessionId: (0, import_pg_core.text)("session_id").notNull(),
+        eventType: (0, import_pg_core.text)("event_type").notNull(),
+        sceneId: (0, import_pg_core.text)("scene_id"),
+        interactionId: (0, import_pg_core.text)("interaction_id"),
+        data: (0, import_pg_core.jsonb)("data").default({}),
+        userAgent: (0, import_pg_core.text)("user_agent"),
+        country: (0, import_pg_core.text)("country"),
+        createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull()
+      },
+      (t) => ({
+        projectIdx: (0, import_pg_core.index)("analytics_project_idx").on(t.publishedProjectId),
+        eventTypeIdx: (0, import_pg_core.index)("analytics_event_type_idx").on(t.publishedProjectId, t.eventType),
+        sessionIdx: (0, import_pg_core.index)("analytics_session_idx").on(t.sessionId),
+        createdIdx: (0, import_pg_core.index)("analytics_created_idx").on(t.createdAt)
+      })
+    );
+    conversations = (0, import_pg_core.pgTable)(
+      "conversations",
+      {
+        id: (0, import_pg_core.uuid)("id").primaryKey().defaultRandom(),
+        projectId: (0, import_pg_core.uuid)("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+        title: (0, import_pg_core.text)("title").notNull().default("New chat"),
+        isPinned: (0, import_pg_core.boolean)("is_pinned").default(false),
+        isArchived: (0, import_pg_core.boolean)("is_archived").default(false),
+        totalInputTokens: (0, import_pg_core.integer)("total_input_tokens").default(0),
+        totalOutputTokens: (0, import_pg_core.integer)("total_output_tokens").default(0),
+        totalCostUsd: (0, import_pg_core.real)("total_cost_usd").default(0),
+        lastMessageAt: (0, import_pg_core.timestamp)("last_message_at").defaultNow(),
+        createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull(),
+        updatedAt: (0, import_pg_core.timestamp)("updated_at").defaultNow().notNull()
+      },
+      (t) => ({
+        projectIdx: (0, import_pg_core.index)("conv_project_idx").on(t.projectId),
+        lastMsgIdx: (0, import_pg_core.index)("conv_last_msg_idx").on(t.projectId, t.lastMessageAt)
+      })
+    );
+    messages = (0, import_pg_core.pgTable)(
+      "messages",
+      {
+        id: (0, import_pg_core.uuid)("id").primaryKey().defaultRandom(),
+        conversationId: (0, import_pg_core.uuid)("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
+        projectId: (0, import_pg_core.uuid)("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+        role: (0, import_pg_core.text)("role").notNull(),
+        content: (0, import_pg_core.text)("content").notNull(),
+        agentType: agentTypeEnum("agent_type"),
+        modelUsed: (0, import_pg_core.text)("model_used"),
+        thinkingContent: (0, import_pg_core.text)("thinking_content"),
+        toolCalls: (0, import_pg_core.jsonb)("tool_calls").default([]),
+        /** Chronologically ordered segments (text + tool call refs) for interleaved display */
+        contentSegments: (0, import_pg_core.jsonb)("content_segments"),
+        /** Message status: 'streaming' while agent is running, 'complete' when done, 'aborted' if interrupted */
+        status: (0, import_pg_core.text)("status").notNull().default("complete"),
+        inputTokens: (0, import_pg_core.integer)("input_tokens"),
+        outputTokens: (0, import_pg_core.integer)("output_tokens"),
+        costUsd: (0, import_pg_core.real)("cost_usd"),
+        generationLogId: (0, import_pg_core.uuid)("generation_log_id").references(() => generationLogs.id, { onDelete: "set null" }),
+        userRating: (0, import_pg_core.integer)("user_rating"),
+        durationMs: (0, import_pg_core.integer)("duration_ms"),
+        apiCalls: (0, import_pg_core.integer)("api_calls"),
+        position: (0, import_pg_core.integer)("position").notNull(),
+        createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull()
+      },
+      (t) => ({
+        convIdx: (0, import_pg_core.index)("msg_conv_idx").on(t.conversationId),
+        projectIdx: (0, import_pg_core.index)("msg_project_idx").on(t.projectId),
+        positionIdx: (0, import_pg_core.index)("msg_position_idx").on(t.conversationId, t.position),
+        createdIdx: (0, import_pg_core.index)("msg_created_idx").on(t.conversationId, t.createdAt)
+      })
+    );
+    mediaCache = (0, import_pg_core.pgTable)(
+      "media_cache",
+      {
+        hash: (0, import_pg_core.text)("hash").primaryKey(),
+        api: (0, import_pg_core.text)("api").notNull(),
+        filePath: (0, import_pg_core.text)("file_path").notNull(),
+        prompt: (0, import_pg_core.text)("prompt"),
+        model: (0, import_pg_core.text)("model"),
+        config: (0, import_pg_core.text)("config"),
+        /** SHA256 of file bytes (16 chars). Different from the primary `hash` which is a hash of
+         *  request params — this hashes the actual file so we can dedupe identical media fetched from
+         *  different queries or different providers. Null for legacy rows. */
+        contentHash: (0, import_pg_core.text)("content_hash"),
+        createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull()
+      },
+      (t) => ({
+        contentHashIdx: (0, import_pg_core.index)("media_cache_content_hash_idx").on(t.contentHash)
+      })
+    );
+    permissionSessions = (0, import_pg_core.pgTable)("permission_sessions", {
+      api: (0, import_pg_core.text)("api").primaryKey(),
+      decision: (0, import_pg_core.text)("decision").notNull(),
+      createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull()
+    });
+    agentUsage = (0, import_pg_core.pgTable)(
+      "agent_usage",
+      {
+        id: (0, import_pg_core.uuid)("id").primaryKey().defaultRandom(),
+        projectId: (0, import_pg_core.text)("project_id").notNull(),
+        agentType: (0, import_pg_core.text)("agent_type").notNull(),
+        modelId: (0, import_pg_core.text)("model_id").notNull(),
+        inputTokens: (0, import_pg_core.integer)("input_tokens").default(0).notNull(),
+        outputTokens: (0, import_pg_core.integer)("output_tokens").default(0).notNull(),
+        apiCalls: (0, import_pg_core.integer)("api_calls").default(1).notNull(),
+        toolCalls: (0, import_pg_core.integer)("tool_calls").default(0).notNull(),
+        costUsd: (0, import_pg_core.real)("cost_usd").default(0).notNull(),
+        durationMs: (0, import_pg_core.integer)("duration_ms").default(0).notNull(),
+        createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull()
+      },
+      (t) => ({
+        projectIdx: (0, import_pg_core.index)("agent_usage_project_idx").on(t.projectId),
+        agentIdx: (0, import_pg_core.index)("agent_usage_agent_idx").on(t.agentType),
+        monthIdx: (0, import_pg_core.index)("agent_usage_month_idx").on(t.createdAt)
+      })
+    );
+    generationLogs = (0, import_pg_core.pgTable)(
+      "generation_logs",
+      {
+        id: (0, import_pg_core.uuid)("id").primaryKey().defaultRandom(),
+        projectId: (0, import_pg_core.uuid)("project_id").references(() => projects.id, { onDelete: "cascade" }),
+        sceneId: (0, import_pg_core.uuid)("scene_id").references(() => scenes.id, { onDelete: "set null" }),
+        layerId: (0, import_pg_core.uuid)("layer_id").references(() => layers.id, { onDelete: "set null" }),
+        // Generation context
+        userPrompt: (0, import_pg_core.text)("user_prompt").notNull(),
+        systemPromptHash: (0, import_pg_core.text)("system_prompt_hash"),
+        systemPromptSnapshot: (0, import_pg_core.text)("system_prompt_snapshot"),
+        injectedRules: (0, import_pg_core.jsonb)("injected_rules").$type(),
+        stylePresetId: (0, import_pg_core.text)("style_preset_id"),
+        agentType: (0, import_pg_core.text)("agent_type"),
+        modelUsed: (0, import_pg_core.text)("model_used"),
+        thinkingMode: (0, import_pg_core.text)("thinking_mode"),
+        // Output
+        sceneType: (0, import_pg_core.text)("scene_type"),
+        generatedCodeLength: (0, import_pg_core.integer)("generated_code_length"),
+        // Thinking
+        thinkingContent: (0, import_pg_core.text)("thinking_content"),
+        // Performance
+        generationTimeMs: (0, import_pg_core.integer)("generation_time_ms"),
+        inputTokens: (0, import_pg_core.integer)("input_tokens"),
+        outputTokens: (0, import_pg_core.integer)("output_tokens"),
+        thinkingTokens: (0, import_pg_core.integer)("thinking_tokens"),
+        costUsd: (0, import_pg_core.real)("cost_usd"),
+        // Quality signals (updated after generation)
+        userAction: (0, import_pg_core.text)("user_action"),
+        timeToActionMs: (0, import_pg_core.integer)("time_to_action_ms"),
+        editDistance: (0, import_pg_core.integer)("edit_distance"),
+        userRating: (0, import_pg_core.integer)("user_rating"),
+        exportSucceeded: (0, import_pg_core.boolean)("export_succeeded"),
+        exportErrorMessage: (0, import_pg_core.text)("export_error_message"),
+        // Analysis
+        qualityScore: (0, import_pg_core.real)("quality_score"),
+        analysisNotes: (0, import_pg_core.text)("analysis_notes"),
+        // Run tracing — full structured timeline for debugging
+        runId: (0, import_pg_core.text)("run_id"),
+        runTrace: (0, import_pg_core.jsonb)("run_trace"),
+        createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull(),
+        updatedAt: (0, import_pg_core.timestamp)("updated_at").defaultNow().notNull()
+      },
+      (t) => ({
+        projectIdx: (0, import_pg_core.index)("gen_log_project_idx").on(t.projectId),
+        modelIdx: (0, import_pg_core.index)("gen_log_model_idx").on(t.modelUsed),
+        presetIdx: (0, import_pg_core.index)("gen_log_preset_idx").on(t.stylePresetId),
+        actionIdx: (0, import_pg_core.index)("gen_log_action_idx").on(t.userAction),
+        createdIdx: (0, import_pg_core.index)("gen_log_created_idx").on(t.createdAt),
+        runIdIdx: (0, import_pg_core.index)("gen_log_run_id_idx").on(t.runId)
+      })
+    );
+    avatarConfigs = (0, import_pg_core.pgTable)(
+      "avatar_configs",
+      {
+        id: (0, import_pg_core.uuid)("id").defaultRandom().primaryKey(),
+        projectId: (0, import_pg_core.uuid)("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+        // Which provider to use
+        // 'talkinghead' | 'musetalk' | 'fabric' | 'aurora' | 'heygen'
+        provider: (0, import_pg_core.text)("provider").notNull().default("talkinghead"),
+        // Provider-specific config stored as JSON
+        config: (0, import_pg_core.jsonb)("config").notNull().default({}),
+        // Display
+        name: (0, import_pg_core.text)("name").notNull().default("Default Avatar"),
+        thumbnailUrl: (0, import_pg_core.text)("thumbnail_url"),
+        // Whether this is the project default
+        isDefault: (0, import_pg_core.boolean)("is_default").notNull().default(false),
+        createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull()
+      },
+      (t) => ({
+        projectIdx: (0, import_pg_core.index)("avatar_configs_project_idx").on(t.projectId),
+        defaultIdx: (0, import_pg_core.index)("avatar_configs_default_idx").on(t.projectId, t.isDefault)
+      })
+    );
+    avatarVideos = (0, import_pg_core.pgTable)(
+      "avatar_videos",
+      {
+        id: (0, import_pg_core.uuid)("id").defaultRandom().primaryKey(),
+        projectId: (0, import_pg_core.uuid)("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+        sceneId: (0, import_pg_core.uuid)("scene_id").references(() => scenes.id, { onDelete: "set null" }),
+        avatarConfigId: (0, import_pg_core.uuid)("avatar_config_id").references(() => avatarConfigs.id, { onDelete: "set null" }),
+        provider: (0, import_pg_core.text)("provider").notNull(),
+        status: (0, import_pg_core.text)("status").notNull().default("pending"),
+        // 'pending' | 'generating' | 'ready' | 'error'
+        // Input
+        text: (0, import_pg_core.text)("text").notNull(),
+        audioUrl: (0, import_pg_core.text)("audio_url"),
+        sourceImageUrl: (0, import_pg_core.text)("source_image_url"),
+        // Output
+        videoUrl: (0, import_pg_core.text)("video_url"),
+        durationSeconds: (0, import_pg_core.real)("duration_seconds"),
+        errorMessage: (0, import_pg_core.text)("error_message"),
+        // Cost tracking
+        costUsd: (0, import_pg_core.real)("cost_usd"),
+        createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull()
+      },
+      (t) => ({
+        projectIdx: (0, import_pg_core.index)("avatar_videos_project_idx").on(t.projectId),
+        sceneIdx: (0, import_pg_core.index)("avatar_videos_scene_idx").on(t.sceneId),
+        statusIdx: (0, import_pg_core.index)("avatar_videos_status_idx").on(t.status)
+      })
+    );
+    permissionRules = (0, import_pg_core.pgTable)(
+      "permission_rules",
+      {
+        id: (0, import_pg_core.uuid)("id").primaryKey().defaultRandom(),
+        userId: (0, import_pg_core.uuid)("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+        scope: (0, import_pg_core.text)("scope").$type().notNull(),
+        workspaceId: (0, import_pg_core.uuid)("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }),
+        projectId: (0, import_pg_core.uuid)("project_id").references(() => projects.id, { onDelete: "cascade" }),
+        conversationId: (0, import_pg_core.uuid)("conversation_id").references(() => conversations.id, { onDelete: "cascade" }),
+        decision: (0, import_pg_core.text)("decision").$type().notNull(),
+        api: (0, import_pg_core.text)("api").notNull(),
+        specifier: (0, import_pg_core.jsonb)("specifier").$type().default(null),
+        costCapUsd: (0, import_pg_core.real)("cost_cap_usd"),
+        expiresAt: (0, import_pg_core.timestamp)("expires_at"),
+        createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull(),
+        createdBy: (0, import_pg_core.text)("created_by").$type().notNull().default("user-settings"),
+        notes: (0, import_pg_core.text)("notes")
+      },
+      (t) => ({
+        userScopeIdx: (0, import_pg_core.index)("permission_rules_user_scope_idx").on(t.userId, t.scope),
+        projectIdx: (0, import_pg_core.index)("permission_rules_project_idx").on(t.projectId),
+        workspaceIdx: (0, import_pg_core.index)("permission_rules_workspace_idx").on(t.workspaceId),
+        conversationIdx: (0, import_pg_core.index)("permission_rules_conversation_idx").on(t.conversationId, t.expiresAt)
+      })
+    );
+    userMemoryRelations = (0, import_drizzle_orm.relations)(userMemory, ({ one }) => ({
+      user: one(users, { fields: [userMemory.userId], references: [users.id] })
+    }));
+    permissionRulesRelations = (0, import_drizzle_orm.relations)(permissionRules, ({ one }) => ({
+      user: one(users, { fields: [permissionRules.userId], references: [users.id] }),
+      workspace: one(workspaces, { fields: [permissionRules.workspaceId], references: [workspaces.id] }),
+      project: one(projects, { fields: [permissionRules.projectId], references: [projects.id] }),
+      conversation: one(conversations, {
+        fields: [permissionRules.conversationId],
+        references: [conversations.id]
+      })
+    }));
+    workspacesRelations = (0, import_drizzle_orm.relations)(workspaces, ({ one, many }) => ({
+      user: one(users, { fields: [workspaces.userId], references: [users.id] }),
+      projects: many(projects)
+    }));
+    projectsRelations = (0, import_drizzle_orm.relations)(projects, ({ one, many }) => ({
+      user: one(users, { fields: [projects.userId], references: [users.id] }),
+      workspace: one(workspaces, { fields: [projects.workspaceId], references: [workspaces.id] }),
+      scenes: many(scenes),
+      sceneEdges: many(sceneEdges),
+      sceneNodes: many(sceneNodes),
+      snapshots: many(snapshots),
+      conversations: many(conversations),
+      messages: many(messages),
+      publishedProjects: many(publishedProjects),
+      assets: many(projectAssets),
+      avatarConfigs: many(avatarConfigs),
+      avatarVideos: many(avatarVideos)
+    }));
+    projectAssetsRelations = (0, import_drizzle_orm.relations)(projectAssets, ({ one }) => ({
+      project: one(projects, { fields: [projectAssets.projectId], references: [projects.id] })
+    }));
+    scenesRelations = (0, import_drizzle_orm.relations)(scenes, ({ one, many }) => ({
+      project: one(projects, { fields: [scenes.projectId], references: [projects.id] }),
+      layers: many(layers),
+      interactions: many(interactions),
+      avatarConfig: one(avatarConfigs, { fields: [scenes.avatarConfigId], references: [avatarConfigs.id] })
+    }));
+    sceneNodesRelations = (0, import_drizzle_orm.relations)(sceneNodes, ({ one }) => ({
+      project: one(projects, { fields: [sceneNodes.projectId], references: [projects.id] }),
+      scene: one(scenes, { fields: [sceneNodes.sceneId], references: [scenes.id] })
+    }));
+    layersRelations = (0, import_drizzle_orm.relations)(layers, ({ one, many }) => ({
+      scene: one(scenes, { fields: [layers.sceneId], references: [scenes.id] }),
+      parent: one(layers, {
+        fields: [layers.parentLayerId],
+        references: [layers.id],
+        relationName: "layer_parent"
+      }),
+      children: many(layers, { relationName: "layer_parent" }),
+      media: one(generatedMedia, {
+        fields: [layers.mediaId],
+        references: [generatedMedia.id]
+      })
+    }));
+    conversationsRelations = (0, import_drizzle_orm.relations)(conversations, ({ one, many }) => ({
+      project: one(projects, { fields: [conversations.projectId], references: [projects.id] }),
+      messages: many(messages)
+    }));
+    messagesRelations = (0, import_drizzle_orm.relations)(messages, ({ one }) => ({
+      conversation: one(conversations, { fields: [messages.conversationId], references: [conversations.id] }),
+      project: one(projects, { fields: [messages.projectId], references: [projects.id] })
+    }));
+    avatarConfigsRelations = (0, import_drizzle_orm.relations)(avatarConfigs, ({ one, many }) => ({
+      project: one(projects, { fields: [avatarConfigs.projectId], references: [projects.id] }),
+      videos: many(avatarVideos)
+    }));
+    avatarVideosRelations = (0, import_drizzle_orm.relations)(avatarVideos, ({ one }) => ({
+      project: one(projects, { fields: [avatarVideos.projectId], references: [projects.id] }),
+      scene: one(scenes, { fields: [avatarVideos.sceneId], references: [scenes.id] }),
+      avatarConfig: one(avatarConfigs, { fields: [avatarVideos.avatarConfigId], references: [avatarConfigs.id] })
+    }));
+    clipSourceTypeEnum = (0, import_pg_core.pgEnum)("clip_source_type", ["scene", "video", "image", "audio", "title"]);
+    trackTypeEnum = (0, import_pg_core.pgEnum)("track_type", ["video", "audio", "overlay"]);
+    timelineTracks = (0, import_pg_core.pgTable)(
+      "timeline_tracks",
+      {
+        id: (0, import_pg_core.uuid)("id").primaryKey().defaultRandom(),
+        projectId: (0, import_pg_core.uuid)("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+        name: (0, import_pg_core.text)("name").notNull(),
+        type: trackTypeEnum("type").notNull(),
+        position: (0, import_pg_core.integer)("position").notNull().default(0),
+        muted: (0, import_pg_core.boolean)("muted").default(false).notNull(),
+        locked: (0, import_pg_core.boolean)("locked").default(false).notNull(),
+        createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull(),
+        updatedAt: (0, import_pg_core.timestamp)("updated_at").defaultNow().notNull()
+      },
+      (t) => ({
+        projectIdx: (0, import_pg_core.index)("timeline_tracks_project_idx").on(t.projectId),
+        positionIdx: (0, import_pg_core.index)("timeline_tracks_position_idx").on(t.projectId, t.position)
+      })
+    );
+    timelineClips = (0, import_pg_core.pgTable)(
+      "timeline_clips",
+      {
+        id: (0, import_pg_core.uuid)("id").primaryKey().defaultRandom(),
+        trackId: (0, import_pg_core.uuid)("track_id").notNull().references(() => timelineTracks.id, { onDelete: "cascade" }),
+        sourceType: clipSourceTypeEnum("source_type").notNull(),
+        sourceId: (0, import_pg_core.text)("source_id").notNull(),
+        label: (0, import_pg_core.text)("label").default("").notNull(),
+        startTime: (0, import_pg_core.real)("start_time").notNull(),
+        duration: (0, import_pg_core.real)("duration").notNull(),
+        trimStart: (0, import_pg_core.real)("trim_start").default(0).notNull(),
+        trimEnd: (0, import_pg_core.real)("trim_end"),
+        speed: (0, import_pg_core.real)("speed").default(1).notNull(),
+        opacity: (0, import_pg_core.real)("opacity").default(1).notNull(),
+        position: (0, import_pg_core.jsonb)("position").$type().default({ x: 0, y: 0 }).notNull(),
+        scale: (0, import_pg_core.jsonb)("scale").$type().default({ x: 1, y: 1 }).notNull(),
+        rotation: (0, import_pg_core.real)("rotation").default(0).notNull(),
+        filters: (0, import_pg_core.jsonb)("filters").$type().default([]).notNull(),
+        keyframes: (0, import_pg_core.jsonb)("keyframes").$type().default([]).notNull(),
+        transition: (0, import_pg_core.jsonb)("transition").$type(),
+        createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull(),
+        updatedAt: (0, import_pg_core.timestamp)("updated_at").defaultNow().notNull()
+      },
+      (t) => ({
+        trackIdx: (0, import_pg_core.index)("timeline_clips_track_idx").on(t.trackId),
+        sourceIdx: (0, import_pg_core.index)("timeline_clips_source_idx").on(t.sourceType, t.sourceId),
+        startIdx: (0, import_pg_core.index)("timeline_clips_start_idx").on(t.trackId, t.startTime)
+      })
+    );
+    timelineTracksRelations = (0, import_drizzle_orm.relations)(timelineTracks, ({ one, many }) => ({
+      project: one(projects, { fields: [timelineTracks.projectId], references: [projects.id] }),
+      clips: many(timelineClips)
+    }));
+    timelineClipsRelations = (0, import_drizzle_orm.relations)(timelineClips, ({ one }) => ({
+      track: one(timelineTracks, { fields: [timelineClips.trackId], references: [timelineTracks.id] })
+    }));
+    githubLinks = (0, import_pg_core.pgTable)(
+      "github_links",
+      {
+        id: (0, import_pg_core.uuid)("id").primaryKey().default(import_drizzle_orm.sql`gen_random_uuid()`),
+        projectId: (0, import_pg_core.uuid)("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+        repoFullName: (0, import_pg_core.text)("repo_full_name").notNull(),
+        // e.g. "user/repo"
+        defaultBranch: (0, import_pg_core.text)("default_branch").notNull().default("main"),
+        accessToken: (0, import_pg_core.text)("access_token").notNull(),
+        // AES-256-GCM encrypted via lib/crypto.ts
+        refreshToken: (0, import_pg_core.text)("refresh_token"),
+        // AES-256-GCM encrypted via lib/crypto.ts
+        tokenExpiresAt: (0, import_pg_core.timestamp)("token_expires_at"),
+        lastPushedSha: (0, import_pg_core.text)("last_pushed_sha"),
+        lastPulledSha: (0, import_pg_core.text)("last_pulled_sha"),
+        linkedAt: (0, import_pg_core.timestamp)("linked_at").defaultNow().notNull(),
+        updatedAt: (0, import_pg_core.timestamp)("updated_at").defaultNow().notNull()
+      },
+      (t) => ({
+        projectIdx: (0, import_pg_core.uniqueIndex)("github_links_project_idx").on(t.projectId),
+        repoIdx: (0, import_pg_core.index)("github_links_repo_idx").on(t.repoFullName)
+      })
+    );
+    githubLinksRelations = (0, import_drizzle_orm.relations)(githubLinks, ({ one }) => ({
+      project: one(projects, { fields: [githubLinks.projectId], references: [projects.id] })
+    }));
+    usersRelations = (0, import_drizzle_orm.relations)(users, ({ many }) => ({
+      accounts: many(accounts),
+      sessions: many(sessions),
+      workspaces: many(workspaces),
+      projects: many(projects),
+      userMemory: many(userMemory)
+    }));
+    accountsRelations = (0, import_drizzle_orm.relations)(accounts, ({ one }) => ({
+      user: one(users, { fields: [accounts.userId], references: [users.id] })
+    }));
+    sessionsRelations = (0, import_drizzle_orm.relations)(sessions, ({ one }) => ({
+      user: one(users, { fields: [sessions.userId], references: [users.id] })
+    }));
+  }
+});
+
 // lib/agents/budget-tracker.ts
 var budget_tracker_exports = {};
 __export(budget_tracker_exports, {
@@ -134,6 +1105,220 @@ var init_budget_tracker = __esm({
       }
     };
     projects2 = /* @__PURE__ */ new Map();
+  }
+});
+
+// lib/db/index.ts
+var db_exports = {};
+__export(db_exports, {
+  checkDbConnection: () => checkDbConnection,
+  clearSessionPermissions: () => clearSessionPermissions,
+  closeDb: () => closeDb,
+  db: () => db,
+  getAgentUsageSummary: () => getAgentUsageSummary,
+  getCachedMedia: () => getCachedMedia,
+  getMonthlySpend: () => getMonthlySpend,
+  getSessionPermission: () => getSessionPermission,
+  getSessionSpend: () => getSessionSpend,
+  logAgentUsage: () => logAgentUsage,
+  logSpend: () => logSpend,
+  setCachedMedia: () => setCachedMedia,
+  setSessionPermission: () => setSessionPermission
+});
+function initDb() {
+  if (_db) return _db;
+  const url = process.env.DATABASE_URL;
+  if (!url) {
+    throw new Error(
+      "DATABASE_URL is not set.\nFor local mode: copy .env.example to .env.local and run npm run db:start\nFor cloud mode: add your Neon/Supabase connection string to .env.local"
+    );
+  }
+  const pool = new import_pg.Pool({
+    connectionString: url,
+    max: process.env.STORAGE_MODE === "cloud" ? 10 : 5,
+    idleTimeoutMillis: 3e4,
+    connectionTimeoutMillis: 5e3,
+    ssl: url.includes("localhost") || url.includes("127.0.0.1") ? false : { rejectUnauthorized: true }
+  });
+  pool.on("error", (err) => {
+    console.error("Unexpected Postgres pool error:", err);
+  });
+  const database = (0, import_node_postgres.drizzle)(pool, {
+    schema: schema_exports,
+    logger: process.env.NODE_ENV === "development"
+  });
+  if (_db) {
+    void pool.end();
+    return _db;
+  }
+  _pool = pool;
+  _db = database;
+  return _db;
+}
+async function checkDbConnection() {
+  try {
+    initDb();
+    await _pool.query("SELECT 1");
+    return true;
+  } catch {
+    return false;
+  }
+}
+async function closeDb() {
+  if (_pool) {
+    await _pool.end();
+    _pool = null;
+    _db = null;
+  }
+}
+async function logSpend(projectId, api, costUsd, description, reservationId) {
+  await db.insert(apiSpend).values({
+    projectId,
+    api,
+    costUsd,
+    description
+  });
+  try {
+    const tracker = await Promise.resolve().then(() => (init_budget_tracker(), budget_tracker_exports));
+    if (reservationId) {
+      const reconciled = tracker.reconcileSpend(projectId, reservationId, costUsd);
+      if (!reconciled) tracker.recordActualSpend(projectId, costUsd);
+    } else {
+      tracker.recordActualSpend(projectId, costUsd);
+    }
+  } catch (trackerErr) {
+    console.warn(`[logSpend] budget tracker update failed for project=${projectId} api=${api}`, trackerErr);
+  }
+}
+async function getSessionSpend(api) {
+  const [row] = await db.select({ total: import_drizzle_orm2.sql`coalesce(sum(${apiSpend.costUsd}), 0)` }).from(apiSpend).where(import_drizzle_orm2.sql`${apiSpend.api} = ${api} AND ${apiSpend.createdAt} > now() - interval '1 day'`);
+  return row.total;
+}
+async function getMonthlySpend(api) {
+  const [row] = await db.select({ total: import_drizzle_orm2.sql`coalesce(sum(${apiSpend.costUsd}), 0)` }).from(apiSpend).where(import_drizzle_orm2.sql`${apiSpend.api} = ${api} AND ${apiSpend.createdAt} > date_trunc('month', now())`);
+  return row.total;
+}
+async function getCachedMedia(hash) {
+  const row = await db.query.mediaCache.findFirst({
+    where: (0, import_drizzle_orm2.eq)(mediaCache.hash, hash),
+    columns: { filePath: true, config: true }
+  });
+  if (!row) return null;
+  return { filePath: row.filePath, config: row.config };
+}
+async function setCachedMedia(hash, api, filePath, prompt, model, config6) {
+  await db.insert(mediaCache).values({ hash, api, filePath, prompt, model, config: config6 }).onConflictDoUpdate({
+    target: mediaCache.hash,
+    set: { api, filePath, prompt, model, config: config6 }
+  });
+}
+async function getSessionPermission(api) {
+  const row = await db.query.permissionSessions.findFirst({
+    where: (0, import_drizzle_orm2.eq)(permissionSessions.api, api),
+    columns: { decision: true }
+  });
+  return row?.decision ?? null;
+}
+async function setSessionPermission(api, decision) {
+  await db.insert(permissionSessions).values({ api, decision }).onConflictDoUpdate({
+    target: permissionSessions.api,
+    set: { decision }
+  });
+}
+async function clearSessionPermissions() {
+  await db.delete(permissionSessions);
+}
+async function logAgentUsage(projectId, agentType, modelId, inputTokens, outputTokens, apiCalls, toolCalls, costUsd, durationMs) {
+  await db.insert(agentUsage).values({
+    projectId,
+    agentType,
+    modelId,
+    inputTokens,
+    outputTokens,
+    apiCalls,
+    toolCalls,
+    costUsd,
+    durationMs
+  });
+}
+async function getAgentUsageSummary(projectId) {
+  const empty = {
+    totalInputTokens: 0,
+    totalOutputTokens: 0,
+    totalCostUsd: 0,
+    totalApiCalls: 0,
+    totalToolCalls: 0,
+    byAgent: {}
+  };
+  try {
+    const whereClause = projectId ? import_drizzle_orm2.sql`WHERE ${agentUsage.projectId} = ${projectId}` : import_drizzle_orm2.sql``;
+    const totalsResult = await db.execute(import_drizzle_orm2.sql`
+      SELECT
+        coalesce(sum(input_tokens), 0) as "totalInputTokens",
+        coalesce(sum(output_tokens), 0) as "totalOutputTokens",
+        coalesce(sum(cost_usd), 0) as "totalCostUsd",
+        coalesce(sum(api_calls), 0) as "totalApiCalls",
+        coalesce(sum(tool_calls), 0) as "totalToolCalls"
+      FROM agent_usage ${whereClause}
+    `);
+    const totals = totalsResult?.rows?.[0] ?? totalsResult?.[0] ?? {};
+    const byAgentRows = await db.execute(import_drizzle_orm2.sql`
+      SELECT
+        agent_type,
+        sum(input_tokens) as "inputTokens",
+        sum(output_tokens) as "outputTokens",
+        sum(cost_usd) as "costUsd",
+        count(*) as count
+      FROM agent_usage ${whereClause}
+      GROUP BY agent_type
+    `);
+    const byAgent = {};
+    for (const row of byAgentRows?.rows ?? byAgentRows ?? []) {
+      byAgent[row.agent_type] = {
+        inputTokens: Number(row.inputTokens),
+        outputTokens: Number(row.outputTokens),
+        costUsd: Number(row.costUsd),
+        count: Number(row.count)
+      };
+    }
+    const t = totals?.rows?.[0] ?? totals ?? {};
+    return {
+      totalInputTokens: Number(t.totalInputTokens ?? 0),
+      totalOutputTokens: Number(t.totalOutputTokens ?? 0),
+      totalCostUsd: Number(t.totalCostUsd ?? 0),
+      totalApiCalls: Number(t.totalApiCalls ?? 0),
+      totalToolCalls: Number(t.totalToolCalls ?? 0),
+      byAgent
+    };
+  } catch (e) {
+    console.error("[DB] getAgentUsageSummary failed (table may not exist):", e);
+    return empty;
+  }
+}
+var import_node_postgres, import_pg, import_drizzle_orm2, _pool, _db, db;
+var init_db = __esm({
+  "lib/db/index.ts"() {
+    "use strict";
+    import_node_postgres = require("drizzle-orm/node-postgres");
+    import_pg = require("pg");
+    init_schema();
+    import_drizzle_orm2 = require("drizzle-orm");
+    _pool = null;
+    _db = null;
+    db = new Proxy({}, {
+      get(_target, prop, receiver) {
+        return Reflect.get(initDb(), prop, receiver);
+      },
+      // Required so Auth.js Drizzle adapter's `is(db, PgDatabase)` check — which
+      // walks the prototype chain via Object.getPrototypeOf — sees the real
+      // PgDatabase prototype instead of the empty Proxy target's Object.prototype.
+      getPrototypeOf() {
+        return Reflect.getPrototypeOf(initDb());
+      },
+      has(_target, prop) {
+        return Reflect.has(initDb(), prop);
+      }
+    });
   }
 });
 
@@ -1891,6 +3076,71 @@ var init_freesound_music = __esm({
   }
 });
 
+// lib/apis/media-cache.ts
+function computeCacheHash(params) {
+  const normalized = JSON.stringify(params, Object.keys(params).sort());
+  return import_crypto5.default.createHash("sha256").update(normalized).digest("hex").slice(0, 16);
+}
+async function checkCache(api, params) {
+  const hash = computeCacheHash(params);
+  const cached = await getCachedMedia(hash);
+  if (!cached) return null;
+  const absPath = import_path11.default.join(process.cwd(), "public", cached.filePath);
+  try {
+    await import_promises17.default.access(absPath);
+  } catch {
+    return null;
+  }
+  let metadata = {};
+  if (cached.config) {
+    try {
+      metadata = JSON.parse(cached.config)?._metadata ?? {};
+    } catch {
+    }
+  }
+  return { filePath: cached.filePath, metadata };
+}
+async function saveToCache(api, params, buffer, ext, metadata) {
+  const hash = computeCacheHash(params);
+  const subdir = api === "heygen" ? "avatars" : api === "veo3" ? "videos" : api === "backgroundRemoval" ? "stickers" : "images";
+  const dir = import_path11.default.join(GENERATED_DIR, subdir);
+  await import_promises17.default.mkdir(dir, { recursive: true });
+  const filename = `${hash}.${ext}`;
+  const filePath = import_path11.default.join(dir, filename);
+  await import_promises17.default.writeFile(filePath, buffer);
+  const publicPath = `/generated/${subdir}/${filename}`;
+  const configObj = { ...params, _metadata: metadata ?? {} };
+  await setCachedMedia(
+    hash,
+    api,
+    publicPath,
+    params.prompt ?? "",
+    params.model ?? "",
+    JSON.stringify(configObj)
+  );
+  return publicPath;
+}
+async function downloadToBuffer(url) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Download failed: ${response.status}`);
+  const arrayBuffer = await response.arrayBuffer();
+  return Buffer.from(arrayBuffer);
+}
+function computeContentHash(buffer) {
+  return import_crypto5.default.createHash("sha256").update(buffer).digest("hex").slice(0, 16);
+}
+var import_crypto5, import_promises17, import_path11, GENERATED_DIR;
+var init_media_cache = __esm({
+  "lib/apis/media-cache.ts"() {
+    "use strict";
+    import_crypto5 = __toESM(require("crypto"));
+    import_promises17 = __toESM(require("fs/promises"));
+    import_path11 = __toESM(require("path"));
+    init_db();
+    GENERATED_DIR = import_path11.default.join(process.cwd(), "public", "generated");
+  }
+});
+
 // lib/three-environments/registry.ts
 function formatThreeEnvironmentsForPrompt() {
   return CENCH_THREE_ENVIRONMENTS.map((e) => `- \`${e.id}\` \u2014 ${e.name}: ${e.description}`).join("\n");
@@ -3175,6 +4425,14 @@ Return a JSON object with these fields:
   - Returns \`{ fire(payload), onFired(callback) }\`
   - Example: \`const reveal = useTrigger('show-details'); reveal.fire({ section: 'pricing' })\`
 
+### Scrub hooks (for components that animate outside useCurrentFrame)
+- \`useCenchSeek(cb)\` \u2014 fires on every timeline seek/scrub with the scene time in seconds
+  - Example: \`useCenchSeek((t) => setPosition(t * 100))\`
+  - Use when your animation state is kept outside the GSAP master timeline and you need it to reflect scrubs
+- \`useCenchTime()\` \u2014 returns current scene time in seconds, kept in sync with playback AND scrub
+  - Example: \`const t = useCenchTime(); const x = interpolate(t, [0, DURATION], [0, 500])\`
+  - Prefer \`useCurrentFrame()\` for frame-accurate work; use \`useCenchTime()\` when you want continuous seconds
+
 ### When to use interactivity hooks
 - Use useVariable when the viewer needs to control a value that affects the scene (slider-driven charts, toggle-driven visibility, score tracking)
 - Use useInteraction when elements should respond to hover/click with visual feedback AND notify the parent
@@ -3481,12 +4739,197 @@ var init_d3_structured_run = __esm({
   }
 });
 
+// lib/apis/image-gen.ts
+var image_gen_exports = {};
+__export(image_gen_exports, {
+  MODEL_COSTS: () => MODEL_COSTS,
+  generateImage: () => generateImage
+});
+function configureFal4() {
+  const key = FAL_KEY();
+  if (key) {
+    fal4.config({ credentials: key });
+  }
+}
+function aspectRatioToSize(ar) {
+  if (ar === "16:9" || ar === "4:3") return "1792x1024";
+  if (ar === "9:16" || ar === "3:4") return "1024x1792";
+  return "1024x1024";
+}
+function aspectRatioToFal(ar) {
+  if (ar === "16:9") return "landscape_16_9";
+  if (ar === "9:16") return "portrait_16_9";
+  if (ar === "4:3") return "landscape_4_3";
+  if (ar === "3:4") return "portrait_4_3";
+  return "square_hd";
+}
+async function generateImage(opts) {
+  const cacheParams = {
+    prompt: opts.prompt,
+    model: opts.model,
+    aspectRatio: opts.aspectRatio,
+    style: opts.style,
+    referenceImageUrl: opts.referenceImageUrl ?? null
+  };
+  if (!opts.skipCache) {
+    const cached = await checkCache("imageGen", cacheParams);
+    if (cached) {
+      return {
+        imageUrl: cached.filePath,
+        width: cached.metadata.width ?? 1024,
+        height: cached.metadata.height ?? 1024,
+        cost: 0
+      };
+    }
+  }
+  const fullPrompt = opts.prompt + (opts.style ? STYLE_PROMPTS[opts.style] ?? "" : "");
+  const cost = MODEL_COSTS[opts.model];
+  if (opts.model === "dall-e-3") {
+    const response = await fetch("https://api.openai.com/v1/images/generations", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${OPENAI_API_KEY()}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: "dall-e-3",
+        prompt: fullPrompt,
+        size: aspectRatioToSize(opts.aspectRatio),
+        quality: "standard",
+        n: 1
+      })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error?.message ?? "DALL-E 3 generation failed");
+    const imageUrl2 = data.data[0].url;
+    const size = aspectRatioToSize(opts.aspectRatio);
+    const [w2, h2] = size.split("x").map(Number);
+    const buffer2 = await downloadToBuffer(imageUrl2);
+    const publicPath2 = await saveToCache("imageGen", cacheParams, buffer2, "png", { width: w2, height: h2 });
+    return { imageUrl: publicPath2, width: w2, height: h2, cost };
+  }
+  const falModelId = MODEL_IDS2[opts.model];
+  if (!falModelId) throw new Error(`Unknown model: ${opts.model}`);
+  configureFal4();
+  const result = await fal4.subscribe(falModelId, {
+    input: {
+      prompt: fullPrompt,
+      negative_prompt: opts.negativePrompt,
+      image_size: aspectRatioToFal(opts.aspectRatio),
+      num_inference_steps: opts.model === "flux-schnell" ? 4 : 28,
+      guidance_scale: 3.5
+    }
+  });
+  const imageUrl = result.images?.[0]?.url;
+  if (!imageUrl) throw new Error("No image returned from fal.ai");
+  const w = result.images[0].width ?? 1024;
+  const h = result.images[0].height ?? 1024;
+  const buffer = await downloadToBuffer(imageUrl);
+  const publicPath = await saveToCache("imageGen", cacheParams, buffer, "png", { width: w, height: h });
+  return {
+    imageUrl: publicPath,
+    width: w,
+    height: h,
+    cost
+  };
+}
+var fal4, FAL_KEY, OPENAI_API_KEY, MODEL_IDS2, STYLE_PROMPTS, MODEL_COSTS;
+var init_image_gen = __esm({
+  "lib/apis/image-gen.ts"() {
+    "use strict";
+    fal4 = __toESM(require("@fal-ai/serverless-client"));
+    init_media_cache();
+    FAL_KEY = () => process.env.FAL_KEY;
+    OPENAI_API_KEY = () => process.env.OPENAI_API_KEY;
+    MODEL_IDS2 = {
+      "flux-1.1-pro": "fal-ai/flux-pro/v1.1",
+      "flux-schnell": "fal-ai/flux/schnell",
+      "ideogram-v3": "fal-ai/ideogram/v3",
+      "recraft-v3": "fal-ai/recraft-v3",
+      "stable-diffusion-3": "fal-ai/stable-diffusion-v3-medium",
+      "dall-e-3": null
+      // uses OpenAI SDK
+    };
+    STYLE_PROMPTS = {
+      illustration: ", vector illustration style, clean lines",
+      flat: ", flat design, simple shapes, minimal",
+      sketch: ", pencil sketch, hand-drawn, whiteboard style",
+      "3d": ", 3D render, octane render, soft lighting",
+      watercolor: ", watercolor illustration, painted",
+      photorealistic: ", photorealistic, 4K, detailed",
+      pixel: ", pixel art style, retro"
+    };
+    MODEL_COSTS = {
+      "flux-1.1-pro": 0.05,
+      "flux-schnell": 3e-3,
+      "ideogram-v3": 0.08,
+      "recraft-v3": 0.04,
+      "stable-diffusion-3": 0.03,
+      "dall-e-3": 0.04
+    };
+  }
+});
+
+// lib/apis/background-removal.ts
+var background_removal_exports = {};
+__export(background_removal_exports, {
+  BG_REMOVAL_COST: () => BG_REMOVAL_COST,
+  removeImageBackground: () => removeImageBackground
+});
+function configureFal5() {
+  const key = FAL_KEY2();
+  if (key) {
+    fal5.config({ credentials: key });
+  }
+}
+async function removeImageBackground(imageUrl, skipCache = false) {
+  const cacheParams = { imageUrl, operation: "rmbg" };
+  if (!skipCache) {
+    const cached = await checkCache("backgroundRemoval", cacheParams);
+    if (cached) {
+      return { resultUrl: cached.filePath, cost: 0 };
+    }
+  }
+  configureFal5();
+  let input;
+  if (imageUrl.startsWith("/")) {
+    const absPath = import_path12.default.join(process.cwd(), "public", imageUrl);
+    const fileBuffer = await import_promises19.default.readFile(absPath);
+    if (fileBuffer.length > 10 * 1024 * 1024) {
+      throw new Error("Image too large for background removal (max 10MB)");
+    }
+    const base64 = fileBuffer.toString("base64");
+    const mime = imageUrl.endsWith(".png") ? "image/png" : imageUrl.endsWith(".webp") ? "image/webp" : imageUrl.endsWith(".gif") ? "image/gif" : "image/jpeg";
+    input = { image_url: `data:${mime};base64,${base64}` };
+  } else {
+    input = { image_url: imageUrl };
+  }
+  const result = await fal5.subscribe("fal-ai/bria-rmbg", { input });
+  const resultUrl = result.image?.url;
+  if (!resultUrl) throw new Error("No result from background removal");
+  const buffer = await downloadToBuffer(resultUrl);
+  const publicPath = await saveToCache("backgroundRemoval", cacheParams, buffer, "png");
+  return { resultUrl: publicPath, cost: BG_REMOVAL_COST };
+}
+var fal5, import_promises19, import_path12, FAL_KEY2, BG_REMOVAL_COST;
+var init_background_removal = __esm({
+  "lib/apis/background-removal.ts"() {
+    "use strict";
+    fal5 = __toESM(require("@fal-ai/serverless-client"));
+    import_promises19 = __toESM(require("fs/promises"));
+    import_path12 = __toESM(require("path"));
+    init_media_cache();
+    FAL_KEY2 = () => process.env.FAL_KEY;
+    BG_REMOVAL_COST = 0.01;
+  }
+});
+
 // electron/main.ts
-var import_path12 = __toESM(require("path"));
+var import_path13 = __toESM(require("path"));
 var import_child_process3 = require("child_process");
 var import_util3 = require("util");
 var import_electron6 = require("electron");
-var import_promises19 = __toESM(require("fs/promises"));
+var import_promises20 = __toESM(require("fs/promises"));
 var import_fs = __toESM(require("fs"));
 var import_url = require("url");
 var import_dotenv = require("dotenv");
@@ -3542,1119 +4985,9 @@ function register(ipcMain2) {
   ipcMain2.handle("cench:settings.listProviders", async () => listProviders());
 }
 
-// lib/db/index.ts
-var import_node_postgres = require("drizzle-orm/node-postgres");
-var import_pg = require("pg");
-
-// lib/db/schema.ts
-var schema_exports = {};
-__export(schema_exports, {
-  accounts: () => accounts,
-  accountsRelations: () => accountsRelations,
-  agentTypeEnum: () => agentTypeEnum,
-  agentUsage: () => agentUsage,
-  analyticsEvents: () => analyticsEvents,
-  apiSpend: () => apiSpend,
-  assets: () => assets,
-  avatarConfigs: () => avatarConfigs,
-  avatarConfigsRelations: () => avatarConfigsRelations,
-  avatarVideos: () => avatarVideos,
-  avatarVideosRelations: () => avatarVideosRelations,
-  clipSourceTypeEnum: () => clipSourceTypeEnum,
-  conversations: () => conversations,
-  conversationsRelations: () => conversationsRelations,
-  generatedMedia: () => generatedMedia,
-  generationLogs: () => generationLogs,
-  githubLinks: () => githubLinks,
-  githubLinksRelations: () => githubLinksRelations,
-  interactions: () => interactions,
-  layerTypeEnum: () => layerTypeEnum,
-  layers: () => layers,
-  layersRelations: () => layersRelations,
-  mediaCache: () => mediaCache,
-  mediaStatusEnum: () => mediaStatusEnum,
-  messages: () => messages,
-  messagesRelations: () => messagesRelations,
-  outputModeEnum: () => outputModeEnum,
-  permissionRules: () => permissionRules,
-  permissionRulesRelations: () => permissionRulesRelations,
-  permissionSessions: () => permissionSessions,
-  planEnum: () => planEnum,
-  projectAssets: () => projectAssets,
-  projectAssetsRelations: () => projectAssetsRelations,
-  projects: () => projects,
-  projectsRelations: () => projectsRelations,
-  publishedProjects: () => publishedProjects,
-  sceneEdges: () => sceneEdges,
-  sceneNodes: () => sceneNodes,
-  sceneNodesRelations: () => sceneNodesRelations,
-  sceneTemplates: () => sceneTemplates,
-  scenes: () => scenes,
-  scenesRelations: () => scenesRelations,
-  sessions: () => sessions,
-  sessionsRelations: () => sessionsRelations,
-  snapshots: () => snapshots,
-  storageModeEnum: () => storageModeEnum,
-  threeDComponents: () => threeDComponents,
-  timelineClips: () => timelineClips,
-  timelineClipsRelations: () => timelineClipsRelations,
-  timelineTracks: () => timelineTracks,
-  timelineTracksRelations: () => timelineTracksRelations,
-  trackTypeEnum: () => trackTypeEnum,
-  userMemory: () => userMemory,
-  userMemoryRelations: () => userMemoryRelations,
-  users: () => users,
-  usersRelations: () => usersRelations,
-  verificationTokens: () => verificationTokens,
-  workspaces: () => workspaces,
-  workspacesRelations: () => workspacesRelations
-});
-var import_pg_core = require("drizzle-orm/pg-core");
-var import_drizzle_orm = require("drizzle-orm");
-var outputModeEnum = (0, import_pg_core.pgEnum)("output_mode", ["mp4", "interactive"]);
-var storageModeEnum = (0, import_pg_core.pgEnum)("storage_mode", ["local", "cloud"]);
-var layerTypeEnum = (0, import_pg_core.pgEnum)("layer_type", [
-  "canvas2d",
-  "svg",
-  "d3",
-  "three",
-  "zdog",
-  "lottie",
-  "html",
-  "assets",
-  "group",
-  "avatar",
-  "veo3",
-  "image",
-  "sticker"
-]);
-var agentTypeEnum = (0, import_pg_core.pgEnum)("agent_type", ["router", "director", "scene-maker", "editor", "dop", "planner"]);
-var mediaStatusEnum = (0, import_pg_core.pgEnum)("media_status", ["pending", "generating", "processing", "ready", "error"]);
-var planEnum = (0, import_pg_core.pgEnum)("plan", ["free", "pro", "team"]);
-var users = (0, import_pg_core.pgTable)("users", {
-  id: (0, import_pg_core.uuid)("id").primaryKey().defaultRandom(),
-  email: (0, import_pg_core.text)("email").notNull().unique(),
-  name: (0, import_pg_core.text)("name"),
-  emailVerified: (0, import_pg_core.timestamp)("email_verified", { mode: "date" }),
-  image: (0, import_pg_core.text)("image"),
-  avatarUrl: (0, import_pg_core.text)("avatar_url"),
-  plan: planEnum("plan").default("free"),
-  defaultStorageMode: storageModeEnum("default_storage_mode").default("local"),
-  preferences: (0, import_pg_core.jsonb)("preferences").default({}),
-  createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull(),
-  updatedAt: (0, import_pg_core.timestamp)("updated_at").defaultNow().notNull()
-});
-var accounts = (0, import_pg_core.pgTable)(
-  "accounts",
-  {
-    userId: (0, import_pg_core.uuid)("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-    type: (0, import_pg_core.text)("type").$type().notNull(),
-    provider: (0, import_pg_core.text)("provider").notNull(),
-    providerAccountId: (0, import_pg_core.text)("provider_account_id").notNull(),
-    refresh_token: (0, import_pg_core.text)("refresh_token"),
-    access_token: (0, import_pg_core.text)("access_token"),
-    expires_at: (0, import_pg_core.integer)("expires_at"),
-    token_type: (0, import_pg_core.text)("token_type"),
-    scope: (0, import_pg_core.text)("scope"),
-    id_token: (0, import_pg_core.text)("id_token"),
-    session_state: (0, import_pg_core.text)("session_state")
-  },
-  (t) => ({
-    compoundKey: (0, import_pg_core.primaryKey)({ columns: [t.provider, t.providerAccountId] })
-  })
-);
-var sessions = (0, import_pg_core.pgTable)("sessions", {
-  sessionToken: (0, import_pg_core.text)("session_token").primaryKey(),
-  userId: (0, import_pg_core.uuid)("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  expires: (0, import_pg_core.timestamp)("expires", { mode: "date" }).notNull()
-});
-var verificationTokens = (0, import_pg_core.pgTable)(
-  "verification_tokens",
-  {
-    identifier: (0, import_pg_core.text)("identifier").notNull(),
-    token: (0, import_pg_core.text)("token").notNull(),
-    expires: (0, import_pg_core.timestamp)("expires", { mode: "date" }).notNull()
-  },
-  (t) => ({
-    compoundKey: (0, import_pg_core.primaryKey)({ columns: [t.identifier, t.token] })
-  })
-);
-var userMemory = (0, import_pg_core.pgTable)(
-  "user_memory",
-  {
-    id: (0, import_pg_core.uuid)("id").primaryKey().defaultRandom(),
-    userId: (0, import_pg_core.uuid)("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-    category: (0, import_pg_core.text)("category").notNull(),
-    key: (0, import_pg_core.text)("key").notNull(),
-    value: (0, import_pg_core.text)("value").notNull(),
-    confidence: (0, import_pg_core.real)("confidence").default(0.5).notNull(),
-    sourceRunId: (0, import_pg_core.text)("source_run_id"),
-    createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull(),
-    updatedAt: (0, import_pg_core.timestamp)("updated_at").defaultNow().notNull()
-  },
-  (t) => ({
-    userIdx: (0, import_pg_core.index)("user_memory_user_idx").on(t.userId),
-    userKeyIdx: (0, import_pg_core.uniqueIndex)("user_memory_user_key_idx").on(t.userId, t.category, t.key)
-  })
-);
-var workspaces = (0, import_pg_core.pgTable)(
-  "workspaces",
-  {
-    id: (0, import_pg_core.uuid)("id").primaryKey().defaultRandom(),
-    userId: (0, import_pg_core.uuid)("user_id").references(() => users.id, { onDelete: "cascade" }),
-    name: (0, import_pg_core.text)("name").notNull(),
-    description: (0, import_pg_core.text)("description"),
-    color: (0, import_pg_core.text)("color"),
-    icon: (0, import_pg_core.text)("icon"),
-    brandKit: (0, import_pg_core.jsonb)("brand_kit").$type().default(null),
-    globalStyle: (0, import_pg_core.jsonb)("global_style").$type().default(null),
-    settings: (0, import_pg_core.jsonb)("settings").$type().default({}),
-    isDefault: (0, import_pg_core.boolean)("is_default").default(false),
-    isArchived: (0, import_pg_core.boolean)("is_archived").default(false),
-    createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull(),
-    updatedAt: (0, import_pg_core.timestamp)("updated_at").defaultNow().notNull()
-  },
-  (t) => ({
-    userIdx: (0, import_pg_core.index)("workspaces_user_idx").on(t.userId),
-    defaultIdx: (0, import_pg_core.index)("workspaces_default_idx").on(t.userId, t.isDefault)
-  })
-);
-var projects = (0, import_pg_core.pgTable)(
-  "projects",
-  {
-    id: (0, import_pg_core.uuid)("id").primaryKey().defaultRandom(),
-    userId: (0, import_pg_core.uuid)("user_id").references(() => users.id, { onDelete: "cascade" }),
-    workspaceId: (0, import_pg_core.uuid)("workspace_id").references(() => workspaces.id, { onDelete: "set null" }),
-    name: (0, import_pg_core.text)("name").notNull(),
-    description: (0, import_pg_core.text)("description"),
-    sceneGraphStartSceneId: (0, import_pg_core.uuid)("scene_graph_start_scene_id"),
-    outputMode: outputModeEnum("output_mode").default("mp4"),
-    storageMode: storageModeEnum("storage_mode").default("local"),
-    globalStyle: (0, import_pg_core.jsonb)("global_style").$type().default({
-      presetId: null,
-      paletteOverride: null,
-      bgColorOverride: null,
-      fontOverride: null,
-      bodyFontOverride: null,
-      strokeColorOverride: null
-    }),
-    // Planner / storyboard review durability (Cursor-like plan review)
-    storyboardProposed: (0, import_pg_core.jsonb)("storyboard_proposed").$type().default(null),
-    storyboardEdited: (0, import_pg_core.jsonb)("storyboard_edited").$type().default(null),
-    storyboardApplied: (0, import_pg_core.jsonb)("storyboard_applied").$type().default(null),
-    pausedAgentRun: (0, import_pg_core.jsonb)("paused_agent_run").$type().default(null),
-    /** Full run checkpoint for resuming interrupted multi-scene builds */
-    runCheckpoint: (0, import_pg_core.jsonb)("run_checkpoint").$type().default(null),
-    /** Per-project agent configuration (model, tools, hooks, permissions overrides) */
-    agentConfig: (0, import_pg_core.jsonb)("agent_config").$type().default(null),
-    mp4Settings: (0, import_pg_core.jsonb)("mp4_settings").$type().default({
-      resolution: "1080p",
-      fps: 30,
-      format: "mp4",
-      aspectRatio: "16:9"
-    }),
-    interactiveSettings: (0, import_pg_core.jsonb)("interactive_settings").$type().default({
-      playerTheme: "dark",
-      showProgressBar: true,
-      showSceneNav: false,
-      allowFullscreen: true,
-      brandColor: "#e84545",
-      customDomain: null,
-      password: null
-    }),
-    apiPermissions: (0, import_pg_core.jsonb)("api_permissions").default({}),
-    audioSettings: (0, import_pg_core.jsonb)("audio_settings").$type().default({
-      defaultTTSProvider: "auto",
-      defaultSFXProvider: "auto",
-      defaultMusicProvider: "auto",
-      defaultVoiceId: null,
-      defaultVoiceName: null,
-      webSpeechVoice: null,
-      puterProvider: "openai",
-      openaiTTSModel: "tts-1",
-      openaiTTSVoice: "alloy",
-      geminiTTSModel: "gemini-2.5-flash-preview-tts",
-      geminiVoice: null,
-      edgeTTSUrl: null,
-      pocketTTSUrl: null,
-      voxcpmUrl: null,
-      globalMusicDucking: true,
-      globalMusicDuckLevel: 0.2
-    }),
-    audioProviderEnabled: (0, import_pg_core.jsonb)("audio_provider_enabled").$type().default({}),
-    mediaGenEnabled: (0, import_pg_core.jsonb)("media_gen_enabled").$type().default({}),
-    watermark: (0, import_pg_core.jsonb)("watermark").$type().default(null),
-    brandKit: (0, import_pg_core.jsonb)("brand_kit").$type().default(null),
-    version: (0, import_pg_core.integer)("version").default(1).notNull(),
-    thumbnailUrl: (0, import_pg_core.text)("thumbnail_url"),
-    isArchived: (0, import_pg_core.boolean)("is_archived").default(false),
-    lastOpenedAt: (0, import_pg_core.timestamp)("last_opened_at").defaultNow(),
-    createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull(),
-    updatedAt: (0, import_pg_core.timestamp)("updated_at").defaultNow().notNull()
-  },
-  (t) => ({
-    userIdx: (0, import_pg_core.index)("projects_user_idx").on(t.userId),
-    archivedIdx: (0, import_pg_core.index)("projects_archived_idx").on(t.userId, t.isArchived),
-    updatedIdx: (0, import_pg_core.index)("projects_updated_idx").on(t.userId, t.updatedAt),
-    workspaceIdx: (0, import_pg_core.index)("projects_workspace_idx").on(t.workspaceId)
-  })
-);
-var projectAssets = (0, import_pg_core.pgTable)(
-  "project_assets",
-  {
-    id: (0, import_pg_core.uuid)("id").primaryKey().defaultRandom(),
-    projectId: (0, import_pg_core.uuid)("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-    filename: (0, import_pg_core.text)("filename").notNull(),
-    storagePath: (0, import_pg_core.text)("storage_path").notNull(),
-    publicUrl: (0, import_pg_core.text)("public_url").notNull(),
-    type: (0, import_pg_core.text)("type").notNull(),
-    // 'image' | 'video' | 'svg'
-    mimeType: (0, import_pg_core.text)("mime_type").notNull(),
-    sizeBytes: (0, import_pg_core.integer)("size_bytes").notNull(),
-    width: (0, import_pg_core.integer)("width"),
-    height: (0, import_pg_core.integer)("height"),
-    durationSeconds: (0, import_pg_core.real)("duration_seconds"),
-    name: (0, import_pg_core.text)("name").notNull(),
-    tags: (0, import_pg_core.text)("tags").array().notNull().default([]),
-    thumbnailUrl: (0, import_pg_core.text)("thumbnail_url"),
-    extractedColors: (0, import_pg_core.text)("extracted_colors").array().notNull().default([]),
-    // Generation provenance — nullable; only populated for AI-generated assets.
-    // Why: enables query_media_library / reuse_asset / regenerate_asset and powers
-    // the Gallery "generated" filter with prompt + cost tooltips.
-    source: (0, import_pg_core.text)("source").default("upload").notNull(),
-    // 'upload' | 'generated'
-    prompt: (0, import_pg_core.text)("prompt"),
-    provider: (0, import_pg_core.text)("provider"),
-    model: (0, import_pg_core.text)("model"),
-    costCents: (0, import_pg_core.integer)("cost_cents"),
-    parentAssetId: (0, import_pg_core.uuid)("parent_asset_id"),
-    referenceAssetIds: (0, import_pg_core.jsonb)("reference_asset_ids").$type(),
-    enhanceTags: (0, import_pg_core.jsonb)("enhance_tags").$type(),
-    // Content-hash dedup + provenance for ingested / research-sourced media.
-    /** SHA256(file bytes), first 16 hex chars. Lets us dedupe repeat uploads and research-downloaded assets. */
-    contentHash: (0, import_pg_core.text)("content_hash"),
-    /** Original URL when the asset was pulled from the web (Pexels, yt-dlp, Archive.org, etc). */
-    sourceUrl: (0, import_pg_core.text)("source_url"),
-    /** Timestamp of last CLIP classification pass (Phase B). Null = not yet indexed. */
-    classificationTimestamp: (0, import_pg_core.timestamp)("classification_timestamp"),
-    createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull()
-  },
-  (t) => ({
-    projectIdx: (0, import_pg_core.index)("project_assets_project_idx").on(t.projectId),
-    typeIdx: (0, import_pg_core.index)("project_assets_type_idx").on(t.projectId, t.type),
-    sourceIdx: (0, import_pg_core.index)("project_assets_source_idx").on(t.projectId, t.source),
-    contentHashIdx: (0, import_pg_core.index)("project_assets_content_hash_idx").on(t.contentHash)
-  })
-);
-var scenes = (0, import_pg_core.pgTable)(
-  "scenes",
-  {
-    id: (0, import_pg_core.uuid)("id").primaryKey().defaultRandom(),
-    projectId: (0, import_pg_core.uuid)("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-    name: (0, import_pg_core.text)("name"),
-    position: (0, import_pg_core.integer)("position").notNull(),
-    duration: (0, import_pg_core.real)("duration").default(8).notNull(),
-    bgColor: (0, import_pg_core.text)("bg_color").default("#fffef9"),
-    styleOverride: (0, import_pg_core.jsonb)("style_override").$type().default({}),
-    transition: (0, import_pg_core.jsonb)("transition").$type().default({
-      type: "none",
-      duration: 0.5
-    }),
-    audioLayer: (0, import_pg_core.jsonb)("audio_layer").$type(),
-    videoLayer: (0, import_pg_core.jsonb)("video_layer").$type(),
-    thumbnailUrl: (0, import_pg_core.text)("thumbnail_url"),
-    gridConfig: (0, import_pg_core.jsonb)("grid_config"),
-    cameraMotion: (0, import_pg_core.jsonb)("camera_motion"),
-    worldConfig: (0, import_pg_core.jsonb)("world_config"),
-    sceneBlob: (0, import_pg_core.jsonb)("scene_blob").$type().default(null),
-    avatarConfigId: (0, import_pg_core.uuid)("avatar_config_id").references(() => avatarConfigs.id, { onDelete: "set null" }),
-    createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull(),
-    updatedAt: (0, import_pg_core.timestamp)("updated_at").defaultNow().notNull()
-  },
-  (t) => ({
-    projectIdx: (0, import_pg_core.index)("scenes_project_idx").on(t.projectId),
-    positionIdx: (0, import_pg_core.index)("scenes_position_idx").on(t.projectId, t.position)
-  })
-);
-var generatedMedia = (0, import_pg_core.pgTable)(
-  "generated_media",
-  {
-    id: (0, import_pg_core.uuid)("id").primaryKey().defaultRandom(),
-    userId: (0, import_pg_core.uuid)("user_id").references(() => users.id),
-    type: (0, import_pg_core.text)("type").notNull(),
-    promptHash: (0, import_pg_core.text)("prompt_hash").notNull(),
-    prompt: (0, import_pg_core.text)("prompt"),
-    model: (0, import_pg_core.text)("model"),
-    url: (0, import_pg_core.text)("url"),
-    status: mediaStatusEnum("status").default("pending"),
-    metadata: (0, import_pg_core.jsonb)("metadata").default({}),
-    costUsd: (0, import_pg_core.real)("cost_usd"),
-    externalJobId: (0, import_pg_core.text)("external_job_id"),
-    createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull()
-  },
-  (t) => ({
-    hashIdx: (0, import_pg_core.uniqueIndex)("media_hash_idx").on(t.promptHash),
-    userIdx: (0, import_pg_core.index)("media_user_idx").on(t.userId),
-    statusIdx: (0, import_pg_core.index)("media_status_idx").on(t.status)
-  })
-);
-var layers = (0, import_pg_core.pgTable)(
-  "layers",
-  {
-    id: (0, import_pg_core.uuid)("id").primaryKey().defaultRandom(),
-    sceneId: (0, import_pg_core.uuid)("scene_id").notNull().references(() => scenes.id, { onDelete: "cascade" }),
-    parentLayerId: (0, import_pg_core.uuid)("parent_layer_id"),
-    type: layerTypeEnum("type").notNull(),
-    label: (0, import_pg_core.text)("label"),
-    zIndex: (0, import_pg_core.integer)("z_index").default(0).notNull(),
-    visible: (0, import_pg_core.boolean)("visible").default(true).notNull(),
-    opacity: (0, import_pg_core.real)("opacity").default(1).notNull(),
-    blendMode: (0, import_pg_core.text)("blend_mode").default("normal"),
-    startAt: (0, import_pg_core.real)("start_at").default(0).notNull(),
-    duration: (0, import_pg_core.real)("duration"),
-    generatedCode: (0, import_pg_core.text)("generated_code"),
-    elements: (0, import_pg_core.jsonb)("elements").$type().default([]),
-    assetPlacements: (0, import_pg_core.jsonb)("asset_placements").$type().default([]),
-    prompt: (0, import_pg_core.text)("prompt"),
-    modelUsed: (0, import_pg_core.text)("model_used"),
-    generatedAt: (0, import_pg_core.timestamp)("generated_at"),
-    layerConfig: (0, import_pg_core.jsonb)("layer_config"),
-    mediaId: (0, import_pg_core.uuid)("media_id").references(() => generatedMedia.id, { onDelete: "set null" }),
-    createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull(),
-    updatedAt: (0, import_pg_core.timestamp)("updated_at").defaultNow().notNull()
-  },
-  (t) => ({
-    sceneIdx: (0, import_pg_core.index)("layers_scene_idx").on(t.sceneId),
-    typeIdx: (0, import_pg_core.index)("layers_type_idx").on(t.sceneId, t.type),
-    zIndexIdx: (0, import_pg_core.index)("layers_zindex_idx").on(t.sceneId, t.zIndex)
-  })
-);
-var sceneEdges = (0, import_pg_core.pgTable)(
-  "scene_edges",
-  {
-    id: (0, import_pg_core.uuid)("id").primaryKey().defaultRandom(),
-    projectId: (0, import_pg_core.uuid)("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-    fromSceneId: (0, import_pg_core.uuid)("from_scene_id").references(() => scenes.id, { onDelete: "cascade" }),
-    toSceneId: (0, import_pg_core.uuid)("to_scene_id").references(() => scenes.id, { onDelete: "cascade" }),
-    condition: (0, import_pg_core.jsonb)("condition").$type().default({
-      type: "auto",
-      interactionId: null,
-      variableName: null,
-      variableValue: null
-    }),
-    position: (0, import_pg_core.jsonb)("position")
-  },
-  (t) => ({
-    projectIdx: (0, import_pg_core.index)("edges_project_idx").on(t.projectId)
-  })
-);
-var sceneNodes = (0, import_pg_core.pgTable)(
-  "scene_nodes",
-  {
-    id: (0, import_pg_core.uuid)("id").primaryKey().defaultRandom(),
-    projectId: (0, import_pg_core.uuid)("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-    sceneId: (0, import_pg_core.uuid)("scene_id").notNull().references(() => scenes.id, { onDelete: "cascade" }),
-    position: (0, import_pg_core.jsonb)("position").notNull()
-  },
-  (t) => ({
-    projectIdx: (0, import_pg_core.index)("nodes_project_idx").on(t.projectId),
-    sceneUniqueIdx: (0, import_pg_core.uniqueIndex)("nodes_project_scene_unique_idx").on(t.projectId, t.sceneId)
-  })
-);
-var interactions = (0, import_pg_core.pgTable)(
-  "interactions",
-  {
-    id: (0, import_pg_core.uuid)("id").primaryKey().defaultRandom(),
-    sceneId: (0, import_pg_core.uuid)("scene_id").notNull().references(() => scenes.id, { onDelete: "cascade" }),
-    type: (0, import_pg_core.text)("type").notNull(),
-    config: (0, import_pg_core.jsonb)("config").$type().notNull(),
-    createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull()
-  },
-  (t) => ({
-    sceneIdx: (0, import_pg_core.index)("interactions_scene_idx").on(t.sceneId)
-  })
-);
-var assets = (0, import_pg_core.pgTable)(
-  "assets",
-  {
-    id: (0, import_pg_core.text)("id").primaryKey(),
-    name: (0, import_pg_core.text)("name").notNull(),
-    category: (0, import_pg_core.text)("category"),
-    tags: (0, import_pg_core.jsonb)("tags").$type().default([]),
-    description: (0, import_pg_core.text)("description"),
-    type: (0, import_pg_core.text)("type").default("canvas"),
-    canvasDrawFn: (0, import_pg_core.text)("canvas_draw_fn"),
-    svgData: (0, import_pg_core.text)("svg_data"),
-    defaultWidth: (0, import_pg_core.integer)("default_width").default(200),
-    defaultHeight: (0, import_pg_core.integer)("default_height").default(200),
-    bounds: (0, import_pg_core.jsonb)("bounds"),
-    thumbnailUrl: (0, import_pg_core.text)("thumbnail_url"),
-    isBuiltIn: (0, import_pg_core.boolean)("is_built_in").default(true),
-    isPublic: (0, import_pg_core.boolean)("is_public").default(false),
-    userId: (0, import_pg_core.uuid)("user_id").references(() => users.id),
-    useCount: (0, import_pg_core.integer)("use_count").default(0),
-    createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull()
-  },
-  (t) => ({
-    categoryIdx: (0, import_pg_core.index)("assets_category_idx").on(t.category),
-    publicIdx: (0, import_pg_core.index)("assets_public_idx").on(t.isPublic),
-    searchIdx: (0, import_pg_core.index)("assets_search_idx").using(
-      "gin",
-      import_drizzle_orm.sql`to_tsvector('english', ${t.name} || ' ' || coalesce(${t.description}, ''))`
-    )
-  })
-);
-var threeDComponents = (0, import_pg_core.pgTable)("three_d_components", {
-  id: (0, import_pg_core.text)("id").primaryKey(),
-  name: (0, import_pg_core.text)("name").notNull(),
-  category: (0, import_pg_core.text)("category"),
-  tags: (0, import_pg_core.jsonb)("tags").$type().default([]),
-  description: (0, import_pg_core.text)("description"),
-  buildFn: (0, import_pg_core.text)("build_fn"),
-  thumbnailUrl: (0, import_pg_core.text)("thumbnail_url"),
-  animates: (0, import_pg_core.boolean)("animates").default(true),
-  isBuiltIn: (0, import_pg_core.boolean)("is_built_in").default(true),
-  createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull()
-});
-var sceneTemplates = (0, import_pg_core.pgTable)(
-  "scene_templates",
-  {
-    id: (0, import_pg_core.uuid)("id").primaryKey().defaultRandom(),
-    name: (0, import_pg_core.text)("name").notNull(),
-    description: (0, import_pg_core.text)("description"),
-    category: (0, import_pg_core.text)("category"),
-    tags: (0, import_pg_core.jsonb)("tags").$type().default([]),
-    layers: (0, import_pg_core.jsonb)("layers").$type().default([]),
-    duration: (0, import_pg_core.real)("duration").default(8),
-    styleOverride: (0, import_pg_core.jsonb)("style_override").$type().default({}),
-    placeholders: (0, import_pg_core.jsonb)("placeholders").$type().default([]),
-    thumbnailUrl: (0, import_pg_core.text)("thumbnail_url"),
-    isBuiltIn: (0, import_pg_core.boolean)("is_built_in").default(false),
-    isPublic: (0, import_pg_core.boolean)("is_public").default(false),
-    userId: (0, import_pg_core.uuid)("user_id").references(() => users.id),
-    useCount: (0, import_pg_core.integer)("use_count").default(0),
-    createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull()
-  },
-  (t) => ({
-    categoryIdx: (0, import_pg_core.index)("templates_category_idx").on(t.category),
-    publicIdx: (0, import_pg_core.index)("templates_public_idx").on(t.isPublic)
-  })
-);
-var snapshots = (0, import_pg_core.pgTable)(
-  "snapshots",
-  {
-    id: (0, import_pg_core.uuid)("id").primaryKey().defaultRandom(),
-    projectId: (0, import_pg_core.uuid)("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-    operation: (0, import_pg_core.text)("operation").notNull(),
-    diff: (0, import_pg_core.jsonb)("diff").notNull(),
-    agentMessage: (0, import_pg_core.text)("agent_message"),
-    agentType: agentTypeEnum("agent_type"),
-    stackIndex: (0, import_pg_core.integer)("stack_index").notNull(),
-    createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull()
-  },
-  (t) => ({
-    projectIdx: (0, import_pg_core.index)("snapshots_project_idx").on(t.projectId),
-    stackIdx: (0, import_pg_core.index)("snapshots_stack_idx").on(t.projectId, t.stackIndex)
-  })
-);
-var apiSpend = (0, import_pg_core.pgTable)(
-  "api_spend",
-  {
-    id: (0, import_pg_core.uuid)("id").primaryKey().defaultRandom(),
-    userId: (0, import_pg_core.uuid)("user_id").references(() => users.id),
-    projectId: (0, import_pg_core.text)("project_id"),
-    api: (0, import_pg_core.text)("api").notNull(),
-    costUsd: (0, import_pg_core.real)("cost_usd").notNull(),
-    description: (0, import_pg_core.text)("description"),
-    metadata: (0, import_pg_core.jsonb)("metadata").default({}),
-    createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull()
-  },
-  (t) => ({
-    userIdx: (0, import_pg_core.index)("spend_user_idx").on(t.userId),
-    monthIdx: (0, import_pg_core.index)("spend_month_idx").on(t.userId, import_drizzle_orm.sql`date_trunc('month', ${t.createdAt})`),
-    apiCreatedIdx: (0, import_pg_core.index)("spend_api_created_idx").on(t.api, t.createdAt)
-  })
-);
-var publishedProjects = (0, import_pg_core.pgTable)(
-  "published_projects",
-  {
-    id: (0, import_pg_core.text)("id").primaryKey(),
-    projectId: (0, import_pg_core.uuid)("project_id").references(() => projects.id, { onDelete: "cascade" }),
-    userId: (0, import_pg_core.uuid)("user_id").references(() => users.id),
-    manifest: (0, import_pg_core.jsonb)("manifest").$type(),
-    version: (0, import_pg_core.integer)("version").default(1).notNull(),
-    isPasswordProtected: (0, import_pg_core.boolean)("is_password_protected").default(false),
-    passwordHash: (0, import_pg_core.text)("password_hash"),
-    isActive: (0, import_pg_core.boolean)("is_active").default(true),
-    viewCount: (0, import_pg_core.integer)("view_count").default(0),
-    customDomain: (0, import_pg_core.text)("custom_domain"),
-    createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull(),
-    updatedAt: (0, import_pg_core.timestamp)("updated_at").defaultNow().notNull()
-  },
-  (t) => ({
-    projectIdx: (0, import_pg_core.index)("published_project_idx").on(t.projectId),
-    activeIdx: (0, import_pg_core.index)("published_active_idx").on(t.isActive)
-  })
-);
-var analyticsEvents = (0, import_pg_core.pgTable)(
-  "analytics_events",
-  {
-    id: (0, import_pg_core.uuid)("id").primaryKey().defaultRandom(),
-    publishedProjectId: (0, import_pg_core.text)("published_project_id").references(() => publishedProjects.id, { onDelete: "cascade" }),
-    sessionId: (0, import_pg_core.text)("session_id").notNull(),
-    eventType: (0, import_pg_core.text)("event_type").notNull(),
-    sceneId: (0, import_pg_core.text)("scene_id"),
-    interactionId: (0, import_pg_core.text)("interaction_id"),
-    data: (0, import_pg_core.jsonb)("data").default({}),
-    userAgent: (0, import_pg_core.text)("user_agent"),
-    country: (0, import_pg_core.text)("country"),
-    createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull()
-  },
-  (t) => ({
-    projectIdx: (0, import_pg_core.index)("analytics_project_idx").on(t.publishedProjectId),
-    eventTypeIdx: (0, import_pg_core.index)("analytics_event_type_idx").on(t.publishedProjectId, t.eventType),
-    sessionIdx: (0, import_pg_core.index)("analytics_session_idx").on(t.sessionId),
-    createdIdx: (0, import_pg_core.index)("analytics_created_idx").on(t.createdAt)
-  })
-);
-var conversations = (0, import_pg_core.pgTable)(
-  "conversations",
-  {
-    id: (0, import_pg_core.uuid)("id").primaryKey().defaultRandom(),
-    projectId: (0, import_pg_core.uuid)("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-    title: (0, import_pg_core.text)("title").notNull().default("New chat"),
-    isPinned: (0, import_pg_core.boolean)("is_pinned").default(false),
-    isArchived: (0, import_pg_core.boolean)("is_archived").default(false),
-    totalInputTokens: (0, import_pg_core.integer)("total_input_tokens").default(0),
-    totalOutputTokens: (0, import_pg_core.integer)("total_output_tokens").default(0),
-    totalCostUsd: (0, import_pg_core.real)("total_cost_usd").default(0),
-    lastMessageAt: (0, import_pg_core.timestamp)("last_message_at").defaultNow(),
-    createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull(),
-    updatedAt: (0, import_pg_core.timestamp)("updated_at").defaultNow().notNull()
-  },
-  (t) => ({
-    projectIdx: (0, import_pg_core.index)("conv_project_idx").on(t.projectId),
-    lastMsgIdx: (0, import_pg_core.index)("conv_last_msg_idx").on(t.projectId, t.lastMessageAt)
-  })
-);
-var messages = (0, import_pg_core.pgTable)(
-  "messages",
-  {
-    id: (0, import_pg_core.uuid)("id").primaryKey().defaultRandom(),
-    conversationId: (0, import_pg_core.uuid)("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
-    projectId: (0, import_pg_core.uuid)("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-    role: (0, import_pg_core.text)("role").notNull(),
-    content: (0, import_pg_core.text)("content").notNull(),
-    agentType: agentTypeEnum("agent_type"),
-    modelUsed: (0, import_pg_core.text)("model_used"),
-    thinkingContent: (0, import_pg_core.text)("thinking_content"),
-    toolCalls: (0, import_pg_core.jsonb)("tool_calls").default([]),
-    /** Chronologically ordered segments (text + tool call refs) for interleaved display */
-    contentSegments: (0, import_pg_core.jsonb)("content_segments"),
-    /** Message status: 'streaming' while agent is running, 'complete' when done, 'aborted' if interrupted */
-    status: (0, import_pg_core.text)("status").notNull().default("complete"),
-    inputTokens: (0, import_pg_core.integer)("input_tokens"),
-    outputTokens: (0, import_pg_core.integer)("output_tokens"),
-    costUsd: (0, import_pg_core.real)("cost_usd"),
-    generationLogId: (0, import_pg_core.uuid)("generation_log_id").references(() => generationLogs.id, { onDelete: "set null" }),
-    userRating: (0, import_pg_core.integer)("user_rating"),
-    durationMs: (0, import_pg_core.integer)("duration_ms"),
-    apiCalls: (0, import_pg_core.integer)("api_calls"),
-    position: (0, import_pg_core.integer)("position").notNull(),
-    createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull()
-  },
-  (t) => ({
-    convIdx: (0, import_pg_core.index)("msg_conv_idx").on(t.conversationId),
-    projectIdx: (0, import_pg_core.index)("msg_project_idx").on(t.projectId),
-    positionIdx: (0, import_pg_core.index)("msg_position_idx").on(t.conversationId, t.position),
-    createdIdx: (0, import_pg_core.index)("msg_created_idx").on(t.conversationId, t.createdAt)
-  })
-);
-var mediaCache = (0, import_pg_core.pgTable)(
-  "media_cache",
-  {
-    hash: (0, import_pg_core.text)("hash").primaryKey(),
-    api: (0, import_pg_core.text)("api").notNull(),
-    filePath: (0, import_pg_core.text)("file_path").notNull(),
-    prompt: (0, import_pg_core.text)("prompt"),
-    model: (0, import_pg_core.text)("model"),
-    config: (0, import_pg_core.text)("config"),
-    /** SHA256 of file bytes (16 chars). Different from the primary `hash` which is a hash of
-     *  request params — this hashes the actual file so we can dedupe identical media fetched from
-     *  different queries or different providers. Null for legacy rows. */
-    contentHash: (0, import_pg_core.text)("content_hash"),
-    createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull()
-  },
-  (t) => ({
-    contentHashIdx: (0, import_pg_core.index)("media_cache_content_hash_idx").on(t.contentHash)
-  })
-);
-var permissionSessions = (0, import_pg_core.pgTable)("permission_sessions", {
-  api: (0, import_pg_core.text)("api").primaryKey(),
-  decision: (0, import_pg_core.text)("decision").notNull(),
-  createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull()
-});
-var agentUsage = (0, import_pg_core.pgTable)(
-  "agent_usage",
-  {
-    id: (0, import_pg_core.uuid)("id").primaryKey().defaultRandom(),
-    projectId: (0, import_pg_core.text)("project_id").notNull(),
-    agentType: (0, import_pg_core.text)("agent_type").notNull(),
-    modelId: (0, import_pg_core.text)("model_id").notNull(),
-    inputTokens: (0, import_pg_core.integer)("input_tokens").default(0).notNull(),
-    outputTokens: (0, import_pg_core.integer)("output_tokens").default(0).notNull(),
-    apiCalls: (0, import_pg_core.integer)("api_calls").default(1).notNull(),
-    toolCalls: (0, import_pg_core.integer)("tool_calls").default(0).notNull(),
-    costUsd: (0, import_pg_core.real)("cost_usd").default(0).notNull(),
-    durationMs: (0, import_pg_core.integer)("duration_ms").default(0).notNull(),
-    createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull()
-  },
-  (t) => ({
-    projectIdx: (0, import_pg_core.index)("agent_usage_project_idx").on(t.projectId),
-    agentIdx: (0, import_pg_core.index)("agent_usage_agent_idx").on(t.agentType),
-    monthIdx: (0, import_pg_core.index)("agent_usage_month_idx").on(t.createdAt)
-  })
-);
-var generationLogs = (0, import_pg_core.pgTable)(
-  "generation_logs",
-  {
-    id: (0, import_pg_core.uuid)("id").primaryKey().defaultRandom(),
-    projectId: (0, import_pg_core.uuid)("project_id").references(() => projects.id, { onDelete: "cascade" }),
-    sceneId: (0, import_pg_core.uuid)("scene_id").references(() => scenes.id, { onDelete: "set null" }),
-    layerId: (0, import_pg_core.uuid)("layer_id").references(() => layers.id, { onDelete: "set null" }),
-    // Generation context
-    userPrompt: (0, import_pg_core.text)("user_prompt").notNull(),
-    systemPromptHash: (0, import_pg_core.text)("system_prompt_hash"),
-    systemPromptSnapshot: (0, import_pg_core.text)("system_prompt_snapshot"),
-    injectedRules: (0, import_pg_core.jsonb)("injected_rules").$type(),
-    stylePresetId: (0, import_pg_core.text)("style_preset_id"),
-    agentType: (0, import_pg_core.text)("agent_type"),
-    modelUsed: (0, import_pg_core.text)("model_used"),
-    thinkingMode: (0, import_pg_core.text)("thinking_mode"),
-    // Output
-    sceneType: (0, import_pg_core.text)("scene_type"),
-    generatedCodeLength: (0, import_pg_core.integer)("generated_code_length"),
-    // Thinking
-    thinkingContent: (0, import_pg_core.text)("thinking_content"),
-    // Performance
-    generationTimeMs: (0, import_pg_core.integer)("generation_time_ms"),
-    inputTokens: (0, import_pg_core.integer)("input_tokens"),
-    outputTokens: (0, import_pg_core.integer)("output_tokens"),
-    thinkingTokens: (0, import_pg_core.integer)("thinking_tokens"),
-    costUsd: (0, import_pg_core.real)("cost_usd"),
-    // Quality signals (updated after generation)
-    userAction: (0, import_pg_core.text)("user_action"),
-    timeToActionMs: (0, import_pg_core.integer)("time_to_action_ms"),
-    editDistance: (0, import_pg_core.integer)("edit_distance"),
-    userRating: (0, import_pg_core.integer)("user_rating"),
-    exportSucceeded: (0, import_pg_core.boolean)("export_succeeded"),
-    exportErrorMessage: (0, import_pg_core.text)("export_error_message"),
-    // Analysis
-    qualityScore: (0, import_pg_core.real)("quality_score"),
-    analysisNotes: (0, import_pg_core.text)("analysis_notes"),
-    // Run tracing — full structured timeline for debugging
-    runId: (0, import_pg_core.text)("run_id"),
-    runTrace: (0, import_pg_core.jsonb)("run_trace"),
-    createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull(),
-    updatedAt: (0, import_pg_core.timestamp)("updated_at").defaultNow().notNull()
-  },
-  (t) => ({
-    projectIdx: (0, import_pg_core.index)("gen_log_project_idx").on(t.projectId),
-    modelIdx: (0, import_pg_core.index)("gen_log_model_idx").on(t.modelUsed),
-    presetIdx: (0, import_pg_core.index)("gen_log_preset_idx").on(t.stylePresetId),
-    actionIdx: (0, import_pg_core.index)("gen_log_action_idx").on(t.userAction),
-    createdIdx: (0, import_pg_core.index)("gen_log_created_idx").on(t.createdAt),
-    runIdIdx: (0, import_pg_core.index)("gen_log_run_id_idx").on(t.runId)
-  })
-);
-var avatarConfigs = (0, import_pg_core.pgTable)(
-  "avatar_configs",
-  {
-    id: (0, import_pg_core.uuid)("id").defaultRandom().primaryKey(),
-    projectId: (0, import_pg_core.uuid)("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-    // Which provider to use
-    // 'talkinghead' | 'musetalk' | 'fabric' | 'aurora' | 'heygen'
-    provider: (0, import_pg_core.text)("provider").notNull().default("talkinghead"),
-    // Provider-specific config stored as JSON
-    config: (0, import_pg_core.jsonb)("config").notNull().default({}),
-    // Display
-    name: (0, import_pg_core.text)("name").notNull().default("Default Avatar"),
-    thumbnailUrl: (0, import_pg_core.text)("thumbnail_url"),
-    // Whether this is the project default
-    isDefault: (0, import_pg_core.boolean)("is_default").notNull().default(false),
-    createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull()
-  },
-  (t) => ({
-    projectIdx: (0, import_pg_core.index)("avatar_configs_project_idx").on(t.projectId),
-    defaultIdx: (0, import_pg_core.index)("avatar_configs_default_idx").on(t.projectId, t.isDefault)
-  })
-);
-var avatarVideos = (0, import_pg_core.pgTable)(
-  "avatar_videos",
-  {
-    id: (0, import_pg_core.uuid)("id").defaultRandom().primaryKey(),
-    projectId: (0, import_pg_core.uuid)("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-    sceneId: (0, import_pg_core.uuid)("scene_id").references(() => scenes.id, { onDelete: "set null" }),
-    avatarConfigId: (0, import_pg_core.uuid)("avatar_config_id").references(() => avatarConfigs.id, { onDelete: "set null" }),
-    provider: (0, import_pg_core.text)("provider").notNull(),
-    status: (0, import_pg_core.text)("status").notNull().default("pending"),
-    // 'pending' | 'generating' | 'ready' | 'error'
-    // Input
-    text: (0, import_pg_core.text)("text").notNull(),
-    audioUrl: (0, import_pg_core.text)("audio_url"),
-    sourceImageUrl: (0, import_pg_core.text)("source_image_url"),
-    // Output
-    videoUrl: (0, import_pg_core.text)("video_url"),
-    durationSeconds: (0, import_pg_core.real)("duration_seconds"),
-    errorMessage: (0, import_pg_core.text)("error_message"),
-    // Cost tracking
-    costUsd: (0, import_pg_core.real)("cost_usd"),
-    createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull()
-  },
-  (t) => ({
-    projectIdx: (0, import_pg_core.index)("avatar_videos_project_idx").on(t.projectId),
-    sceneIdx: (0, import_pg_core.index)("avatar_videos_scene_idx").on(t.sceneId),
-    statusIdx: (0, import_pg_core.index)("avatar_videos_status_idx").on(t.status)
-  })
-);
-var permissionRules = (0, import_pg_core.pgTable)(
-  "permission_rules",
-  {
-    id: (0, import_pg_core.uuid)("id").primaryKey().defaultRandom(),
-    userId: (0, import_pg_core.uuid)("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-    scope: (0, import_pg_core.text)("scope").$type().notNull(),
-    workspaceId: (0, import_pg_core.uuid)("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }),
-    projectId: (0, import_pg_core.uuid)("project_id").references(() => projects.id, { onDelete: "cascade" }),
-    conversationId: (0, import_pg_core.uuid)("conversation_id").references(() => conversations.id, { onDelete: "cascade" }),
-    decision: (0, import_pg_core.text)("decision").$type().notNull(),
-    api: (0, import_pg_core.text)("api").notNull(),
-    specifier: (0, import_pg_core.jsonb)("specifier").$type().default(null),
-    costCapUsd: (0, import_pg_core.real)("cost_cap_usd"),
-    expiresAt: (0, import_pg_core.timestamp)("expires_at"),
-    createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull(),
-    createdBy: (0, import_pg_core.text)("created_by").$type().notNull().default("user-settings"),
-    notes: (0, import_pg_core.text)("notes")
-  },
-  (t) => ({
-    userScopeIdx: (0, import_pg_core.index)("permission_rules_user_scope_idx").on(t.userId, t.scope),
-    projectIdx: (0, import_pg_core.index)("permission_rules_project_idx").on(t.projectId),
-    workspaceIdx: (0, import_pg_core.index)("permission_rules_workspace_idx").on(t.workspaceId),
-    conversationIdx: (0, import_pg_core.index)("permission_rules_conversation_idx").on(t.conversationId, t.expiresAt)
-  })
-);
-var userMemoryRelations = (0, import_drizzle_orm.relations)(userMemory, ({ one }) => ({
-  user: one(users, { fields: [userMemory.userId], references: [users.id] })
-}));
-var permissionRulesRelations = (0, import_drizzle_orm.relations)(permissionRules, ({ one }) => ({
-  user: one(users, { fields: [permissionRules.userId], references: [users.id] }),
-  workspace: one(workspaces, { fields: [permissionRules.workspaceId], references: [workspaces.id] }),
-  project: one(projects, { fields: [permissionRules.projectId], references: [projects.id] }),
-  conversation: one(conversations, {
-    fields: [permissionRules.conversationId],
-    references: [conversations.id]
-  })
-}));
-var workspacesRelations = (0, import_drizzle_orm.relations)(workspaces, ({ one, many }) => ({
-  user: one(users, { fields: [workspaces.userId], references: [users.id] }),
-  projects: many(projects)
-}));
-var projectsRelations = (0, import_drizzle_orm.relations)(projects, ({ one, many }) => ({
-  user: one(users, { fields: [projects.userId], references: [users.id] }),
-  workspace: one(workspaces, { fields: [projects.workspaceId], references: [workspaces.id] }),
-  scenes: many(scenes),
-  sceneEdges: many(sceneEdges),
-  sceneNodes: many(sceneNodes),
-  snapshots: many(snapshots),
-  conversations: many(conversations),
-  messages: many(messages),
-  publishedProjects: many(publishedProjects),
-  assets: many(projectAssets),
-  avatarConfigs: many(avatarConfigs),
-  avatarVideos: many(avatarVideos)
-}));
-var projectAssetsRelations = (0, import_drizzle_orm.relations)(projectAssets, ({ one }) => ({
-  project: one(projects, { fields: [projectAssets.projectId], references: [projects.id] })
-}));
-var scenesRelations = (0, import_drizzle_orm.relations)(scenes, ({ one, many }) => ({
-  project: one(projects, { fields: [scenes.projectId], references: [projects.id] }),
-  layers: many(layers),
-  interactions: many(interactions),
-  avatarConfig: one(avatarConfigs, { fields: [scenes.avatarConfigId], references: [avatarConfigs.id] })
-}));
-var sceneNodesRelations = (0, import_drizzle_orm.relations)(sceneNodes, ({ one }) => ({
-  project: one(projects, { fields: [sceneNodes.projectId], references: [projects.id] }),
-  scene: one(scenes, { fields: [sceneNodes.sceneId], references: [scenes.id] })
-}));
-var layersRelations = (0, import_drizzle_orm.relations)(layers, ({ one, many }) => ({
-  scene: one(scenes, { fields: [layers.sceneId], references: [scenes.id] }),
-  parent: one(layers, {
-    fields: [layers.parentLayerId],
-    references: [layers.id],
-    relationName: "layer_parent"
-  }),
-  children: many(layers, { relationName: "layer_parent" }),
-  media: one(generatedMedia, {
-    fields: [layers.mediaId],
-    references: [generatedMedia.id]
-  })
-}));
-var conversationsRelations = (0, import_drizzle_orm.relations)(conversations, ({ one, many }) => ({
-  project: one(projects, { fields: [conversations.projectId], references: [projects.id] }),
-  messages: many(messages)
-}));
-var messagesRelations = (0, import_drizzle_orm.relations)(messages, ({ one }) => ({
-  conversation: one(conversations, { fields: [messages.conversationId], references: [conversations.id] }),
-  project: one(projects, { fields: [messages.projectId], references: [projects.id] })
-}));
-var avatarConfigsRelations = (0, import_drizzle_orm.relations)(avatarConfigs, ({ one, many }) => ({
-  project: one(projects, { fields: [avatarConfigs.projectId], references: [projects.id] }),
-  videos: many(avatarVideos)
-}));
-var avatarVideosRelations = (0, import_drizzle_orm.relations)(avatarVideos, ({ one }) => ({
-  project: one(projects, { fields: [avatarVideos.projectId], references: [projects.id] }),
-  scene: one(scenes, { fields: [avatarVideos.sceneId], references: [scenes.id] }),
-  avatarConfig: one(avatarConfigs, { fields: [avatarVideos.avatarConfigId], references: [avatarConfigs.id] })
-}));
-var clipSourceTypeEnum = (0, import_pg_core.pgEnum)("clip_source_type", ["scene", "video", "image", "audio", "title"]);
-var trackTypeEnum = (0, import_pg_core.pgEnum)("track_type", ["video", "audio", "overlay"]);
-var timelineTracks = (0, import_pg_core.pgTable)(
-  "timeline_tracks",
-  {
-    id: (0, import_pg_core.uuid)("id").primaryKey().defaultRandom(),
-    projectId: (0, import_pg_core.uuid)("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-    name: (0, import_pg_core.text)("name").notNull(),
-    type: trackTypeEnum("type").notNull(),
-    position: (0, import_pg_core.integer)("position").notNull().default(0),
-    muted: (0, import_pg_core.boolean)("muted").default(false).notNull(),
-    locked: (0, import_pg_core.boolean)("locked").default(false).notNull(),
-    createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull(),
-    updatedAt: (0, import_pg_core.timestamp)("updated_at").defaultNow().notNull()
-  },
-  (t) => ({
-    projectIdx: (0, import_pg_core.index)("timeline_tracks_project_idx").on(t.projectId),
-    positionIdx: (0, import_pg_core.index)("timeline_tracks_position_idx").on(t.projectId, t.position)
-  })
-);
-var timelineClips = (0, import_pg_core.pgTable)(
-  "timeline_clips",
-  {
-    id: (0, import_pg_core.uuid)("id").primaryKey().defaultRandom(),
-    trackId: (0, import_pg_core.uuid)("track_id").notNull().references(() => timelineTracks.id, { onDelete: "cascade" }),
-    sourceType: clipSourceTypeEnum("source_type").notNull(),
-    sourceId: (0, import_pg_core.text)("source_id").notNull(),
-    label: (0, import_pg_core.text)("label").default("").notNull(),
-    startTime: (0, import_pg_core.real)("start_time").notNull(),
-    duration: (0, import_pg_core.real)("duration").notNull(),
-    trimStart: (0, import_pg_core.real)("trim_start").default(0).notNull(),
-    trimEnd: (0, import_pg_core.real)("trim_end"),
-    speed: (0, import_pg_core.real)("speed").default(1).notNull(),
-    opacity: (0, import_pg_core.real)("opacity").default(1).notNull(),
-    position: (0, import_pg_core.jsonb)("position").$type().default({ x: 0, y: 0 }).notNull(),
-    scale: (0, import_pg_core.jsonb)("scale").$type().default({ x: 1, y: 1 }).notNull(),
-    rotation: (0, import_pg_core.real)("rotation").default(0).notNull(),
-    filters: (0, import_pg_core.jsonb)("filters").$type().default([]).notNull(),
-    keyframes: (0, import_pg_core.jsonb)("keyframes").$type().default([]).notNull(),
-    transition: (0, import_pg_core.jsonb)("transition").$type(),
-    createdAt: (0, import_pg_core.timestamp)("created_at").defaultNow().notNull(),
-    updatedAt: (0, import_pg_core.timestamp)("updated_at").defaultNow().notNull()
-  },
-  (t) => ({
-    trackIdx: (0, import_pg_core.index)("timeline_clips_track_idx").on(t.trackId),
-    sourceIdx: (0, import_pg_core.index)("timeline_clips_source_idx").on(t.sourceType, t.sourceId),
-    startIdx: (0, import_pg_core.index)("timeline_clips_start_idx").on(t.trackId, t.startTime)
-  })
-);
-var timelineTracksRelations = (0, import_drizzle_orm.relations)(timelineTracks, ({ one, many }) => ({
-  project: one(projects, { fields: [timelineTracks.projectId], references: [projects.id] }),
-  clips: many(timelineClips)
-}));
-var timelineClipsRelations = (0, import_drizzle_orm.relations)(timelineClips, ({ one }) => ({
-  track: one(timelineTracks, { fields: [timelineClips.trackId], references: [timelineTracks.id] })
-}));
-var githubLinks = (0, import_pg_core.pgTable)(
-  "github_links",
-  {
-    id: (0, import_pg_core.uuid)("id").primaryKey().default(import_drizzle_orm.sql`gen_random_uuid()`),
-    projectId: (0, import_pg_core.uuid)("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-    repoFullName: (0, import_pg_core.text)("repo_full_name").notNull(),
-    // e.g. "user/repo"
-    defaultBranch: (0, import_pg_core.text)("default_branch").notNull().default("main"),
-    accessToken: (0, import_pg_core.text)("access_token").notNull(),
-    // AES-256-GCM encrypted via lib/crypto.ts
-    refreshToken: (0, import_pg_core.text)("refresh_token"),
-    // AES-256-GCM encrypted via lib/crypto.ts
-    tokenExpiresAt: (0, import_pg_core.timestamp)("token_expires_at"),
-    lastPushedSha: (0, import_pg_core.text)("last_pushed_sha"),
-    lastPulledSha: (0, import_pg_core.text)("last_pulled_sha"),
-    linkedAt: (0, import_pg_core.timestamp)("linked_at").defaultNow().notNull(),
-    updatedAt: (0, import_pg_core.timestamp)("updated_at").defaultNow().notNull()
-  },
-  (t) => ({
-    projectIdx: (0, import_pg_core.uniqueIndex)("github_links_project_idx").on(t.projectId),
-    repoIdx: (0, import_pg_core.index)("github_links_repo_idx").on(t.repoFullName)
-  })
-);
-var githubLinksRelations = (0, import_drizzle_orm.relations)(githubLinks, ({ one }) => ({
-  project: one(projects, { fields: [githubLinks.projectId], references: [projects.id] })
-}));
-var usersRelations = (0, import_drizzle_orm.relations)(users, ({ many }) => ({
-  accounts: many(accounts),
-  sessions: many(sessions),
-  workspaces: many(workspaces),
-  projects: many(projects),
-  userMemory: many(userMemory)
-}));
-var accountsRelations = (0, import_drizzle_orm.relations)(accounts, ({ one }) => ({
-  user: one(users, { fields: [accounts.userId], references: [users.id] })
-}));
-var sessionsRelations = (0, import_drizzle_orm.relations)(sessions, ({ one }) => ({
-  user: one(users, { fields: [sessions.userId], references: [users.id] })
-}));
-
-// lib/db/index.ts
-var import_drizzle_orm2 = require("drizzle-orm");
-var _pool = null;
-var _db = null;
-function initDb() {
-  if (_db) return _db;
-  const url = process.env.DATABASE_URL;
-  if (!url) {
-    throw new Error(
-      "DATABASE_URL is not set.\nFor local mode: copy .env.example to .env.local and run npm run db:start\nFor cloud mode: add your Neon/Supabase connection string to .env.local"
-    );
-  }
-  const pool = new import_pg.Pool({
-    connectionString: url,
-    max: process.env.STORAGE_MODE === "cloud" ? 10 : 5,
-    idleTimeoutMillis: 3e4,
-    connectionTimeoutMillis: 5e3,
-    ssl: url.includes("localhost") || url.includes("127.0.0.1") ? false : { rejectUnauthorized: true }
-  });
-  pool.on("error", (err) => {
-    console.error("Unexpected Postgres pool error:", err);
-  });
-  const database = (0, import_node_postgres.drizzle)(pool, {
-    schema: schema_exports,
-    logger: process.env.NODE_ENV === "development"
-  });
-  if (_db) {
-    void pool.end();
-    return _db;
-  }
-  _pool = pool;
-  _db = database;
-  return _db;
-}
-var db = new Proxy({}, {
-  get(_target, prop, receiver) {
-    return Reflect.get(initDb(), prop, receiver);
-  },
-  // Required so Auth.js Drizzle adapter's `is(db, PgDatabase)` check — which
-  // walks the prototype chain via Object.getPrototypeOf — sees the real
-  // PgDatabase prototype instead of the empty Proxy target's Object.prototype.
-  getPrototypeOf() {
-    return Reflect.getPrototypeOf(initDb());
-  },
-  has(_target, prop) {
-    return Reflect.has(initDb(), prop);
-  }
-});
-async function logSpend(projectId, api, costUsd, description, reservationId) {
-  await db.insert(apiSpend).values({
-    projectId,
-    api,
-    costUsd,
-    description
-  });
-  try {
-    const tracker = await Promise.resolve().then(() => (init_budget_tracker(), budget_tracker_exports));
-    if (reservationId) {
-      const reconciled = tracker.reconcileSpend(projectId, reservationId, costUsd);
-      if (!reconciled) tracker.recordActualSpend(projectId, costUsd);
-    } else {
-      tracker.recordActualSpend(projectId, costUsd);
-    }
-  } catch (trackerErr) {
-    console.warn(`[logSpend] budget tracker update failed for project=${projectId} api=${api}`, trackerErr);
-  }
-}
-async function getSessionSpend(api) {
-  const [row] = await db.select({ total: import_drizzle_orm2.sql`coalesce(sum(${apiSpend.costUsd}), 0)` }).from(apiSpend).where(import_drizzle_orm2.sql`${apiSpend.api} = ${api} AND ${apiSpend.createdAt} > now() - interval '1 day'`);
-  return row.total;
-}
-async function getMonthlySpend(api) {
-  const [row] = await db.select({ total: import_drizzle_orm2.sql`coalesce(sum(${apiSpend.costUsd}), 0)` }).from(apiSpend).where(import_drizzle_orm2.sql`${apiSpend.api} = ${api} AND ${apiSpend.createdAt} > date_trunc('month', now())`);
-  return row.total;
-}
-async function getSessionPermission(api) {
-  const row = await db.query.permissionSessions.findFirst({
-    where: (0, import_drizzle_orm2.eq)(permissionSessions.api, api),
-    columns: { decision: true }
-  });
-  return row?.decision ?? null;
-}
-async function setSessionPermission(api, decision) {
-  await db.insert(permissionSessions).values({ api, decision }).onConflictDoUpdate({
-    target: permissionSessions.api,
-    set: { decision }
-  });
-}
-async function getAgentUsageSummary(projectId) {
-  const empty = {
-    totalInputTokens: 0,
-    totalOutputTokens: 0,
-    totalCostUsd: 0,
-    totalApiCalls: 0,
-    totalToolCalls: 0,
-    byAgent: {}
-  };
-  try {
-    const whereClause = projectId ? import_drizzle_orm2.sql`WHERE ${agentUsage.projectId} = ${projectId}` : import_drizzle_orm2.sql``;
-    const totalsResult = await db.execute(import_drizzle_orm2.sql`
-      SELECT
-        coalesce(sum(input_tokens), 0) as "totalInputTokens",
-        coalesce(sum(output_tokens), 0) as "totalOutputTokens",
-        coalesce(sum(cost_usd), 0) as "totalCostUsd",
-        coalesce(sum(api_calls), 0) as "totalApiCalls",
-        coalesce(sum(tool_calls), 0) as "totalToolCalls"
-      FROM agent_usage ${whereClause}
-    `);
-    const totals = totalsResult?.rows?.[0] ?? totalsResult?.[0] ?? {};
-    const byAgentRows = await db.execute(import_drizzle_orm2.sql`
-      SELECT
-        agent_type,
-        sum(input_tokens) as "inputTokens",
-        sum(output_tokens) as "outputTokens",
-        sum(cost_usd) as "costUsd",
-        count(*) as count
-      FROM agent_usage ${whereClause}
-      GROUP BY agent_type
-    `);
-    const byAgent = {};
-    for (const row of byAgentRows?.rows ?? byAgentRows ?? []) {
-      byAgent[row.agent_type] = {
-        inputTokens: Number(row.inputTokens),
-        outputTokens: Number(row.outputTokens),
-        costUsd: Number(row.costUsd),
-        count: Number(row.count)
-      };
-    }
-    const t = totals?.rows?.[0] ?? totals ?? {};
-    return {
-      totalInputTokens: Number(t.totalInputTokens ?? 0),
-      totalOutputTokens: Number(t.totalOutputTokens ?? 0),
-      totalCostUsd: Number(t.totalCostUsd ?? 0),
-      totalApiCalls: Number(t.totalApiCalls ?? 0),
-      totalToolCalls: Number(t.totalToolCalls ?? 0),
-      byAgent
-    };
-  } catch (e) {
-    console.error("[DB] getAgentUsageSummary failed (table may not exist):", e);
-    return empty;
-  }
-}
-
 // lib/db/queries/conversations.ts
+init_db();
+init_schema();
 var import_drizzle_orm3 = require("drizzle-orm");
 async function getProjectConversations(projectId) {
   const convs = await db.select().from(conversations).where((0, import_drizzle_orm3.eq)(conversations.projectId, projectId)).orderBy((0, import_drizzle_orm3.desc)(conversations.lastMessageAt));
@@ -4816,6 +5149,8 @@ async function clearConversationMessages(conversationId) {
 }
 
 // electron/ipc/_helpers.ts
+init_db();
+init_schema();
 var import_drizzle_orm4 = require("drizzle-orm");
 var UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function assertValidUuid(id, label = "id") {
@@ -5032,6 +5367,7 @@ function register2(ipcMain2) {
 }
 
 // electron/ipc/usage.ts
+init_db();
 async function getSummary(projectId) {
   if (projectId) assertValidUuid(projectId, "projectId");
   return getAgentUsageSummary(projectId);
@@ -5041,6 +5377,8 @@ function register3(ipcMain2) {
 }
 
 // lib/db/queries/generation-logs.ts
+init_db();
+init_schema();
 var import_drizzle_orm5 = require("drizzle-orm");
 function truncateForDB(text2, maxBytes) {
   if (!text2 || text2.length <= maxBytes) return text2;
@@ -5215,6 +5553,7 @@ function register4(ipcMain2) {
 }
 
 // electron/ipc/permissions.ts
+init_db();
 var TRACKED_APIS = ["heygen", "veo3", "imageGen", "backgroundRemoval", "elevenLabs", "unsplash"];
 async function getSpend() {
   const result = {};
@@ -5308,6 +5647,8 @@ function register6(ipcMain2) {
 var import_electron2 = require("electron");
 var import_node_path2 = __toESM(require("node:path"));
 var import_promises2 = __toESM(require("node:fs/promises"));
+init_db();
+init_schema();
 var import_drizzle_orm7 = require("drizzle-orm");
 
 // lib/charts/normalize-scenes.ts
@@ -5388,6 +5729,8 @@ function writeProjectSceneBlob(existingDescription, updates) {
 // lib/db/project-scene-table.ts
 var import_drizzle_orm6 = require("drizzle-orm");
 var import_crypto = require("crypto");
+init_db();
+init_schema();
 
 // lib/transitions.ts
 var TRANSITION_CATALOG = [
@@ -5999,6 +6342,8 @@ function register7(ipcMain2) {
 }
 
 // lib/db/queries/workspaces.ts
+init_db();
+init_schema();
 var import_drizzle_orm8 = require("drizzle-orm");
 async function getUserWorkspaces(userId) {
   const ownerFilter = userId ? (0, import_drizzle_orm8.eq)(workspaces.userId, userId) : (0, import_drizzle_orm8.isNull)(workspaces.userId);
@@ -6050,6 +6395,8 @@ async function removeProjectsFromWorkspace(projectIds) {
 }
 
 // electron/ipc/workspaces.ts
+init_db();
+init_schema();
 var import_drizzle_orm9 = require("drizzle-orm");
 var MAX_NAME = 255;
 var MAX_PROJECTS_PER_ASSIGN = 100;
@@ -6251,6 +6598,8 @@ function register9(ipcMain2) {
 var import_electron4 = require("electron");
 var import_node_path4 = __toESM(require("node:path"));
 var import_promises4 = __toESM(require("node:fs/promises"));
+init_db();
+init_schema();
 var import_drizzle_orm10 = require("drizzle-orm");
 
 // lib/dimensions.ts
@@ -12103,13 +12452,13 @@ function generateLayerAnimationScript(layerId, imgId, anim, startAt) {
       props: `opacity:1, rotation:0, scale:1, duration:${dur}, ease:'${ease}'`
     }
   };
-  const config4 = animMap[anim.type];
-  if (!config4) return "";
+  const config6 = animMap[anim.type];
+  if (!config6) return "";
   return `<script>
     window.addEventListener('load', function() {
       var el = document.getElementById('${imgId}');
       if (!el || !window.__tl) return;
-      window.__tl.to(el, { ${config4.props} }, ${delay});
+      window.__tl.to(el, { ${config6.props} }, ${delay});
     });
   </script>`;
 }
@@ -13399,10 +13748,10 @@ function generateWorldHTML(scene, style, audioSettings, dims) {
   const appBaseUrl = process.env.NEXT_PUBLIC_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
   if (typeof window === "undefined") {
     try {
-      const fs20 = require("fs");
+      const fs21 = require("fs");
       const pathMod = require("path");
       const templatePath = pathMod.join(process.cwd(), "public", "worlds", worldHtmlFile);
-      let templateHTML = fs20.readFileSync(templatePath, "utf-8");
+      let templateHTML = fs21.readFileSync(templatePath, "utf-8");
       const configScript = `<script>
     window.__worldConfig = ${configJSON};
     window.DURATION = ${scene.duration ?? 10};
@@ -14603,6 +14952,8 @@ function register11(ipcMain2) {
 }
 
 // electron/ipc/avatar-configs.ts
+init_db();
+init_schema();
 var import_drizzle_orm11 = require("drizzle-orm");
 
 // lib/avatar/providers/talkinghead.ts
@@ -14612,11 +14963,11 @@ var talkingHeadProvider = {
   isFree: true,
   requiresImage: false,
   estimateCost: () => 0,
-  async generate(input, config4) {
-    const character = config4.characterFile || "friendly";
-    const idleAnimation = config4.idleAnimation || "idle";
-    const style = config4.style || "default";
-    const modelFromConfig = config4.avatarModelId || config4.model;
+  async generate(input, config6) {
+    const character = config6.characterFile || "friendly";
+    const idleAnimation = config6.idleAnimation || "idle";
+    const style = config6.style || "default";
+    const modelFromConfig = config6.avatarModelId || config6.model;
     const model = typeof modelFromConfig === "string" && isTalkingHeadModelId(modelFromConfig) ? modelFromConfig : DEFAULT_TALKING_HEAD_MODEL_BY_CHARACTER[character] ?? "brunette";
     const params = new URLSearchParams({
       text: input.text,
@@ -14647,7 +14998,7 @@ var museTalkProvider = {
   isFree: false,
   requiresImage: true,
   estimateCost: () => 0.04,
-  async generate(input, config4) {
+  async generate(input, config6) {
     configureFal();
     const result = await fal.subscribe("fal-ai/musetalk", {
       input: {
@@ -14676,9 +15027,9 @@ var fabricProvider = {
   isFree: false,
   requiresImage: true,
   estimateCost: (duration) => duration * 0.08,
-  async generate(input, config4) {
+  async generate(input, config6) {
     configureFal2();
-    const resolution = config4.resolution || "480p";
+    const resolution = config6.resolution || "480p";
     const costPerSec = resolution === "720p" ? 0.15 : 0.08;
     const result = await fal2.subscribe("veed/fabric-1.0", {
       input: {
@@ -14708,7 +15059,7 @@ var auroraProvider = {
   isFree: false,
   requiresImage: true,
   estimateCost: (duration) => duration * 0.05,
-  async generate(input, config4) {
+  async generate(input, config6) {
     configureFal3();
     const result = await fal3.subscribe("creatify/aurora", {
       input: {
@@ -14728,8 +15079,8 @@ var auroraProvider = {
 // lib/apis/heygen.ts
 var HEYGEN_BASE = "https://api.heygen.com/v2";
 var HEYGEN_KEY = () => process.env.HEYGEN_API_KEY;
-async function heygenFetch(path23, options = {}) {
-  const response = await fetch(`${HEYGEN_BASE}${path23}`, {
+async function heygenFetch(path24, options = {}) {
+  const response = await fetch(`${HEYGEN_BASE}${path24}`, {
     ...options,
     headers: {
       "X-Api-Key": HEYGEN_KEY(),
@@ -14798,9 +15149,9 @@ var heygenProvider = {
   isFree: false,
   requiresImage: false,
   estimateCost: (duration) => duration * 0.1,
-  async generate(input, config4) {
-    const avatarId = config4.avatarId;
-    const voiceId = config4.voiceId;
+  async generate(input, config6) {
+    const avatarId = config6.avatarId;
+    const voiceId = config6.voiceId;
     if (!avatarId || !voiceId) {
       throw new Error("HeyGen provider requires avatarId and voiceId in config");
     }
@@ -14808,9 +15159,9 @@ var heygenProvider = {
       avatarId,
       voiceId,
       script: input.text,
-      bgColor: config4.bgColor ?? "#00FF00",
-      width: config4.width ?? 512,
-      height: config4.height ?? 512
+      bgColor: config6.bgColor ?? "#00FF00",
+      width: config6.width ?? 512,
+      height: config6.height ?? 512
     });
     const maxAttempts = 60;
     const pollInterval = 5e3;
@@ -14933,6 +15284,8 @@ function register12(ipcMain2) {
 }
 
 // electron/ipc/zdog-library.ts
+init_db();
+init_schema();
 var import_drizzle_orm12 = require("drizzle-orm");
 var import_uuid2 = require("uuid");
 function parseBlob(description) {
@@ -15585,6 +15938,8 @@ var import_uuid3 = require("uuid");
 var import_node_child_process = require("node:child_process");
 var import_node_util = require("node:util");
 var import_sharp = __toESM(require("sharp"));
+init_db();
+init_schema();
 var import_drizzle_orm13 = require("drizzle-orm");
 
 // lib/ingest/yt-dlp.ts
@@ -15676,14 +16031,8 @@ async function download(opts) {
   };
 }
 
-// lib/apis/media-cache.ts
-var import_crypto5 = __toESM(require("crypto"));
-var import_promises17 = __toESM(require("fs/promises"));
-var import_path11 = __toESM(require("path"));
-var GENERATED_DIR = import_path11.default.join(process.cwd(), "public", "generated");
-function computeContentHash(buffer) {
-  return import_crypto5.default.createHash("sha256").update(buffer).digest("hex").slice(0, 16);
-}
+// lib/services/ingest.ts
+init_media_cache();
 
 // lib/security/url-guard.ts
 var UrlGuardError = class extends Error {
@@ -16110,6 +16459,7 @@ var import_sdk3 = __toESM(require("@anthropic-ai/sdk"));
 
 // lib/generation/generate.ts
 var import_sdk = __toESM(require("@anthropic-ai/sdk"));
+init_db();
 
 // lib/agents/types.ts
 var MODEL_PRICING = {
@@ -16132,9 +16482,9 @@ function getModelProvider(modelId, modelConfigs) {
   if (modelId === "codex-cli") return "openai";
   if (modelId === "claude-code") return "claude-code";
   if (modelConfigs) {
-    const config4 = modelConfigs.find((m) => m.id === modelId || m.modelId === modelId);
-    if (config4?.provider === "local") return "local";
-    if (config4?.provider === "claude-code") return "claude-code";
+    const config6 = modelConfigs.find((m) => m.id === modelId || m.modelId === modelId);
+    if (config6?.provider === "local") return "local";
+    if (config6?.provider === "claude-code") return "claude-code";
   }
   if (modelId.startsWith("claude-")) return "anthropic";
   if (modelId.startsWith("gpt-") || modelId.startsWith("o1") || modelId.startsWith("o3")) return "openai";
@@ -16446,8 +16796,8 @@ new Zdog.Rect({ addTo: module_${mod.id}, width: 20, height: 1.2, stroke: 0.5, co
 }
 function buildLineChart(mod) {
   const data = mod.data && mod.data.length ? mod.data : [2, 4, 3, 6, 5];
-  const path23 = data.map((v, i) => `{ x: ${(-8 + i * 4).toFixed(2)}, y: ${(-v * 1.7).toFixed(2)}, z: 0 }`).join(", ");
-  return `new Zdog.Shape({ addTo: module_${mod.id}, path: [${path23}], closed: false, stroke: 1.1, color: ${colorExpr(
+  const path24 = data.map((v, i) => `{ x: ${(-8 + i * 4).toFixed(2)}, y: ${(-v * 1.7).toFixed(2)}, z: 0 }`).join(", ");
+  return `new Zdog.Shape({ addTo: module_${mod.id}, path: [${path24}], closed: false, stroke: 1.1, color: ${colorExpr(
     mod.color,
     "PALETTE[2]"
   )} });
@@ -17366,14 +17716,14 @@ function hasValidHandles(kf) {
   if (o.x.length === 0 || o.y.length === 0) return false;
   return true;
 }
-function validateKeyframes(keyframes, propName, path23, result, opts) {
+function validateKeyframes(keyframes, propName, path24, result, opts) {
   let fixCount = 0;
   const dims = dimensionsForProperty(propName);
   for (let i = 0; i < keyframes.length - 1; i++) {
     const kf = keyframes[i];
     if (!isObject(kf)) continue;
     if (!hasValidHandles(kf)) {
-      const msg = `${path23}[${i}]: missing or invalid easing handles`;
+      const msg = `${path24}[${i}]: missing or invalid easing handles`;
       if (opts.fix) {
         const handles = easingToLottieHandles(opts.fixEasing, dims);
         kf.i = handles.i;
@@ -17402,29 +17752,29 @@ function validateKeyframes(keyframes, propName, path23, result, opts) {
       }
     }
     if (allLinear) {
-      result.warnings.push(`${path23}: position uses linear easing \u2014 motion may look robotic`);
+      result.warnings.push(`${path24}: position uses linear easing \u2014 motion may look robotic`);
     }
   }
   return fixCount;
 }
-function walkObject(obj, path23, propName, result, opts) {
+function walkObject(obj, path24, propName, result, opts) {
   if (!isObject(obj)) return;
   if ("a" in obj && "k" in obj) {
     const animated = obj.a;
     const k = obj.k;
     if (animated === 1 && isArray(k) && k.length > 0 && isObject(k[0])) {
-      result.fixCount += validateKeyframes(k, propName, path23, result, opts);
+      result.fixCount += validateKeyframes(k, propName, path24, result, opts);
       return;
     }
   }
   for (const key of Object.keys(obj)) {
     const val = obj[key];
     if (isObject(val)) {
-      walkObject(val, `${path23}.${key}`, key, result, opts);
+      walkObject(val, `${path24}.${key}`, key, result, opts);
     } else if (isArray(val)) {
       for (let i = 0; i < val.length; i++) {
         if (isObject(val[i])) {
-          walkObject(val[i], `${path23}.${key}[${i}]`, key, result, opts);
+          walkObject(val[i], `${path24}.${key}[${i}]`, key, result, opts);
         }
       }
     }
@@ -17874,6 +18224,37 @@ async function generateLottie(input) {
     ...validation.fixCount > 0 && { fixCount: validation.fixCount }
   };
 }
+async function generateImageAsset(input) {
+  if (!input.prompt) throw new GenerationValidationError("prompt is required");
+  const { generateImage: generateImage2 } = await Promise.resolve().then(() => (init_image_gen(), image_gen_exports));
+  const { removeImageBackground: removeImageBackground2, BG_REMOVAL_COST: BG_REMOVAL_COST2 } = await Promise.resolve().then(() => (init_background_removal(), background_removal_exports));
+  const { logSpend: logSpend2 } = await Promise.resolve().then(() => (init_db(), db_exports));
+  const result = await generateImage2({
+    prompt: input.prompt,
+    negativePrompt: input.negativePrompt,
+    model: input.model ?? "flux-schnell",
+    aspectRatio: input.aspectRatio ?? "1:1",
+    style: input.style ?? null
+  });
+  if (result.cost > 0 && input.projectId) {
+    await logSpend2(input.projectId, "imageGen", result.cost, `${input.model ?? "flux-schnell"}: ${input.prompt.slice(0, 100)}`);
+  }
+  let stickerUrl = null;
+  if (input.removeBackground) {
+    const bgResult = await removeImageBackground2(result.imageUrl);
+    stickerUrl = bgResult.resultUrl;
+    if (bgResult.cost > 0 && input.projectId) {
+      await logSpend2(input.projectId, "backgroundRemoval", bgResult.cost, `BG removal for: ${input.prompt.slice(0, 80)}`);
+    }
+  }
+  return {
+    imageUrl: result.imageUrl,
+    stickerUrl,
+    width: result.width,
+    height: result.height,
+    cost: result.cost + (stickerUrl ? BG_REMOVAL_COST2 : 0)
+  };
+}
 var GenerationValidationError = class extends Error {
   code = "VALIDATION";
   constructor(message) {
@@ -17909,6 +18290,7 @@ function register16(ipcMain2) {
   ipcMain2.handle("cench:generate.react", wrap(generateReact));
   ipcMain2.handle("cench:generate.lottie", wrap(generateLottie));
   ipcMain2.handle("cench:generate.d3", wrap(generateD3));
+  ipcMain2.handle("cench:generate.image", wrap(generateImageAsset));
 }
 
 // electron/ipc/index.ts
@@ -17957,12 +18339,12 @@ function loadEnvFiles() {
     }
   };
   if (import_electron6.app.isPackaged) {
-    tryLoad(import_path12.default.join(import_electron6.app.getPath("userData"), "cench.env"));
-    tryLoad(import_path12.default.join(process.resourcesPath, ".env.defaults"));
+    tryLoad(import_path13.default.join(import_electron6.app.getPath("userData"), "cench.env"));
+    tryLoad(import_path13.default.join(process.resourcesPath, ".env.defaults"));
   } else {
-    const repoRoot = import_path12.default.resolve(__dirname, "..");
-    tryLoad(import_path12.default.join(repoRoot, ".env.local"));
-    tryLoad(import_path12.default.join(repoRoot, ".env"));
+    const repoRoot = import_path13.default.resolve(__dirname, "..");
+    tryLoad(import_path13.default.join(repoRoot, ".env.local"));
+    tryLoad(import_path13.default.join(repoRoot, ".env"));
   }
 }
 loadEnvFiles();
@@ -17990,13 +18372,13 @@ import_electron6.protocol.registerSchemesAsPrivileged([
   }
 ]);
 async function registerCenchProtocol() {
-  const staticDir = import_path12.default.resolve(getStaticAppDir());
-  const scenesDir = import_path12.default.resolve(getUserScenesDir());
-  const uploadsDir2 = import_path12.default.resolve(getUserUploadsDir());
-  const audioDir = import_path12.default.resolve(getUserAudioDir());
-  await import_promises19.default.mkdir(scenesDir, { recursive: true });
-  await import_promises19.default.mkdir(uploadsDir2, { recursive: true });
-  await import_promises19.default.mkdir(audioDir, { recursive: true });
+  const staticDir = import_path13.default.resolve(getStaticAppDir());
+  const scenesDir = import_path13.default.resolve(getUserScenesDir());
+  const uploadsDir2 = import_path13.default.resolve(getUserUploadsDir());
+  const audioDir = import_path13.default.resolve(getUserAudioDir());
+  await import_promises20.default.mkdir(scenesDir, { recursive: true });
+  await import_promises20.default.mkdir(uploadsDir2, { recursive: true });
+  await import_promises20.default.mkdir(audioDir, { recursive: true });
   import_electron6.protocol.handle("cench", async (request) => {
     try {
       const url = new URL(request.url);
@@ -18014,26 +18396,26 @@ async function registerCenchProtocol() {
       } else {
         return new Response(`Unknown cench:// host "${host}"`, { status: 404 });
       }
-      let filePath = import_path12.default.resolve(baseDir, rawPath || "index.html");
-      if (!filePath.startsWith(baseDir + import_path12.default.sep) && filePath !== baseDir) {
+      let filePath = import_path13.default.resolve(baseDir, rawPath || "index.html");
+      if (!filePath.startsWith(baseDir + import_path13.default.sep) && filePath !== baseDir) {
         return new Response("Forbidden", { status: 403 });
       }
       try {
-        const stat = await import_promises19.default.stat(filePath);
-        if (stat.isDirectory()) filePath = import_path12.default.join(filePath, "index.html");
+        const stat = await import_promises20.default.stat(filePath);
+        if (stat.isDirectory()) filePath = import_path13.default.join(filePath, "index.html");
       } catch {
         if (!filePath.endsWith(".html")) {
           const htmlVariant = `${filePath}.html`;
           try {
-            await import_promises19.default.access(htmlVariant);
+            await import_promises20.default.access(htmlVariant);
             filePath = htmlVariant;
           } catch {
           }
         }
       }
       try {
-        const realPath = await import_promises19.default.realpath(filePath);
-        if (!realPath.startsWith(baseDir + import_path12.default.sep) && realPath !== baseDir) {
+        const realPath = await import_promises20.default.realpath(filePath);
+        if (!realPath.startsWith(baseDir + import_path13.default.sep) && realPath !== baseDir) {
           return new Response("Forbidden (symlink escape)", { status: 403 });
         }
         filePath = realPath;
@@ -18058,7 +18440,7 @@ function createWindow() {
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 12, y: 16 },
     webPreferences: {
-      preload: import_path12.default.join(__dirname, "preload.js"),
+      preload: import_path13.default.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
       autoplayPolicy: "no-user-gesture-required"
@@ -18289,8 +18671,8 @@ import_electron6.app.whenReady().then(async () => {
     return { ok: true };
   });
   import_electron6.ipcMain.handle("cench:writeFile", async (_evt, args) => {
-    await import_promises19.default.mkdir(import_path12.default.dirname(args.filePath), { recursive: true });
-    await import_promises19.default.writeFile(args.filePath, Buffer.from(args.bytes));
+    await import_promises20.default.mkdir(import_path13.default.dirname(args.filePath), { recursive: true });
+    await import_promises20.default.writeFile(args.filePath, Buffer.from(args.bytes));
     return { ok: true };
   });
   import_electron6.ipcMain.handle(
@@ -18298,11 +18680,11 @@ import_electron6.app.whenReady().then(async () => {
     async (_evt, args) => {
       const extRaw = (args.extension || "webm").toLowerCase().replace(/[^a-z0-9]/g, "");
       const ext = extRaw || "webm";
-      const dir = import_path12.default.join(import_electron6.app.getPath("userData"), "recordings");
-      await import_promises19.default.mkdir(dir, { recursive: true });
+      const dir = import_path13.default.join(import_electron6.app.getPath("userData"), "recordings");
+      await import_promises20.default.mkdir(dir, { recursive: true });
       const safeBase = sanitizeFilename(args.nameHint || "");
-      const filePath = import_path12.default.join(dir, `${safeBase}-${Date.now()}.${ext}`);
-      await import_promises19.default.writeFile(filePath, Buffer.from(args.bytes));
+      const filePath = import_path13.default.join(dir, `${safeBase}-${Date.now()}.${ext}`);
+      await import_promises20.default.writeFile(filePath, Buffer.from(args.bytes));
       const fileUrl = (0, import_url.pathToFileURL)(filePath).href;
       return { ok: true, filePath, fileUrl };
     }
@@ -18313,16 +18695,16 @@ import_electron6.app.whenReady().then(async () => {
       const inputs = (args.inputs ?? []).filter(Boolean);
       if (inputs.length === 0) throw new Error("concatMp4: no input files");
       if (inputs.length === 1) {
-        await import_promises19.default.copyFile(inputs[0], args.output);
+        await import_promises20.default.copyFile(inputs[0], args.output);
         if (args.cleanup) {
-          await import_promises19.default.unlink(inputs[0]).catch(() => {
+          await import_promises20.default.unlink(inputs[0]).catch(() => {
           });
         }
         return { ok: true };
       }
       const transitions = args.transitions ?? [];
       try {
-        const stitcherPath = import_electron6.app.isPackaged ? import_path12.default.join(process.resourcesPath, "render-server", "stitcher.js") : import_path12.default.join(process.cwd(), "render-server", "stitcher.js");
+        const stitcherPath = import_electron6.app.isPackaged ? import_path13.default.join(process.resourcesPath, "render-server", "stitcher.js") : import_path13.default.join(process.cwd(), "render-server", "stitcher.js");
         const mod = await import((0, import_url.pathToFileURL)(stitcherPath).href);
         const stitchScenes = mod?.stitchScenes;
         if (typeof stitchScenes !== "function") {
@@ -18335,7 +18717,7 @@ import_electron6.app.whenReady().then(async () => {
         await stitchScenes(inputs, stitchedTransitions, args.output);
       } finally {
         if (args.cleanup) {
-          await Promise.all(inputs.map((p) => import_promises19.default.unlink(p).catch(() => {
+          await Promise.all(inputs.map((p) => import_promises20.default.unlink(p).catch(() => {
           })));
         }
       }
@@ -18385,14 +18767,14 @@ import_electron6.app.whenReady().then(async () => {
       if (!args.screenBytes || args.screenBytes.byteLength === 0) {
         throw new Error("Screen recording is empty \u2014 nothing to save");
       }
-      const dir = import_path12.default.join(import_electron6.app.getPath("userData"), "recordings");
-      await import_promises19.default.mkdir(dir, { recursive: true });
+      const dir = import_path13.default.join(import_electron6.app.getPath("userData"), "recordings");
+      await import_promises20.default.mkdir(dir, { recursive: true });
       const ts = Date.now();
       const safeBase = sanitizeFilename(args.nameHint || "");
       const writtenFiles = [];
       try {
-        const screenPath = import_path12.default.join(dir, `${safeBase}-${ts}.webm`);
-        await import_promises19.default.writeFile(screenPath, Buffer.from(args.screenBytes));
+        const screenPath = import_path13.default.join(dir, `${safeBase}-${ts}.webm`);
+        await import_promises20.default.writeFile(screenPath, Buffer.from(args.screenBytes));
         writtenFiles.push(screenPath);
         const result = {
           screenVideoPath: screenPath,
@@ -18400,17 +18782,17 @@ import_electron6.app.whenReady().then(async () => {
           createdAt: ts
         };
         if (args.webcamBytes && args.webcamBytes.byteLength > 0) {
-          const webcamPath = import_path12.default.join(dir, `${safeBase}-${ts}-webcam.webm`);
-          await import_promises19.default.writeFile(webcamPath, Buffer.from(args.webcamBytes));
+          const webcamPath = import_path13.default.join(dir, `${safeBase}-${ts}-webcam.webm`);
+          await import_promises20.default.writeFile(webcamPath, Buffer.from(args.webcamBytes));
           writtenFiles.push(webcamPath);
           result.webcamVideoPath = webcamPath;
           result.webcamVideoUrl = (0, import_url.pathToFileURL)(webcamPath).href;
         }
-        const manifestPath = import_path12.default.join(dir, `${safeBase}-${ts}.session.json`);
-        await import_promises19.default.writeFile(manifestPath, JSON.stringify(result, null, 2));
+        const manifestPath = import_path13.default.join(dir, `${safeBase}-${ts}.session.json`);
+        await import_promises20.default.writeFile(manifestPath, JSON.stringify(result, null, 2));
         return result;
       } catch (err) {
-        await Promise.all(writtenFiles.map((f) => import_promises19.default.unlink(f).catch(() => {
+        await Promise.all(writtenFiles.map((f) => import_promises20.default.unlink(f).catch(() => {
         })));
         throw err;
       }

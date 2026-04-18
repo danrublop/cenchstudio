@@ -705,22 +705,28 @@ export function createGenerationActions(set: Set, get: Get) {
       get().addAILayer(sceneId, layer)
 
       try {
-        const res = await fetch('/api/generate-image', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            projectId: project.id,
-            sceneId,
-            prompt: opts.prompt,
-            model: opts.model ?? (isSticker ? 'recraft-v3' : 'flux-schnell'),
-            style: opts.style,
-            aspectRatio: opts.aspectRatio ?? '1:1',
-            removeBackground: isSticker,
-          }),
-        })
-
-        const data = await res.json()
-        if (!res.ok) throw new Error(data.error)
+        const ipc = typeof window !== 'undefined' ? window.cenchApi?.generate : undefined
+        const payload = {
+          projectId: project.id,
+          sceneId,
+          prompt: opts.prompt,
+          model: opts.model ?? (isSticker ? 'recraft-v3' : 'flux-schnell'),
+          style: opts.style,
+          aspectRatio: opts.aspectRatio ?? '1:1',
+          removeBackground: isSticker,
+        }
+        let data: { imageUrl?: string; stickerUrl?: string | null; error?: string }
+        if (ipc) {
+          data = (await ipc.image(payload)) as typeof data
+        } else {
+          const res = await fetch('/api/generate-image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          })
+          data = await res.json()
+          if (!res.ok) throw new Error(data.error)
+        }
 
         if (isSticker) {
           get().updateAILayer(sceneId, layerId, {

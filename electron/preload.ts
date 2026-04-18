@@ -231,6 +231,22 @@ export type CenchApi = {
       usage: UsageResult
       mode: 'cench_charts' | 'legacy'
     }>
+    image: (args: {
+      prompt: string
+      negativePrompt?: string
+      model?: string
+      aspectRatio?: string
+      style?: string | null
+      removeBackground?: boolean
+      projectId?: string
+      sceneId?: string
+    }) => Promise<{
+      imageUrl: string
+      stickerUrl: string | null
+      width: number
+      height: number
+      cost: number
+    }>
   }
 }
 
@@ -337,6 +353,7 @@ const cenchApi: CenchApi = {
     react: (args) => ipcRenderer.invoke('cench:generate.react', args),
     lottie: (args) => ipcRenderer.invoke('cench:generate.lottie', args),
     d3: (args) => ipcRenderer.invoke('cench:generate.d3', args),
+    image: (args) => ipcRenderer.invoke('cench:generate.image', args),
   },
 }
 

@@ -375,6 +375,27 @@ export interface CenchApi {
       usage: GenerateCodeUsage
       mode: 'cench_charts' | 'legacy'
     }>
+    /**
+     * AI image generation (Flux / DALL-E / Recraft via the image-gen
+     * router). When `removeBackground` is true, follows with a
+     * background-removal pass and returns `stickerUrl` alongside.
+     */
+    image(args: {
+      prompt: string
+      negativePrompt?: string
+      model?: string
+      aspectRatio?: string
+      style?: string | null
+      removeBackground?: boolean
+      projectId?: string
+      sceneId?: string
+    }): Promise<{
+      imageUrl: string
+      stickerUrl: string | null
+      width: number
+      height: number
+      cost: number
+    }>
   }
 }
 

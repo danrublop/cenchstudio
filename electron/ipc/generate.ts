@@ -6,6 +6,7 @@ import {
   generateReact,
   generateLottie,
   generateD3,
+  generateImageAsset,
   GenerationValidationError,
   LottieParseError,
 } from '@/lib/services/generation'
@@ -60,4 +61,5 @@ export function register(ipcMain: IpcMain): void {
   ipcMain.handle('cench:generate.react', wrap(generateReact))
   ipcMain.handle('cench:generate.lottie', wrap(generateLottie))
   ipcMain.handle('cench:generate.d3', wrap(generateD3))
+  ipcMain.handle('cench:generate.image', wrap(generateImageAsset))
 }

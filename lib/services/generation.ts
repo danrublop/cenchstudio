@@ -318,6 +318,77 @@ export async function generateLottie(input: GenerateLottieInput): Promise<Genera
   }
 }
 
+// ── Image generation ───────────────────────────────────────────────────────
+
+export interface GenerateImageInput {
+  prompt: string
+  negativePrompt?: string
+  model?: string
+  aspectRatio?: string
+  style?: string | null
+  removeBackground?: boolean
+  /** When set, spend is logged against this project. */
+  projectId?: string
+  /** Unused by the service but preserved for route parity. */
+  sceneId?: string
+}
+
+export interface GenerateImageResult {
+  imageUrl: string
+  stickerUrl: string | null
+  width: number
+  height: number
+  cost: number
+}
+
+export async function generateImageAsset(input: GenerateImageInput): Promise<GenerateImageResult> {
+  if (!input.prompt) throw new GenerationValidationError('prompt is required')
+
+  // Lazy-imported — provider SDKs are heavy and only needed when this runs.
+  const { generateImage } = await import('@/lib/apis/image-gen')
+  const { removeImageBackground, BG_REMOVAL_COST } = await import('@/lib/apis/background-removal')
+  const { logSpend } = await import('@/lib/db')
+
+  const result = await generateImage({
+    prompt: input.prompt,
+    negativePrompt: input.negativePrompt,
+    model: (input.model ?? 'flux-schnell') as Parameters<typeof generateImage>[0]['model'],
+    aspectRatio: (input.aspectRatio ?? '1:1') as Parameters<typeof generateImage>[0]['aspectRatio'],
+    style: (input.style ?? null) as Parameters<typeof generateImage>[0]['style'],
+  })
+
+  if (result.cost > 0 && input.projectId) {
+    await logSpend(
+      input.projectId,
+      'imageGen',
+      result.cost,
+      `${input.model ?? 'flux-schnell'}: ${input.prompt.slice(0, 100)}`,
+    )
+  }
+
+  let stickerUrl: string | null = null
+  if (input.removeBackground) {
+    const bgResult = await removeImageBackground(result.imageUrl)
+    stickerUrl = bgResult.resultUrl
+    if (bgResult.cost > 0 && input.projectId) {
+      await logSpend(
+        input.projectId,
+        'backgroundRemoval',
+        bgResult.cost,
+        `BG removal for: ${input.prompt.slice(0, 80)}`,
+      )
+    }
+  }
+
+  return {
+    imageUrl: result.imageUrl,
+    stickerUrl,
+    width: result.width,
+    height: result.height,
+    cost: result.cost + (stickerUrl ? BG_REMOVAL_COST : 0),
+  }
+}
+
 export class GenerationValidationError extends Error {
   readonly code = 'VALIDATION' as const
   constructor(message: string) {
