@@ -2552,9 +2552,9 @@ async function writeProjectScenesToTablesTx(tx, projectId, projectScenes, sceneG
       toSceneId: ee.toSceneId ?? "",
       condition: normalizeEdgeCondition(ee.condition)
     });
-    const list6 = existingBySemantic.get(key) ?? [];
-    list6.push(ee.id);
-    existingBySemantic.set(key, list6);
+    const list7 = existingBySemantic.get(key) ?? [];
+    list7.push(ee.id);
+    existingBySemantic.set(key, list7);
   }
   const edges = sceneGraph?.edges ?? [];
   const edgeRows = edges.map((e) => {
@@ -11733,6 +11733,102 @@ function register12(ipcMain2) {
   ipcMain2.handle("cench:avatarConfigs.delete", (_e, args) => remove4(args));
 }
 
+// electron/ipc/zdog-library.ts
+var import_drizzle_orm12 = require("drizzle-orm");
+var import_uuid2 = require("uuid");
+function parseBlob(description) {
+  if (!description) return {};
+  try {
+    return JSON.parse(description);
+  } catch {
+    return {};
+  }
+}
+async function list6(args) {
+  assertValidUuid(args.projectId, "projectId");
+  await loadProjectOrThrow(args.projectId);
+  const [project] = await db.select({ description: projects.description }).from(projects).where((0, import_drizzle_orm12.eq)(projects.id, args.projectId)).limit(1);
+  if (!project) throw new IpcNotFoundError("Project not found");
+  const blob = parseBlob(project.description);
+  return {
+    assets: [
+      ...blob.zdogStudioLibrary ?? [],
+      ...(blob.zdogLibrary ?? []).map((a) => ({ ...a, assetType: "person" }))
+    ]
+  };
+}
+async function save(args) {
+  assertValidUuid(args.projectId, "projectId");
+  await loadProjectOrThrow(args.projectId);
+  if (!args.name || typeof args.name !== "string") throw new IpcValidationError("name is required");
+  const tags = args.tags ?? [];
+  const [existing] = await db.select({ description: projects.description, version: projects.version }).from(projects).where((0, import_drizzle_orm12.eq)(projects.id, args.projectId)).limit(1);
+  if (!existing) throw new IpcNotFoundError("Project not found");
+  const currentVersion = existing.version ?? 1;
+  const blob = parseBlob(existing.description);
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  let updatedBlob;
+  let asset;
+  if (args.assetType === "studio") {
+    if (!args.shapes?.length) throw new IpcValidationError("shapes are required for studio assets");
+    asset = {
+      id: (0, import_uuid2.v4)(),
+      name: args.name.slice(0, 120),
+      shapes: args.shapes,
+      tags,
+      createdAt: now,
+      updatedAt: now
+    };
+    updatedBlob = { ...blob, zdogStudioLibrary: [...blob.zdogStudioLibrary ?? [], asset] };
+  } else {
+    if (!args.formula) throw new IpcValidationError("formula is required for person assets");
+    asset = {
+      id: (0, import_uuid2.v4)(),
+      name: args.name.slice(0, 120),
+      formula: args.formula,
+      tags,
+      createdAt: now,
+      updatedAt: now
+    };
+    updatedBlob = { ...blob, zdogLibrary: [...blob.zdogLibrary ?? [], asset] };
+  }
+  const [updated] = await db.update(projects).set({
+    description: JSON.stringify(updatedBlob),
+    version: currentVersion + 1,
+    updatedAt: /* @__PURE__ */ new Date()
+  }).where((0, import_drizzle_orm12.and)((0, import_drizzle_orm12.eq)(projects.id, args.projectId), (0, import_drizzle_orm12.eq)(projects.version, currentVersion))).returning({ id: projects.id });
+  if (!updated) throw new IpcConflictError("Project was modified concurrently. Please retry.");
+  return { success: true, asset };
+}
+async function remove5(args) {
+  assertValidUuid(args.projectId, "projectId");
+  if (!args.id || typeof args.id !== "string") throw new IpcValidationError("id is required");
+  await loadProjectOrThrow(args.projectId);
+  const [existing] = await db.select({ description: projects.description, version: projects.version }).from(projects).where((0, import_drizzle_orm12.eq)(projects.id, args.projectId)).limit(1);
+  if (!existing) throw new IpcNotFoundError("Project not found");
+  const currentVersion = existing.version ?? 1;
+  const blob = parseBlob(existing.description);
+  const prevStudio = blob.zdogStudioLibrary ?? [];
+  const newStudio = prevStudio.filter((a) => a.id !== args.id);
+  const prevPerson = blob.zdogLibrary ?? [];
+  const newPerson = prevPerson.filter((a) => a.id !== args.id);
+  if (newStudio.length === prevStudio.length && newPerson.length === prevPerson.length) {
+    throw new IpcNotFoundError("Asset not found");
+  }
+  const [updated] = await db.update(projects).set({
+    description: JSON.stringify({ ...blob, zdogLibrary: newPerson, zdogStudioLibrary: newStudio }),
+    version: currentVersion + 1,
+    updatedAt: /* @__PURE__ */ new Date()
+  }).where((0, import_drizzle_orm12.and)((0, import_drizzle_orm12.eq)(projects.id, args.projectId), (0, import_drizzle_orm12.eq)(projects.version, currentVersion))).returning({ id: projects.id });
+  if (!updated) throw new IpcConflictError("Project was modified concurrently. Please retry.");
+  return { success: true };
+}
+function register13(ipcMain2) {
+  ipcMain2.handle("cench:zdogLibrary.list", (_e, args) => list6(args));
+  ipcMain2.handle("cench:zdogLibrary.save", (_e, args) => save(args));
+  ipcMain2.handle("cench:zdogLibrary.delete", (_e, args) => remove5(args));
+}
+
 // electron/ipc/index.ts
 function registerAllIpc(ipcMain2) {
   register(ipcMain2);
@@ -11747,6 +11843,7 @@ function registerAllIpc(ipcMain2) {
   register10(ipcMain2);
   register11(ipcMain2);
   register12(ipcMain2);
+  register13(ipcMain2);
 }
 
 // electron/main.ts

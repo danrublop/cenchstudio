@@ -60,11 +60,11 @@ export default function ZdogOutliner({ projectId }: ZdogOutlinerProps) {
   // Load assets
   const loadAssets = useCallback(async () => {
     try {
-      const res = await fetch(`/api/projects/${projectId}/zdog-library`)
-      if (res.ok) {
-        const data = await res.json()
-        setAssets(data.assets || [])
-      }
+      const ipc = typeof window !== 'undefined' ? window.cenchApi?.zdogLibrary : undefined
+      const data = ipc
+        ? await ipc.list({ projectId })
+        : await fetch(`/api/projects/${projectId}/zdog-library`).then((r) => (r.ok ? r.json() : null))
+      if (data) setAssets(data.assets || [])
     } catch {}
   }, [projectId, setAssets])
 
@@ -76,12 +76,16 @@ export default function ZdogOutliner({ projectId }: ZdogOutlinerProps) {
     if (!assetName.trim()) return
     setSaving(true)
     try {
-      const res = await fetch(`/api/projects/${projectId}/zdog-library`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: assetName.trim(), shapes: scene.shapes, assetType: 'studio', tags: [] }),
-      })
-      if (res.ok) {
+      const ipc = typeof window !== 'undefined' ? window.cenchApi?.zdogLibrary : undefined
+      const body = { name: assetName.trim(), shapes: scene.shapes, assetType: 'studio' as const, tags: [] }
+      const ok = ipc
+        ? await ipc.save({ projectId, ...body }).then(() => true)
+        : await fetch(`/api/projects/${projectId}/zdog-library`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          }).then((r) => r.ok)
+      if (ok) {
         setAssetName('')
         loadAssets()
       }
@@ -94,11 +98,16 @@ export default function ZdogOutliner({ projectId }: ZdogOutlinerProps) {
   const deleteAsset = useCallback(
     async (id: string) => {
       try {
-        await fetch(`/api/projects/${projectId}/zdog-library`, {
-          method: 'DELETE',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id }),
-        })
+        const ipc = typeof window !== 'undefined' ? window.cenchApi?.zdogLibrary : undefined
+        if (ipc) {
+          await ipc.delete({ projectId, id })
+        } else {
+          await fetch(`/api/projects/${projectId}/zdog-library`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id }),
+          })
+        }
         loadAssets()
       } catch {}
     },

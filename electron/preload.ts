@@ -139,6 +139,18 @@ export type CenchApi = {
     }) => Promise<Record<string, unknown>>
     delete: (args: { projectId: string; configId: string }) => Promise<{ success: true }>
   }
+  zdogLibrary: {
+    list: (args: { projectId: string }) => Promise<{ assets: Array<Record<string, unknown>> }>
+    save: (args: {
+      projectId: string
+      name: string
+      assetType?: 'studio' | 'person'
+      tags?: string[]
+      shapes?: unknown[]
+      formula?: unknown
+    }) => Promise<{ success: true; asset: Record<string, unknown> }>
+    delete: (args: { projectId: string; id: string }) => Promise<{ success: true }>
+  }
 }
 
 const cenchApi: CenchApi = {
@@ -206,6 +218,11 @@ const cenchApi: CenchApi = {
     create: (args) => ipcRenderer.invoke('cench:avatarConfigs.create', args),
     update: (args) => ipcRenderer.invoke('cench:avatarConfigs.update', args),
     delete: (args) => ipcRenderer.invoke('cench:avatarConfigs.delete', args),
+  },
+  zdogLibrary: {
+    list: (args) => ipcRenderer.invoke('cench:zdogLibrary.list', args),
+    save: (args) => ipcRenderer.invoke('cench:zdogLibrary.save', args),
+    delete: (args) => ipcRenderer.invoke('cench:zdogLibrary.delete', args),
   },
 }
 

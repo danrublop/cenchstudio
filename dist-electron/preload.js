@@ -82,6 +82,11 @@ var cenchApi = {
     create: (args) => import_electron.ipcRenderer.invoke("cench:avatarConfigs.create", args),
     update: (args) => import_electron.ipcRenderer.invoke("cench:avatarConfigs.update", args),
     delete: (args) => import_electron.ipcRenderer.invoke("cench:avatarConfigs.delete", args)
+  },
+  zdogLibrary: {
+    list: (args) => import_electron.ipcRenderer.invoke("cench:zdogLibrary.list", args),
+    save: (args) => import_electron.ipcRenderer.invoke("cench:zdogLibrary.save", args),
+    delete: (args) => import_electron.ipcRenderer.invoke("cench:zdogLibrary.delete", args)
   }
 };
 import_electron.contextBridge.exposeInMainWorld("cenchApi", cenchApi);

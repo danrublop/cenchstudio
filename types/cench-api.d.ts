@@ -258,6 +258,20 @@ export interface CenchApi {
     }): Promise<Record<string, unknown>>
     delete(args: { projectId: string; configId: string }): Promise<{ success: true }>
   }
+  zdogLibrary: {
+    /** Fetch all zdog studio + person assets saved on a project. */
+    list(args: { projectId: string }): Promise<{ assets: Array<Record<string, unknown>> }>
+    /** Append a studio shape-tree or legacy person formula to the library. Optimistic-lock retry on CONFLICT. */
+    save(args: {
+      projectId: string
+      name: string
+      assetType?: 'studio' | 'person'
+      tags?: string[]
+      shapes?: unknown[]
+      formula?: unknown
+    }): Promise<{ success: true; asset: Record<string, unknown> }>
+    delete(args: { projectId: string; id: string }): Promise<{ success: true }>
+  }
 }
 
 declare global {
