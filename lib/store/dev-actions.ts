@@ -4,6 +4,22 @@ import { v4 as uuidv4 } from 'uuid'
 import type { Scene, SceneNode, SceneEdge } from '../types'
 import { generateSceneHTML } from '../sceneTemplate'
 import { resolveProjectDimensions } from '../dimensions'
+import {
+  createTestScenes,
+  createInteractiveTestScenes,
+  createInteractiveStyleShowcaseScenes,
+  createInteractiveProfessionalTourScenes,
+  createProfessionalTooltipTestScenes,
+  createWorldTestScenes,
+  createMedicalTestScenes,
+  createTextEditingHarnessScenes,
+} from '../testScenes'
+import { createCapabilityShowcaseScenes } from '../capabilityShowcaseScenes'
+import { createThreeEnvironmentShowcaseScenes } from '../threeEnvironmentShowcaseScenes'
+import { createAvatarShowcaseScenes } from '../avatarShowcaseScenes'
+import { createTalkingHeadLipSyncTestScene } from '../talkingHeadLipSyncTestScene'
+import { createReactShowcaseScenes } from '../reactShowcaseScenes'
+import type { Set, Get } from './types'
 
 // Seed/showcase helpers all write the same shape: one HTML file per scene
 // to the scenes directory. Fire-and-forget in every case (these are dev
@@ -25,22 +41,6 @@ async function writeSceneHtmlSilent(id: string, html: string): Promise<void> {
     // dev-seed writes are non-fatal
   }
 }
-import {
-  createTestScenes,
-  createInteractiveTestScenes,
-  createInteractiveStyleShowcaseScenes,
-  createInteractiveProfessionalTourScenes,
-  createProfessionalTooltipTestScenes,
-  createWorldTestScenes,
-  createMedicalTestScenes,
-  createTextEditingHarnessScenes,
-} from '../testScenes'
-import { createCapabilityShowcaseScenes } from '../capabilityShowcaseScenes'
-import { createThreeEnvironmentShowcaseScenes } from '../threeEnvironmentShowcaseScenes'
-import { createAvatarShowcaseScenes } from '../avatarShowcaseScenes'
-import { createTalkingHeadLipSyncTestScene } from '../talkingHeadLipSyncTestScene'
-import { createReactShowcaseScenes } from '../reactShowcaseScenes'
-import type { Set, Get } from './types'
 
 export function createDevActions(set: Set, get: Get) {
   return {
