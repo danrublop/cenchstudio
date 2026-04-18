@@ -83,46 +83,60 @@ function AssetCard({ asset, onDelete, onAddToTimeline, onExtrude3D, onRegenerate
 
   const saveName = async () => {
     if (editName.trim() && editName !== asset.name) {
+      const ipc = typeof window !== 'undefined' ? window.cenchApi?.projects : undefined
+      if (ipc) {
+        const { asset: updated } = await ipc.patchAsset({
+          projectId: project.id,
+          assetId: asset.id,
+          name: editName.trim(),
+        })
+        updateProjectAsset(asset.id, updated as unknown as ProjectAsset)
+      } else {
+        const res = await fetch(`/api/projects/${project.id}/assets/${asset.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: editName.trim() }),
+        })
+        if (res.ok) {
+          const { asset: updated } = await res.json()
+          updateProjectAsset(asset.id, updated)
+        }
+      }
+    }
+    setIsEditing(false)
+  }
+
+  const patchTags = async (newTags: string[]) => {
+    const ipc = typeof window !== 'undefined' ? window.cenchApi?.projects : undefined
+    if (ipc) {
+      const { asset: updated } = await ipc.patchAsset({
+        projectId: project.id,
+        assetId: asset.id,
+        tags: newTags,
+      })
+      updateProjectAsset(asset.id, updated as unknown as ProjectAsset)
+    } else {
       const res = await fetch(`/api/projects/${project.id}/assets/${asset.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: editName.trim() }),
+        body: JSON.stringify({ tags: newTags }),
       })
       if (res.ok) {
         const { asset: updated } = await res.json()
         updateProjectAsset(asset.id, updated)
       }
     }
-    setIsEditing(false)
   }
 
   const addTag = async (tag: string) => {
     const t = tag.trim().toLowerCase()
     if (!t || asset.tags.includes(t)) return
-    const newTags = [...asset.tags, t]
-    const res = await fetch(`/api/projects/${project.id}/assets/${asset.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tags: newTags }),
-    })
-    if (res.ok) {
-      const { asset: updated } = await res.json()
-      updateProjectAsset(asset.id, updated)
-    }
+    await patchTags([...asset.tags, t])
     setTagInput('')
   }
 
   const removeTag = async (tag: string) => {
-    const newTags = asset.tags.filter((t) => t !== tag)
-    const res = await fetch(`/api/projects/${project.id}/assets/${asset.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tags: newTags }),
-    })
-    if (res.ok) {
-      const { asset: updated } = await res.json()
-      updateProjectAsset(asset.id, updated)
-    }
+    await patchTags(asset.tags.filter((t) => t !== tag))
   }
 
   const provenanceTooltip = asset.prompt
@@ -386,8 +400,18 @@ export default function GalleryPanel() {
   )
 
   const handleDelete = async (assetId: string) => {
-    const res = await fetch(`/api/projects/${project.id}/assets/${assetId}`, { method: 'DELETE' })
-    if (res.ok) removeProjectAsset(assetId)
+    const ipc = typeof window !== 'undefined' ? window.cenchApi?.projects : undefined
+    if (ipc) {
+      try {
+        await ipc.deleteAsset({ projectId: project.id, assetId })
+        removeProjectAsset(assetId)
+      } catch {
+        /* leave asset in store on failure */
+      }
+    } else {
+      const res = await fetch(`/api/projects/${project.id}/assets/${assetId}`, { method: 'DELETE' })
+      if (res.ok) removeProjectAsset(assetId)
+    }
   }
 
   const handleAddToTimeline = (asset: ProjectAsset) => {
@@ -443,18 +467,24 @@ export default function GalleryPanel() {
 
   const handleRegenerate = async (asset: ProjectAsset) => {
     try {
-      const res = await fetch(`/api/projects/${project.id}/assets/${asset.id}/regenerate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        setUploadError(err?.error ?? 'Regeneration failed')
-        return
+      const ipc = typeof window !== 'undefined' ? window.cenchApi?.projects : undefined
+      if (ipc) {
+        const { asset: newAsset } = await ipc.regenerateAsset({ projectId: project.id, assetId: asset.id })
+        addProjectAsset(newAsset as unknown as ProjectAsset)
+      } else {
+        const res = await fetch(`/api/projects/${project.id}/assets/${asset.id}/regenerate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        })
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}))
+          setUploadError(err?.error ?? 'Regeneration failed')
+          return
+        }
+        const { asset: newAsset } = await res.json()
+        addProjectAsset(newAsset)
       }
-      const { asset: newAsset } = await res.json()
-      addProjectAsset(newAsset)
     } catch (e: any) {
       setUploadError(e?.message ?? 'Regeneration failed')
     }

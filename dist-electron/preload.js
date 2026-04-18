@@ -55,7 +55,10 @@ var cenchApi = {
     delete: (projectId) => import_electron.ipcRenderer.invoke("cench:projects.delete", projectId),
     listAssets: (args) => import_electron.ipcRenderer.invoke("cench:projects.listAssets", args),
     getBrandKit: (projectId) => import_electron.ipcRenderer.invoke("cench:projects.getBrandKit", projectId),
-    updateBrandKit: (args) => import_electron.ipcRenderer.invoke("cench:projects.updateBrandKit", args)
+    updateBrandKit: (args) => import_electron.ipcRenderer.invoke("cench:projects.updateBrandKit", args),
+    patchAsset: (args) => import_electron.ipcRenderer.invoke("cench:projects.patchAsset", args),
+    deleteAsset: (args) => import_electron.ipcRenderer.invoke("cench:projects.deleteAsset", args),
+    regenerateAsset: (args) => import_electron.ipcRenderer.invoke("cench:projects.regenerateAsset", args)
   },
   workspaces: {
     list: () => import_electron.ipcRenderer.invoke("cench:workspaces.list"),

@@ -10,6 +10,13 @@ import { normalizeScenesForPersistence } from '@/lib/charts/normalize-scenes'
 import { readProjectSceneBlob, writeProjectSceneBlob } from '@/lib/db/project-scene-storage'
 import { readProjectScenesFromTables, writeProjectScenesToTables } from '@/lib/db/project-scene-table'
 import { assertValidUuid, loadProjectOrThrow, IpcValidationError, IpcNotFoundError, IpcConflictError } from './_helpers'
+import {
+  patchAsset as svcPatchAsset,
+  deleteAsset as svcDeleteAsset,
+  regenerateAsset as svcRegenerateAsset,
+  AssetValidationError,
+  AssetNotFoundError,
+} from '@/lib/services/assets'
 
 /**
  * Category: projects
@@ -457,5 +464,50 @@ export function register(ipcMain: IpcMain): void {
   ipcMain.handle('cench:projects.getBrandKit', (_e, projectId: string) => getBrandKit(projectId))
   ipcMain.handle('cench:projects.updateBrandKit', (_e, args: { projectId: string; updates: Partial<BrandKit> }) =>
     updateBrandKit(args),
+  )
+  // Single-asset CRUD. Route the service's validation/not-found errors
+  // through the existing IPC-side error classes so the renderer sees a
+  // consistent shape across all categories.
+  const mapAssetError = (err: unknown) => {
+    if (err instanceof AssetValidationError) throw new IpcValidationError(err.message)
+    if (err instanceof AssetNotFoundError) throw new IpcNotFoundError(err.message)
+    throw err
+  }
+  ipcMain.handle(
+    'cench:projects.patchAsset',
+    async (_e, args: { projectId: string; assetId: string; name?: string; tags?: string[] }) => {
+      try {
+        return await svcPatchAsset(args)
+      } catch (err) {
+        mapAssetError(err)
+      }
+    },
+  )
+  ipcMain.handle('cench:projects.deleteAsset', async (_e, args: { projectId: string; assetId: string }) => {
+    try {
+      return await svcDeleteAsset(args)
+    } catch (err) {
+      mapAssetError(err)
+    }
+  })
+  ipcMain.handle(
+    'cench:projects.regenerateAsset',
+    async (
+      _e,
+      args: {
+        projectId: string
+        assetId: string
+        promptOverride?: string
+        model?: string
+        aspectRatio?: string
+        enhanceTags?: string[]
+      },
+    ) => {
+      try {
+        return await svcRegenerateAsset(args)
+      } catch (err) {
+        mapAssetError(err)
+      }
+    },
   )
 }

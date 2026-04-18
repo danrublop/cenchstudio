@@ -78,6 +78,21 @@ export type CenchApi = {
     updateBrandKit: (args: { projectId: string; updates: Record<string, unknown> }) => Promise<{
       brandKit: unknown
     }>
+    patchAsset: (args: {
+      projectId: string
+      assetId: string
+      name?: string
+      tags?: string[]
+    }) => Promise<{ asset: Record<string, unknown> }>
+    deleteAsset: (args: { projectId: string; assetId: string }) => Promise<{ success: true }>
+    regenerateAsset: (args: {
+      projectId: string
+      assetId: string
+      promptOverride?: string
+      model?: string
+      aspectRatio?: string
+      enhanceTags?: string[]
+    }) => Promise<{ asset: Record<string, unknown>; cost: number; finalPrompt: string }>
   }
   workspaces: {
     list: () => Promise<unknown[]>
@@ -339,6 +354,9 @@ const cenchApi: CenchApi = {
     listAssets: (args) => ipcRenderer.invoke('cench:projects.listAssets', args),
     getBrandKit: (projectId) => ipcRenderer.invoke('cench:projects.getBrandKit', projectId),
     updateBrandKit: (args) => ipcRenderer.invoke('cench:projects.updateBrandKit', args),
+    patchAsset: (args) => ipcRenderer.invoke('cench:projects.patchAsset', args),
+    deleteAsset: (args) => ipcRenderer.invoke('cench:projects.deleteAsset', args),
+    regenerateAsset: (args) => ipcRenderer.invoke('cench:projects.regenerateAsset', args),
   },
   workspaces: {
     list: () => ipcRenderer.invoke('cench:workspaces.list'),

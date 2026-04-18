@@ -183,6 +183,28 @@ export interface CenchApi {
     }): Promise<{ assets: unknown[] }>
     getBrandKit(projectId: string): Promise<{ brandKit: unknown }>
     updateBrandKit(args: { projectId: string; updates: Record<string, unknown> }): Promise<{ brandKit: unknown }>
+    /** Partial update of a single project asset (rename / retag). */
+    patchAsset(args: {
+      projectId: string
+      assetId: string
+      name?: string
+      tags?: string[]
+    }): Promise<{ asset: Record<string, unknown> }>
+    /** Delete an asset row + its on-disk storage + thumbnail. */
+    deleteAsset(args: { projectId: string; assetId: string }): Promise<{ success: true }>
+    /**
+     * Regenerate an image asset as a sibling record (parentAssetId points
+     * to the original). Optional overrides can change the prompt, model,
+     * aspectRatio, or enrichment tags.
+     */
+    regenerateAsset(args: {
+      projectId: string
+      assetId: string
+      promptOverride?: string
+      model?: string
+      aspectRatio?: string
+      enhanceTags?: string[]
+    }): Promise<{ asset: Record<string, unknown>; cost: number; finalPrompt: string }>
   }
   workspaces: {
     list(): Promise<Array<Record<string, unknown>>>

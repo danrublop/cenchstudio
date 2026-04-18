@@ -1535,6 +1535,446 @@ var init_compile = __esm({
   }
 });
 
+// lib/apis/media-cache.ts
+var media_cache_exports = {};
+__export(media_cache_exports, {
+  checkCache: () => checkCache,
+  checkContentCache: () => checkContentCache,
+  computeCacheHash: () => computeCacheHash,
+  computeContentHash: () => computeContentHash,
+  downloadToBuffer: () => downloadToBuffer,
+  saveDownloadedMedia: () => saveDownloadedMedia,
+  saveToCache: () => saveToCache
+});
+function computeCacheHash(params) {
+  const normalized = JSON.stringify(params, Object.keys(params).sort());
+  return import_crypto2.default.createHash("sha256").update(normalized).digest("hex").slice(0, 16);
+}
+async function checkCache(api, params) {
+  const hash = computeCacheHash(params);
+  const cached = await getCachedMedia(hash);
+  if (!cached) return null;
+  const absPath = import_path.default.join(process.cwd(), "public", cached.filePath);
+  try {
+    await import_promises2.default.access(absPath);
+  } catch {
+    return null;
+  }
+  let metadata = {};
+  if (cached.config) {
+    try {
+      metadata = JSON.parse(cached.config)?._metadata ?? {};
+    } catch {
+    }
+  }
+  return { filePath: cached.filePath, metadata };
+}
+async function saveToCache(api, params, buffer, ext, metadata) {
+  const hash = computeCacheHash(params);
+  const subdir = api === "heygen" ? "avatars" : api === "veo3" ? "videos" : api === "backgroundRemoval" ? "stickers" : "images";
+  const dir = import_path.default.join(GENERATED_DIR, subdir);
+  await import_promises2.default.mkdir(dir, { recursive: true });
+  const filename = `${hash}.${ext}`;
+  const filePath = import_path.default.join(dir, filename);
+  await import_promises2.default.writeFile(filePath, buffer);
+  const publicPath = `/generated/${subdir}/${filename}`;
+  const configObj = { ...params, _metadata: metadata ?? {} };
+  await setCachedMedia(
+    hash,
+    api,
+    publicPath,
+    params.prompt ?? "",
+    params.model ?? "",
+    JSON.stringify(configObj)
+  );
+  return publicPath;
+}
+async function downloadToBuffer(url) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Download failed: ${response.status}`);
+  const arrayBuffer = await response.arrayBuffer();
+  return Buffer.from(arrayBuffer);
+}
+function computeContentHash(buffer) {
+  return import_crypto2.default.createHash("sha256").update(buffer).digest("hex").slice(0, 16);
+}
+async function checkContentCache(buffer) {
+  const contentHash = computeContentHash(buffer);
+  const cached = await getCachedMedia(contentHash);
+  if (!cached) return null;
+  const absPath = import_path.default.join(process.cwd(), "public", cached.filePath);
+  try {
+    await import_promises2.default.access(absPath);
+  } catch {
+    return null;
+  }
+  return { filePath: cached.filePath, contentHash };
+}
+async function saveDownloadedMedia(opts) {
+  const { api, sourceUrl, buffer, ext, subdir, metadata } = opts;
+  const contentHash = computeContentHash(buffer);
+  const cached = await getCachedMedia(contentHash);
+  if (cached) {
+    const absPath = import_path.default.join(process.cwd(), "public", cached.filePath);
+    try {
+      await import_promises2.default.access(absPath);
+      return { publicPath: cached.filePath, contentHash, alreadyCached: true };
+    } catch {
+    }
+  }
+  const subPath = subdir ? `research/${subdir}` : `research/${api}`;
+  const dir = import_path.default.join(GENERATED_DIR, subPath);
+  await import_promises2.default.mkdir(dir, { recursive: true });
+  const filename = `${contentHash}.${ext}`;
+  const filePath = import_path.default.join(dir, filename);
+  await import_promises2.default.writeFile(filePath, buffer);
+  const publicPath = `/generated/${subPath}/${filename}`;
+  const configObj = { sourceUrl, _metadata: metadata ?? {} };
+  await setCachedMedia(contentHash, api, publicPath, "", "", JSON.stringify(configObj));
+  return { publicPath, contentHash, alreadyCached: false };
+}
+var import_crypto2, import_promises2, import_path, GENERATED_DIR;
+var init_media_cache = __esm({
+  "lib/apis/media-cache.ts"() {
+    "use strict";
+    import_crypto2 = __toESM(require("crypto"));
+    import_promises2 = __toESM(require("fs/promises"));
+    import_path = __toESM(require("path"));
+    init_db();
+    GENERATED_DIR = import_path.default.join(process.cwd(), "public", "generated");
+  }
+});
+
+// lib/apis/image-gen.ts
+var image_gen_exports = {};
+__export(image_gen_exports, {
+  MODEL_COSTS: () => MODEL_COSTS,
+  generateImage: () => generateImage
+});
+function configureFal() {
+  const key = FAL_KEY();
+  if (key) {
+    fal.config({ credentials: key });
+  }
+}
+function aspectRatioToSize(ar) {
+  if (ar === "16:9" || ar === "4:3") return "1792x1024";
+  if (ar === "9:16" || ar === "3:4") return "1024x1792";
+  return "1024x1024";
+}
+function aspectRatioToFal(ar) {
+  if (ar === "16:9") return "landscape_16_9";
+  if (ar === "9:16") return "portrait_16_9";
+  if (ar === "4:3") return "landscape_4_3";
+  if (ar === "3:4") return "portrait_4_3";
+  return "square_hd";
+}
+async function generateImage(opts) {
+  const cacheParams = {
+    prompt: opts.prompt,
+    model: opts.model,
+    aspectRatio: opts.aspectRatio,
+    style: opts.style,
+    referenceImageUrl: opts.referenceImageUrl ?? null
+  };
+  if (!opts.skipCache) {
+    const cached = await checkCache("imageGen", cacheParams);
+    if (cached) {
+      return {
+        imageUrl: cached.filePath,
+        width: cached.metadata.width ?? 1024,
+        height: cached.metadata.height ?? 1024,
+        cost: 0
+      };
+    }
+  }
+  const fullPrompt = opts.prompt + (opts.style ? STYLE_PROMPTS[opts.style] ?? "" : "");
+  const cost = MODEL_COSTS[opts.model];
+  if (opts.model === "dall-e-3") {
+    const response = await fetch("https://api.openai.com/v1/images/generations", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${OPENAI_API_KEY()}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: "dall-e-3",
+        prompt: fullPrompt,
+        size: aspectRatioToSize(opts.aspectRatio),
+        quality: "standard",
+        n: 1
+      })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error?.message ?? "DALL-E 3 generation failed");
+    const imageUrl2 = data.data[0].url;
+    const size = aspectRatioToSize(opts.aspectRatio);
+    const [w2, h2] = size.split("x").map(Number);
+    const buffer2 = await downloadToBuffer(imageUrl2);
+    const publicPath2 = await saveToCache("imageGen", cacheParams, buffer2, "png", { width: w2, height: h2 });
+    return { imageUrl: publicPath2, width: w2, height: h2, cost };
+  }
+  const falModelId = MODEL_IDS[opts.model];
+  if (!falModelId) throw new Error(`Unknown model: ${opts.model}`);
+  configureFal();
+  const result = await fal.subscribe(falModelId, {
+    input: {
+      prompt: fullPrompt,
+      negative_prompt: opts.negativePrompt,
+      image_size: aspectRatioToFal(opts.aspectRatio),
+      num_inference_steps: opts.model === "flux-schnell" ? 4 : 28,
+      guidance_scale: 3.5
+    }
+  });
+  const imageUrl = result.images?.[0]?.url;
+  if (!imageUrl) throw new Error("No image returned from fal.ai");
+  const w = result.images[0].width ?? 1024;
+  const h = result.images[0].height ?? 1024;
+  const buffer = await downloadToBuffer(imageUrl);
+  const publicPath = await saveToCache("imageGen", cacheParams, buffer, "png", { width: w, height: h });
+  return {
+    imageUrl: publicPath,
+    width: w,
+    height: h,
+    cost
+  };
+}
+var fal, FAL_KEY, OPENAI_API_KEY, MODEL_IDS, STYLE_PROMPTS, MODEL_COSTS;
+var init_image_gen = __esm({
+  "lib/apis/image-gen.ts"() {
+    "use strict";
+    fal = __toESM(require("@fal-ai/serverless-client"));
+    init_media_cache();
+    FAL_KEY = () => process.env.FAL_KEY;
+    OPENAI_API_KEY = () => process.env.OPENAI_API_KEY;
+    MODEL_IDS = {
+      "flux-1.1-pro": "fal-ai/flux-pro/v1.1",
+      "flux-schnell": "fal-ai/flux/schnell",
+      "ideogram-v3": "fal-ai/ideogram/v3",
+      "recraft-v3": "fal-ai/recraft-v3",
+      "stable-diffusion-3": "fal-ai/stable-diffusion-v3-medium",
+      "dall-e-3": null
+      // uses OpenAI SDK
+    };
+    STYLE_PROMPTS = {
+      illustration: ", vector illustration style, clean lines",
+      flat: ", flat design, simple shapes, minimal",
+      sketch: ", pencil sketch, hand-drawn, whiteboard style",
+      "3d": ", 3D render, octane render, soft lighting",
+      watercolor: ", watercolor illustration, painted",
+      photorealistic: ", photorealistic, 4K, detailed",
+      pixel: ", pixel art style, retro"
+    };
+    MODEL_COSTS = {
+      "flux-1.1-pro": 0.05,
+      "flux-schnell": 3e-3,
+      "ideogram-v3": 0.08,
+      "recraft-v3": 0.04,
+      "stable-diffusion-3": 0.03,
+      "dall-e-3": 0.04
+    };
+  }
+});
+
+// lib/media/provenance.ts
+var provenance_exports = {};
+__export(provenance_exports, {
+  emptyMetadata: () => emptyMetadata,
+  persistGeneratedAsset: () => persistGeneratedAsset
+});
+async function persistGeneratedAsset(input) {
+  const assetId = (0, import_uuid.v4)();
+  const ext = guessExt(input.type, input.mimeType, input.sourceUrl);
+  const uploadsDir2 = import_path2.default.join(process.cwd(), "public", "uploads", "projects", input.projectId);
+  await import_promises3.default.mkdir(uploadsDir2, { recursive: true });
+  const storedFilename = `${assetId}.${ext}`;
+  const storagePath = import_path2.default.join(uploadsDir2, storedFilename);
+  const publicUrl = `/uploads/projects/${input.projectId}/${storedFilename}`;
+  const buffer = await fetchAsBuffer(input.sourceUrl);
+  await import_promises3.default.writeFile(storagePath, buffer);
+  let width = input.width ?? null;
+  let height = input.height ?? null;
+  let thumbnailUrl = null;
+  if (input.type === "image") {
+    try {
+      if (width == null || height == null) {
+        const meta = await (0, import_sharp.default)(buffer).metadata();
+        width = meta.width ?? width;
+        height = meta.height ?? height;
+      }
+      const thumbFilename = `${assetId}_thumb.jpg`;
+      const thumbPath = import_path2.default.join(uploadsDir2, thumbFilename);
+      await (0, import_sharp.default)(buffer, { animated: false }).resize(300, null, { withoutEnlargement: true }).jpeg({ quality: 80 }).toFile(thumbPath);
+      thumbnailUrl = `/uploads/projects/${input.projectId}/${thumbFilename}`;
+    } catch (e) {
+      console.warn("[provenance] image meta/thumbnail failed:", e);
+    }
+  }
+  const displayName = input.name?.trim() || deriveName(input.metadata.prompt) || `generated-${assetId.slice(0, 6)}`;
+  const [row] = await db.insert(projectAssets).values({
+    id: assetId,
+    projectId: input.projectId,
+    filename: storedFilename,
+    storagePath,
+    publicUrl,
+    type: input.type,
+    mimeType: input.mimeType ?? inferMime(input.type, ext),
+    sizeBytes: buffer.byteLength,
+    width,
+    height,
+    durationSeconds: input.durationSeconds ?? null,
+    name: displayName,
+    tags: input.tags ?? [],
+    thumbnailUrl,
+    extractedColors: [],
+    source: input.source ?? "generated",
+    prompt: input.metadata.prompt,
+    provider: input.metadata.provider,
+    model: input.metadata.model,
+    costCents: input.metadata.costCents,
+    parentAssetId: input.metadata.parentAssetId,
+    referenceAssetIds: input.metadata.referenceAssetIds,
+    enhanceTags: input.metadata.enhanceTags
+  }).returning();
+  return {
+    id: row.id,
+    projectId: row.projectId,
+    publicUrl: row.publicUrl,
+    thumbnailUrl: row.thumbnailUrl,
+    type: row.type
+  };
+}
+async function fetchAsBuffer(url) {
+  if (url.startsWith("/")) {
+    const p = import_path2.default.join(process.cwd(), "public", url);
+    return await import_promises3.default.readFile(p);
+  }
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Fetch ${url} failed: ${res.status}`);
+  const ab = await res.arrayBuffer();
+  return Buffer.from(ab);
+}
+function guessExt(type, mime, url) {
+  if (type === "video") {
+    if (mime?.includes("webm")) return "webm";
+    if (mime?.includes("quicktime")) return "mov";
+    return "mp4";
+  }
+  if (type === "svg") return "svg";
+  if (mime?.includes("png")) return "png";
+  if (mime?.includes("webp")) return "webp";
+  const urlExt = url.split("?")[0].split(".").pop()?.toLowerCase();
+  if (urlExt && ["png", "jpg", "jpeg", "webp", "gif", "svg"].includes(urlExt)) {
+    return urlExt === "jpeg" ? "jpg" : urlExt;
+  }
+  return "png";
+}
+function inferMime(type, ext) {
+  if (type === "video") return ext === "webm" ? "video/webm" : ext === "mov" ? "video/quicktime" : "video/mp4";
+  if (type === "svg") return "image/svg+xml";
+  if (ext === "png") return "image/png";
+  if (ext === "webp") return "image/webp";
+  if (ext === "gif") return "image/gif";
+  return "image/jpeg";
+}
+function deriveName(prompt) {
+  if (!prompt) return null;
+  return prompt.replace(/\s+/g, " ").trim().slice(0, 60);
+}
+function emptyMetadata() {
+  return {
+    prompt: null,
+    provider: null,
+    model: null,
+    costCents: null,
+    parentAssetId: null,
+    referenceAssetIds: null,
+    enhanceTags: null
+  };
+}
+var import_server_only, import_promises3, import_path2, import_uuid, import_sharp;
+var init_provenance = __esm({
+  "lib/media/provenance.ts"() {
+    "use strict";
+    import_server_only = require("server-only");
+    import_promises3 = __toESM(require("fs/promises"));
+    import_path2 = __toESM(require("path"));
+    import_uuid = require("uuid");
+    import_sharp = __toESM(require("sharp"));
+    init_db();
+    init_schema();
+  }
+});
+
+// lib/media/prompt-enhancer.ts
+var prompt_enhancer_exports = {};
+__export(prompt_enhancer_exports, {
+  ALL_ENHANCE_TAGS: () => ALL_ENHANCE_TAGS,
+  ENHANCE_TAGS: () => ENHANCE_TAGS,
+  QUICK_PROMPTS: () => QUICK_PROMPTS,
+  enrichPrompt: () => enrichPrompt,
+  parseEnrichedPrompt: () => parseEnrichedPrompt
+});
+function enrichPrompt(rawPrompt, tags = [], model, context) {
+  const base = rawPrompt.trim();
+  const parts = [base];
+  const seen = /* @__PURE__ */ new Set();
+  for (const t of tags) {
+    const norm = t.trim().toLowerCase();
+    if (!norm || seen.has(norm)) continue;
+    seen.add(norm);
+    parts.push(t.trim());
+  }
+  const hasStyleTag = tags.some((t) => ENHANCE_TAGS.style.includes(t));
+  if (!hasStyleTag && context) {
+    if (context.roughness != null && context.roughness >= 2) {
+      parts.push("loose sketchy line work");
+    }
+    if (context.palette && context.palette.length > 0) {
+      parts.push(`palette of ${context.palette.slice(0, 4).join(", ")}`);
+    }
+  }
+  if (model === "flux-1.1-pro" && !tags.some((t) => /4k|detailed|sharp/i.test(t))) {
+    parts.push("ultra detailed, sharp focus");
+  }
+  return parts.join(", ");
+}
+function parseEnrichedPrompt(stored) {
+  const bits = stored.split(/,\s*/);
+  const [first, ...rest] = bits;
+  return { base: first ?? "", tags: rest };
+}
+var ENHANCE_TAGS, ALL_ENHANCE_TAGS, QUICK_PROMPTS;
+var init_prompt_enhancer = __esm({
+  "lib/media/prompt-enhancer.ts"() {
+    "use strict";
+    ENHANCE_TAGS = {
+      quality: ["ultra detailed", "4k", "sharp focus", "masterpiece", "crisp"],
+      lighting: [
+        "cinematic lighting",
+        "soft natural light",
+        "golden hour",
+        "studio lighting",
+        "rim light",
+        "volumetric light"
+      ],
+      mood: ["vibrant", "moody", "dreamy", "energetic", "serene", "dramatic"],
+      style: ["photorealistic", "illustration", "flat design", "oil painting", "watercolor", "cyberpunk", "isometric"],
+      medium: ["digital art", "concept art", "matte painting", "pencil sketch", "vector art"],
+      camera: ["wide shot", "close-up", "overhead view", "shallow depth of field", "bokeh"]
+    };
+    ALL_ENHANCE_TAGS = Object.entries(ENHANCE_TAGS).flatMap(([category, tags]) => tags.map((tag) => ({ category, tag })));
+    QUICK_PROMPTS = [
+      { label: "Hero illustration", prompt: "minimalist hero illustration, flat vector, generous negative space" },
+      { label: "Product shot", prompt: "clean product photograph on seamless background, soft shadows" },
+      { label: "Explainer icon", prompt: "simple friendly icon, bold outlines, limited palette, transparent background" },
+      { label: "Background plate", prompt: "soft abstract gradient background, subtle grain, suitable for overlay text" },
+      { label: "Data viz motif", prompt: "geometric data visualization motif, axonometric, muted analytical palette" },
+      { label: "Whiteboard sketch", prompt: "whiteboard-style hand-drawn sketch, black marker on off-white, informal" }
+    ];
+  }
+});
+
 // lib/crypto.ts
 var crypto_exports = {};
 __export(crypto_exports, {
@@ -1559,8 +1999,8 @@ function getEncryptionKey() {
 }
 function encrypt(plaintext) {
   const key = getEncryptionKey();
-  const iv = (0, import_crypto2.randomBytes)(IV_LENGTH);
-  const cipher = (0, import_crypto2.createCipheriv)(ALGORITHM, key, iv);
+  const iv = (0, import_crypto3.randomBytes)(IV_LENGTH);
+  const cipher = (0, import_crypto3.createCipheriv)(ALGORITHM, key, iv);
   const encrypted = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
   const tag = cipher.getAuthTag();
   const combined = Buffer.concat([iv, tag, encrypted]);
@@ -1575,7 +2015,7 @@ function decrypt(encryptedBase64) {
   const iv = combined.subarray(0, IV_LENGTH);
   const tag = combined.subarray(IV_LENGTH, IV_LENGTH + TAG_LENGTH);
   const ciphertext = combined.subarray(IV_LENGTH + TAG_LENGTH);
-  const decipher = (0, import_crypto2.createDecipheriv)(ALGORITHM, key, iv);
+  const decipher = (0, import_crypto3.createDecipheriv)(ALGORITHM, key, iv);
   decipher.setAuthTag(tag);
   const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
   return decrypted.toString("utf8");
@@ -1591,8 +2031,8 @@ function isEncryptionConfigured() {
   }
 }
 function hashPassword(password) {
-  const salt = (0, import_crypto2.randomBytes)(SALT_LENGTH);
-  const derived = (0, import_crypto2.scryptSync)(password, salt, SCRYPT_KEYLEN);
+  const salt = (0, import_crypto3.randomBytes)(SALT_LENGTH);
+  const derived = (0, import_crypto3.scryptSync)(password, salt, SCRYPT_KEYLEN);
   return `${salt.toString("hex")}:${derived.toString("hex")}`;
 }
 function verifyPassword(password, stored) {
@@ -1600,15 +2040,15 @@ function verifyPassword(password, stored) {
   if (!saltHex || !hashHex) return false;
   const salt = Buffer.from(saltHex, "hex");
   const storedHash = Buffer.from(hashHex, "hex");
-  const derived = (0, import_crypto2.scryptSync)(password, salt, SCRYPT_KEYLEN);
+  const derived = (0, import_crypto3.scryptSync)(password, salt, SCRYPT_KEYLEN);
   if (derived.length !== storedHash.length) return false;
-  return (0, import_crypto2.timingSafeEqual)(derived, storedHash);
+  return (0, import_crypto3.timingSafeEqual)(derived, storedHash);
 }
-var import_crypto2, ALGORITHM, IV_LENGTH, TAG_LENGTH, SCRYPT_KEYLEN, SALT_LENGTH;
+var import_crypto3, ALGORITHM, IV_LENGTH, TAG_LENGTH, SCRYPT_KEYLEN, SALT_LENGTH;
 var init_crypto = __esm({
   "lib/crypto.ts"() {
     "use strict";
-    import_crypto2 = require("crypto");
+    import_crypto3 = require("crypto");
     ALGORITHM = "aes-256-gcm";
     IV_LENGTH = 12;
     TAG_LENGTH = 16;
@@ -1627,8 +2067,8 @@ __export(heygen_exports, {
   listAvatars: () => listAvatars,
   listVoices: () => listVoices
 });
-async function heygenFetch(path24, options = {}) {
-  const response = await fetch(`${HEYGEN_BASE}${path24}`, {
+async function heygenFetch(path26, options = {}) {
+  const response = await fetch(`${HEYGEN_BASE}${path26}`, {
     ...options,
     headers: {
       "X-Api-Key": HEYGEN_KEY(),
@@ -1762,14 +2202,14 @@ function sanitizeSceneId(sceneId) {
 }
 function safeAudioFilename(prefix, sceneId, ext = "mp3") {
   const safe = sanitizeSceneId(sceneId);
-  const rand = import_crypto3.default.randomBytes(4).toString("hex");
+  const rand = import_crypto4.default.randomBytes(4).toString("hex");
   return `${prefix}-${safe}-${Date.now()}-${rand}.${ext}`;
 }
-var import_crypto3, MAX_TTS_TEXT_LENGTH, MAX_SEARCH_QUERY_LENGTH;
+var import_crypto4, MAX_TTS_TEXT_LENGTH, MAX_SEARCH_QUERY_LENGTH;
 var init_sanitize = __esm({
   "lib/audio/sanitize.ts"() {
     "use strict";
-    import_crypto3 = __toESM(require("crypto"));
+    import_crypto4 = __toESM(require("crypto"));
     MAX_TTS_TEXT_LENGTH = 1e4;
     MAX_SEARCH_QUERY_LENGTH = 500;
   }
@@ -1905,7 +2345,7 @@ var init_captions = __esm({
 
 // lib/audio/paths.ts
 function getAudioDir() {
-  return process.env.CENCH_AUDIO_DIR || import_node_path7.default.join(process.cwd(), "public", "audio");
+  return process.env.CENCH_AUDIO_DIR || import_node_path8.default.join(process.cwd(), "public", "audio");
 }
 function audioUrlFor(filename) {
   const raw = process.env.CENCH_AUDIO_URL_BASE || "/audio/";
@@ -1915,11 +2355,11 @@ function audioUrlFor(filename) {
 function isLocalAudioUrl(url) {
   return url.startsWith("/audio/") || url.startsWith("cench://audio/");
 }
-var import_node_path7;
+var import_node_path8;
 var init_paths = __esm({
   "lib/audio/paths.ts"() {
     "use strict";
-    import_node_path7 = __toESM(require("node:path"));
+    import_node_path8 = __toESM(require("node:path"));
   }
 });
 
@@ -1933,12 +2373,12 @@ function getApiKey() {
   if (!key) throw new Error("ELEVENLABS_API_KEY is not set");
   return key;
 }
-var import_promises6, import_path, API_BASE, DEFAULT_VOICE_ID, DEFAULT_MODEL, elevenlabsTTS;
+var import_promises9, import_path3, API_BASE, DEFAULT_VOICE_ID, DEFAULT_MODEL, elevenlabsTTS;
 var init_elevenlabs_tts = __esm({
   "lib/audio/providers/elevenlabs-tts.ts"() {
     "use strict";
-    import_promises6 = __toESM(require("fs/promises"));
-    import_path = __toESM(require("path"));
+    import_promises9 = __toESM(require("fs/promises"));
+    import_path3 = __toESM(require("path"));
     init_sanitize();
     init_captions();
     init_paths();
@@ -1977,10 +2417,10 @@ var init_elevenlabs_tts = __esm({
         const payload = await response.json();
         const audioBuffer = Buffer.from(payload.audio_base64, "base64");
         const audioDir = getAudioDir();
-        await import_promises6.default.mkdir(audioDir, { recursive: true });
+        await import_promises9.default.mkdir(audioDir, { recursive: true });
         const filename = safeAudioFilename("tts", params.sceneId, "mp3");
-        const filePath = import_path.default.join(audioDir, filename);
-        await import_promises6.default.writeFile(filePath, audioBuffer);
+        const filePath = import_path3.default.join(audioDir, filename);
+        await import_promises9.default.writeFile(filePath, audioBuffer);
         const durationEstimate = audioBuffer.length * 8 / (128 * 1e3);
         const result = {
           audioUrl: audioUrlFor(filename),
@@ -1994,8 +2434,8 @@ var init_elevenlabs_tts = __esm({
           const srtName = `${base}.srt`;
           const vttName = `${base}.vtt`;
           await Promise.all([
-            import_promises6.default.writeFile(import_path.default.join(audioDir, srtName), bundle.srt, "utf8"),
-            import_promises6.default.writeFile(import_path.default.join(audioDir, vttName), bundle.vtt, "utf8")
+            import_promises9.default.writeFile(import_path3.default.join(audioDir, srtName), bundle.srt, "utf8"),
+            import_promises9.default.writeFile(import_path3.default.join(audioDir, vttName), bundle.vtt, "utf8")
           ]);
           result.captions = {
             srtUrl: audioUrlFor(srtName),
@@ -2039,12 +2479,12 @@ function getApiKey2() {
   if (!key) throw new Error("OPENAI_API_KEY is not set");
   return key;
 }
-var import_promises7, import_path2, API_URL, DEFAULT_MODEL2, DEFAULT_VOICE, VOICES, openaiTTS;
+var import_promises10, import_path4, API_URL, DEFAULT_MODEL2, DEFAULT_VOICE, VOICES, openaiTTS;
 var init_openai_tts = __esm({
   "lib/audio/providers/openai-tts.ts"() {
     "use strict";
-    import_promises7 = __toESM(require("fs/promises"));
-    import_path2 = __toESM(require("path"));
+    import_promises10 = __toESM(require("fs/promises"));
+    import_path4 = __toESM(require("path"));
     init_sanitize();
     init_paths();
     API_URL = "https://api.openai.com/v1/audio/speech";
@@ -2094,10 +2534,10 @@ var init_openai_tts = __esm({
         }
         const audioBuffer = Buffer.from(await response.arrayBuffer());
         const audioDir = getAudioDir();
-        await import_promises7.default.mkdir(audioDir, { recursive: true });
+        await import_promises10.default.mkdir(audioDir, { recursive: true });
         const filename = safeAudioFilename("tts", params.sceneId, "mp3");
-        const filePath = import_path2.default.join(audioDir, filename);
-        await import_promises7.default.writeFile(filePath, audioBuffer);
+        const filePath = import_path4.default.join(audioDir, filename);
+        await import_promises10.default.writeFile(filePath, audioBuffer);
         const durationEstimate = audioBuffer.length * 8 / (128 * 1e3);
         return {
           audioUrl: audioUrlFor(filename),
@@ -2223,12 +2663,12 @@ async function generateViaGoogleCloudTTS(params, apiKey) {
   const data = await response.json();
   return Buffer.from(data.audioContent, "base64");
 }
-var import_promises8, import_path3, DEFAULT_MODEL3, DEFAULT_VOICE2, GEMINI_VOICES, geminiTTS;
+var import_promises11, import_path5, DEFAULT_MODEL3, DEFAULT_VOICE2, GEMINI_VOICES, geminiTTS;
 var init_gemini_tts = __esm({
   "lib/audio/providers/gemini-tts.ts"() {
     "use strict";
-    import_promises8 = __toESM(require("fs/promises"));
-    import_path3 = __toESM(require("path"));
+    import_promises11 = __toESM(require("fs/promises"));
+    import_path5 = __toESM(require("path"));
     init_sanitize();
     init_paths();
     DEFAULT_MODEL3 = "gemini-2.5-flash-preview-tts";
@@ -2254,7 +2694,7 @@ var init_gemini_tts = __esm({
           throw new Error("Either GEMINI_API_KEY or GOOGLE_TTS_API_KEY must be set for Gemini TTS");
         }
         const audioDir = getAudioDir();
-        await import_promises8.default.mkdir(audioDir, { recursive: true });
+        await import_promises11.default.mkdir(audioDir, { recursive: true });
         let audioBuffer;
         let extension;
         if (geminiKey) {
@@ -2265,8 +2705,8 @@ var init_gemini_tts = __esm({
           extension = "mp3";
         }
         const filename = safeAudioFilename("tts", params.sceneId, extension);
-        const filePath = import_path3.default.join(audioDir, filename);
-        await import_promises8.default.writeFile(filePath, audioBuffer);
+        const filePath = import_path5.default.join(audioDir, filename);
+        await import_promises11.default.writeFile(filePath, audioBuffer);
         let durationEstimate;
         if (extension === "wav") {
           const pcmBytes = audioBuffer.length - 44;
@@ -2298,12 +2738,12 @@ function getApiKey3() {
   if (!key) throw new Error("GOOGLE_TTS_API_KEY is not set");
   return key;
 }
-var import_promises9, import_path4, API_BASE2, DEFAULT_VOICE3, DEFAULT_LANGUAGE, googleTTS;
+var import_promises12, import_path6, API_BASE2, DEFAULT_VOICE3, DEFAULT_LANGUAGE, googleTTS;
 var init_google_tts = __esm({
   "lib/audio/providers/google-tts.ts"() {
     "use strict";
-    import_promises9 = __toESM(require("fs/promises"));
-    import_path4 = __toESM(require("path"));
+    import_promises12 = __toESM(require("fs/promises"));
+    import_path6 = __toESM(require("path"));
     init_sanitize();
     init_paths();
     API_BASE2 = "https://texttospeech.googleapis.com/v1";
@@ -2341,10 +2781,10 @@ var init_google_tts = __esm({
         const data = await response.json();
         const audioBuffer = Buffer.from(data.audioContent, "base64");
         const audioDir = getAudioDir();
-        await import_promises9.default.mkdir(audioDir, { recursive: true });
+        await import_promises12.default.mkdir(audioDir, { recursive: true });
         const filename = safeAudioFilename("tts", params.sceneId, "mp3");
-        const filePath = import_path4.default.join(audioDir, filename);
-        await import_promises9.default.writeFile(filePath, audioBuffer);
+        const filePath = import_path6.default.join(audioDir, filename);
+        await import_promises12.default.writeFile(filePath, audioBuffer);
         const durationEstimate = audioBuffer.length * 8 / (128 * 1e3);
         return {
           audioUrl: audioUrlFor(filename),
@@ -2378,12 +2818,12 @@ __export(openai_edge_tts_exports, {
 function getBaseUrl() {
   return process.env.EDGE_TTS_URL || "http://localhost:5050";
 }
-var import_promises10, import_path5, DEFAULT_VOICE4, EDGE_VOICES, openaiEdgeTTS;
+var import_promises13, import_path7, DEFAULT_VOICE4, EDGE_VOICES, openaiEdgeTTS;
 var init_openai_edge_tts = __esm({
   "lib/audio/providers/openai-edge-tts.ts"() {
     "use strict";
-    import_promises10 = __toESM(require("fs/promises"));
-    import_path5 = __toESM(require("path"));
+    import_promises13 = __toESM(require("fs/promises"));
+    import_path7 = __toESM(require("path"));
     init_sanitize();
     init_paths();
     DEFAULT_VOICE4 = "en-US-AndrewNeural";
@@ -2431,10 +2871,10 @@ var init_openai_edge_tts = __esm({
         }
         const audioBuffer = Buffer.from(await response.arrayBuffer());
         const audioDir = getAudioDir();
-        await import_promises10.default.mkdir(audioDir, { recursive: true });
+        await import_promises13.default.mkdir(audioDir, { recursive: true });
         const filename = safeAudioFilename("tts", params.sceneId, "mp3");
-        const filePath = import_path5.default.join(audioDir, filename);
-        await import_promises10.default.writeFile(filePath, audioBuffer);
+        const filePath = import_path7.default.join(audioDir, filename);
+        await import_promises13.default.writeFile(filePath, audioBuffer);
         const durationEstimate = audioBuffer.length * 8 / (128 * 1e3);
         return {
           audioUrl: audioUrlFor(filename),
@@ -2475,12 +2915,12 @@ __export(pocket_tts_exports, {
 function getBaseUrl2() {
   return process.env.POCKET_TTS_URL || "http://localhost:8000";
 }
-var import_promises11, import_path6, DEFAULT_VOICE5, POCKET_VOICES, VOICE_URLS, pocketTTS;
+var import_promises14, import_path8, DEFAULT_VOICE5, POCKET_VOICES, VOICE_URLS, pocketTTS;
 var init_pocket_tts = __esm({
   "lib/audio/providers/pocket-tts.ts"() {
     "use strict";
-    import_promises11 = __toESM(require("fs/promises"));
-    import_path6 = __toESM(require("path"));
+    import_promises14 = __toESM(require("fs/promises"));
+    import_path8 = __toESM(require("path"));
     init_sanitize();
     init_paths();
     DEFAULT_VOICE5 = "alba";
@@ -2528,10 +2968,10 @@ var init_pocket_tts = __esm({
         }
         const audioBuffer = Buffer.from(await response.arrayBuffer());
         const audioDir = getAudioDir();
-        await import_promises11.default.mkdir(audioDir, { recursive: true });
+        await import_promises14.default.mkdir(audioDir, { recursive: true });
         const filename = safeAudioFilename("tts", params.sceneId, "wav");
-        const filePath = import_path6.default.join(audioDir, filename);
-        await import_promises11.default.writeFile(filePath, audioBuffer);
+        const filePath = import_path8.default.join(audioDir, filename);
+        await import_promises14.default.writeFile(filePath, audioBuffer);
         const headerSize = 44;
         const durationEstimate = Math.max(0, audioBuffer.length - headerSize) / 48e3;
         return {
@@ -2544,11 +2984,11 @@ var init_pocket_tts = __esm({
         return POCKET_VOICES;
       },
       async cloneVoice(params) {
-        const audioDir = import_path6.default.join(getAudioDir(), "voices");
-        await import_promises11.default.mkdir(audioDir, { recursive: true });
+        const audioDir = import_path8.default.join(getAudioDir(), "voices");
+        await import_promises14.default.mkdir(audioDir, { recursive: true });
         const voiceId = `cloned-${Date.now().toString(36)}`;
-        const voicePath = import_path6.default.join(audioDir, `${voiceId}.wav`);
-        await import_promises11.default.writeFile(voicePath, params.audioBuffer);
+        const voicePath = import_path8.default.join(audioDir, `${voiceId}.wav`);
+        await import_promises14.default.writeFile(voicePath, params.audioBuffer);
         return {
           voiceId,
           name: params.name
@@ -2566,12 +3006,12 @@ __export(voxcpm_tts_exports, {
 function getBaseUrl3() {
   return process.env.VOXCPM_URL || "http://localhost:8100";
 }
-var import_promises12, import_path7, DEFAULT_VOICE6, voxcpmTTS;
+var import_promises15, import_path9, DEFAULT_VOICE6, voxcpmTTS;
 var init_voxcpm_tts = __esm({
   "lib/audio/providers/voxcpm-tts.ts"() {
     "use strict";
-    import_promises12 = __toESM(require("fs/promises"));
-    import_path7 = __toESM(require("path"));
+    import_promises15 = __toESM(require("fs/promises"));
+    import_path9 = __toESM(require("path"));
     init_sanitize();
     init_paths();
     DEFAULT_VOICE6 = "default";
@@ -2599,10 +3039,10 @@ var init_voxcpm_tts = __esm({
         }
         const audioBuffer = Buffer.from(await response.arrayBuffer());
         const audioDir = getAudioDir();
-        await import_promises12.default.mkdir(audioDir, { recursive: true });
+        await import_promises15.default.mkdir(audioDir, { recursive: true });
         const filename = safeAudioFilename("tts", params.sceneId, "mp3");
-        const filePath = import_path7.default.join(audioDir, filename);
-        await import_promises12.default.writeFile(filePath, audioBuffer);
+        const filePath = import_path9.default.join(audioDir, filename);
+        await import_promises15.default.writeFile(filePath, audioBuffer);
         const durationEstimate = audioBuffer.length * 8 / (128 * 1e3);
         return {
           audioUrl: audioUrlFor(filename),
@@ -2702,14 +3142,14 @@ function estimateDuration(mp3Bytes) {
 }
 async function generateMac(params, outMp3) {
   const voice = sanitizeVoiceId(params.voiceId || "Samantha");
-  const tmpAiff = import_path8.default.join(import_os.default.tmpdir(), `native-tts-${Date.now()}.aiff`);
+  const tmpAiff = import_path10.default.join(import_os.default.tmpdir(), `native-tts-${Date.now()}.aiff`);
   try {
     await execFileAsync("say", ["-v", voice, "-o", tmpAiff, sanitizeText(params.text)], { timeout: 6e4 });
     await ffmpegConvert(tmpAiff, outMp3);
-    const stat = await import_promises13.default.stat(outMp3);
+    const stat = await import_promises16.default.stat(outMp3);
     return estimateDuration(stat.size);
   } finally {
-    await import_promises13.default.unlink(tmpAiff).catch(() => {
+    await import_promises16.default.unlink(tmpAiff).catch(() => {
     });
   }
 }
@@ -2729,7 +3169,7 @@ async function listVoicesMac() {
 }
 async function generateWin(params, outMp3) {
   const voice = sanitizeVoiceId(params.voiceId || "");
-  const tmpWav = import_path8.default.join(import_os.default.tmpdir(), `native-tts-${Date.now()}.wav`);
+  const tmpWav = import_path10.default.join(import_os.default.tmpdir(), `native-tts-${Date.now()}.wav`);
   const escapedText = sanitizeText(params.text).replace(/'/g, "''");
   const selectVoice = voice ? `$synth.SelectVoice('${voice.replace(/'/g, "''")}')` : "";
   const ps = [
@@ -2743,10 +3183,10 @@ async function generateWin(params, outMp3) {
   try {
     await execFileAsync("powershell", ["-NoProfile", "-Command", ps], { timeout: 6e4 });
     await ffmpegConvert(tmpWav, outMp3);
-    const stat = await import_promises13.default.stat(outMp3);
+    const stat = await import_promises16.default.stat(outMp3);
     return estimateDuration(stat.size);
   } finally {
-    await import_promises13.default.unlink(tmpWav).catch(() => {
+    await import_promises16.default.unlink(tmpWav).catch(() => {
     });
   }
 }
@@ -2771,14 +3211,14 @@ async function listVoicesWin() {
     };
   });
 }
-var import_child_process, import_util, import_promises13, import_path8, import_os, execFileAsync, nativeTTS;
+var import_child_process, import_util, import_promises16, import_path10, import_os, execFileAsync, nativeTTS;
 var init_native_tts = __esm({
   "lib/audio/providers/native-tts.ts"() {
     "use strict";
     import_child_process = require("child_process");
     import_util = require("util");
-    import_promises13 = __toESM(require("fs/promises"));
-    import_path8 = __toESM(require("path"));
+    import_promises16 = __toESM(require("fs/promises"));
+    import_path10 = __toESM(require("path"));
     import_os = __toESM(require("os"));
     init_sanitize();
     init_paths();
@@ -2794,9 +3234,9 @@ var init_native_tts = __esm({
           throw new Error("Native TTS is only available on macOS and Windows");
         }
         const audioDir = getAudioDir();
-        await import_promises13.default.mkdir(audioDir, { recursive: true });
+        await import_promises16.default.mkdir(audioDir, { recursive: true });
         const filename = safeAudioFilename("tts", params.sceneId, "mp3");
-        const outMp3 = import_path8.default.join(audioDir, filename);
+        const outMp3 = import_path10.default.join(audioDir, filename);
         const duration = platform === "darwin" ? await generateMac(params, outMp3) : await generateWin(params, outMp3);
         return {
           audioUrl: audioUrlFor(filename),
@@ -2920,12 +3360,12 @@ async function generateSFX(prompt, duration) {
   }
   const audioBuffer = Buffer.from(await response.arrayBuffer());
   const audioDir = getAudioDir();
-  await import_promises14.default.mkdir(audioDir, { recursive: true });
+  await import_promises17.default.mkdir(audioDir, { recursive: true });
   const timestamp2 = Date.now();
-  const rand = import_crypto4.default.randomBytes(4).toString("hex");
+  const rand = import_crypto5.default.randomBytes(4).toString("hex");
   const filename = `sfx-generated-${timestamp2}-${rand}.mp3`;
-  const filePath = import_path9.default.join(audioDir, filename);
-  await import_promises14.default.writeFile(filePath, audioBuffer);
+  const filePath = import_path11.default.join(audioDir, filename);
+  await import_promises17.default.writeFile(filePath, audioBuffer);
   const durationEstimate = audioBuffer.length * 8 / (128 * 1e3);
   const localUrl = audioUrlFor(filename);
   return {
@@ -2937,13 +3377,13 @@ async function generateSFX(prompt, duration) {
     previewUrl: localUrl
   };
 }
-var import_promises14, import_path9, import_crypto4, API_BASE3, elevenlabsSFX;
+var import_promises17, import_path11, import_crypto5, API_BASE3, elevenlabsSFX;
 var init_elevenlabs_sfx = __esm({
   "lib/audio/providers/elevenlabs-sfx.ts"() {
     "use strict";
-    import_promises14 = __toESM(require("fs/promises"));
-    import_path9 = __toESM(require("path"));
-    import_crypto4 = __toESM(require("crypto"));
+    import_promises17 = __toESM(require("fs/promises"));
+    import_path11 = __toESM(require("path"));
+    import_crypto5 = __toESM(require("crypto"));
     init_paths();
     API_BASE3 = "https://api.elevenlabs.io/v1";
     elevenlabsSFX = {
@@ -3202,116 +3642,6 @@ var init_freesound_music = __esm({
         }));
       }
     };
-  }
-});
-
-// lib/apis/media-cache.ts
-var media_cache_exports = {};
-__export(media_cache_exports, {
-  checkCache: () => checkCache,
-  checkContentCache: () => checkContentCache,
-  computeCacheHash: () => computeCacheHash,
-  computeContentHash: () => computeContentHash,
-  downloadToBuffer: () => downloadToBuffer,
-  saveDownloadedMedia: () => saveDownloadedMedia,
-  saveToCache: () => saveToCache
-});
-function computeCacheHash(params) {
-  const normalized = JSON.stringify(params, Object.keys(params).sort());
-  return import_crypto5.default.createHash("sha256").update(normalized).digest("hex").slice(0, 16);
-}
-async function checkCache(api, params) {
-  const hash = computeCacheHash(params);
-  const cached = await getCachedMedia(hash);
-  if (!cached) return null;
-  const absPath = import_path11.default.join(process.cwd(), "public", cached.filePath);
-  try {
-    await import_promises17.default.access(absPath);
-  } catch {
-    return null;
-  }
-  let metadata = {};
-  if (cached.config) {
-    try {
-      metadata = JSON.parse(cached.config)?._metadata ?? {};
-    } catch {
-    }
-  }
-  return { filePath: cached.filePath, metadata };
-}
-async function saveToCache(api, params, buffer, ext, metadata) {
-  const hash = computeCacheHash(params);
-  const subdir = api === "heygen" ? "avatars" : api === "veo3" ? "videos" : api === "backgroundRemoval" ? "stickers" : "images";
-  const dir = import_path11.default.join(GENERATED_DIR, subdir);
-  await import_promises17.default.mkdir(dir, { recursive: true });
-  const filename = `${hash}.${ext}`;
-  const filePath = import_path11.default.join(dir, filename);
-  await import_promises17.default.writeFile(filePath, buffer);
-  const publicPath = `/generated/${subdir}/${filename}`;
-  const configObj = { ...params, _metadata: metadata ?? {} };
-  await setCachedMedia(
-    hash,
-    api,
-    publicPath,
-    params.prompt ?? "",
-    params.model ?? "",
-    JSON.stringify(configObj)
-  );
-  return publicPath;
-}
-async function downloadToBuffer(url) {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`Download failed: ${response.status}`);
-  const arrayBuffer = await response.arrayBuffer();
-  return Buffer.from(arrayBuffer);
-}
-function computeContentHash(buffer) {
-  return import_crypto5.default.createHash("sha256").update(buffer).digest("hex").slice(0, 16);
-}
-async function checkContentCache(buffer) {
-  const contentHash = computeContentHash(buffer);
-  const cached = await getCachedMedia(contentHash);
-  if (!cached) return null;
-  const absPath = import_path11.default.join(process.cwd(), "public", cached.filePath);
-  try {
-    await import_promises17.default.access(absPath);
-  } catch {
-    return null;
-  }
-  return { filePath: cached.filePath, contentHash };
-}
-async function saveDownloadedMedia(opts) {
-  const { api, sourceUrl, buffer, ext, subdir, metadata } = opts;
-  const contentHash = computeContentHash(buffer);
-  const cached = await getCachedMedia(contentHash);
-  if (cached) {
-    const absPath = import_path11.default.join(process.cwd(), "public", cached.filePath);
-    try {
-      await import_promises17.default.access(absPath);
-      return { publicPath: cached.filePath, contentHash, alreadyCached: true };
-    } catch {
-    }
-  }
-  const subPath = subdir ? `research/${subdir}` : `research/${api}`;
-  const dir = import_path11.default.join(GENERATED_DIR, subPath);
-  await import_promises17.default.mkdir(dir, { recursive: true });
-  const filename = `${contentHash}.${ext}`;
-  const filePath = import_path11.default.join(dir, filename);
-  await import_promises17.default.writeFile(filePath, buffer);
-  const publicPath = `/generated/${subPath}/${filename}`;
-  const configObj = { sourceUrl, _metadata: metadata ?? {} };
-  await setCachedMedia(contentHash, api, publicPath, "", "", JSON.stringify(configObj));
-  return { publicPath, contentHash, alreadyCached: false };
-}
-var import_crypto5, import_promises17, import_path11, GENERATED_DIR;
-var init_media_cache = __esm({
-  "lib/apis/media-cache.ts"() {
-    "use strict";
-    import_crypto5 = __toESM(require("crypto"));
-    import_promises17 = __toESM(require("fs/promises"));
-    import_path11 = __toESM(require("path"));
-    init_db();
-    GENERATED_DIR = import_path11.default.join(process.cwd(), "public", "generated");
   }
 });
 
@@ -4781,7 +5111,7 @@ function normalizeChartLayerFromAi(raw, sceneDuration, _index) {
     duration: typeof timingRaw.duration === "number" && Number.isFinite(timingRaw.duration) && timingRaw.duration > 0 ? timingRaw.duration : Math.max(0.5, dur),
     animated: timingRaw.animated === true
   };
-  const id = typeof o.id === "string" && /^[a-zA-Z0-9_-]+$/.test(o.id) ? o.id : `chart-${(0, import_uuid4.v4)().slice(0, 8)}`;
+  const id = typeof o.id === "string" && /^[a-zA-Z0-9_-]+$/.test(o.id) ? o.id : `chart-${(0, import_uuid5.v4)().slice(0, 8)}`;
   const name = typeof o.name === "string" && o.name.trim() ? o.name.trim().slice(0, 120) : `${chartType} chart`;
   return {
     id,
@@ -4821,11 +5151,11 @@ function autoGridChartLayoutsForLayers(layers2) {
     layout: presets[i] ?? l.layout
   }));
 }
-var import_uuid4, CENCH_CHART_TYPES, TYPE_SET;
+var import_uuid5, CENCH_CHART_TYPES, TYPE_SET;
 var init_structured_d3 = __esm({
   "lib/charts/structured-d3.ts"() {
     "use strict";
-    import_uuid4 = require("uuid");
+    import_uuid5 = require("uuid");
     CENCH_CHART_TYPES = [
       "bar",
       "horizontalBar",
@@ -5239,137 +5569,6 @@ var init_registry2 = __esm({
   }
 });
 
-// lib/apis/image-gen.ts
-var image_gen_exports = {};
-__export(image_gen_exports, {
-  MODEL_COSTS: () => MODEL_COSTS,
-  generateImage: () => generateImage
-});
-function configureFal4() {
-  const key = FAL_KEY();
-  if (key) {
-    fal4.config({ credentials: key });
-  }
-}
-function aspectRatioToSize(ar) {
-  if (ar === "16:9" || ar === "4:3") return "1792x1024";
-  if (ar === "9:16" || ar === "3:4") return "1024x1792";
-  return "1024x1024";
-}
-function aspectRatioToFal(ar) {
-  if (ar === "16:9") return "landscape_16_9";
-  if (ar === "9:16") return "portrait_16_9";
-  if (ar === "4:3") return "landscape_4_3";
-  if (ar === "3:4") return "portrait_4_3";
-  return "square_hd";
-}
-async function generateImage(opts) {
-  const cacheParams = {
-    prompt: opts.prompt,
-    model: opts.model,
-    aspectRatio: opts.aspectRatio,
-    style: opts.style,
-    referenceImageUrl: opts.referenceImageUrl ?? null
-  };
-  if (!opts.skipCache) {
-    const cached = await checkCache("imageGen", cacheParams);
-    if (cached) {
-      return {
-        imageUrl: cached.filePath,
-        width: cached.metadata.width ?? 1024,
-        height: cached.metadata.height ?? 1024,
-        cost: 0
-      };
-    }
-  }
-  const fullPrompt = opts.prompt + (opts.style ? STYLE_PROMPTS[opts.style] ?? "" : "");
-  const cost = MODEL_COSTS[opts.model];
-  if (opts.model === "dall-e-3") {
-    const response = await fetch("https://api.openai.com/v1/images/generations", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${OPENAI_API_KEY()}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: "dall-e-3",
-        prompt: fullPrompt,
-        size: aspectRatioToSize(opts.aspectRatio),
-        quality: "standard",
-        n: 1
-      })
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error?.message ?? "DALL-E 3 generation failed");
-    const imageUrl2 = data.data[0].url;
-    const size = aspectRatioToSize(opts.aspectRatio);
-    const [w2, h2] = size.split("x").map(Number);
-    const buffer2 = await downloadToBuffer(imageUrl2);
-    const publicPath2 = await saveToCache("imageGen", cacheParams, buffer2, "png", { width: w2, height: h2 });
-    return { imageUrl: publicPath2, width: w2, height: h2, cost };
-  }
-  const falModelId = MODEL_IDS2[opts.model];
-  if (!falModelId) throw new Error(`Unknown model: ${opts.model}`);
-  configureFal4();
-  const result = await fal4.subscribe(falModelId, {
-    input: {
-      prompt: fullPrompt,
-      negative_prompt: opts.negativePrompt,
-      image_size: aspectRatioToFal(opts.aspectRatio),
-      num_inference_steps: opts.model === "flux-schnell" ? 4 : 28,
-      guidance_scale: 3.5
-    }
-  });
-  const imageUrl = result.images?.[0]?.url;
-  if (!imageUrl) throw new Error("No image returned from fal.ai");
-  const w = result.images[0].width ?? 1024;
-  const h = result.images[0].height ?? 1024;
-  const buffer = await downloadToBuffer(imageUrl);
-  const publicPath = await saveToCache("imageGen", cacheParams, buffer, "png", { width: w, height: h });
-  return {
-    imageUrl: publicPath,
-    width: w,
-    height: h,
-    cost
-  };
-}
-var fal4, FAL_KEY, OPENAI_API_KEY, MODEL_IDS2, STYLE_PROMPTS, MODEL_COSTS;
-var init_image_gen = __esm({
-  "lib/apis/image-gen.ts"() {
-    "use strict";
-    fal4 = __toESM(require("@fal-ai/serverless-client"));
-    init_media_cache();
-    FAL_KEY = () => process.env.FAL_KEY;
-    OPENAI_API_KEY = () => process.env.OPENAI_API_KEY;
-    MODEL_IDS2 = {
-      "flux-1.1-pro": "fal-ai/flux-pro/v1.1",
-      "flux-schnell": "fal-ai/flux/schnell",
-      "ideogram-v3": "fal-ai/ideogram/v3",
-      "recraft-v3": "fal-ai/recraft-v3",
-      "stable-diffusion-3": "fal-ai/stable-diffusion-v3-medium",
-      "dall-e-3": null
-      // uses OpenAI SDK
-    };
-    STYLE_PROMPTS = {
-      illustration: ", vector illustration style, clean lines",
-      flat: ", flat design, simple shapes, minimal",
-      sketch: ", pencil sketch, hand-drawn, whiteboard style",
-      "3d": ", 3D render, octane render, soft lighting",
-      watercolor: ", watercolor illustration, painted",
-      photorealistic: ", photorealistic, 4K, detailed",
-      pixel: ", pixel art style, retro"
-    };
-    MODEL_COSTS = {
-      "flux-1.1-pro": 0.05,
-      "flux-schnell": 3e-3,
-      "ideogram-v3": 0.08,
-      "recraft-v3": 0.04,
-      "stable-diffusion-3": 0.03,
-      "dall-e-3": 0.04
-    };
-  }
-});
-
 // lib/apis/background-removal.ts
 var background_removal_exports = {};
 __export(background_removal_exports, {
@@ -5393,8 +5592,8 @@ async function removeImageBackground(imageUrl, skipCache = false) {
   configureFal5();
   let input;
   if (imageUrl.startsWith("/")) {
-    const absPath = import_path12.default.join(process.cwd(), "public", imageUrl);
-    const fileBuffer = await import_promises19.default.readFile(absPath);
+    const absPath = import_path13.default.join(process.cwd(), "public", imageUrl);
+    const fileBuffer = await import_promises21.default.readFile(absPath);
     if (fileBuffer.length > 10 * 1024 * 1024) {
       throw new Error("Image too large for background removal (max 10MB)");
     }
@@ -5411,13 +5610,13 @@ async function removeImageBackground(imageUrl, skipCache = false) {
   const publicPath = await saveToCache("backgroundRemoval", cacheParams, buffer, "png");
   return { resultUrl: publicPath, cost: BG_REMOVAL_COST };
 }
-var fal5, import_promises19, import_path12, FAL_KEY2, BG_REMOVAL_COST;
+var fal5, import_promises21, import_path13, FAL_KEY2, BG_REMOVAL_COST;
 var init_background_removal = __esm({
   "lib/apis/background-removal.ts"() {
     "use strict";
     fal5 = __toESM(require("@fal-ai/serverless-client"));
-    import_promises19 = __toESM(require("fs/promises"));
-    import_path12 = __toESM(require("path"));
+    import_promises21 = __toESM(require("fs/promises"));
+    import_path13 = __toESM(require("path"));
     init_media_cache();
     FAL_KEY2 = () => process.env.FAL_KEY;
     BG_REMOVAL_COST = 0.01;
@@ -5425,11 +5624,11 @@ var init_background_removal = __esm({
 });
 
 // electron/main.ts
-var import_path13 = __toESM(require("path"));
+var import_path14 = __toESM(require("path"));
 var import_child_process3 = require("child_process");
 var import_util3 = require("util");
 var import_electron6 = require("electron");
-var import_promises20 = __toESM(require("fs/promises"));
+var import_promises22 = __toESM(require("fs/promises"));
 var import_fs = __toESM(require("fs"));
 var import_url = require("url");
 var import_dotenv = require("dotenv");
@@ -6145,11 +6344,11 @@ function register6(ipcMain2) {
 
 // electron/ipc/projects.ts
 var import_electron2 = require("electron");
-var import_node_path2 = __toESM(require("node:path"));
-var import_promises2 = __toESM(require("node:fs/promises"));
+var import_node_path3 = __toESM(require("node:path"));
+var import_promises5 = __toESM(require("node:fs/promises"));
 init_db();
 init_schema();
-var import_drizzle_orm7 = require("drizzle-orm");
+var import_drizzle_orm8 = require("drizzle-orm");
 
 // lib/charts/normalize-scenes.ts
 init_compile();
@@ -6525,6 +6724,137 @@ async function readProjectScenesFromTables(projectId) {
   return { scenes: outScenes, sceneGraph: outGraph };
 }
 
+// lib/services/assets.ts
+var import_promises4 = __toESM(require("node:fs/promises"));
+var import_node_path2 = __toESM(require("node:path"));
+var import_drizzle_orm7 = require("drizzle-orm");
+init_db();
+init_schema();
+var UUID_RE3 = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+var AssetValidationError = class extends Error {
+  code = "VALIDATION";
+  constructor(message) {
+    super(message);
+    this.name = "AssetValidationError";
+  }
+};
+var AssetNotFoundError = class extends Error {
+  code = "NOT_FOUND";
+  constructor(message) {
+    super(message);
+    this.name = "AssetNotFoundError";
+  }
+};
+function assertProjectId(id) {
+  if (typeof id !== "string" || !UUID_RE3.test(id)) {
+    throw new AssetValidationError("projectId (uuid) is required");
+  }
+}
+async function patchAsset(input) {
+  assertProjectId(input.projectId);
+  if (!input.assetId) throw new AssetValidationError("assetId is required");
+  const updates = {};
+  if (typeof input.name === "string" && input.name.trim()) {
+    updates.name = input.name.trim();
+  }
+  if (Array.isArray(input.tags)) {
+    updates.tags = input.tags.filter((t) => typeof t === "string" && t.trim()).map((t) => t.trim());
+  }
+  if (Object.keys(updates).length === 0) {
+    throw new AssetValidationError("No valid fields to update");
+  }
+  const [updated] = await db.update(projectAssets).set(updates).where((0, import_drizzle_orm7.and)((0, import_drizzle_orm7.eq)(projectAssets.id, input.assetId), (0, import_drizzle_orm7.eq)(projectAssets.projectId, input.projectId))).returning();
+  if (!updated) throw new AssetNotFoundError("Asset not found");
+  return { asset: updated };
+}
+async function deleteAsset(input) {
+  assertProjectId(input.projectId);
+  if (!input.assetId) throw new AssetValidationError("assetId is required");
+  const [asset] = await db.select().from(projectAssets).where((0, import_drizzle_orm7.and)((0, import_drizzle_orm7.eq)(projectAssets.id, input.assetId), (0, import_drizzle_orm7.eq)(projectAssets.projectId, input.projectId)));
+  if (!asset) throw new AssetNotFoundError("Asset not found");
+  try {
+    await import_promises4.default.unlink(asset.storagePath);
+  } catch (e) {
+    const err = e;
+    if (err?.code !== "ENOENT") console.warn("[asset-delete] failed to delete file:", err);
+  }
+  if (asset.thumbnailUrl && asset.thumbnailUrl !== asset.publicUrl) {
+    const thumbPath = import_node_path2.default.join(process.cwd(), "public", asset.thumbnailUrl);
+    try {
+      await import_promises4.default.unlink(thumbPath);
+    } catch (e) {
+      const err = e;
+      if (err?.code !== "ENOENT") console.warn("[asset-delete] failed to delete thumbnail:", err);
+    }
+  }
+  await db.delete(projectAssets).where((0, import_drizzle_orm7.and)((0, import_drizzle_orm7.eq)(projectAssets.id, input.assetId), (0, import_drizzle_orm7.eq)(projectAssets.projectId, input.projectId)));
+  return { success: true };
+}
+function deriveAspect(w, h) {
+  if (!w || !h) return null;
+  const r = w / h;
+  if (r > 1.5) return "16:9";
+  if (r < 0.7) return "9:16";
+  if (r > 1.1) return "4:3";
+  if (r < 0.9) return "3:4";
+  return "1:1";
+}
+async function regenerateAsset(input) {
+  assertProjectId(input.projectId);
+  if (!input.assetId) throw new AssetValidationError("assetId is required");
+  const { generateImage: generateImage2 } = await Promise.resolve().then(() => (init_image_gen(), image_gen_exports));
+  const { logSpend: logSpend2 } = await Promise.resolve().then(() => (init_db(), db_exports));
+  const { persistGeneratedAsset: persistGeneratedAsset2 } = await Promise.resolve().then(() => (init_provenance(), provenance_exports));
+  const { enrichPrompt: enrichPrompt2 } = await Promise.resolve().then(() => (init_prompt_enhancer(), prompt_enhancer_exports));
+  const [parent] = await db.select().from(projectAssets).where((0, import_drizzle_orm7.and)((0, import_drizzle_orm7.eq)(projectAssets.id, input.assetId), (0, import_drizzle_orm7.eq)(projectAssets.projectId, input.projectId))).limit(1);
+  if (!parent) throw new AssetNotFoundError("Asset not found");
+  if (parent.type !== "image") {
+    throw new AssetValidationError("Only image assets are regenerable");
+  }
+  const basePrompt = (input.promptOverride?.trim() || parent.prompt || parent.name || "").toString();
+  if (!basePrompt) {
+    throw new AssetValidationError("Parent has no prompt; pass promptOverride");
+  }
+  const model = input.model ?? parent.model ?? "flux-schnell";
+  const aspectRatio = input.aspectRatio ?? deriveAspect(parent.width, parent.height) ?? "1:1";
+  const enhanceTags = Array.isArray(input.enhanceTags) ? input.enhanceTags : parent.enhanceTags ?? [];
+  const finalPrompt = enrichPrompt2(basePrompt, enhanceTags, model);
+  const result = await generateImage2({
+    prompt: finalPrompt,
+    model,
+    aspectRatio,
+    style: null,
+    skipCache: true
+  });
+  if (result.cost > 0) {
+    await logSpend2(
+      input.projectId,
+      "imageGen",
+      result.cost,
+      `regen ${input.assetId.slice(0, 6)}: ${basePrompt.slice(0, 80)}`
+    );
+  }
+  const persisted = await persistGeneratedAsset2({
+    projectId: input.projectId,
+    sourceUrl: result.imageUrl,
+    type: "image",
+    name: `${parent.name} \u2014 retry`,
+    width: result.width,
+    height: result.height,
+    metadata: {
+      prompt: finalPrompt,
+      provider: "imageGen",
+      model,
+      costCents: Math.round((result.cost ?? 0) * 100),
+      parentAssetId: parent.id,
+      referenceAssetIds: parent.referenceAssetIds ?? null,
+      enhanceTags: enhanceTags.length ? enhanceTags : null
+    }
+  });
+  const [row] = await db.select().from(projectAssets).where((0, import_drizzle_orm7.eq)(projectAssets.id, persisted.id)).limit(1);
+  return { asset: row, cost: result.cost, finalPrompt };
+}
+
 // electron/ipc/projects.ts
 var MAX_PROJECTS_PER_PAGE = 100;
 var MAX_SCENES = 200;
@@ -6545,15 +6875,15 @@ async function list3(args = {}) {
   const limit = Math.min(Math.max(args.limit ?? 50, 1), MAX_PROJECTS_PER_PAGE);
   const conditions = [];
   if (args.workspaceId === "none") {
-    conditions.push((0, import_drizzle_orm7.isNull)(projects.workspaceId));
+    conditions.push((0, import_drizzle_orm8.isNull)(projects.workspaceId));
   } else if (args.workspaceId) {
     assertValidUuid(args.workspaceId, "workspaceId");
-    conditions.push((0, import_drizzle_orm7.eq)(projects.workspaceId, args.workspaceId));
+    conditions.push((0, import_drizzle_orm8.eq)(projects.workspaceId, args.workspaceId));
   }
   if (args.cursor) {
     const cursorDate = new Date(args.cursor);
     if (!isNaN(cursorDate.getTime())) {
-      conditions.push((0, import_drizzle_orm7.lt)(projects.updatedAt, cursorDate));
+      conditions.push((0, import_drizzle_orm8.lt)(projects.updatedAt, cursorDate));
     }
   }
   const rows = await db.select({
@@ -6565,7 +6895,7 @@ async function list3(args = {}) {
     workspaceId: projects.workspaceId,
     updatedAt: projects.updatedAt,
     createdAt: projects.createdAt
-  }).from(projects).where(conditions.length > 0 ? (0, import_drizzle_orm7.and)(...conditions) : void 0).orderBy((0, import_drizzle_orm7.desc)(projects.updatedAt)).limit(paginated ? limit + 1 : limit);
+  }).from(projects).where(conditions.length > 0 ? (0, import_drizzle_orm8.and)(...conditions) : void 0).orderBy((0, import_drizzle_orm8.desc)(projects.updatedAt)).limit(paginated ? limit + 1 : limit);
   if (!paginated) return rows;
   const hasMore = rows.length > limit;
   const items = hasMore ? rows.slice(0, limit) : rows;
@@ -6701,7 +7031,7 @@ async function update3({ projectId, updates }) {
   ]) {
     if (updates[key] !== void 0) updateData[key] = updates[key];
   }
-  const [existing] = await db.select({ description: projects.description, version: projects.version }).from(projects).where((0, import_drizzle_orm7.eq)(projects.id, projectId));
+  const [existing] = await db.select({ description: projects.description, version: projects.version }).from(projects).where((0, import_drizzle_orm8.eq)(projects.id, projectId));
   if (!existing) throw new IpcNotFoundError(`Project ${projectId} not found`);
   const currentVersion = existing.version ?? 1;
   let normalizedScenes = null;
@@ -6722,7 +7052,7 @@ async function update3({ projectId, updates }) {
     });
   }
   updateData.version = currentVersion + 1;
-  const [project] = await db.update(projects).set(updateData).where((0, import_drizzle_orm7.and)((0, import_drizzle_orm7.eq)(projects.id, projectId), (0, import_drizzle_orm7.eq)(projects.version, currentVersion))).returning();
+  const [project] = await db.update(projects).set(updateData).where((0, import_drizzle_orm8.and)((0, import_drizzle_orm8.eq)(projects.id, projectId), (0, import_drizzle_orm8.eq)(projects.version, currentVersion))).returning();
   if (!project) {
     throw new IpcConflictError("Project was modified concurrently. Please retry.");
   }
@@ -6737,15 +7067,15 @@ async function update3({ projectId, updates }) {
   return project;
 }
 function resolveScenesDir() {
-  return import_electron2.app.isPackaged ? import_node_path2.default.join(import_electron2.app.getPath("userData"), "scenes") : import_node_path2.default.join(process.cwd(), "public", "scenes");
+  return import_electron2.app.isPackaged ? import_node_path3.default.join(import_electron2.app.getPath("userData"), "scenes") : import_node_path3.default.join(process.cwd(), "public", "scenes");
 }
 function resolvePublishedDir(projectId) {
-  const base = import_electron2.app.isPackaged ? import_node_path2.default.join(import_electron2.app.getPath("userData"), "published") : import_node_path2.default.join(process.cwd(), "public", "published");
-  return import_node_path2.default.join(base, projectId);
+  const base = import_electron2.app.isPackaged ? import_node_path3.default.join(import_electron2.app.getPath("userData"), "published") : import_node_path3.default.join(process.cwd(), "public", "published");
+  return import_node_path3.default.join(base, projectId);
 }
 async function remove2(projectId) {
   const project = await loadProjectOrThrow(projectId);
-  await db.delete(projects).where((0, import_drizzle_orm7.eq)(projects.id, projectId));
+  await db.delete(projects).where((0, import_drizzle_orm8.eq)(projects.id, projectId));
   const cleanup = async () => {
     const scenesDir = resolveScenesDir();
     const publishedDir = resolvePublishedDir(projectId);
@@ -6753,12 +7083,12 @@ async function remove2(projectId) {
       try {
         const parsed = readProjectSceneBlob(project.description);
         const sceneIds = (parsed.scenes || []).map((s) => s.id);
-        await Promise.allSettled(sceneIds.map((sid) => import_promises2.default.unlink(import_node_path2.default.join(scenesDir, `${sid}.html`)).catch(() => {
+        await Promise.allSettled(sceneIds.map((sid) => import_promises5.default.unlink(import_node_path3.default.join(scenesDir, `${sid}.html`)).catch(() => {
         })));
       } catch {
       }
     }
-    await import_promises2.default.rm(publishedDir, { recursive: true, force: true }).catch(() => {
+    await import_promises5.default.rm(publishedDir, { recursive: true, force: true }).catch(() => {
     });
   };
   cleanup().catch((err) => console.error(`[projects.remove] Cleanup failed for ${projectId}:`, err));
@@ -6766,25 +7096,25 @@ async function remove2(projectId) {
 }
 async function listAssets(args) {
   await loadProjectOrThrow(args.projectId);
-  const conditions = [(0, import_drizzle_orm7.eq)(projectAssets.projectId, args.projectId)];
+  const conditions = [(0, import_drizzle_orm8.eq)(projectAssets.projectId, args.projectId)];
   if (args.type && ["image", "video", "svg"].includes(args.type)) {
-    conditions.push((0, import_drizzle_orm7.eq)(projectAssets.type, args.type));
+    conditions.push((0, import_drizzle_orm8.eq)(projectAssets.type, args.type));
   }
   if (args.source === "upload" || args.source === "generated") {
-    conditions.push((0, import_drizzle_orm7.eq)(projectAssets.source, args.source));
+    conditions.push((0, import_drizzle_orm8.eq)(projectAssets.source, args.source));
   }
-  const assets2 = await db.select().from(projectAssets).where((0, import_drizzle_orm7.and)(...conditions)).orderBy((0, import_drizzle_orm7.desc)(projectAssets.createdAt));
+  const assets2 = await db.select().from(projectAssets).where((0, import_drizzle_orm8.and)(...conditions)).orderBy((0, import_drizzle_orm8.desc)(projectAssets.createdAt));
   return { assets: assets2 };
 }
 async function getBrandKit(projectId) {
   assertValidUuid(projectId, "projectId");
-  const [project] = await db.select({ brandKit: projects.brandKit }).from(projects).where((0, import_drizzle_orm7.eq)(projects.id, projectId));
+  const [project] = await db.select({ brandKit: projects.brandKit }).from(projects).where((0, import_drizzle_orm8.eq)(projects.id, projectId));
   if (!project) throw new IpcNotFoundError(`Project ${projectId} not found`);
   return { brandKit: project.brandKit ?? DEFAULT_BRAND_KIT };
 }
 async function updateBrandKit(args) {
   assertValidUuid(args.projectId, "projectId");
-  const [project] = await db.select({ brandKit: projects.brandKit }).from(projects).where((0, import_drizzle_orm7.eq)(projects.id, args.projectId));
+  const [project] = await db.select({ brandKit: projects.brandKit }).from(projects).where((0, import_drizzle_orm8.eq)(projects.id, args.projectId));
   if (!project) throw new IpcNotFoundError(`Project ${args.projectId} not found`);
   const current = project.brandKit ?? { ...DEFAULT_BRAND_KIT };
   const updated = { ...current };
@@ -6802,7 +7132,7 @@ async function updateBrandKit(args) {
       }
     }
     if (updates.logoAssetIds.length > 0) {
-      const existing = await db.select({ id: projectAssets.id }).from(projectAssets).where((0, import_drizzle_orm7.and)((0, import_drizzle_orm7.eq)(projectAssets.projectId, args.projectId), (0, import_drizzle_orm7.inArray)(projectAssets.id, updates.logoAssetIds)));
+      const existing = await db.select({ id: projectAssets.id }).from(projectAssets).where((0, import_drizzle_orm8.and)((0, import_drizzle_orm8.eq)(projectAssets.projectId, args.projectId), (0, import_drizzle_orm8.inArray)(projectAssets.id, updates.logoAssetIds)));
       const existingIds = new Set(existing.map((a) => a.id));
       updated.logoAssetIds = updates.logoAssetIds.filter((id) => existingIds.has(id));
     } else {
@@ -6821,7 +7151,7 @@ async function updateBrandKit(args) {
   if (typeof updates.guidelines === "string" || updates.guidelines === null) {
     updated.guidelines = updates.guidelines;
   }
-  await db.update(projects).set({ brandKit: updated }).where((0, import_drizzle_orm7.eq)(projects.id, args.projectId));
+  await db.update(projects).set({ brandKit: updated }).where((0, import_drizzle_orm8.eq)(projects.id, args.projectId));
   return { brandKit: updated };
 }
 function register7(ipcMain2) {
@@ -6839,14 +7169,49 @@ function register7(ipcMain2) {
     "cench:projects.updateBrandKit",
     (_e, args) => updateBrandKit(args)
   );
+  const mapAssetError = (err) => {
+    if (err instanceof AssetValidationError) throw new IpcValidationError(err.message);
+    if (err instanceof AssetNotFoundError) throw new IpcNotFoundError(err.message);
+    throw err;
+  };
+  ipcMain2.handle(
+    "cench:projects.patchAsset",
+    async (_e, args) => {
+      try {
+        return await patchAsset(args);
+      } catch (err) {
+        mapAssetError(err);
+      }
+    }
+  );
+  ipcMain2.handle(
+    "cench:projects.deleteAsset",
+    async (_e, args) => {
+      try {
+        return await deleteAsset(args);
+      } catch (err) {
+        mapAssetError(err);
+      }
+    }
+  );
+  ipcMain2.handle(
+    "cench:projects.regenerateAsset",
+    async (_e, args) => {
+      try {
+        return await regenerateAsset(args);
+      } catch (err) {
+        mapAssetError(err);
+      }
+    }
+  );
 }
 
 // lib/db/queries/workspaces.ts
 init_db();
 init_schema();
-var import_drizzle_orm8 = require("drizzle-orm");
+var import_drizzle_orm9 = require("drizzle-orm");
 async function getUserWorkspaces(userId) {
-  const ownerFilter = userId ? (0, import_drizzle_orm8.eq)(workspaces.userId, userId) : (0, import_drizzle_orm8.isNull)(workspaces.userId);
+  const ownerFilter = userId ? (0, import_drizzle_orm9.eq)(workspaces.userId, userId) : (0, import_drizzle_orm9.isNull)(workspaces.userId);
   const rows = await db.select({
     id: workspaces.id,
     name: workspaces.name,
@@ -6856,18 +7221,18 @@ async function getUserWorkspaces(userId) {
     isDefault: workspaces.isDefault,
     isArchived: workspaces.isArchived,
     updatedAt: workspaces.updatedAt,
-    projectCount: import_drizzle_orm8.sql`count(${projects.id})::int`
-  }).from(workspaces).leftJoin(projects, (0, import_drizzle_orm8.eq)(projects.workspaceId, workspaces.id)).where(ownerFilter).groupBy(workspaces.id).orderBy((0, import_drizzle_orm8.desc)(workspaces.updatedAt));
+    projectCount: import_drizzle_orm9.sql`count(${projects.id})::int`
+  }).from(workspaces).leftJoin(projects, (0, import_drizzle_orm9.eq)(projects.workspaceId, workspaces.id)).where(ownerFilter).groupBy(workspaces.id).orderBy((0, import_drizzle_orm9.desc)(workspaces.updatedAt));
   return rows;
 }
 async function getWorkspace(workspaceId) {
   return db.query.workspaces.findFirst({
-    where: (0, import_drizzle_orm8.eq)(workspaces.id, workspaceId)
+    where: (0, import_drizzle_orm9.eq)(workspaces.id, workspaceId)
   });
 }
 async function createWorkspace(data) {
   if (data.isDefault && data.userId) {
-    await db.update(workspaces).set({ isDefault: false }).where((0, import_drizzle_orm8.and)((0, import_drizzle_orm8.eq)(workspaces.userId, data.userId), (0, import_drizzle_orm8.eq)(workspaces.isDefault, true)));
+    await db.update(workspaces).set({ isDefault: false }).where((0, import_drizzle_orm9.and)((0, import_drizzle_orm9.eq)(workspaces.userId, data.userId), (0, import_drizzle_orm9.eq)(workspaces.isDefault, true)));
   }
   const [workspace] = await db.insert(workspaces).values(data).returning();
   return workspace;
@@ -6876,28 +7241,28 @@ async function updateWorkspace(workspaceId, data) {
   if (data.isDefault) {
     const existing = await getWorkspace(workspaceId);
     if (existing?.userId) {
-      await db.update(workspaces).set({ isDefault: false }).where((0, import_drizzle_orm8.and)((0, import_drizzle_orm8.eq)(workspaces.userId, existing.userId), (0, import_drizzle_orm8.eq)(workspaces.isDefault, true)));
+      await db.update(workspaces).set({ isDefault: false }).where((0, import_drizzle_orm9.and)((0, import_drizzle_orm9.eq)(workspaces.userId, existing.userId), (0, import_drizzle_orm9.eq)(workspaces.isDefault, true)));
     }
   }
-  const [workspace] = await db.update(workspaces).set({ ...data, updatedAt: /* @__PURE__ */ new Date() }).where((0, import_drizzle_orm8.eq)(workspaces.id, workspaceId)).returning();
+  const [workspace] = await db.update(workspaces).set({ ...data, updatedAt: /* @__PURE__ */ new Date() }).where((0, import_drizzle_orm9.eq)(workspaces.id, workspaceId)).returning();
   return workspace;
 }
 async function deleteWorkspace(workspaceId) {
-  await db.delete(workspaces).where((0, import_drizzle_orm8.eq)(workspaces.id, workspaceId));
+  await db.delete(workspaces).where((0, import_drizzle_orm9.eq)(workspaces.id, workspaceId));
 }
 async function assignProjectsToWorkspace(workspaceId, projectIds) {
   if (projectIds.length === 0) return;
-  await db.update(projects).set({ workspaceId, updatedAt: /* @__PURE__ */ new Date() }).where(import_drizzle_orm8.sql`${projects.id} = ANY(${projectIds})`);
+  await db.update(projects).set({ workspaceId, updatedAt: /* @__PURE__ */ new Date() }).where(import_drizzle_orm9.sql`${projects.id} = ANY(${projectIds})`);
 }
 async function removeProjectsFromWorkspace(projectIds) {
   if (projectIds.length === 0) return;
-  await db.update(projects).set({ workspaceId: null, updatedAt: /* @__PURE__ */ new Date() }).where(import_drizzle_orm8.sql`${projects.id} = ANY(${projectIds})`);
+  await db.update(projects).set({ workspaceId: null, updatedAt: /* @__PURE__ */ new Date() }).where(import_drizzle_orm9.sql`${projects.id} = ANY(${projectIds})`);
 }
 
 // electron/ipc/workspaces.ts
 init_db();
 init_schema();
-var import_drizzle_orm9 = require("drizzle-orm");
+var import_drizzle_orm10 = require("drizzle-orm");
 var MAX_NAME = 255;
 var MAX_PROJECTS_PER_ASSIGN = 100;
 async function list4() {
@@ -6948,7 +7313,7 @@ async function validateProjectIds(projectIds, label = "projectIds") {
     throw new IpcValidationError(`Maximum ${MAX_PROJECTS_PER_ASSIGN} projects per request`);
   }
   const ids = projectIds.map((id) => assertValidUuid(id, "projectId"));
-  const found = await db.select({ id: projects.id }).from(projects).where((0, import_drizzle_orm9.inArray)(projects.id, ids));
+  const found = await db.select({ id: projects.id }).from(projects).where((0, import_drizzle_orm10.inArray)(projects.id, ids));
   if (found.length !== ids.length) {
     const foundSet = new Set(found.map((r) => r.id));
     const missing = ids.filter((id) => !foundSet.has(id));
@@ -6982,47 +7347,47 @@ function register8(ipcMain2) {
 
 // electron/ipc/publish.ts
 var import_electron3 = require("electron");
-var import_node_path3 = __toESM(require("node:path"));
-var import_promises3 = __toESM(require("node:fs/promises"));
+var import_node_path4 = __toESM(require("node:path"));
+var import_promises6 = __toESM(require("node:fs/promises"));
 var import_node_fs = __toESM(require("node:fs"));
 function scenesSourceDir() {
-  return import_electron3.app.isPackaged ? import_node_path3.default.join(import_electron3.app.getPath("userData"), "scenes") : import_node_path3.default.join(process.cwd(), "public", "scenes");
+  return import_electron3.app.isPackaged ? import_node_path4.default.join(import_electron3.app.getPath("userData"), "scenes") : import_node_path4.default.join(process.cwd(), "public", "scenes");
 }
 function publishBase() {
-  return import_electron3.app.isPackaged ? import_node_path3.default.join(import_electron3.app.getPath("userData"), "published") : import_node_path3.default.join(process.cwd(), "public", "published");
+  return import_electron3.app.isPackaged ? import_node_path4.default.join(import_electron3.app.getPath("userData"), "published") : import_node_path4.default.join(process.cwd(), "public", "published");
 }
 function uploadsDir() {
-  return import_electron3.app.isPackaged ? import_node_path3.default.join(import_electron3.app.getPath("userData"), "uploads") : import_node_path3.default.join(process.cwd(), "public", "uploads");
+  return import_electron3.app.isPackaged ? import_node_path4.default.join(import_electron3.app.getPath("userData"), "uploads") : import_node_path4.default.join(process.cwd(), "public", "uploads");
 }
 async function publish(args) {
   if (!args.project?.id || !args.scenes?.length) {
     throw new IpcValidationError("Missing project or scenes");
   }
   await loadProjectOrThrow(args.project.id);
-  const publishDir = import_node_path3.default.join(publishBase(), args.project.id);
-  const scenesDir = import_node_path3.default.join(publishDir, "scenes");
-  const assetsDir = import_node_path3.default.join(publishDir, "assets");
-  await import_promises3.default.mkdir(scenesDir, { recursive: true });
-  await import_promises3.default.mkdir(assetsDir, { recursive: true });
+  const publishDir = import_node_path4.default.join(publishBase(), args.project.id);
+  const scenesDir = import_node_path4.default.join(publishDir, "scenes");
+  const assetsDir = import_node_path4.default.join(publishDir, "assets");
+  await import_promises6.default.mkdir(scenesDir, { recursive: true });
+  await import_promises6.default.mkdir(assetsDir, { recursive: true });
   const publishedScenes = [];
   const missingSceneIds = [];
   const srcScenesDir = scenesSourceDir();
   for (const scene of args.scenes) {
     assertValidUuid(scene.id, "scene.id");
-    const srcPath = import_node_path3.default.resolve(import_node_path3.default.join(srcScenesDir, `${scene.id}.html`));
-    const destPath = import_node_path3.default.resolve(import_node_path3.default.join(scenesDir, `${scene.id}.html`));
-    if (!srcPath.startsWith(srcScenesDir + import_node_path3.default.sep) || !destPath.startsWith(scenesDir + import_node_path3.default.sep)) {
+    const srcPath = import_node_path4.default.resolve(import_node_path4.default.join(srcScenesDir, `${scene.id}.html`));
+    const destPath = import_node_path4.default.resolve(import_node_path4.default.join(scenesDir, `${scene.id}.html`));
+    if (!srcPath.startsWith(srcScenesDir + import_node_path4.default.sep) || !destPath.startsWith(scenesDir + import_node_path4.default.sep)) {
       throw new IpcValidationError("Invalid scene id (path escape)");
     }
     try {
-      await import_promises3.default.access(srcPath);
+      await import_promises6.default.access(srcPath);
     } catch {
       console.warn(`[publish] Scene HTML missing: ${scene.id}.html`);
       missingSceneIds.push(scene.id);
       continue;
     }
     try {
-      await import_promises3.default.copyFile(srcPath, destPath);
+      await import_promises6.default.copyFile(srcPath, destPath);
     } catch (e) {
       console.error(`[publish] Failed to copy scene HTML for ${scene.id}:`, e);
       missingSceneIds.push(scene.id);
@@ -7051,13 +7416,13 @@ async function publish(args) {
   const uploads = uploadsDir();
   if (import_node_fs.default.existsSync(uploads)) {
     try {
-      const files = await import_promises3.default.readdir(uploads);
+      const files = await import_promises6.default.readdir(uploads);
       for (const file of files) {
-        const src = import_node_path3.default.join(uploads, file);
-        const dest = import_node_path3.default.join(assetsDir, file);
+        const src = import_node_path4.default.join(uploads, file);
+        const dest = import_node_path4.default.join(assetsDir, file);
         try {
-          const stat = await import_promises3.default.stat(src);
-          if (stat.isFile()) await import_promises3.default.copyFile(src, dest);
+          const stat = await import_promises6.default.stat(src);
+          if (stat.isFile()) await import_promises6.default.copyFile(src, dest);
         } catch {
         }
       }
@@ -7065,10 +7430,10 @@ async function publish(args) {
       console.warn("[publish] uploads copy failed:", e);
     }
   }
-  const manifestPath = import_node_path3.default.join(publishDir, "manifest.json");
+  const manifestPath = import_node_path4.default.join(publishDir, "manifest.json");
   let version = 1;
   try {
-    const existing = JSON.parse(await import_promises3.default.readFile(manifestPath, "utf-8"));
+    const existing = JSON.parse(await import_promises6.default.readFile(manifestPath, "utf-8"));
     version = (existing.version ?? 0) + 1;
   } catch {
   }
@@ -7087,7 +7452,7 @@ async function publish(args) {
     sceneGraph: args.project.sceneGraph,
     scenes: publishedScenes
   };
-  await import_promises3.default.writeFile(manifestPath, JSON.stringify(manifest, null, 2));
+  await import_promises6.default.writeFile(manifestPath, JSON.stringify(manifest, null, 2));
   return { publishedUrl: `/v/${args.project.id}`, version };
 }
 function register9(ipcMain2) {
@@ -7096,11 +7461,11 @@ function register9(ipcMain2) {
 
 // electron/ipc/scene.ts
 var import_electron4 = require("electron");
-var import_node_path4 = __toESM(require("node:path"));
-var import_promises4 = __toESM(require("node:fs/promises"));
+var import_node_path5 = __toESM(require("node:path"));
+var import_promises7 = __toESM(require("node:fs/promises"));
 init_db();
 init_schema();
-var import_drizzle_orm10 = require("drizzle-orm");
+var import_drizzle_orm11 = require("drizzle-orm");
 
 // lib/dimensions.ts
 var DIMENSION_TABLE = {
@@ -12335,7 +12700,7 @@ var TALKING_HEAD_AVATAR_MODELS = [
     path: `${TALKING_HEAD_SAMPLE_CDN_BASE}/avatarsdk.glb`
   }
 ];
-var MODEL_IDS = new Set(TALKING_HEAD_AVATAR_MODELS.map((m) => m.id));
+var MODEL_IDS2 = new Set(TALKING_HEAD_AVATAR_MODELS.map((m) => m.id));
 var PATH_BY_ID = Object.fromEntries(TALKING_HEAD_AVATAR_MODELS.map((m) => [m.id, m.path]));
 var DEFAULT_TALKING_HEAD_MODEL_BY_CHARACTER = {
   friendly: "brunette",
@@ -12343,7 +12708,7 @@ var DEFAULT_TALKING_HEAD_MODEL_BY_CHARACTER = {
   energetic: "brunette"
 };
 function isTalkingHeadModelId(id) {
-  return !!id && MODEL_IDS.has(id);
+  return !!id && MODEL_IDS2.has(id);
 }
 function getTalkingHeadGlbPath(modelId) {
   if (isTalkingHeadModelId(modelId)) return PATH_BY_ID[modelId];
@@ -14255,10 +14620,10 @@ function generateWorldHTML(scene, style, audioSettings, dims) {
   const appBaseUrl = process.env.NEXT_PUBLIC_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
   if (typeof window === "undefined") {
     try {
-      const fs21 = require("fs");
+      const fs23 = require("fs");
       const pathMod = require("path");
       const templatePath = pathMod.join(process.cwd(), "public", "worlds", worldHtmlFile);
-      let templateHTML = fs21.readFileSync(templatePath, "utf-8");
+      let templateHTML = fs23.readFileSync(templatePath, "utf-8");
       const configScript = `<script>
     window.__worldConfig = ${configJSON};
     window.DURATION = ${scene.duration ?? 10};
@@ -15325,7 +15690,7 @@ function generateSVGHTML(scene, style, audioSettings, dims) {
 
 // electron/ipc/scene.ts
 function resolveScenesDir2() {
-  return import_electron4.app.isPackaged ? import_node_path4.default.join(import_electron4.app.getPath("userData"), "scenes") : import_node_path4.default.join(process.cwd(), "public", "scenes");
+  return import_electron4.app.isPackaged ? import_node_path5.default.join(import_electron4.app.getPath("userData"), "scenes") : import_node_path5.default.join(process.cwd(), "public", "scenes");
 }
 var SCENE_ID_RE = /^[a-zA-Z0-9_-]+$/;
 var MAX_HTML_BYTES = 5 * 1024 * 1024;
@@ -15340,19 +15705,19 @@ async function writeHtml(args) {
     throw new IpcValidationError("HTML body exceeds 5MB limit");
   }
   const scenesDir = resolveScenesDir2();
-  await import_promises4.default.mkdir(scenesDir, { recursive: true });
-  const destPath = import_node_path4.default.resolve(import_node_path4.default.join(scenesDir, `${args.id}.html`));
-  if (!destPath.startsWith(scenesDir + import_node_path4.default.sep)) {
+  await import_promises7.default.mkdir(scenesDir, { recursive: true });
+  const destPath = import_node_path5.default.resolve(import_node_path5.default.join(scenesDir, `${args.id}.html`));
+  if (!destPath.startsWith(scenesDir + import_node_path5.default.sep)) {
     throw new IpcValidationError("Invalid scene id (path escape)");
   }
-  await import_promises4.default.writeFile(destPath, args.html, "utf-8");
+  await import_promises7.default.writeFile(destPath, args.html, "utf-8");
   return { success: true, path: `/scenes/${args.id}.html` };
 }
 async function get4(args) {
   assertValidUuid(args.projectId, "projectId");
   assertValidUuid(args.sceneId, "sceneId");
   await loadProjectOrThrow(args.projectId);
-  const [project] = await db.select({ description: projects.description }).from(projects).where((0, import_drizzle_orm10.eq)(projects.id, args.projectId)).limit(1);
+  const [project] = await db.select({ description: projects.description }).from(projects).where((0, import_drizzle_orm11.eq)(projects.id, args.projectId)).limit(1);
   if (!project) throw new IpcNotFoundError(`Project ${args.projectId} not found`);
   const tableBacked = await readProjectScenesFromTables(args.projectId);
   const scenes2 = tableBacked?.scenes ?? readProjectSceneBlob(project.description).scenes;
@@ -15379,12 +15744,12 @@ async function generateWorld(args) {
     resolveProjectDimensions(args.aspectRatio, args.resolution)
   );
   const scenesDir = resolveScenesDir2();
-  await import_promises4.default.mkdir(scenesDir, { recursive: true });
-  const destPath = import_node_path4.default.resolve(import_node_path4.default.join(scenesDir, `${args.scene.id}.html`));
-  if (!destPath.startsWith(scenesDir + import_node_path4.default.sep)) {
+  await import_promises7.default.mkdir(scenesDir, { recursive: true });
+  const destPath = import_node_path5.default.resolve(import_node_path5.default.join(scenesDir, `${args.scene.id}.html`));
+  if (!destPath.startsWith(scenesDir + import_node_path5.default.sep)) {
     throw new IpcValidationError("Invalid scene id (path escape)");
   }
-  await import_promises4.default.writeFile(destPath, html, "utf-8");
+  await import_promises7.default.writeFile(destPath, html, "utf-8");
   return { success: true, path: `/scenes/${args.scene.id}.html` };
 }
 function register10(ipcMain2) {
@@ -15394,14 +15759,14 @@ function register10(ipcMain2) {
 }
 
 // electron/ipc/media.ts
-var import_node_path6 = __toESM(require("node:path"));
-var import_promises5 = __toESM(require("node:fs/promises"));
-var import_uuid = require("uuid");
+var import_node_path7 = __toESM(require("node:path"));
+var import_promises8 = __toESM(require("node:fs/promises"));
+var import_uuid2 = require("uuid");
 
 // lib/uploads/paths.ts
-var import_node_path5 = __toESM(require("node:path"));
+var import_node_path6 = __toESM(require("node:path"));
 function getUploadsDir() {
-  return process.env.CENCH_UPLOADS_DIR || import_node_path5.default.join(process.cwd(), "public", "uploads");
+  return process.env.CENCH_UPLOADS_DIR || import_node_path6.default.join(process.cwd(), "public", "uploads");
 }
 function uploadsUrlFor(relativePath) {
   const raw = process.env.CENCH_UPLOADS_URL_BASE || "/uploads/";
@@ -15445,13 +15810,13 @@ async function upload(args) {
     }
   }
   const uploadsDir2 = getUploadsDir();
-  await import_promises5.default.mkdir(uploadsDir2, { recursive: true });
-  const filename = `${(0, import_uuid.v4)()}.${ext}`;
-  const destPath = import_node_path6.default.resolve(import_node_path6.default.join(uploadsDir2, filename));
-  if (!destPath.startsWith(uploadsDir2 + import_node_path6.default.sep)) {
+  await import_promises8.default.mkdir(uploadsDir2, { recursive: true });
+  const filename = `${(0, import_uuid2.v4)()}.${ext}`;
+  const destPath = import_node_path7.default.resolve(import_node_path7.default.join(uploadsDir2, filename));
+  if (!destPath.startsWith(uploadsDir2 + import_node_path7.default.sep)) {
     throw new IpcValidationError("Invalid upload path (escape)");
   }
-  await import_promises5.default.writeFile(destPath, buffer);
+  await import_promises8.default.writeFile(destPath, buffer);
   return { url: uploadsUrlFor(filename), filename };
 }
 function register11(ipcMain2) {
@@ -15461,7 +15826,7 @@ function register11(ipcMain2) {
 // electron/ipc/avatar-configs.ts
 init_db();
 init_schema();
-var import_drizzle_orm11 = require("drizzle-orm");
+var import_drizzle_orm12 = require("drizzle-orm");
 
 // lib/avatar/providers/talkinghead.ts
 var talkingHeadProvider = {
@@ -15494,10 +15859,10 @@ var talkingHeadProvider = {
 };
 
 // lib/avatar/providers/musetalk.ts
-var fal = __toESM(require("@fal-ai/serverless-client"));
-function configureFal() {
+var fal2 = __toESM(require("@fal-ai/serverless-client"));
+function configureFal2() {
   const key = process.env.FAL_KEY;
-  if (key) fal.config({ credentials: key });
+  if (key) fal2.config({ credentials: key });
 }
 var museTalkProvider = {
   id: "musetalk",
@@ -15506,8 +15871,8 @@ var museTalkProvider = {
   requiresImage: true,
   estimateCost: () => 0.04,
   async generate(input, config6) {
-    configureFal();
-    const result = await fal.subscribe("fal-ai/musetalk", {
+    configureFal2();
+    const result = await fal2.subscribe("fal-ai/musetalk", {
       input: {
         source_video_url: input.sourceImageUrl,
         audio_url: input.audioUrl
@@ -15523,10 +15888,10 @@ var museTalkProvider = {
 };
 
 // lib/avatar/providers/fabric.ts
-var fal2 = __toESM(require("@fal-ai/serverless-client"));
-function configureFal2() {
+var fal3 = __toESM(require("@fal-ai/serverless-client"));
+function configureFal3() {
   const key = process.env.FAL_KEY;
-  if (key) fal2.config({ credentials: key });
+  if (key) fal3.config({ credentials: key });
 }
 var fabricProvider = {
   id: "fabric",
@@ -15535,10 +15900,10 @@ var fabricProvider = {
   requiresImage: true,
   estimateCost: (duration) => duration * 0.08,
   async generate(input, config6) {
-    configureFal2();
+    configureFal3();
     const resolution = config6.resolution || "480p";
     const costPerSec = resolution === "720p" ? 0.15 : 0.08;
-    const result = await fal2.subscribe("veed/fabric-1.0", {
+    const result = await fal3.subscribe("veed/fabric-1.0", {
       input: {
         image_url: input.sourceImageUrl,
         audio_url: input.audioUrl,
@@ -15555,10 +15920,10 @@ var fabricProvider = {
 };
 
 // lib/avatar/providers/aurora.ts
-var fal3 = __toESM(require("@fal-ai/serverless-client"));
-function configureFal3() {
+var fal4 = __toESM(require("@fal-ai/serverless-client"));
+function configureFal4() {
   const key = process.env.FAL_KEY;
-  if (key) fal3.config({ credentials: key });
+  if (key) fal4.config({ credentials: key });
 }
 var auroraProvider = {
   id: "aurora",
@@ -15567,8 +15932,8 @@ var auroraProvider = {
   requiresImage: true,
   estimateCost: (duration) => duration * 0.05,
   async generate(input, config6) {
-    configureFal3();
-    const result = await fal3.subscribe("creatify/aurora", {
+    configureFal4();
+    const result = await fal4.subscribe("creatify/aurora", {
       input: {
         image_url: input.sourceImageUrl,
         audio_url: input.audioUrl
@@ -15669,7 +16034,7 @@ var AvatarService = class {
 async function list5(args) {
   assertValidUuid(args.projectId, "projectId");
   await loadProjectOrThrow(args.projectId);
-  const configs = await db.select().from(avatarConfigs).where((0, import_drizzle_orm11.eq)(avatarConfigs.projectId, args.projectId)).orderBy(avatarConfigs.createdAt);
+  const configs = await db.select().from(avatarConfigs).where((0, import_drizzle_orm12.eq)(avatarConfigs.projectId, args.projectId)).orderBy(avatarConfigs.createdAt);
   return { configs, providers: AvatarService.getAllProviders() };
 }
 async function create4(args) {
@@ -15682,7 +16047,7 @@ async function create4(args) {
     throw new IpcValidationError("name is required");
   }
   if (args.isDefault) {
-    await db.update(avatarConfigs).set({ isDefault: false }).where((0, import_drizzle_orm11.eq)(avatarConfigs.projectId, args.projectId));
+    await db.update(avatarConfigs).set({ isDefault: false }).where((0, import_drizzle_orm12.eq)(avatarConfigs.projectId, args.projectId));
   }
   const [created] = await db.insert(avatarConfigs).values({
     projectId: args.projectId,
@@ -15698,7 +16063,7 @@ async function update5(args) {
   assertValidUuid(args.configId, "configId");
   await loadProjectOrThrow(args.projectId);
   if (args.isDefault) {
-    await db.update(avatarConfigs).set({ isDefault: false }).where((0, import_drizzle_orm11.eq)(avatarConfigs.projectId, args.projectId));
+    await db.update(avatarConfigs).set({ isDefault: false }).where((0, import_drizzle_orm12.eq)(avatarConfigs.projectId, args.projectId));
   }
   const updates = {};
   if (args.provider !== void 0) updates.provider = args.provider;
@@ -15706,7 +16071,7 @@ async function update5(args) {
   if (args.config !== void 0) updates.config = args.config;
   if (args.isDefault !== void 0) updates.isDefault = args.isDefault;
   if (args.thumbnailUrl !== void 0) updates.thumbnailUrl = args.thumbnailUrl;
-  const [updated] = await db.update(avatarConfigs).set(updates).where((0, import_drizzle_orm11.and)((0, import_drizzle_orm11.eq)(avatarConfigs.id, args.configId), (0, import_drizzle_orm11.eq)(avatarConfigs.projectId, args.projectId))).returning();
+  const [updated] = await db.update(avatarConfigs).set(updates).where((0, import_drizzle_orm12.and)((0, import_drizzle_orm12.eq)(avatarConfigs.id, args.configId), (0, import_drizzle_orm12.eq)(avatarConfigs.projectId, args.projectId))).returning();
   if (!updated) throw new IpcNotFoundError(`Config ${args.configId} not found`);
   return updated;
 }
@@ -15714,7 +16079,7 @@ async function remove4(args) {
   assertValidUuid(args.projectId, "projectId");
   assertValidUuid(args.configId, "configId");
   await loadProjectOrThrow(args.projectId);
-  const [deleted] = await db.delete(avatarConfigs).where((0, import_drizzle_orm11.and)((0, import_drizzle_orm11.eq)(avatarConfigs.id, args.configId), (0, import_drizzle_orm11.eq)(avatarConfigs.projectId, args.projectId))).returning();
+  const [deleted] = await db.delete(avatarConfigs).where((0, import_drizzle_orm12.and)((0, import_drizzle_orm12.eq)(avatarConfigs.id, args.configId), (0, import_drizzle_orm12.eq)(avatarConfigs.projectId, args.projectId))).returning();
   if (!deleted) throw new IpcNotFoundError(`Config ${args.configId} not found`);
   return { success: true };
 }
@@ -15728,8 +16093,8 @@ function register12(ipcMain2) {
 // electron/ipc/zdog-library.ts
 init_db();
 init_schema();
-var import_drizzle_orm12 = require("drizzle-orm");
-var import_uuid2 = require("uuid");
+var import_drizzle_orm13 = require("drizzle-orm");
+var import_uuid3 = require("uuid");
 function parseBlob(description) {
   if (!description) return {};
   try {
@@ -15741,7 +16106,7 @@ function parseBlob(description) {
 async function list6(args) {
   assertValidUuid(args.projectId, "projectId");
   await loadProjectOrThrow(args.projectId);
-  const [project] = await db.select({ description: projects.description }).from(projects).where((0, import_drizzle_orm12.eq)(projects.id, args.projectId)).limit(1);
+  const [project] = await db.select({ description: projects.description }).from(projects).where((0, import_drizzle_orm13.eq)(projects.id, args.projectId)).limit(1);
   if (!project) throw new IpcNotFoundError("Project not found");
   const blob = parseBlob(project.description);
   return {
@@ -15756,7 +16121,7 @@ async function save(args) {
   await loadProjectOrThrow(args.projectId);
   if (!args.name || typeof args.name !== "string") throw new IpcValidationError("name is required");
   const tags = args.tags ?? [];
-  const [existing] = await db.select({ description: projects.description, version: projects.version }).from(projects).where((0, import_drizzle_orm12.eq)(projects.id, args.projectId)).limit(1);
+  const [existing] = await db.select({ description: projects.description, version: projects.version }).from(projects).where((0, import_drizzle_orm13.eq)(projects.id, args.projectId)).limit(1);
   if (!existing) throw new IpcNotFoundError("Project not found");
   const currentVersion = existing.version ?? 1;
   const blob = parseBlob(existing.description);
@@ -15766,7 +16131,7 @@ async function save(args) {
   if (args.assetType === "studio") {
     if (!args.shapes?.length) throw new IpcValidationError("shapes are required for studio assets");
     asset = {
-      id: (0, import_uuid2.v4)(),
+      id: (0, import_uuid3.v4)(),
       name: args.name.slice(0, 120),
       shapes: args.shapes,
       tags,
@@ -15777,7 +16142,7 @@ async function save(args) {
   } else {
     if (!args.formula) throw new IpcValidationError("formula is required for person assets");
     asset = {
-      id: (0, import_uuid2.v4)(),
+      id: (0, import_uuid3.v4)(),
       name: args.name.slice(0, 120),
       formula: args.formula,
       tags,
@@ -15790,7 +16155,7 @@ async function save(args) {
     description: JSON.stringify(updatedBlob),
     version: currentVersion + 1,
     updatedAt: /* @__PURE__ */ new Date()
-  }).where((0, import_drizzle_orm12.and)((0, import_drizzle_orm12.eq)(projects.id, args.projectId), (0, import_drizzle_orm12.eq)(projects.version, currentVersion))).returning({ id: projects.id });
+  }).where((0, import_drizzle_orm13.and)((0, import_drizzle_orm13.eq)(projects.id, args.projectId), (0, import_drizzle_orm13.eq)(projects.version, currentVersion))).returning({ id: projects.id });
   if (!updated) throw new IpcConflictError("Project was modified concurrently. Please retry.");
   return { success: true, asset };
 }
@@ -15798,7 +16163,7 @@ async function remove5(args) {
   assertValidUuid(args.projectId, "projectId");
   if (!args.id || typeof args.id !== "string") throw new IpcValidationError("id is required");
   await loadProjectOrThrow(args.projectId);
-  const [existing] = await db.select({ description: projects.description, version: projects.version }).from(projects).where((0, import_drizzle_orm12.eq)(projects.id, args.projectId)).limit(1);
+  const [existing] = await db.select({ description: projects.description, version: projects.version }).from(projects).where((0, import_drizzle_orm13.eq)(projects.id, args.projectId)).limit(1);
   if (!existing) throw new IpcNotFoundError("Project not found");
   const currentVersion = existing.version ?? 1;
   const blob = parseBlob(existing.description);
@@ -15813,7 +16178,7 @@ async function remove5(args) {
     description: JSON.stringify({ ...blob, zdogLibrary: newPerson, zdogStudioLibrary: newStudio }),
     version: currentVersion + 1,
     updatedAt: /* @__PURE__ */ new Date()
-  }).where((0, import_drizzle_orm12.and)((0, import_drizzle_orm12.eq)(projects.id, args.projectId), (0, import_drizzle_orm12.eq)(projects.version, currentVersion))).returning({ id: projects.id });
+  }).where((0, import_drizzle_orm13.and)((0, import_drizzle_orm13.eq)(projects.id, args.projectId), (0, import_drizzle_orm13.eq)(projects.version, currentVersion))).returning({ id: projects.id });
   if (!updated) throw new IpcConflictError("Project was modified concurrently. Please retry.");
   return { success: true };
 }
@@ -15824,8 +16189,8 @@ function register13(ipcMain2) {
 }
 
 // lib/services/audio.ts
-var import_promises16 = __toESM(require("node:fs/promises"));
-var import_node_path8 = __toESM(require("node:path"));
+var import_promises19 = __toESM(require("node:fs/promises"));
+var import_node_path9 = __toESM(require("node:path"));
 
 // lib/audio/router.ts
 var ttsProviders = {
@@ -15882,8 +16247,8 @@ async function getMusicProvider(id) {
 }
 
 // lib/audio/download.ts
-var import_promises15 = __toESM(require("fs/promises"));
-var import_path10 = __toESM(require("path"));
+var import_promises18 = __toESM(require("fs/promises"));
+var import_path12 = __toESM(require("path"));
 init_paths();
 var ALLOWED_HOSTS = /* @__PURE__ */ new Set([
   "freesound.org",
@@ -15922,15 +16287,15 @@ async function downloadToLocal(remoteUrl, prefix = "dl") {
   }
   validateDownloadUrl(remoteUrl);
   const audioDir = getAudioDir();
-  await import_promises15.default.mkdir(audioDir, { recursive: true });
+  await import_promises18.default.mkdir(audioDir, { recursive: true });
   let ext = ".mp3";
   try {
     const urlPath = new URL(remoteUrl).pathname;
-    ext = import_path10.default.extname(urlPath) || ".mp3";
+    ext = import_path12.default.extname(urlPath) || ".mp3";
   } catch {
   }
   const filename = `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`;
-  const filePath = import_path10.default.join(audioDir, filename);
+  const filePath = import_path12.default.join(audioDir, filename);
   const res = await fetch(remoteUrl);
   if (!res.ok) {
     throw new Error(`Failed to download audio: ${res.status} ${res.statusText}`);
@@ -15943,7 +16308,7 @@ async function downloadToLocal(remoteUrl, prefix = "dl") {
   if (buffer.length > MAX_DOWNLOAD_BYTES) {
     throw new Error("Audio file too large to download");
   }
-  await import_promises15.default.writeFile(filePath, buffer);
+  await import_promises18.default.writeFile(filePath, buffer);
   return audioUrlFor(filename);
 }
 
@@ -16238,13 +16603,13 @@ async function synthesizeTTS(input) {
     if (bundle.words.length > 0 && bundle.srt.length > 0) {
       try {
         const audioDir = getAudioDir();
-        await import_promises16.default.mkdir(audioDir, { recursive: true });
+        await import_promises19.default.mkdir(audioDir, { recursive: true });
         const base = result.audioUrl.replace(/^(cench:\/\/audio\/|\/audio\/)/, "").replace(/\.[a-z0-9]+$/i, "");
         const srtName = `${base}.srt`;
         const vttName = `${base}.vtt`;
         await Promise.all([
-          import_promises16.default.writeFile(import_node_path8.default.join(audioDir, srtName), bundle.srt, "utf8"),
-          import_promises16.default.writeFile(import_node_path8.default.join(audioDir, vttName), bundle.vtt, "utf8")
+          import_promises19.default.writeFile(import_node_path9.default.join(audioDir, srtName), bundle.srt, "utf8"),
+          import_promises19.default.writeFile(import_node_path9.default.join(audioDir, vttName), bundle.vtt, "utf8")
         ]);
         result.captions = {
           srtUrl: audioUrlFor(srtName),
@@ -16374,15 +16739,15 @@ function register14(ipcMain2) {
 }
 
 // lib/services/ingest.ts
-var import_promises18 = __toESM(require("node:fs/promises"));
-var import_node_path9 = __toESM(require("node:path"));
-var import_uuid3 = require("uuid");
+var import_promises20 = __toESM(require("node:fs/promises"));
+var import_node_path10 = __toESM(require("node:path"));
+var import_uuid4 = require("uuid");
 var import_node_child_process = require("node:child_process");
 var import_node_util = require("node:util");
-var import_sharp = __toESM(require("sharp"));
+var import_sharp2 = __toESM(require("sharp"));
 init_db();
 init_schema();
-var import_drizzle_orm13 = require("drizzle-orm");
+var import_drizzle_orm14 = require("drizzle-orm");
 
 // lib/ingest/yt-dlp.ts
 var import_child_process2 = require("child_process");
@@ -16527,7 +16892,7 @@ function assertPublicHttpUrl(urlString, opts = {}) {
 
 // lib/services/ingest.ts
 var execFileAsync3 = (0, import_node_util.promisify)(import_node_child_process.execFile);
-var UUID_RE3 = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+var UUID_RE4 = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 var MAX_DURATION_SEC = 600;
 var MAX_FILE_SIZE_BYTES = 200 * 1024 * 1024;
 var INGESTED_SUBDIR = "ingested";
@@ -16545,13 +16910,13 @@ var YtDlpMissingError = class extends Error {
     this.name = "YtDlpMissingError";
   }
 };
-function assertProjectId(projectId) {
-  if (typeof projectId !== "string" || !UUID_RE3.test(projectId)) {
+function assertProjectId2(projectId) {
+  if (typeof projectId !== "string" || !UUID_RE4.test(projectId)) {
     throw new IngestValidationError("projectId (uuid) is required");
   }
 }
 function ingestedDir(projectId) {
-  return import_node_path9.default.join(getUploadsDir(), "projects", projectId, INGESTED_SUBDIR);
+  return import_node_path10.default.join(getUploadsDir(), "projects", projectId, INGESTED_SUBDIR);
 }
 function ingestedUrl(projectId, filename) {
   return uploadsUrlFor(`projects/${projectId}/${INGESTED_SUBDIR}/${filename}`);
@@ -16566,7 +16931,7 @@ async function ingestUrl(input) {
     if (e instanceof UrlGuardError) throw new IngestValidationError(e.message);
     throw e;
   }
-  assertProjectId(input.projectId);
+  assertProjectId2(input.projectId);
   if (!input.formatId) {
     try {
       const info = await probe(input.url);
@@ -16587,10 +16952,10 @@ async function ingestUrl(input) {
       throw new Error(`yt-dlp probe failed: ${e.message}`, { cause: e });
     }
   }
-  const assetId = (0, import_uuid3.v4)();
+  const assetId = (0, import_uuid4.v4)();
   const uploadsDir2 = ingestedDir(input.projectId);
-  await import_promises18.default.mkdir(uploadsDir2, { recursive: true });
-  const storagePath = import_node_path9.default.join(uploadsDir2, `${assetId}.mp4`);
+  await import_promises20.default.mkdir(uploadsDir2, { recursive: true });
+  const storagePath = import_node_path10.default.join(uploadsDir2, `${assetId}.mp4`);
   let result;
   let downloadSucceeded = false;
   try {
@@ -16608,23 +16973,23 @@ async function ingestUrl(input) {
     }
   } finally {
     if (!downloadSucceeded) {
-      await import_promises18.default.unlink(storagePath).catch(() => {
+      await import_promises20.default.unlink(storagePath).catch(() => {
       });
     }
   }
-  const stat = await import_promises18.default.stat(storagePath);
+  const stat = await import_promises20.default.stat(storagePath);
   if (stat.size > MAX_FILE_SIZE_BYTES) {
-    await import_promises18.default.unlink(storagePath).catch(() => {
+    await import_promises20.default.unlink(storagePath).catch(() => {
     });
     throw new IngestValidationError(
       `Downloaded file is ${Math.round(stat.size / 1024 / 1024)} MB, exceeds ${MAX_FILE_SIZE_BYTES / 1024 / 1024} MB cap.`
     );
   }
-  const fileBuffer = await import_promises18.default.readFile(storagePath);
+  const fileBuffer = await import_promises20.default.readFile(storagePath);
   const contentHash = computeContentHash(fileBuffer);
-  const existing = await db.select().from(projectAssets).where((0, import_drizzle_orm13.and)((0, import_drizzle_orm13.eq)(projectAssets.projectId, input.projectId), (0, import_drizzle_orm13.eq)(projectAssets.contentHash, contentHash))).limit(1);
+  const existing = await db.select().from(projectAssets).where((0, import_drizzle_orm14.and)((0, import_drizzle_orm14.eq)(projectAssets.projectId, input.projectId), (0, import_drizzle_orm14.eq)(projectAssets.contentHash, contentHash))).limit(1);
   if (existing.length > 0) {
-    await import_promises18.default.unlink(storagePath).catch(() => {
+    await import_promises20.default.unlink(storagePath).catch(() => {
     });
     return {
       mode: "download",
@@ -16637,7 +17002,7 @@ async function ingestUrl(input) {
   let thumbnailUrl = null;
   try {
     const thumbFilename = `${assetId}_thumb.jpg`;
-    const thumbPath = import_node_path9.default.join(uploadsDir2, thumbFilename);
+    const thumbPath = import_node_path10.default.join(uploadsDir2, thumbFilename);
     await execFileAsync3("ffmpeg", ["-i", storagePath, "-vframes", "1", "-vf", "scale=300:-1", "-y", thumbPath], {
       timeout: 3e4
     });
@@ -16689,7 +17054,7 @@ var MIME_TO_TYPE = {
 function extFromUrl(url) {
   try {
     const u = new URL(url);
-    const ext = import_node_path9.default.extname(u.pathname).toLowerCase().slice(1);
+    const ext = import_node_path10.default.extname(u.pathname).toLowerCase().slice(1);
     return ext || null;
   } catch {
     return null;
@@ -16706,7 +17071,7 @@ function typeFromExt(ext) {
 function deriveNameFromUrl(url) {
   try {
     const u = new URL(url);
-    const name = import_node_path9.default.basename(u.pathname).replace(/\.[^.]+$/, "").replace(/[-_]/g, " ");
+    const name = import_node_path10.default.basename(u.pathname).replace(/\.[^.]+$/, "").replace(/[-_]/g, " ");
     return name || u.hostname;
   } catch {
     return "Imported media";
@@ -16722,7 +17087,7 @@ async function ingestDirect(input) {
     if (e instanceof UrlGuardError) throw new IngestValidationError(e.message);
     throw e;
   }
-  assertProjectId(input.projectId);
+  assertProjectId2(input.projectId);
   const head = await fetch(input.url, { method: "HEAD" }).catch(() => null);
   const contentType = head?.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase();
   const contentLength = head?.headers.get("content-length");
@@ -16759,23 +17124,23 @@ async function ingestDirect(input) {
     );
   }
   const contentHash = computeContentHash(buffer);
-  const existing = await db.select().from(projectAssets).where((0, import_drizzle_orm13.and)((0, import_drizzle_orm13.eq)(projectAssets.projectId, input.projectId), (0, import_drizzle_orm13.eq)(projectAssets.contentHash, contentHash))).limit(1);
+  const existing = await db.select().from(projectAssets).where((0, import_drizzle_orm14.and)((0, import_drizzle_orm14.eq)(projectAssets.projectId, input.projectId), (0, import_drizzle_orm14.eq)(projectAssets.contentHash, contentHash))).limit(1);
   if (existing.length > 0) {
     return { asset: existing[0], contentHash, sourceUrl: input.url, deduped: true };
   }
-  const assetId = (0, import_uuid3.v4)();
+  const assetId = (0, import_uuid4.v4)();
   const uploadsDir2 = ingestedDir(input.projectId);
-  await import_promises18.default.mkdir(uploadsDir2, { recursive: true });
+  await import_promises20.default.mkdir(uploadsDir2, { recursive: true });
   let effectiveExt = typeInfo.ext;
   const needsTranscode = typeInfo.type === "video" && (typeInfo.ext === "ogv" || typeInfo.ext === "mov");
   const rawFilename = `${assetId}.${typeInfo.ext}`;
-  const rawPath = import_node_path9.default.join(uploadsDir2, rawFilename);
-  await import_promises18.default.writeFile(rawPath, buffer);
+  const rawPath = import_node_path10.default.join(uploadsDir2, rawFilename);
+  await import_promises20.default.writeFile(rawPath, buffer);
   let storedFilename = rawFilename;
   let storagePath = rawPath;
   if (needsTranscode) {
     const mp4Filename = `${assetId}.mp4`;
-    const mp4Path = import_node_path9.default.join(uploadsDir2, mp4Filename);
+    const mp4Path = import_node_path10.default.join(uploadsDir2, mp4Filename);
     try {
       await execFileAsync3(
         "ffmpeg",
@@ -16797,7 +17162,7 @@ async function ingestDirect(input) {
         ],
         { timeout: 18e4 }
       );
-      await import_promises18.default.unlink(rawPath).catch(() => {
+      await import_promises20.default.unlink(rawPath).catch(() => {
       });
       storedFilename = mp4Filename;
       storagePath = mp4Path;
@@ -16813,12 +17178,12 @@ async function ingestDirect(input) {
   let thumbnailUrl = null;
   if (typeInfo.type === "image") {
     try {
-      const meta = await (0, import_sharp.default)(buffer).metadata();
+      const meta = await (0, import_sharp2.default)(buffer).metadata();
       width = meta.width ?? null;
       height = meta.height ?? null;
       const thumbFilename = `${assetId}_thumb.jpg`;
-      const thumbPath = import_node_path9.default.join(uploadsDir2, thumbFilename);
-      await (0, import_sharp.default)(buffer, { animated: false }).resize(300, null, { withoutEnlargement: true }).jpeg({ quality: 80 }).toFile(thumbPath);
+      const thumbPath = import_node_path10.default.join(uploadsDir2, thumbFilename);
+      await (0, import_sharp2.default)(buffer, { animated: false }).resize(300, null, { withoutEnlargement: true }).jpeg({ quality: 80 }).toFile(thumbPath);
       thumbnailUrl = ingestedUrl(input.projectId, thumbFilename);
     } catch {
     }
@@ -16840,7 +17205,7 @@ async function ingestDirect(input) {
     }
     try {
       const thumbFilename = `${assetId}_thumb.jpg`;
-      const thumbPath = import_node_path9.default.join(uploadsDir2, thumbFilename);
+      const thumbPath = import_node_path10.default.join(uploadsDir2, thumbFilename);
       await execFileAsync3("ffmpeg", ["-i", storagePath, "-vframes", "1", "-vf", "scale=300:-1", "-y", thumbPath], {
         timeout: 3e4
       });
@@ -16860,7 +17225,7 @@ async function ingestDirect(input) {
     publicUrl,
     type: typeInfo.type,
     mimeType: storedMime,
-    sizeBytes: (await import_promises18.default.stat(storagePath)).size,
+    sizeBytes: (await import_promises20.default.stat(storagePath)).size,
     width,
     height,
     durationSeconds,
@@ -17238,8 +17603,8 @@ new Zdog.Rect({ addTo: module_${mod.id}, width: 20, height: 1.2, stroke: 0.5, co
 }
 function buildLineChart(mod) {
   const data = mod.data && mod.data.length ? mod.data : [2, 4, 3, 6, 5];
-  const path24 = data.map((v, i) => `{ x: ${(-8 + i * 4).toFixed(2)}, y: ${(-v * 1.7).toFixed(2)}, z: 0 }`).join(", ");
-  return `new Zdog.Shape({ addTo: module_${mod.id}, path: [${path24}], closed: false, stroke: 1.1, color: ${colorExpr(
+  const path26 = data.map((v, i) => `{ x: ${(-8 + i * 4).toFixed(2)}, y: ${(-v * 1.7).toFixed(2)}, z: 0 }`).join(", ");
+  return `new Zdog.Shape({ addTo: module_${mod.id}, path: [${path26}], closed: false, stroke: 1.1, color: ${colorExpr(
     mod.color,
     "PALETTE[2]"
   )} });
@@ -18158,14 +18523,14 @@ function hasValidHandles(kf) {
   if (o.x.length === 0 || o.y.length === 0) return false;
   return true;
 }
-function validateKeyframes(keyframes, propName, path24, result, opts) {
+function validateKeyframes(keyframes, propName, path26, result, opts) {
   let fixCount = 0;
   const dims = dimensionsForProperty(propName);
   for (let i = 0; i < keyframes.length - 1; i++) {
     const kf = keyframes[i];
     if (!isObject(kf)) continue;
     if (!hasValidHandles(kf)) {
-      const msg = `${path24}[${i}]: missing or invalid easing handles`;
+      const msg = `${path26}[${i}]: missing or invalid easing handles`;
       if (opts.fix) {
         const handles = easingToLottieHandles(opts.fixEasing, dims);
         kf.i = handles.i;
@@ -18194,29 +18559,29 @@ function validateKeyframes(keyframes, propName, path24, result, opts) {
       }
     }
     if (allLinear) {
-      result.warnings.push(`${path24}: position uses linear easing \u2014 motion may look robotic`);
+      result.warnings.push(`${path26}: position uses linear easing \u2014 motion may look robotic`);
     }
   }
   return fixCount;
 }
-function walkObject(obj, path24, propName, result, opts) {
+function walkObject(obj, path26, propName, result, opts) {
   if (!isObject(obj)) return;
   if ("a" in obj && "k" in obj) {
     const animated = obj.a;
     const k = obj.k;
     if (animated === 1 && isArray(k) && k.length > 0 && isObject(k[0])) {
-      result.fixCount += validateKeyframes(k, propName, path24, result, opts);
+      result.fixCount += validateKeyframes(k, propName, path26, result, opts);
       return;
     }
   }
   for (const key of Object.keys(obj)) {
     const val = obj[key];
     if (isObject(val)) {
-      walkObject(val, `${path24}.${key}`, key, result, opts);
+      walkObject(val, `${path26}.${key}`, key, result, opts);
     } else if (isArray(val)) {
       for (let i = 0; i < val.length; i++) {
         if (isObject(val[i])) {
-          walkObject(val[i], `${path24}.${key}[${i}]`, key, result, opts);
+          walkObject(val[i], `${path26}.${key}[${i}]`, key, result, opts);
         }
       }
     }
@@ -18961,18 +19326,18 @@ function registerAllIpc(ipcMain2) {
 
 // electron/paths.ts
 var import_electron5 = require("electron");
-var import_node_path10 = __toESM(require("node:path"));
+var import_node_path11 = __toESM(require("node:path"));
 function getUserScenesDir() {
-  return import_node_path10.default.join(import_electron5.app.getPath("userData"), "scenes");
+  return import_node_path11.default.join(import_electron5.app.getPath("userData"), "scenes");
 }
 function getUserUploadsDir() {
-  return import_node_path10.default.join(import_electron5.app.getPath("userData"), "uploads");
+  return import_node_path11.default.join(import_electron5.app.getPath("userData"), "uploads");
 }
 function getUserAudioDir() {
-  return import_node_path10.default.join(import_electron5.app.getPath("userData"), "audio");
+  return import_node_path11.default.join(import_electron5.app.getPath("userData"), "audio");
 }
 function getStaticAppDir() {
-  return import_node_path10.default.join(__dirname, "..", "out");
+  return import_node_path11.default.join(__dirname, "..", "out");
 }
 
 // electron/main.ts
@@ -18985,12 +19350,12 @@ function loadEnvFiles() {
     }
   };
   if (import_electron6.app.isPackaged) {
-    tryLoad(import_path13.default.join(import_electron6.app.getPath("userData"), "cench.env"));
-    tryLoad(import_path13.default.join(process.resourcesPath, ".env.defaults"));
+    tryLoad(import_path14.default.join(import_electron6.app.getPath("userData"), "cench.env"));
+    tryLoad(import_path14.default.join(process.resourcesPath, ".env.defaults"));
   } else {
-    const repoRoot = import_path13.default.resolve(__dirname, "..");
-    tryLoad(import_path13.default.join(repoRoot, ".env.local"));
-    tryLoad(import_path13.default.join(repoRoot, ".env"));
+    const repoRoot = import_path14.default.resolve(__dirname, "..");
+    tryLoad(import_path14.default.join(repoRoot, ".env.local"));
+    tryLoad(import_path14.default.join(repoRoot, ".env"));
   }
 }
 loadEnvFiles();
@@ -19018,13 +19383,13 @@ import_electron6.protocol.registerSchemesAsPrivileged([
   }
 ]);
 async function registerCenchProtocol() {
-  const staticDir = import_path13.default.resolve(getStaticAppDir());
-  const scenesDir = import_path13.default.resolve(getUserScenesDir());
-  const uploadsDir2 = import_path13.default.resolve(getUserUploadsDir());
-  const audioDir = import_path13.default.resolve(getUserAudioDir());
-  await import_promises20.default.mkdir(scenesDir, { recursive: true });
-  await import_promises20.default.mkdir(uploadsDir2, { recursive: true });
-  await import_promises20.default.mkdir(audioDir, { recursive: true });
+  const staticDir = import_path14.default.resolve(getStaticAppDir());
+  const scenesDir = import_path14.default.resolve(getUserScenesDir());
+  const uploadsDir2 = import_path14.default.resolve(getUserUploadsDir());
+  const audioDir = import_path14.default.resolve(getUserAudioDir());
+  await import_promises22.default.mkdir(scenesDir, { recursive: true });
+  await import_promises22.default.mkdir(uploadsDir2, { recursive: true });
+  await import_promises22.default.mkdir(audioDir, { recursive: true });
   import_electron6.protocol.handle("cench", async (request) => {
     try {
       const url = new URL(request.url);
@@ -19042,26 +19407,26 @@ async function registerCenchProtocol() {
       } else {
         return new Response(`Unknown cench:// host "${host}"`, { status: 404 });
       }
-      let filePath = import_path13.default.resolve(baseDir, rawPath || "index.html");
-      if (!filePath.startsWith(baseDir + import_path13.default.sep) && filePath !== baseDir) {
+      let filePath = import_path14.default.resolve(baseDir, rawPath || "index.html");
+      if (!filePath.startsWith(baseDir + import_path14.default.sep) && filePath !== baseDir) {
         return new Response("Forbidden", { status: 403 });
       }
       try {
-        const stat = await import_promises20.default.stat(filePath);
-        if (stat.isDirectory()) filePath = import_path13.default.join(filePath, "index.html");
+        const stat = await import_promises22.default.stat(filePath);
+        if (stat.isDirectory()) filePath = import_path14.default.join(filePath, "index.html");
       } catch {
         if (!filePath.endsWith(".html")) {
           const htmlVariant = `${filePath}.html`;
           try {
-            await import_promises20.default.access(htmlVariant);
+            await import_promises22.default.access(htmlVariant);
             filePath = htmlVariant;
           } catch {
           }
         }
       }
       try {
-        const realPath = await import_promises20.default.realpath(filePath);
-        if (!realPath.startsWith(baseDir + import_path13.default.sep) && realPath !== baseDir) {
+        const realPath = await import_promises22.default.realpath(filePath);
+        if (!realPath.startsWith(baseDir + import_path14.default.sep) && realPath !== baseDir) {
           return new Response("Forbidden (symlink escape)", { status: 403 });
         }
         filePath = realPath;
@@ -19086,7 +19451,7 @@ function createWindow() {
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 12, y: 16 },
     webPreferences: {
-      preload: import_path13.default.join(__dirname, "preload.js"),
+      preload: import_path14.default.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
       autoplayPolicy: "no-user-gesture-required"
@@ -19317,8 +19682,8 @@ import_electron6.app.whenReady().then(async () => {
     return { ok: true };
   });
   import_electron6.ipcMain.handle("cench:writeFile", async (_evt, args) => {
-    await import_promises20.default.mkdir(import_path13.default.dirname(args.filePath), { recursive: true });
-    await import_promises20.default.writeFile(args.filePath, Buffer.from(args.bytes));
+    await import_promises22.default.mkdir(import_path14.default.dirname(args.filePath), { recursive: true });
+    await import_promises22.default.writeFile(args.filePath, Buffer.from(args.bytes));
     return { ok: true };
   });
   import_electron6.ipcMain.handle(
@@ -19326,11 +19691,11 @@ import_electron6.app.whenReady().then(async () => {
     async (_evt, args) => {
       const extRaw = (args.extension || "webm").toLowerCase().replace(/[^a-z0-9]/g, "");
       const ext = extRaw || "webm";
-      const dir = import_path13.default.join(import_electron6.app.getPath("userData"), "recordings");
-      await import_promises20.default.mkdir(dir, { recursive: true });
+      const dir = import_path14.default.join(import_electron6.app.getPath("userData"), "recordings");
+      await import_promises22.default.mkdir(dir, { recursive: true });
       const safeBase = sanitizeFilename(args.nameHint || "");
-      const filePath = import_path13.default.join(dir, `${safeBase}-${Date.now()}.${ext}`);
-      await import_promises20.default.writeFile(filePath, Buffer.from(args.bytes));
+      const filePath = import_path14.default.join(dir, `${safeBase}-${Date.now()}.${ext}`);
+      await import_promises22.default.writeFile(filePath, Buffer.from(args.bytes));
       const fileUrl = (0, import_url.pathToFileURL)(filePath).href;
       return { ok: true, filePath, fileUrl };
     }
@@ -19341,16 +19706,16 @@ import_electron6.app.whenReady().then(async () => {
       const inputs = (args.inputs ?? []).filter(Boolean);
       if (inputs.length === 0) throw new Error("concatMp4: no input files");
       if (inputs.length === 1) {
-        await import_promises20.default.copyFile(inputs[0], args.output);
+        await import_promises22.default.copyFile(inputs[0], args.output);
         if (args.cleanup) {
-          await import_promises20.default.unlink(inputs[0]).catch(() => {
+          await import_promises22.default.unlink(inputs[0]).catch(() => {
           });
         }
         return { ok: true };
       }
       const transitions = args.transitions ?? [];
       try {
-        const stitcherPath = import_electron6.app.isPackaged ? import_path13.default.join(process.resourcesPath, "render-server", "stitcher.js") : import_path13.default.join(process.cwd(), "render-server", "stitcher.js");
+        const stitcherPath = import_electron6.app.isPackaged ? import_path14.default.join(process.resourcesPath, "render-server", "stitcher.js") : import_path14.default.join(process.cwd(), "render-server", "stitcher.js");
         const mod = await import((0, import_url.pathToFileURL)(stitcherPath).href);
         const stitchScenes = mod?.stitchScenes;
         if (typeof stitchScenes !== "function") {
@@ -19363,7 +19728,7 @@ import_electron6.app.whenReady().then(async () => {
         await stitchScenes(inputs, stitchedTransitions, args.output);
       } finally {
         if (args.cleanup) {
-          await Promise.all(inputs.map((p) => import_promises20.default.unlink(p).catch(() => {
+          await Promise.all(inputs.map((p) => import_promises22.default.unlink(p).catch(() => {
           })));
         }
       }
@@ -19413,14 +19778,14 @@ import_electron6.app.whenReady().then(async () => {
       if (!args.screenBytes || args.screenBytes.byteLength === 0) {
         throw new Error("Screen recording is empty \u2014 nothing to save");
       }
-      const dir = import_path13.default.join(import_electron6.app.getPath("userData"), "recordings");
-      await import_promises20.default.mkdir(dir, { recursive: true });
+      const dir = import_path14.default.join(import_electron6.app.getPath("userData"), "recordings");
+      await import_promises22.default.mkdir(dir, { recursive: true });
       const ts = Date.now();
       const safeBase = sanitizeFilename(args.nameHint || "");
       const writtenFiles = [];
       try {
-        const screenPath = import_path13.default.join(dir, `${safeBase}-${ts}.webm`);
-        await import_promises20.default.writeFile(screenPath, Buffer.from(args.screenBytes));
+        const screenPath = import_path14.default.join(dir, `${safeBase}-${ts}.webm`);
+        await import_promises22.default.writeFile(screenPath, Buffer.from(args.screenBytes));
         writtenFiles.push(screenPath);
         const result = {
           screenVideoPath: screenPath,
@@ -19428,17 +19793,17 @@ import_electron6.app.whenReady().then(async () => {
           createdAt: ts
         };
         if (args.webcamBytes && args.webcamBytes.byteLength > 0) {
-          const webcamPath = import_path13.default.join(dir, `${safeBase}-${ts}-webcam.webm`);
-          await import_promises20.default.writeFile(webcamPath, Buffer.from(args.webcamBytes));
+          const webcamPath = import_path14.default.join(dir, `${safeBase}-${ts}-webcam.webm`);
+          await import_promises22.default.writeFile(webcamPath, Buffer.from(args.webcamBytes));
           writtenFiles.push(webcamPath);
           result.webcamVideoPath = webcamPath;
           result.webcamVideoUrl = (0, import_url.pathToFileURL)(webcamPath).href;
         }
-        const manifestPath = import_path13.default.join(dir, `${safeBase}-${ts}.session.json`);
-        await import_promises20.default.writeFile(manifestPath, JSON.stringify(result, null, 2));
+        const manifestPath = import_path14.default.join(dir, `${safeBase}-${ts}.session.json`);
+        await import_promises22.default.writeFile(manifestPath, JSON.stringify(result, null, 2));
         return result;
       } catch (err) {
-        await Promise.all(writtenFiles.map((f) => import_promises20.default.unlink(f).catch(() => {
+        await Promise.all(writtenFiles.map((f) => import_promises22.default.unlink(f).catch(() => {
         })));
         throw err;
       }
