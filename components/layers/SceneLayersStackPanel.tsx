@@ -6,6 +6,7 @@ import {
   Atom,
   BarChart3,
   Box,
+  Camera,
   ChevronDown,
   ChevronRight,
   ChevronUp,
@@ -15,6 +16,7 @@ import {
   EyeOff,
   Film,
   Globe,
+  Hash,
   Image as ImageIcon,
   Layers,
   LayoutTemplate,
@@ -22,6 +24,7 @@ import {
   Music,
   Palette,
   Sparkles,
+  SplitSquareHorizontal,
   Type,
   User,
   Volume2,
@@ -251,6 +254,29 @@ export function labelForKey(scene: Scene, key: StackKey): string {
     }
     return id ?? 'Element'
   }
+  if (kind === 'camera') {
+    const n = scene.cameraMotion?.length ?? 0
+    return n > 0 ? `Camera (${n})` : 'Camera'
+  }
+  if (kind === 'transition')
+    return scene.transition && scene.transition !== 'none' ? `Transition: ${scene.transition}` : 'Transition'
+  if (kind === 'style') return 'Style Override'
+  if (kind === 'variables') {
+    const n = scene.variables?.length ?? 0
+    return n > 0 ? `Variables (${n})` : 'Variables'
+  }
+  if (kind === 'tts') {
+    const t = (scene.audioLayer?.tts?.text ?? '').trim()
+    return t ? `TTS · ${t.slice(0, 28)}${t.length > 28 ? '…' : ''}` : 'Narration'
+  }
+  if (kind === 'music') {
+    const name = (scene.audioLayer?.music?.name ?? '').trim()
+    return name ? `Music · ${name.slice(0, 28)}${name.length > 28 ? '…' : ''}` : 'Music'
+  }
+  if (kind === 'sfx' && id) {
+    const s = (scene.audioLayer?.sfx ?? []).find((x) => x.id === id)
+    return s?.name ?? 'SFX'
+  }
   return kind
 }
 
@@ -401,6 +427,20 @@ export function iconForKey(scene: Scene, key: StackKey) {
       if (sub === 'image') return ImageIcon
       return Sparkles
     }
+    case 'camera':
+      return Camera
+    case 'transition':
+      return SplitSquareHorizontal
+    case 'style':
+      return Palette
+    case 'variables':
+      return Hash
+    case 'tts':
+      return Volume2
+    case 'music':
+      return Music
+    case 'sfx':
+      return Volume2
     default:
       return Layers
   }

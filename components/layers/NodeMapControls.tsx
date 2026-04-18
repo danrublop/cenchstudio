@@ -1,8 +1,18 @@
 'use client'
 
 import { useCallback, useMemo, useRef, useEffect } from 'react'
-import { ChevronDown, ChevronRight, ChevronUp, Eye, EyeOff, Trash2 } from 'lucide-react'
-import type { Scene, TextOverlay, AILayer, D3ChartLayer, PhysicsLayer, InteractionElement } from '@/lib/types'
+import { ChevronDown, ChevronRight, ChevronUp, Eye, EyeOff, Plus, Trash2 } from 'lucide-react'
+import type {
+  Scene,
+  TextOverlay,
+  AILayer,
+  D3ChartLayer,
+  PhysicsLayer,
+  InteractionElement,
+  CameraMove,
+  SceneStyleOverride,
+  SceneVariable,
+} from '@/lib/types'
 import { BG_STAGE_STACK_KEY, type LayerStackKey, parseLayerStackKey, pinLayerStackTail } from '@/lib/layer-stack-keys'
 import { useVideoStore } from '@/lib/store'
 import { buildDefaultOrder, mergeOrder, labelForKey, iconForKey } from './SceneLayersStackPanel'
@@ -10,6 +20,7 @@ import type { NodeMapKey } from './NodeMapCanvas'
 import type { SceneElement } from '@/lib/types/elements'
 import { getElementPropertyMap } from '@/lib/types/elements'
 import { patchElementInIframe } from '@/lib/scene-patcher'
+import { TRANSITION_UI_GROUPS, type TransitionType } from '@/lib/transitions'
 import { ColorPicker } from '@/components/inspector/controls/ColorPicker'
 import { SliderInput } from '@/components/inspector/controls/SliderInput'
 import { SelectInput as InspectorSelect } from '@/components/inspector/controls/SelectInput'
@@ -19,6 +30,15 @@ import { TextareaInput } from '@/components/inspector/controls/TextareaInput'
 
 let _nodeMapSaveTimer: ReturnType<typeof setTimeout> | null = null
 let _bgSaveTimer: ReturnType<typeof setTimeout> | null = null
+
+// Virtual rows appended to the drilled node-map stack for scene-level properties.
+const EXTRA_KINDS = new Set(['camera', 'transition', 'style', 'variables', 'tts', 'music', 'sfx'])
+
+function isExtraKind(key: string): boolean {
+  const i = key.indexOf(':')
+  const kind = i < 0 ? key : key.slice(0, i)
+  return EXTRA_KINDS.has(kind)
+}
 
 /** Send bgColor change to live scene iframe via postMessage (no HTML regeneration). */
 function sendBgColorToIframe(sceneId: string, color: string) {
@@ -113,10 +133,38 @@ export default function NodeMapControls({
 
   // ── Ordered keys (same logic as SceneLayersStackPanel) ──
   const fallbackOrder = useMemo(() => buildDefaultOrder(scene), [scene])
-  const orderedKeys = useMemo(
+  const stackOrderedKeys = useMemo(
     () => mergeOrder(scene.layerPanelOrder, fallbackOrder),
     [scene.layerPanelOrder, fallbackOrder],
   )
+
+  // ── Extra virtual rows for scene-level properties surfaced in the node map ──
+  // These aren't part of the stack order but appear here so editors are reachable
+  // when a user clicks the corresponding canvas node.
+  const extraKeys = useMemo<LayerStackKey[]>(() => {
+    const out: LayerStackKey[] = []
+    if (scene.cameraMotion && scene.cameraMotion.length > 0) out.push('camera' as LayerStackKey)
+    if (scene.transition && scene.transition !== 'none') out.push('transition' as LayerStackKey)
+    const so = scene.styleOverride
+    if (so && ((so.palette && so.palette.length > 0) || so.font || so.bgColor)) {
+      out.push('style' as LayerStackKey)
+    }
+    if (scene.variables && scene.variables.length > 0) out.push('variables' as LayerStackKey)
+    const a = scene.audioLayer
+    if (a?.tts?.text?.trim() || a?.tts?.status === 'ready' || a?.tts?.status === 'generating') {
+      out.push('tts' as LayerStackKey)
+    }
+    if (a?.music?.src) out.push('music' as LayerStackKey)
+    for (const s of a?.sfx ?? []) out.push(`sfx:${s.id}` as LayerStackKey)
+    return out
+  }, [scene.cameraMotion, scene.transition, scene.styleOverride, scene.variables, scene.audioLayer])
+
+  const orderedKeys = useMemo<LayerStackKey[]>(() => {
+    if (extraKeys.length === 0) return stackOrderedKeys
+    const have = new Set(stackOrderedKeys)
+    const extras = extraKeys.filter((k) => !have.has(k))
+    return [...stackOrderedKeys, ...extras]
+  }, [stackOrderedKeys, extraKeys])
 
   const hidden = useMemo(() => new Set(scene.layerHiddenIds ?? []), [scene.layerHiddenIds])
 
@@ -134,13 +182,20 @@ export default function NodeMapControls({
     (index: number, dir: -1 | 1) => {
       const j = index + dir
       if (j < 0 || j >= orderedKeys.length) return
-      if (orderedKeys[index] === 'audio' || orderedKeys[j] === 'audio') return
-      if (orderedKeys[index] === BG_STAGE_STACK_KEY || orderedKeys[j] === BG_STAGE_STACK_KEY) return
-      const next = [...orderedKeys]
-      ;[next[index], next[j]] = [next[j], next[index]]
+      const a = orderedKeys[index]
+      const b = orderedKeys[j]
+      if (a === 'audio' || b === 'audio') return
+      if (a === BG_STAGE_STACK_KEY || b === BG_STAGE_STACK_KEY) return
+      // Extra virtual rows aren't part of layerPanelOrder — skip them.
+      if (isExtraKind(a) || isExtraKind(b)) return
+      const next = [...stackOrderedKeys]
+      const realI = next.indexOf(a)
+      const realJ = next.indexOf(b)
+      if (realI < 0 || realJ < 0) return
+      ;[next[realI], next[realJ]] = [next[realJ], next[realI]]
       upd({ layerPanelOrder: [...pinLayerStackTail(next)] })
     },
-    [orderedKeys, upd],
+    [orderedKeys, stackOrderedKeys, upd],
   )
 
   return (
@@ -154,6 +209,7 @@ export default function NodeMapControls({
           const isSelected = selectedKey === key
           const { kind, id: rowId } = parseLayerStackKey(key)
           const isBgStage = key === BG_STAGE_STACK_KEY
+          const isExtra = isExtraKind(key)
 
           return (
             <li key={key} ref={(el) => registerRef(key, el as HTMLDivElement | null)}>
@@ -178,15 +234,15 @@ export default function NodeMapControls({
                 <span
                   role="button"
                   tabIndex={0}
-                  className={`no-style flex h-6 w-6 shrink-0 items-center justify-center text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] ${isBgStage ? 'cursor-default opacity-40 pointer-events-none' : ''}`}
+                  className={`no-style flex h-6 w-6 shrink-0 items-center justify-center text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] ${isBgStage || isExtra ? 'cursor-default opacity-40 pointer-events-none' : ''}`}
                   onClick={(e) => {
                     e.stopPropagation()
-                    if (!isBgStage) toggleHidden(key)
+                    if (!isBgStage && !isExtra) toggleHidden(key)
                   }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
                       e.stopPropagation()
-                      if (!isBgStage) toggleHidden(key)
+                      if (!isBgStage && !isExtra) toggleHidden(key)
                     }
                   }}
                 >
@@ -213,7 +269,7 @@ export default function NodeMapControls({
                     role="button"
                     tabIndex={0}
                     className={`no-style flex h-6 w-5 items-center justify-center text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] ${
-                      key === 'audio' || isBgStage || index === 0 ? 'opacity-25 pointer-events-none' : ''
+                      key === 'audio' || isBgStage || isExtra || index === 0 ? 'opacity-25 pointer-events-none' : ''
                     }`}
                     onClick={(e) => {
                       e.stopPropagation()
@@ -232,7 +288,7 @@ export default function NodeMapControls({
                     role="button"
                     tabIndex={0}
                     className={`no-style flex h-6 w-5 items-center justify-center text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] ${
-                      key === 'audio' || isBgStage || index === orderedKeys.length - 1
+                      key === 'audio' || isBgStage || isExtra || index === orderedKeys.length - 1
                         ? 'opacity-25 pointer-events-none'
                         : ''
                     }`}
@@ -832,6 +888,125 @@ function LayerSettings({
       )
     }
 
+    case 'camera':
+      return <CameraEditor scene={scene} upd={upd} updAndDelete={updAndDelete} />
+
+    case 'transition':
+      return <TransitionEditor scene={scene} upd={upd} />
+
+    case 'style':
+      return <StyleOverrideEditor scene={scene} upd={upd} />
+
+    case 'variables':
+      return <VariablesEditor scene={scene} upd={upd} />
+
+    case 'tts': {
+      const a = scene.audioLayer
+      const t = a.tts
+      if (!t) return <Muted>No narration configured</Muted>
+      return (
+        <div className="space-y-2">
+          <FieldRow label="Text">
+            <TextInput
+              value={t.text ?? ''}
+              onChange={(v) => upd({ audioLayer: { ...a, tts: { ...t, text: v } } })}
+              multiline
+              placeholder="Narration text"
+            />
+          </FieldRow>
+          {t.voiceId && (
+            <FieldRow label="Voice">
+              <Muted>{t.voiceId}</Muted>
+            </FieldRow>
+          )}
+          {t.status && (
+            <FieldRow label="Status">
+              <Muted>{t.status}</Muted>
+            </FieldRow>
+          )}
+          <DeleteRow onDelete={() => updAndDelete({ audioLayer: { ...a, tts: null } })} label="narration" />
+        </div>
+      )
+    }
+
+    case 'music': {
+      const a = scene.audioLayer
+      const m = a.music
+      if (!m) return <Muted>No music configured</Muted>
+      return (
+        <div className="space-y-2">
+          <FieldRow label="Name">
+            <TextInput
+              value={m.name ?? ''}
+              onChange={(v) => upd({ audioLayer: { ...a, music: { ...m, name: v } } })}
+              placeholder="Track name"
+            />
+          </FieldRow>
+          <FieldRow label="Volume">
+            <NumberInput
+              value={m.volume ?? 0.5}
+              onChange={(v) => upd({ audioLayer: { ...a, music: { ...m, volume: v } } })}
+              min={0}
+              max={1}
+              step={0.05}
+            />
+          </FieldRow>
+          {m.src && (
+            <FieldRow label="Source">
+              <Muted className="truncate block">{m.src}</Muted>
+            </FieldRow>
+          )}
+          <DeleteRow onDelete={() => updAndDelete({ audioLayer: { ...a, music: null } })} label="music track" />
+        </div>
+      )
+    }
+
+    case 'sfx': {
+      const a = scene.audioLayer
+      const sfx = a.sfx ?? []
+      const item = sfx.find((s) => s.id === rowId)
+      if (!item) return <Muted>SFX not found</Muted>
+      const updSfx = (changes: Partial<typeof item>) => {
+        upd({ audioLayer: { ...a, sfx: sfx.map((s) => (s.id === rowId ? { ...s, ...changes } : s)) } })
+      }
+      return (
+        <div className="space-y-2">
+          <FieldRow label="Name">
+            <TextInput value={item.name ?? ''} onChange={(v) => updSfx({ name: v })} placeholder="SFX name" />
+          </FieldRow>
+          <FieldRow label="Trigger">
+            <NumberInput
+              value={item.triggerAt ?? 0}
+              onChange={(v) => updSfx({ triggerAt: v })}
+              min={0}
+              step={0.1}
+              unit="s"
+            />
+          </FieldRow>
+          {typeof item.volume === 'number' && (
+            <FieldRow label="Volume">
+              <NumberInput
+                value={item.volume ?? 1}
+                onChange={(v) => updSfx({ volume: v })}
+                min={0}
+                max={1}
+                step={0.05}
+              />
+            </FieldRow>
+          )}
+          {item.src && (
+            <FieldRow label="Source">
+              <Muted className="truncate block">{item.src}</Muted>
+            </FieldRow>
+          )}
+          <DeleteRow
+            onDelete={() => updAndDelete({ audioLayer: { ...a, sfx: sfx.filter((s) => s.id !== rowId) } })}
+            label="sound effect"
+          />
+        </div>
+      )
+    }
+
     case 'scene':
       return (
         <div className="space-y-1">
@@ -878,8 +1053,372 @@ function LayerSettings({
     }
 
     default:
-      return <Muted>No editable properties</Muted>
+      return <Muted>No editor available for &quot;{kind}&quot; yet.</Muted>
   }
+}
+
+// ── Camera editor ────────────────────────────────────────────────────────────
+
+const CAMERA_PRESETS: { value: CameraMove['type']; label: string }[] = [
+  { value: 'kenBurns', label: 'Ken Burns' },
+  { value: 'dollyIn', label: 'Dolly In' },
+  { value: 'dollyOut', label: 'Dolly Out' },
+  { value: 'pan', label: 'Pan' },
+  { value: 'rackFocus', label: 'Rack Focus' },
+  { value: 'cut', label: 'Cut' },
+  { value: 'shake', label: 'Shake' },
+  { value: 'reset', label: 'Reset' },
+  { value: 'orbit', label: 'Orbit (3D)' },
+  { value: 'dolly3D', label: 'Dolly (3D)' },
+  { value: 'rackFocus3D', label: 'Rack Focus (3D)' },
+  { value: 'presetReveal', label: 'Preset · Reveal' },
+  { value: 'presetEmphasis', label: 'Preset · Emphasis' },
+  { value: 'presetCinematicPush', label: 'Preset · Cinematic Push' },
+  { value: 'presetRackTransition', label: 'Preset · Rack Transition' },
+]
+
+function CameraEditor({
+  scene,
+  upd,
+  updAndDelete,
+}: {
+  scene: Scene
+  upd: (updates: Partial<Scene>) => void
+  updAndDelete: (updates: Partial<Scene>) => void
+}) {
+  const moves: CameraMove[] = scene.cameraMotion ?? []
+  const replace = (next: CameraMove[]) => upd({ cameraMotion: next.length > 0 ? next : null })
+  const updMove = (idx: number, changes: Partial<CameraMove>) => {
+    replace(
+      moves.map((m, i) => {
+        if (i !== idx) return m
+        // When type changes, drop stale params so the new move type starts from its own defaults.
+        // Preserve timing (startAt/duration) so the user doesn't have to re-enter it.
+        if (changes.type && changes.type !== m.type) {
+          const prior = (m.params ?? {}) as Record<string, unknown>
+          const timing: Record<string, unknown> = {}
+          if (typeof prior.startAt === 'number') timing.startAt = prior.startAt
+          if (typeof prior.duration === 'number') timing.duration = prior.duration
+          return { ...m, ...changes, params: timing }
+        }
+        return { ...m, ...changes }
+      }),
+    )
+  }
+  const updParam = (idx: number, key: string, value: unknown) => {
+    const m = moves[idx]
+    if (!m) return
+    const params = { ...(m.params ?? {}), [key]: value }
+    updMove(idx, { params })
+  }
+  const removeMove = (idx: number) => {
+    const next = moves.filter((_, i) => i !== idx)
+    updAndDelete({ cameraMotion: next.length > 0 ? next : null })
+  }
+  const addMove = () => {
+    replace([...moves, { type: 'kenBurns', params: { duration: 2 } }])
+  }
+
+  return (
+    <div className="space-y-2">
+      {moves.length === 0 && <Muted>No camera moves. Add one below.</Muted>}
+      {moves.map((m, i) => {
+        const p = (m.params ?? {}) as Record<string, unknown>
+        const duration = typeof p.duration === 'number' ? p.duration : 0
+        const startAt = typeof p.startAt === 'number' ? p.startAt : 0
+        return (
+          <div
+            key={i}
+            className="space-y-1.5 rounded border px-2 py-1.5"
+            style={{ borderColor: 'var(--color-hairline)' }}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span
+                className="text-[9px] font-semibold uppercase tracking-wider"
+                style={{ color: 'var(--color-text-muted)', opacity: 0.7 }}
+              >
+                Move {i + 1}
+              </span>
+              <span
+                role="button"
+                tabIndex={0}
+                className="inline-flex items-center gap-1 text-[9px] cursor-pointer hover:opacity-80"
+                style={{ color: '#ef4444' }}
+                onClick={() => removeMove(i)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') removeMove(i)
+                }}
+              >
+                <Trash2 size={9} /> Remove
+              </span>
+            </div>
+            <FieldRow label="Type">
+              <SelectInput
+                value={m.type}
+                onChange={(v) => updMove(i, { type: v as CameraMove['type'] })}
+                options={CAMERA_PRESETS}
+              />
+            </FieldRow>
+            <FieldRow label="Start">
+              <NumberInput value={startAt} onChange={(v) => updParam(i, 'startAt', v)} min={0} step={0.1} unit="s" />
+            </FieldRow>
+            <FieldRow label="Duration">
+              <NumberInput value={duration} onChange={(v) => updParam(i, 'duration', v)} min={0} step={0.1} unit="s" />
+            </FieldRow>
+          </div>
+        )
+      })}
+      <div className="pt-1">
+        <span
+          role="button"
+          tabIndex={0}
+          className="inline-flex items-center gap-1 text-[10px] cursor-pointer hover:opacity-80"
+          style={{ color: 'var(--color-accent)' }}
+          onClick={addMove}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') addMove()
+          }}
+        >
+          <Plus size={10} /> Add camera move
+        </span>
+      </div>
+    </div>
+  )
+}
+
+// ── Transition editor ────────────────────────────────────────────────────────
+
+function TransitionEditor({ scene, upd }: { scene: Scene; upd: (updates: Partial<Scene>) => void }) {
+  const options: { value: string; label: string }[] = []
+  for (const group of TRANSITION_UI_GROUPS) {
+    for (const item of group.items) {
+      options.push({ value: item.id, label: `${group.category} · ${item.label}` })
+    }
+  }
+  return (
+    <div className="space-y-2">
+      <FieldRow label="Style">
+        <SelectInput
+          value={scene.transition ?? 'none'}
+          onChange={(v) => upd({ transition: v as TransitionType })}
+          options={options}
+        />
+      </FieldRow>
+      <Muted className="text-[9px]">
+        Transition runs between this scene and the next. Duration is controlled per-project in Export settings.
+      </Muted>
+    </div>
+  )
+}
+
+// ── Style override editor ────────────────────────────────────────────────────
+
+function StyleOverrideEditor({ scene, upd }: { scene: Scene; upd: (updates: Partial<Scene>) => void }) {
+  const so: SceneStyleOverride = scene.styleOverride ?? {}
+  const palette = (so.palette ?? ['#2d2d2d', '#e84545', '#4a90d9', '#50c878']) as [string, string, string, string]
+  const updSo = (changes: Partial<SceneStyleOverride>) => upd({ styleOverride: { ...so, ...changes } })
+  const updPalette = (idx: number, color: string) => {
+    const next = [...palette] as [string, string, string, string]
+    next[idx] = color
+    updSo({ palette: next })
+  }
+  return (
+    <div className="space-y-2">
+      <SectionLabel>Palette</SectionLabel>
+      <div className="grid grid-cols-4 gap-1.5">
+        {palette.map((c, i) => (
+          <ColorInput key={i} value={c} onChange={(v) => updPalette(i, v)} />
+        ))}
+      </div>
+      <FieldRow label="Font">
+        <TextInput value={so.font ?? ''} onChange={(v) => updSo({ font: v || null })} placeholder="e.g. Inter, serif" />
+      </FieldRow>
+      <FieldRow label="Body">
+        <TextInput
+          value={so.bodyFont ?? ''}
+          onChange={(v) => updSo({ bodyFont: v || null })}
+          placeholder="Body font (optional)"
+        />
+      </FieldRow>
+      <FieldRow label="BG color">
+        <ColorInput value={so.bgColor ?? '#ffffff'} onChange={(v) => updSo({ bgColor: v })} />
+      </FieldRow>
+      <FieldRow label="Roughness">
+        <NumberInput
+          value={so.roughnessLevel ?? 0}
+          onChange={(v) => updSo({ roughnessLevel: v })}
+          min={0}
+          max={3}
+          step={1}
+        />
+      </FieldRow>
+      <FieldRow label="Stroke">
+        <ColorInput value={so.strokeColorOverride ?? '#000000'} onChange={(v) => updSo({ strokeColorOverride: v })} />
+      </FieldRow>
+      <FieldRow label="Stroke W">
+        <NumberInput
+          value={so.strokeWidth ?? 2}
+          onChange={(v) => updSo({ strokeWidth: v })}
+          min={0}
+          max={20}
+          step={0.5}
+          unit="px"
+        />
+      </FieldRow>
+      <FieldRow label="Note">
+        <TextInput
+          value={so.styleNote ?? ''}
+          onChange={(v) => updSo({ styleNote: v || null })}
+          placeholder="Optional style note for the agent"
+          multiline
+        />
+      </FieldRow>
+    </div>
+  )
+}
+
+// ── Variables editor ─────────────────────────────────────────────────────────
+
+function renameVariableInInteractions(
+  interactions: Scene['interactions'],
+  oldName: string,
+  newName: string,
+): Scene['interactions'] {
+  return interactions.map((ix) => {
+    if (ix.type === 'slider' || ix.type === 'toggle') {
+      if (ix.setsVariable !== oldName) return ix
+      return { ...ix, setsVariable: newName }
+    }
+    if (ix.type === 'form') {
+      const touched = ix.setsVariables.some((m) => m.variableName === oldName)
+      if (!touched) return ix
+      return {
+        ...ix,
+        setsVariables: ix.setsVariables.map((m) => (m.variableName === oldName ? { ...m, variableName: newName } : m)),
+      }
+    }
+    return ix
+  })
+}
+
+function VariablesEditor({ scene, upd }: { scene: Scene; upd: (updates: Partial<Scene>) => void }) {
+  const vars: SceneVariable[] = scene.variables ?? []
+  const replace = (next: SceneVariable[], extras: Partial<Scene> = {}) => upd({ variables: next, ...extras })
+  const updVar = (idx: number, changes: Partial<SceneVariable>) => {
+    const current = vars[idx]
+    if (!current) return
+    // Variables are keyed by name downstream (conditions, runtime evaluator, store actions).
+    // Reject renames that collide with another variable's name.
+    if (typeof changes.name === 'string' && changes.name !== current.name) {
+      const collides = vars.some((v, i) => i !== idx && v.name === changes.name)
+      if (collides) return
+      // Rewrite scene-local references so slider/toggle/form bindings follow the rename.
+      const nextVars = vars.map((v, i) => (i === idx ? { ...v, ...changes } : v))
+      const nextInteractions = renameVariableInInteractions(scene.interactions, current.name, changes.name)
+      replace(nextVars, { interactions: nextInteractions })
+      return
+    }
+    replace(vars.map((v, i) => (i === idx ? { ...v, ...changes } : v)))
+  }
+  const removeVar = (idx: number) => {
+    replace(vars.filter((_, i) => i !== idx))
+  }
+  const addVar = () => {
+    let i = 1
+    const taken = new Set(vars.map((v) => v.name))
+    while (taken.has(`var${i}`)) i++
+    replace([...vars, { name: `var${i}`, type: 'string', defaultValue: '' }])
+  }
+  const coerceDefault = (raw: string, type: SceneVariable['type']): SceneVariable['defaultValue'] => {
+    if (type === 'number') {
+      const n = parseFloat(raw)
+      return Number.isFinite(n) ? n : 0
+    }
+    if (type === 'boolean') return raw === 'true'
+    return raw
+  }
+  return (
+    <div className="space-y-2">
+      {vars.length === 0 && <Muted>No variables defined.</Muted>}
+      {vars.map((v, i) => (
+        <div key={i} className="space-y-1 rounded border px-2 py-1.5" style={{ borderColor: 'var(--color-hairline)' }}>
+          <div className="flex items-center justify-between gap-2">
+            <span
+              className="text-[9px] font-semibold uppercase tracking-wider"
+              style={{ color: 'var(--color-text-muted)', opacity: 0.7 }}
+            >
+              Variable {i + 1}
+            </span>
+            <span
+              role="button"
+              tabIndex={0}
+              className="inline-flex items-center gap-1 text-[9px] cursor-pointer hover:opacity-80"
+              style={{ color: '#ef4444' }}
+              onClick={() => removeVar(i)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') removeVar(i)
+              }}
+            >
+              <Trash2 size={9} /> Remove
+            </span>
+          </div>
+          <FieldRow label="Name">
+            <TextInput value={v.name} onChange={(val) => updVar(i, { name: val })} placeholder="name" />
+          </FieldRow>
+          <FieldRow label="Type">
+            <SelectInput
+              value={v.type ?? 'string'}
+              onChange={(val) =>
+                updVar(i, {
+                  type: val as SceneVariable['type'],
+                  defaultValue: coerceDefault(String(v.defaultValue ?? ''), val as SceneVariable['type']),
+                })
+              }
+              options={[
+                { value: 'string', label: 'String' },
+                { value: 'number', label: 'Number' },
+                { value: 'boolean', label: 'Boolean' },
+              ]}
+            />
+          </FieldRow>
+          <FieldRow label="Default">
+            {(v.type ?? 'string') === 'boolean' ? (
+              <SelectInput
+                value={String(Boolean(v.defaultValue))}
+                onChange={(val) => updVar(i, { defaultValue: val === 'true' })}
+                options={[
+                  { value: 'true', label: 'true' },
+                  { value: 'false', label: 'false' },
+                ]}
+              />
+            ) : (v.type ?? 'string') === 'number' ? (
+              <NumberInput value={Number(v.defaultValue ?? 0)} onChange={(val) => updVar(i, { defaultValue: val })} />
+            ) : (
+              <TextInput
+                value={String(v.defaultValue ?? '')}
+                onChange={(val) => updVar(i, { defaultValue: val })}
+                placeholder="Default value"
+              />
+            )}
+          </FieldRow>
+        </div>
+      ))}
+      <div className="pt-1">
+        <span
+          role="button"
+          tabIndex={0}
+          className="inline-flex items-center gap-1 text-[10px] cursor-pointer hover:opacity-80"
+          style={{ color: 'var(--color-accent)' }}
+          onClick={addVar}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') addVar()
+          }}
+        >
+          <Plus size={10} /> Add variable
+        </span>
+      </div>
+    </div>
+  )
 }
 
 // ── Match rx: node to Inspector element ─────────────────────────────────────
