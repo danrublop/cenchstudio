@@ -132,8 +132,10 @@ export function createResearchToolHandler() {
             'yt-dlp download requires user consent. The app must show the legal disclaimer modal and persist consent before this tool can download. (Probe-only calls without formatId are OK.)',
           )
         }
+        // Hoisted dynamic import so the catch block can reference
+        // `svc.YtDlpMissingError` without a second `await import`.
+        const svc = await import('@/lib/services/ingest')
         try {
-          const svc = await import('@/lib/services/ingest')
           const data = await svc.ingestUrl({ url, projectId, formatId })
           if (data.mode === 'probe') {
             return ok(
@@ -148,7 +150,6 @@ export function createResearchToolHandler() {
             data,
           )
         } catch (e) {
-          const svc = await import('@/lib/services/ingest')
           if (e instanceof svc.YtDlpMissingError) {
             return err(`yt-dlp not installed: ${e.message}`)
           }

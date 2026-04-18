@@ -109,30 +109,42 @@ export async function generateAvatar(projectId: string, input: GenerateAvatarInp
     .returning()
 
   // TalkingHead is local — no API call, mark ready and return.
+  // Wrap in the same error-recovery as the remote path: if `AvatarService.generate`
+  // throws, flip the row to `status: 'error'` so the UI stops spinning on a
+  // zombie `generating` record (pre-existing bug in the old HTTP route).
   if (config.provider === 'talkinghead') {
-    const result = await AvatarService.generate(
-      {
-        text: input.text,
-        audioUrl: resolvedAudioUrl ?? '',
-        durationSeconds: estimatedDuration,
-        projectId,
-        sourceImageUrl: input.sourceImageUrl ?? undefined,
-      },
-      config,
-    )
+    try {
+      const result = await AvatarService.generate(
+        {
+          text: input.text,
+          audioUrl: resolvedAudioUrl ?? '',
+          durationSeconds: estimatedDuration,
+          projectId,
+          sourceImageUrl: input.sourceImageUrl ?? undefined,
+        },
+        config,
+      )
 
-    const [updated] = await db
-      .update(avatarVideos)
-      .set({
-        status: 'ready',
-        videoUrl: result.videoUrl,
-        durationSeconds: result.durationSeconds,
-        costUsd: 0,
-      })
-      .where(eq(avatarVideos.id, videoRecord.id))
-      .returning()
+      const [updated] = await db
+        .update(avatarVideos)
+        .set({
+          status: 'ready',
+          videoUrl: result.videoUrl,
+          durationSeconds: result.durationSeconds,
+          costUsd: 0,
+        })
+        .where(eq(avatarVideos.id, videoRecord.id))
+        .returning()
 
-    return updated
+      return updated
+    } catch (e) {
+      const message = (e as Error).message
+      await db
+        .update(avatarVideos)
+        .set({ status: 'error', errorMessage: message })
+        .where(eq(avatarVideos.id, videoRecord.id))
+      throw new Error(`Avatar generation failed: ${message}`)
+    }
   }
 
   try {
