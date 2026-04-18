@@ -68,6 +68,11 @@ var cenchApi = {
   },
   publish: {
     run: (args) => import_electron.ipcRenderer.invoke("cench:publish.run", args)
+  },
+  scene: {
+    writeHtml: (args) => import_electron.ipcRenderer.invoke("cench:scene.writeHtml", args),
+    get: (args) => import_electron.ipcRenderer.invoke("cench:scene.get", args),
+    generateWorld: (args) => import_electron.ipcRenderer.invoke("cench:scene.generateWorld", args)
   }
 };
 import_electron.contextBridge.exposeInMainWorld("cenchApi", cenchApi);

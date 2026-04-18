@@ -8,6 +8,7 @@ import * as skills from './skills'
 import * as projects from './projects'
 import * as workspaces from './workspaces'
 import * as publish from './publish'
+import * as scene from './scene'
 
 /**
  * Central IPC registration. Each category module exports
@@ -29,4 +30,5 @@ export function registerAllIpc(ipcMain: IpcMain): void {
   projects.register(ipcMain)
   workspaces.register(ipcMain)
   publish.register(ipcMain)
+  scene.register(ipcMain)
 }

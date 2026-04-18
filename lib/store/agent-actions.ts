@@ -628,33 +628,50 @@ export function createAgentActions(set: Set, get: Get) {
       })
       // Persist all updated scene HTMLs (awaited to prevent data loss on tab close)
       const writeEntries: { sceneId: string; promise: Promise<void> }[] = []
+      const sceneIpc = typeof window !== 'undefined' ? window.cenchApi?.scene : undefined
       for (const scene of updatedScenes) {
         if (scene.sceneHTML) {
-          const p = fetch('/api/scene', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: scene.id, html: scene.sceneHTML }),
-          }).then(async (r) => {
-            if (!r.ok) {
-              console.error(`[Store] POST /api/scene failed for ${scene.id}: ${r.status}`)
-              // Retry once after a short delay with timeout (helps with 409 conflicts)
-              await new Promise((resolve) => setTimeout(resolve, 100))
-              const retryController = new AbortController()
-              const retryTimeout = setTimeout(() => retryController.abort(), 15000)
-              try {
-                const r2 = await fetch('/api/scene', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ id: scene.id, html: scene.sceneHTML }),
-                  signal: retryController.signal,
-                })
-                if (!r2.ok) throw new Error(`Save failed for scene ${scene.id} (${r2.status})`)
-              } finally {
-                clearTimeout(retryTimeout)
-              }
-            }
-          })
-          writeEntries.push({ sceneId: scene.id, promise: p as Promise<void> })
+          // IPC: throws on failure, no HTTP status. Retry once on any error
+          // with the same 100ms delay that the HTTP path used.
+          // HTTP fallback keeps the AbortController-timed retry on 409.
+          const p: Promise<void> = sceneIpc
+            ? (async () => {
+                try {
+                  await sceneIpc.writeHtml({ id: scene.id, html: scene.sceneHTML })
+                } catch (err) {
+                  console.error(`[Store] scene.writeHtml failed for ${scene.id}:`, err)
+                  await new Promise((resolve) => setTimeout(resolve, 100))
+                  try {
+                    await sceneIpc.writeHtml({ id: scene.id, html: scene.sceneHTML })
+                  } catch (retryErr) {
+                    throw new Error(`Save failed for scene ${scene.id}: ${(retryErr as Error).message}`)
+                  }
+                }
+              })()
+            : fetch('/api/scene', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: scene.id, html: scene.sceneHTML }),
+              }).then(async (r) => {
+                if (!r.ok) {
+                  console.error(`[Store] POST /api/scene failed for ${scene.id}: ${r.status}`)
+                  await new Promise((resolve) => setTimeout(resolve, 100))
+                  const retryController = new AbortController()
+                  const retryTimeout = setTimeout(() => retryController.abort(), 15000)
+                  try {
+                    const r2 = await fetch('/api/scene', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ id: scene.id, html: scene.sceneHTML }),
+                      signal: retryController.signal,
+                    })
+                    if (!r2.ok) throw new Error(`Save failed for scene ${scene.id} (${r2.status})`)
+                  } finally {
+                    clearTimeout(retryTimeout)
+                  }
+                }
+              })
+          writeEntries.push({ sceneId: scene.id, promise: p })
         } else {
           console.warn(`[Store] Scene ${scene.id.slice(0, 8)}… has empty sceneHTML, skipping file write`)
         }

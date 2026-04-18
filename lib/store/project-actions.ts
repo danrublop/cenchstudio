@@ -311,11 +311,18 @@ export function createProjectActions(set: Set, get: Get) {
                   loadedProject.audioSettings,
                   dims,
                 )
-                fetch('/api/scene', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ id: scene.id, html }),
-                }).catch(() => {})
+                ;(async () => {
+                  const sceneIpc = typeof window !== 'undefined' ? window.cenchApi?.scene : undefined
+                  if (sceneIpc) {
+                    await sceneIpc.writeHtml({ id: scene.id, html })
+                  } else {
+                    await fetch('/api/scene', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ id: scene.id, html }),
+                    })
+                  }
+                })().catch(() => {})
               } catch (e) {
                 console.error(`[refreshProject] generateSceneHTML failed for ${scene.id}:`, e)
               }
@@ -463,11 +470,18 @@ export function createProjectActions(set: Set, get: Get) {
             if (sceneHasRenderableContent(scene)) {
               try {
                 const html = generateSceneHTML(scene, loadedStyle, undefined, loadedProject.audioSettings, dims)
-                fetch('/api/scene', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ id: scene.id, html }),
-                }).catch(() => {})
+                ;(async () => {
+                  const sceneIpc = typeof window !== 'undefined' ? window.cenchApi?.scene : undefined
+                  if (sceneIpc) {
+                    await sceneIpc.writeHtml({ id: scene.id, html })
+                  } else {
+                    await fetch('/api/scene', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ id: scene.id, html }),
+                    })
+                  }
+                })().catch(() => {})
                 savedAny = true
               } catch (e) {
                 console.error(`[loadProject] generateSceneHTML failed for ${scene.id}:`, e)

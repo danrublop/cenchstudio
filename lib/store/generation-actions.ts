@@ -511,18 +511,29 @@ export function createGenerationActions(set: Set, get: Get) {
           }
         }
         const { mp4Settings } = get().project
-        const html = generateSceneHTML(scene, get().globalStyle, watermarkWithUrl, get().audioSettings, resolveProjectDimensions(mp4Settings?.aspectRatio, mp4Settings?.resolution))
+        const html = generateSceneHTML(
+          scene,
+          get().globalStyle,
+          watermarkWithUrl,
+          get().audioSettings,
+          resolveProjectDimensions(mp4Settings?.aspectRatio, mp4Settings?.resolution),
+        )
         try {
-          const res = await fetch('/api/scene', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: sceneId, html }),
-          })
-          if (!res.ok) {
-            const body = await res.text().catch(() => '')
-            console.error('[saveSceneHTML] API error', res.status, body)
-            set({ sceneWriteErrors: { ...get().sceneWriteErrors, [sceneId]: `Save failed (${res.status})` } })
-            return
+          const sceneIpc = typeof window !== 'undefined' ? window.cenchApi?.scene : undefined
+          if (sceneIpc) {
+            await sceneIpc.writeHtml({ id: sceneId, html })
+          } else {
+            const res = await fetch('/api/scene', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id: sceneId, html }),
+            })
+            if (!res.ok) {
+              const body = await res.text().catch(() => '')
+              console.error('[saveSceneHTML] API error', res.status, body)
+              set({ sceneWriteErrors: { ...get().sceneWriteErrors, [sceneId]: `Save failed (${res.status})` } })
+              return
+            }
           }
           console.log('[saveSceneHTML] saved', sceneId, `(${html.length} chars)`)
           // Clear any previous error for this scene
@@ -532,8 +543,13 @@ export function createGenerationActions(set: Set, get: Get) {
             set({ sceneHtmlVersion: get().sceneHtmlVersion + 1 })
           }
         } catch (err) {
-          console.error('[saveSceneHTML] network error:', err)
-          set({ sceneWriteErrors: { ...get().sceneWriteErrors, [sceneId]: 'Network error — server may be down' } })
+          console.error('[saveSceneHTML] save failed:', err)
+          set({
+            sceneWriteErrors: {
+              ...get().sceneWriteErrors,
+              [sceneId]: (err as Error).message ?? 'Save failed',
+            },
+          })
         }
       }
 

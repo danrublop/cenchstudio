@@ -100,6 +100,15 @@ export type CenchApi = {
       version: number
     }>
   }
+  scene: {
+    writeHtml: (args: { id: string; html: string }) => Promise<{ success: true; path: string }>
+    get: (args: { projectId: string; sceneId: string }) => Promise<{ scene: Record<string, unknown> }>
+    generateWorld: (args: {
+      scene: Record<string, unknown>
+      aspectRatio?: string
+      resolution?: string
+    }) => Promise<{ success: true; path: string }>
+  }
 }
 
 const cenchApi: CenchApi = {
@@ -153,6 +162,11 @@ const cenchApi: CenchApi = {
   },
   publish: {
     run: (args) => ipcRenderer.invoke('cench:publish.run', args),
+  },
+  scene: {
+    writeHtml: (args) => ipcRenderer.invoke('cench:scene.writeHtml', args),
+    get: (args) => ipcRenderer.invoke('cench:scene.get', args),
+    generateWorld: (args) => ipcRenderer.invoke('cench:scene.generateWorld', args),
   },
 }
 

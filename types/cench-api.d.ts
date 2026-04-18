@@ -206,6 +206,18 @@ export interface CenchApi {
       globalStyle?: unknown
     }): Promise<{ publishedUrl: string; version: number }>
   }
+  scene: {
+    /** Write a raw scene HTML file to the scenes dir (dev: public/scenes, packaged: userData/scenes). */
+    writeHtml(args: { id: string; html: string }): Promise<{ success: true; path: string }>
+    /** Fetch a single scene by id from the project's scene store. */
+    get(args: { projectId: string; sceneId: string }): Promise<{ scene: Record<string, unknown> }>
+    /** Server-side HTML generation + disk write for world scenes (needs template access). */
+    generateWorld(args: {
+      scene: Record<string, unknown>
+      aspectRatio?: string
+      resolution?: string
+    }): Promise<{ success: true; path: string }>
+  }
 }
 
 declare global {

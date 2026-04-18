@@ -77,10 +77,16 @@ export function createExportActions(set: Set, get: Get) {
             // (localStorage partialize strips svgContent, sceneCode, etc.)
             let fullScene = scene
             try {
-              const fullRes = await fetch(`/api/scene?projectId=${get().project.id}&sceneId=${scene.id}`)
-              if (fullRes.ok) {
-                const fullData = await fullRes.json()
-                if (fullData.scene) fullScene = { ...scene, ...fullData.scene }
+              const sceneIpc = typeof window !== 'undefined' ? window.cenchApi?.scene : undefined
+              if (sceneIpc) {
+                const fullData = await sceneIpc.get({ projectId: get().project.id, sceneId: scene.id })
+                if (fullData?.scene) fullScene = { ...scene, ...(fullData.scene as Partial<typeof scene>) }
+              } else {
+                const fullRes = await fetch(`/api/scene?projectId=${get().project.id}&sceneId=${scene.id}`)
+                if (fullRes.ok) {
+                  const fullData = await fullRes.json()
+                  if (fullData.scene) fullScene = { ...scene, ...fullData.scene }
+                }
               }
             } catch {}
             const freshHTML = generateSceneHTML(
