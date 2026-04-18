@@ -18,6 +18,7 @@ import {
   validateExportDeps,
 } from './paths'
 import { createLogger } from '../lib/logger'
+import { initAutoUpdater, checkForUpdatesInteractive } from './auto-updater'
 
 const log = createLogger('electron.main')
 
@@ -320,6 +321,12 @@ function createWindow() {
       },
     },
     {
+      label: 'Check for Updates…',
+      click: () => {
+        void checkForUpdatesInteractive(BrowserWindow.getFocusedWindow() ?? undefined)
+      },
+    },
+    {
       role: 'window',
       submenu: [
         { role: 'minimize' },
@@ -619,6 +626,12 @@ app.whenReady().then(async () => {
   registerAllIpc(ipcMain)
 
   createWindow()
+
+  // Kick off a silent background update check. No-op in dev builds; when
+  // packaged, downloads in the background and installs on quit. Interactive
+  // "Check for Updates..." menu item in the Help menu gives the user a
+  // manual trigger with explicit dialogs.
+  initAutoUpdater().catch((err) => log.error('initAutoUpdater threw', { error: err }))
 
   // Surface a clear warning on boot if the export stitcher or its bundled
   // FFmpeg dependencies are missing. Non-fatal — the rest of the app still

@@ -5634,7 +5634,7 @@ var init_background_removal = __esm({
 var import_path14 = __toESM(require("path"));
 var import_child_process3 = require("child_process");
 var import_util3 = require("util");
-var import_electron6 = require("electron");
+var import_electron7 = require("electron");
 var import_promises22 = __toESM(require("fs/promises"));
 var import_fs = __toESM(require("fs"));
 var import_url = require("url");
@@ -6139,10 +6139,10 @@ async function getQualityByDimension(dimension, projectId) {
 }
 
 // lib/generation-logs/score.ts
-function computeQualityScore(log2) {
-  if (!log2.userAction) return -1;
+function computeQualityScore(log3) {
+  if (!log3.userAction) return -1;
   let score = 0.5;
-  switch (log2.userAction) {
+  switch (log3.userAction) {
     case "kept":
       score += 0.3;
       break;
@@ -6156,27 +6156,27 @@ function computeQualityScore(log2) {
       score -= 0.5;
       break;
   }
-  if (log2.timeToActionMs != null) {
-    if (log2.userAction === "regenerated" && log2.timeToActionMs < 5e3) {
+  if (log3.timeToActionMs != null) {
+    if (log3.userAction === "regenerated" && log3.timeToActionMs < 5e3) {
       score -= 0.2;
     }
-    if (log2.userAction === "kept" && log2.timeToActionMs > 3e4) {
+    if (log3.userAction === "kept" && log3.timeToActionMs > 3e4) {
       score += 0.1;
     }
   }
-  if (log2.editDistance != null && log2.generatedCodeLength) {
-    const relativeEdit = log2.editDistance / log2.generatedCodeLength;
+  if (log3.editDistance != null && log3.generatedCodeLength) {
+    const relativeEdit = log3.editDistance / log3.generatedCodeLength;
     if (relativeEdit > 0.6)
       score -= 0.4;
     else if (relativeEdit > 0.3)
       score -= 0.2;
     else if (relativeEdit < 0.05) score += 0.1;
   }
-  if (log2.userRating != null) {
-    score += (log2.userRating - 3) * 0.1;
+  if (log3.userRating != null) {
+    score += (log3.userRating - 3) * 0.1;
   }
-  if (log2.exportSucceeded === false) score -= 0.3;
-  if (log2.exportSucceeded === true) score += 0.1;
+  if (log3.exportSucceeded === false) score -= 0.3;
+  if (log3.exportSucceeded === true) score += 0.1;
   return Math.max(0, Math.min(1, score));
 }
 
@@ -19550,8 +19550,120 @@ function createLogger(namespace) {
   return build(namespace);
 }
 
+// electron/auto-updater.ts
+var import_electron6 = require("electron");
+var log = createLogger("electron.auto-updater");
+var initialized = false;
+var interactiveCheckInFlight = false;
+async function loadUpdater() {
+  try {
+    const mod = await import("electron-updater");
+    return mod.autoUpdater;
+  } catch (err) {
+    log.warn("electron-updater module failed to load", { error: err });
+    return null;
+  }
+}
+async function initAutoUpdater() {
+  if (initialized) return;
+  if (!import_electron6.app.isPackaged) {
+    log.debug("skipping auto-updater (dev build)");
+    return;
+  }
+  const autoUpdater = await loadUpdater();
+  if (!autoUpdater) return;
+  initialized = true;
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.on("checking-for-update", () => log.info("checking for updates"));
+  autoUpdater.on("update-available", (info) => {
+    log.info("update available", { extra: { version: info.version, releaseDate: info.releaseDate } });
+  });
+  autoUpdater.on("update-not-available", () => log.debug("no update available"));
+  autoUpdater.on("update-downloaded", (info) => {
+    log.info("update downloaded; will install on quit", { extra: { version: info.version } });
+  });
+  autoUpdater.on("error", (err) => log.error("auto-updater error", { error: err }));
+  try {
+    await autoUpdater.checkForUpdates();
+  } catch (err) {
+    log.error("initial update check threw", { error: err });
+  }
+}
+async function checkForUpdatesInteractive(parent) {
+  if (interactiveCheckInFlight) return;
+  if (!import_electron6.app.isPackaged) {
+    import_electron6.dialog.showMessageBox(parent ?? void 0, {
+      type: "info",
+      title: "Dev build",
+      message: "Updates are disabled in development builds.",
+      detail: "Run the packaged app to test the updater.",
+      buttons: ["OK"],
+      noLink: true
+    });
+    return;
+  }
+  const autoUpdater = await loadUpdater();
+  if (!autoUpdater) {
+    import_electron6.dialog.showMessageBox(parent ?? void 0, {
+      type: "error",
+      title: "Updater unavailable",
+      message: "Could not load the auto-updater.",
+      detail: "Check the console for details and try again later.",
+      buttons: ["OK"],
+      noLink: true
+    });
+    return;
+  }
+  interactiveCheckInFlight = true;
+  try {
+    const result = await autoUpdater.checkForUpdates();
+    if (!result || !result.updateInfo) {
+      import_electron6.dialog.showMessageBox(parent ?? void 0, {
+        type: "info",
+        title: "Up to date",
+        message: `You're running the latest version (${import_electron6.app.getVersion()}).`,
+        buttons: ["OK"],
+        noLink: true
+      });
+      return;
+    }
+    const { version } = result.updateInfo;
+    if (version === import_electron6.app.getVersion()) {
+      import_electron6.dialog.showMessageBox(parent ?? void 0, {
+        type: "info",
+        title: "Up to date",
+        message: `You're running the latest version (${import_electron6.app.getVersion()}).`,
+        buttons: ["OK"],
+        noLink: true
+      });
+      return;
+    }
+    import_electron6.dialog.showMessageBox(parent ?? void 0, {
+      type: "info",
+      title: "Update available",
+      message: `Cench Studio ${version} is downloading in the background.`,
+      detail: "The update will install automatically the next time you quit.",
+      buttons: ["OK"],
+      noLink: true
+    });
+  } catch (err) {
+    log.error("interactive update check failed", { error: err });
+    import_electron6.dialog.showMessageBox(parent ?? void 0, {
+      type: "error",
+      title: "Update check failed",
+      message: "Could not check for updates.",
+      detail: err?.message ? String(err.message) : "Check your connection and try again.",
+      buttons: ["OK"],
+      noLink: true
+    });
+  } finally {
+    interactiveCheckInFlight = false;
+  }
+}
+
 // electron/main.ts
-var log = createLogger("electron.main");
+var log2 = createLogger("electron.main");
 function loadEnvFiles() {
   const attempted = [];
   const tryLoad = (p) => {
@@ -19560,8 +19672,8 @@ function loadEnvFiles() {
       (0, import_dotenv.config)({ path: p, override: false });
     }
   };
-  if (import_electron6.app.isPackaged) {
-    tryLoad(import_path14.default.join(import_electron6.app.getPath("userData"), "cench.env"));
+  if (import_electron7.app.isPackaged) {
+    tryLoad(import_path14.default.join(import_electron7.app.getPath("userData"), "cench.env"));
     tryLoad(import_path14.default.join(process.resourcesPath, ".env.defaults"));
   } else {
     const repoRoot = import_path14.default.resolve(__dirname, "..");
@@ -19570,7 +19682,7 @@ function loadEnvFiles() {
   }
 }
 loadEnvFiles();
-if (import_electron6.app.isPackaged) {
+if (import_electron7.app.isPackaged) {
   process.env.CENCH_AUDIO_DIR = getUserAudioDir();
   process.env.CENCH_AUDIO_URL_BASE = "cench://audio/";
   process.env.CENCH_UPLOADS_DIR = getUserUploadsDir();
@@ -19578,10 +19690,10 @@ if (import_electron6.app.isPackaged) {
 }
 var execFileAsync4 = (0, import_util3.promisify)(import_child_process3.execFile);
 function webZoomTargetWindow() {
-  return import_electron6.BrowserWindow.getFocusedWindow() ?? import_electron6.BrowserWindow.getAllWindows()[0] ?? null;
+  return import_electron7.BrowserWindow.getFocusedWindow() ?? import_electron7.BrowserWindow.getAllWindows()[0] ?? null;
 }
 var DEV_URL = process.env.ELECTRON_START_URL || "http://localhost:3000";
-import_electron6.protocol.registerSchemesAsPrivileged([
+import_electron7.protocol.registerSchemesAsPrivileged([
   {
     scheme: "cench",
     privileges: {
@@ -19601,7 +19713,7 @@ async function registerCenchProtocol() {
   await import_promises22.default.mkdir(scenesDir, { recursive: true });
   await import_promises22.default.mkdir(uploadsDir2, { recursive: true });
   await import_promises22.default.mkdir(audioDir, { recursive: true });
-  import_electron6.protocol.handle("cench", async (request) => {
+  import_electron7.protocol.handle("cench", async (request) => {
     try {
       const url = new URL(request.url);
       const host = url.hostname;
@@ -19643,9 +19755,9 @@ async function registerCenchProtocol() {
         filePath = realPath;
       } catch {
       }
-      return import_electron6.net.fetch((0, import_url.pathToFileURL)(filePath).toString());
+      return import_electron7.net.fetch((0, import_url.pathToFileURL)(filePath).toString());
     } catch (err) {
-      log.error("cench-protocol: failed to serve", { extra: { url: request.url }, error: err });
+      log2.error("cench-protocol: failed to serve", { extra: { url: request.url }, error: err });
       return new Response("Internal error", { status: 500 });
     }
   });
@@ -19653,9 +19765,9 @@ async function registerCenchProtocol() {
 function sanitizeFilename(hint, fallback = "recording") {
   return (hint || fallback).toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").slice(0, 100) || fallback;
 }
-import_electron6.app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
+import_electron7.app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 function createWindow() {
-  const win = new import_electron6.BrowserWindow({
+  const win = new import_electron7.BrowserWindow({
     width: 1600,
     height: 960,
     backgroundColor: "#0b0b0f",
@@ -19668,13 +19780,13 @@ function createWindow() {
       autoplayPolicy: "no-user-gesture-required"
     }
   });
-  const appUrl = import_electron6.app.isPackaged ? "cench://app/index.html" : DEV_URL;
+  const appUrl = import_electron7.app.isPackaged ? "cench://app/index.html" : DEV_URL;
   win.loadURL(appUrl);
   win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   const template = [
     ...process.platform === "darwin" ? [
       {
-        label: import_electron6.app.name,
+        label: import_electron7.app.name,
         submenu: [
           { role: "about" },
           { type: "separator" },
@@ -19695,7 +19807,7 @@ function createWindow() {
           label: "Home",
           accelerator: "CmdOrCtrl+Shift+H",
           click: () => {
-            const w = import_electron6.BrowserWindow.getFocusedWindow() ?? import_electron6.BrowserWindow.getAllWindows()[0];
+            const w = import_electron7.BrowserWindow.getFocusedWindow() ?? import_electron7.BrowserWindow.getAllWindows()[0];
             if (w)
               w.webContents.executeJavaScript(`
               (() => {
@@ -19716,7 +19828,7 @@ function createWindow() {
           label: "Undo",
           accelerator: "CmdOrCtrl+Z",
           click: () => {
-            const w = import_electron6.BrowserWindow.getFocusedWindow() ?? import_electron6.BrowserWindow.getAllWindows()[0];
+            const w = import_electron7.BrowserWindow.getFocusedWindow() ?? import_electron7.BrowserWindow.getAllWindows()[0];
             if (w)
               w.webContents.executeJavaScript(`
               (() => {
@@ -19734,7 +19846,7 @@ function createWindow() {
           label: "Redo",
           accelerator: "CmdOrCtrl+Shift+Z",
           click: () => {
-            const w = import_electron6.BrowserWindow.getFocusedWindow() ?? import_electron6.BrowserWindow.getAllWindows()[0];
+            const w = import_electron7.BrowserWindow.getFocusedWindow() ?? import_electron7.BrowserWindow.getAllWindows()[0];
             if (w)
               w.webContents.executeJavaScript(`
               (() => {
@@ -19762,7 +19874,7 @@ function createWindow() {
           label: "Toggle Preview Fullscreen",
           accelerator: "CmdOrCtrl+Shift+F",
           click: () => {
-            const w = import_electron6.BrowserWindow.getFocusedWindow() ?? import_electron6.BrowserWindow.getAllWindows()[0];
+            const w = import_electron7.BrowserWindow.getFocusedWindow() ?? import_electron7.BrowserWindow.getAllWindows()[0];
             if (w)
               w.webContents.executeJavaScript(`
               (() => {
@@ -19787,7 +19899,13 @@ function createWindow() {
     {
       label: "Documentation",
       click: () => {
-        import_electron6.shell.openExternal(`${DEV_URL.replace(/\/$/, "")}/docs`);
+        import_electron7.shell.openExternal(`${DEV_URL.replace(/\/$/, "")}/docs`);
+      }
+    },
+    {
+      label: "Check for Updates\u2026",
+      click: () => {
+        void checkForUpdatesInteractive(import_electron7.BrowserWindow.getFocusedWindow() ?? void 0);
       }
     },
     {
@@ -19799,11 +19917,11 @@ function createWindow() {
       ]
     }
   ];
-  import_electron6.Menu.setApplicationMenu(import_electron6.Menu.buildFromTemplate(template));
+  import_electron7.Menu.setApplicationMenu(import_electron7.Menu.buildFromTemplate(template));
 }
-import_electron6.app.whenReady().then(async () => {
-  import_electron6.ipcMain.handle("cench:gitStatus", async () => {
-    if (import_electron6.app.isPackaged) {
+import_electron7.app.whenReady().then(async () => {
+  import_electron7.ipcMain.handle("cench:gitStatus", async () => {
+    if (import_electron7.app.isPackaged) {
       return { ok: false, branch: null, dirty: false };
     }
     const cwd = process.cwd();
@@ -19825,7 +19943,7 @@ import_electron6.app.whenReady().then(async () => {
       return { ok: false, branch: null, dirty: false };
     }
   });
-  import_electron6.ipcMain.handle("cench:webZoomIn", () => {
+  import_electron7.ipcMain.handle("cench:webZoomIn", () => {
     const win = webZoomTargetWindow();
     if (!win) return { ok: false, factor: 1 };
     const z = win.webContents.getZoomFactor();
@@ -19833,7 +19951,7 @@ import_electron6.app.whenReady().then(async () => {
     win.webContents.setZoomFactor(next);
     return { ok: true, factor: win.webContents.getZoomFactor() };
   });
-  import_electron6.ipcMain.handle("cench:webZoomOut", () => {
+  import_electron7.ipcMain.handle("cench:webZoomOut", () => {
     const win = webZoomTargetWindow();
     if (!win) return { ok: false, factor: 1 };
     const z = win.webContents.getZoomFactor();
@@ -19841,13 +19959,13 @@ import_electron6.app.whenReady().then(async () => {
     win.webContents.setZoomFactor(next);
     return { ok: true, factor: win.webContents.getZoomFactor() };
   });
-  import_electron6.ipcMain.handle("cench:webZoomReset", () => {
+  import_electron7.ipcMain.handle("cench:webZoomReset", () => {
     const win = webZoomTargetWindow();
     if (!win) return { ok: false, factor: 1 };
     win.webContents.setZoomFactor(1);
     return { ok: true, factor: 1 };
   });
-  import_electron6.ipcMain.handle(
+  import_electron7.ipcMain.handle(
     "cench:capturePage",
     async (_evt, args) => {
       const win = webZoomTargetWindow();
@@ -19861,48 +19979,48 @@ import_electron6.app.whenReady().then(async () => {
       }
     }
   );
-  import_electron6.ipcMain.handle("cench:saveDialog", async (_evt, suggestedName) => {
-    const res = await import_electron6.dialog.showSaveDialog({
+  import_electron7.ipcMain.handle("cench:saveDialog", async (_evt, suggestedName) => {
+    const res = await import_electron7.dialog.showSaveDialog({
       title: "Save exported video",
       defaultPath: suggestedName || `export-${Date.now()}.mp4`,
       filters: [{ name: "MP4 Video", extensions: ["mp4"] }]
     });
     return { canceled: res.canceled, filePath: res.filePath ?? null };
   });
-  import_electron6.ipcMain.handle("cench:chooseDirectory", async (_evt, defaultPath) => {
-    const res = await import_electron6.dialog.showOpenDialog({
+  import_electron7.ipcMain.handle("cench:chooseDirectory", async (_evt, defaultPath) => {
+    const res = await import_electron7.dialog.showOpenDialog({
       title: "Choose export folder",
-      defaultPath: defaultPath || import_electron6.app.getPath("downloads"),
+      defaultPath: defaultPath || import_electron7.app.getPath("downloads"),
       properties: ["openDirectory", "createDirectory"]
     });
     const dirPath = res.canceled || res.filePaths.length === 0 ? null : res.filePaths[0];
     return { canceled: res.canceled, dirPath };
   });
-  import_electron6.ipcMain.handle("cench:getDefaultExportDir", async () => {
-    return { dirPath: import_electron6.app.getPath("downloads") };
+  import_electron7.ipcMain.handle("cench:getDefaultExportDir", async () => {
+    return { dirPath: import_electron7.app.getPath("downloads") };
   });
-  import_electron6.ipcMain.handle("cench:showItemInFolder", async (_evt, filePath) => {
+  import_electron7.ipcMain.handle("cench:showItemInFolder", async (_evt, filePath) => {
     if (!filePath) return { ok: false, error: "No file path provided" };
-    import_electron6.shell.showItemInFolder(filePath);
+    import_electron7.shell.showItemInFolder(filePath);
     return { ok: true };
   });
-  import_electron6.ipcMain.handle("cench:openPath", async (_evt, filePath) => {
+  import_electron7.ipcMain.handle("cench:openPath", async (_evt, filePath) => {
     if (!filePath) return { ok: false, error: "No file path provided" };
-    const err = await import_electron6.shell.openPath(filePath);
+    const err = await import_electron7.shell.openPath(filePath);
     if (err) return { ok: false, error: err };
     return { ok: true };
   });
-  import_electron6.ipcMain.handle("cench:writeFile", async (_evt, args) => {
+  import_electron7.ipcMain.handle("cench:writeFile", async (_evt, args) => {
     await import_promises22.default.mkdir(import_path14.default.dirname(args.filePath), { recursive: true });
     await import_promises22.default.writeFile(args.filePath, Buffer.from(args.bytes));
     return { ok: true };
   });
-  import_electron6.ipcMain.handle(
+  import_electron7.ipcMain.handle(
     "cench:saveRecording",
     async (_evt, args) => {
       const extRaw = (args.extension || "webm").toLowerCase().replace(/[^a-z0-9]/g, "");
       const ext = extRaw || "webm";
-      const dir = import_path14.default.join(import_electron6.app.getPath("userData"), "recordings");
+      const dir = import_path14.default.join(import_electron7.app.getPath("userData"), "recordings");
       await import_promises22.default.mkdir(dir, { recursive: true });
       const safeBase = sanitizeFilename(args.nameHint || "");
       const filePath = import_path14.default.join(dir, `${safeBase}-${Date.now()}.${ext}`);
@@ -19911,7 +20029,7 @@ import_electron6.app.whenReady().then(async () => {
       return { ok: true, filePath, fileUrl };
     }
   );
-  import_electron6.ipcMain.handle(
+  import_electron7.ipcMain.handle(
     "cench:concatMp4",
     async (_evt, args) => {
       const inputs = (args.inputs ?? []).filter(Boolean);
@@ -19953,18 +20071,18 @@ import_electron6.app.whenReady().then(async () => {
   let cursorSamples = [];
   let cursorStartTime = 0;
   let cursorSourceDisplay = null;
-  import_electron6.ipcMain.handle("cench:startCursorTelemetry", (_evt, args) => {
+  import_electron7.ipcMain.handle("cench:startCursorTelemetry", (_evt, args) => {
     cursorSamples = [];
     cursorStartTime = Date.now();
     cursorSourceDisplay = null;
     if (args?.displayId) {
       const numId = Number(args.displayId);
-      const all = import_electron6.screen.getAllDisplays();
+      const all = import_electron7.screen.getAllDisplays();
       cursorSourceDisplay = all.find((d) => d.id === numId || String(d.id) === args.displayId) ?? null;
     }
     cursorInterval = setInterval(() => {
-      const point = import_electron6.screen.getCursorScreenPoint();
-      const display = cursorSourceDisplay ?? import_electron6.screen.getDisplayNearestPoint(point);
+      const point = import_electron7.screen.getCursorScreenPoint();
+      const display = cursorSourceDisplay ?? import_electron7.screen.getDisplayNearestPoint(point);
       const { x, y, width, height } = display.bounds;
       const nx = Math.max(0, Math.min(1, (point.x - x) / width));
       const ny = Math.max(0, Math.min(1, (point.y - y) / height));
@@ -19975,7 +20093,7 @@ import_electron6.app.whenReady().then(async () => {
     }, 100);
     return { ok: true };
   });
-  import_electron6.ipcMain.handle("cench:stopCursorTelemetry", () => {
+  import_electron7.ipcMain.handle("cench:stopCursorTelemetry", () => {
     if (cursorInterval) {
       clearInterval(cursorInterval);
       cursorInterval = null;
@@ -19985,13 +20103,13 @@ import_electron6.app.whenReady().then(async () => {
     cursorSamples = [];
     return { samples };
   });
-  import_electron6.ipcMain.handle(
+  import_electron7.ipcMain.handle(
     "cench:saveRecordingSession",
     async (_evt, args) => {
       if (!args.screenBytes || args.screenBytes.byteLength === 0) {
         throw new Error("Screen recording is empty \u2014 nothing to save");
       }
-      const dir = import_path14.default.join(import_electron6.app.getPath("userData"), "recordings");
+      const dir = import_path14.default.join(import_electron7.app.getPath("userData"), "recordings");
       await import_promises22.default.mkdir(dir, { recursive: true });
       const ts = Date.now();
       const safeBase = sanitizeFilename(args.nameHint || "");
@@ -20022,21 +20140,22 @@ import_electron6.app.whenReady().then(async () => {
       }
     }
   );
-  import_electron6.session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {
+  import_electron7.session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {
     const allowed = ["media", "audioCapture", "microphone", "videoCapture", "camera"];
     return allowed.includes(permission);
   });
-  import_electron6.session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+  import_electron7.session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
     const allowed = ["media", "audioCapture", "microphone", "videoCapture", "camera"];
     callback(allowed.includes(permission));
   });
   await registerCenchProtocol();
-  registerAllIpc(import_electron6.ipcMain);
+  registerAllIpc(import_electron7.ipcMain);
   createWindow();
+  initAutoUpdater().catch((err) => log2.error("initAutoUpdater threw", { error: err }));
   const deps = validateExportDeps();
   if (!deps.ok) {
-    log.error("export dependency check failed", { extra: { missing: deps.missing } });
-    import_electron6.dialog.showMessageBox({
+    log2.error("export dependency check failed", { extra: { missing: deps.missing } });
+    import_electron7.dialog.showMessageBox({
       type: "warning",
       title: "Export setup incomplete",
       message: "MP4 export is unavailable",
@@ -20045,8 +20164,8 @@ import_electron6.app.whenReady().then(async () => {
       noLink: true
     });
   }
-  import_electron6.session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
-    log.debug("setDisplayMediaRequestHandler", {
+  import_electron7.session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
+    log2.debug("setDisplayMediaRequestHandler", {
       extra: {
         video: !!request.videoRequested,
         audio: !!request.audioRequested,
@@ -20056,17 +20175,17 @@ import_electron6.app.whenReady().then(async () => {
     try {
       ;
       callback({}, { useSystemPicker: true });
-      log.debug("display-media callback invoked with useSystemPicker");
+      log2.debug("display-media callback invoked with useSystemPicker");
     } catch (err) {
-      log.error("display-media callback error", { error: err });
+      log2.error("display-media callback error", { error: err });
       callback(null);
     }
   });
-  import_electron6.app.on("activate", () => {
-    if (import_electron6.BrowserWindow.getAllWindows().length === 0) createWindow();
+  import_electron7.app.on("activate", () => {
+    if (import_electron7.BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
-import_electron6.app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") import_electron6.app.quit();
+import_electron7.app.on("window-all-closed", () => {
+  if (process.platform !== "darwin") import_electron7.app.quit();
 });
 //# sourceMappingURL=main.js.map
