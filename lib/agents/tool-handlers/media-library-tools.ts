@@ -429,21 +429,15 @@ async function uploadMediaFromUrl(args: Record<string, unknown>, world: WorldSta
   }
 
   try {
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-    const response = await fetch(`${baseUrl}/api/ingest-direct`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, projectId, name, tags }),
-    })
-    const data = await response.json()
-    if (!response.ok) return err(`Media ingest failed: ${data?.error ?? response.statusText}`)
+    const { ingestDirect } = await import('@/lib/services/ingest')
+    const data = await ingestDirect({ url, projectId, name, tags })
     const asset = data.asset
     const summary = data.deduped
       ? `Deduped — "${asset.name}" already in library (contentHash: ${data.contentHash.slice(0, 8)}…)`
       : `Ingested ${asset.type} "${asset.name}" → asset ${asset.id}`
     return ok(null, summary, data)
-  } catch (e: any) {
-    return err(`Media ingest failed: ${e?.message ?? String(e)}`)
+  } catch (e) {
+    return err(`Media ingest failed: ${(e as Error)?.message ?? String(e)}`)
   }
 }
 

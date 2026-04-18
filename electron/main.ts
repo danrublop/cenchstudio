@@ -41,14 +41,16 @@ function loadEnvFiles(): void {
 }
 loadEnvFiles()
 
-// Tell `lib/audio/paths.ts` where to write audio files and which URL
-// prefix to stamp into scene HTML. Must run before any IPC handler
-// loads an audio provider module (lazy imports via dynamic `import()`).
-//   Dev:      public/audio  +  /audio/           (Next serves these)
-//   Packaged: <userData>/audio  +  cench://audio/  (protocol handler serves these)
+// Tell runtime path resolvers (`lib/audio/paths.ts`, `lib/uploads/paths.ts`)
+// where to write assets and which URL prefix to stamp into scene HTML.
+// Must run before any IPC handler loads a provider or service module.
+//   Dev:      public/<kind>    +  /<kind>/           (Next serves)
+//   Packaged: <userData>/<kind> +  cench://<kind>/   (protocol handler serves)
 if (app.isPackaged) {
   process.env.CENCH_AUDIO_DIR = getUserAudioDir()
   process.env.CENCH_AUDIO_URL_BASE = 'cench://audio/'
+  process.env.CENCH_UPLOADS_DIR = getUserUploadsDir()
+  process.env.CENCH_UPLOADS_URL_BASE = 'cench://uploads/'
 }
 
 const execFileAsync = promisify(execFile)
@@ -396,6 +398,33 @@ app.whenReady().then(async () => {
       filters: [{ name: 'MP4 Video', extensions: ['mp4'] }],
     })
     return { canceled: res.canceled, filePath: res.filePath ?? null }
+  })
+
+  ipcMain.handle('cench:chooseDirectory', async (_evt, defaultPath?: string) => {
+    const res = await dialog.showOpenDialog({
+      title: 'Choose export folder',
+      defaultPath: defaultPath || app.getPath('downloads'),
+      properties: ['openDirectory', 'createDirectory'],
+    })
+    const dirPath = res.canceled || res.filePaths.length === 0 ? null : res.filePaths[0]
+    return { canceled: res.canceled, dirPath }
+  })
+
+  ipcMain.handle('cench:getDefaultExportDir', async () => {
+    return { dirPath: app.getPath('downloads') }
+  })
+
+  ipcMain.handle('cench:showItemInFolder', async (_evt, filePath: string) => {
+    if (!filePath) return { ok: false as const, error: 'No file path provided' }
+    shell.showItemInFolder(filePath)
+    return { ok: true as const }
+  })
+
+  ipcMain.handle('cench:openPath', async (_evt, filePath: string) => {
+    if (!filePath) return { ok: false as const, error: 'No file path provided' }
+    const err = await shell.openPath(filePath)
+    if (err) return { ok: false as const, error: err }
+    return { ok: true as const }
   })
 
   ipcMain.handle('cench:writeFile', async (_evt, args: { filePath: string; bytes: ArrayBuffer }) => {

@@ -133,16 +133,8 @@ export function createResearchToolHandler() {
           )
         }
         try {
-          const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-          const response = await fetch(`${baseUrl}/api/ingest-url`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url, projectId, formatId }),
-          })
-          const data = await response.json()
-          if (!response.ok) {
-            return err(`yt-dlp ${data.mode ?? 'ingest'} failed: ${data.error ?? response.statusText}`)
-          }
+          const svc = await import('@/lib/services/ingest')
+          const data = await svc.ingestUrl({ url, projectId, formatId })
           if (data.mode === 'probe') {
             return ok(
               null,
@@ -150,14 +142,17 @@ export function createResearchToolHandler() {
               data,
             )
           }
-          // download mode
           return ok(
             null,
-            `Downloaded "${data.asset.name}" via yt-dlp (${Math.round(data.asset.durationSeconds)}s, ${Math.round(data.asset.sizeBytes / 1024 / 1024)} MB) → asset ${data.asset.id}`,
+            `Downloaded "${data.asset.name}" via yt-dlp (${Math.round(data.asset.durationSeconds ?? 0)}s, ${Math.round(data.asset.sizeBytes / 1024 / 1024)} MB) → asset ${data.asset.id}`,
             data,
           )
-        } catch (e: any) {
-          return err(`yt-dlp ingest failed: ${e?.message ?? String(e)}`)
+        } catch (e) {
+          const svc = await import('@/lib/services/ingest')
+          if (e instanceof svc.YtDlpMissingError) {
+            return err(`yt-dlp not installed: ${e.message}`)
+          }
+          return err(`yt-dlp ingest failed: ${(e as Error)?.message ?? String(e)}`)
         }
       }
 

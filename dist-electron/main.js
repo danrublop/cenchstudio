@@ -1679,11 +1679,11 @@ var init_freesound_music = __esm({
 });
 
 // electron/main.ts
-var import_path11 = __toESM(require("path"));
-var import_child_process2 = require("child_process");
-var import_util2 = require("util");
-var import_electron7 = require("electron");
-var import_promises17 = __toESM(require("fs/promises"));
+var import_path12 = __toESM(require("path"));
+var import_child_process3 = require("child_process");
+var import_util3 = require("util");
+var import_electron6 = require("electron");
+var import_promises19 = __toESM(require("fs/promises"));
 var import_fs = __toESM(require("fs"));
 var import_url = require("url");
 var import_dotenv = require("dotenv");
@@ -11651,10 +11651,10 @@ function generateWorldHTML(scene, style, audioSettings, dims) {
   const appBaseUrl = process.env.NEXT_PUBLIC_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
   if (typeof window === "undefined") {
     try {
-      const fs18 = require("fs");
+      const fs20 = require("fs");
       const pathMod = require("path");
       const templatePath = pathMod.join(process.cwd(), "public", "worlds", worldHtmlFile);
-      let templateHTML = fs18.readFileSync(templatePath, "utf-8");
+      let templateHTML = fs20.readFileSync(templatePath, "utf-8");
       const configScript = `<script>
     window.__worldConfig = ${configJSON};
     window.DURATION = ${scene.duration ?? 10};
@@ -12790,25 +12790,20 @@ function register10(ipcMain2) {
 }
 
 // electron/ipc/media.ts
-var import_electron6 = require("electron");
 var import_node_path6 = __toESM(require("node:path"));
 var import_promises5 = __toESM(require("node:fs/promises"));
 var import_uuid = require("uuid");
 
-// electron/paths.ts
-var import_electron5 = require("electron");
+// lib/uploads/paths.ts
 var import_node_path5 = __toESM(require("node:path"));
-function getUserScenesDir() {
-  return import_node_path5.default.join(import_electron5.app.getPath("userData"), "scenes");
+function getUploadsDir() {
+  return process.env.CENCH_UPLOADS_DIR || import_node_path5.default.join(process.cwd(), "public", "uploads");
 }
-function getUserUploadsDir() {
-  return import_node_path5.default.join(import_electron5.app.getPath("userData"), "uploads");
-}
-function getUserAudioDir() {
-  return import_node_path5.default.join(import_electron5.app.getPath("userData"), "audio");
-}
-function getStaticAppDir() {
-  return import_node_path5.default.join(__dirname, "..", "out");
+function uploadsUrlFor(relativePath) {
+  const raw = process.env.CENCH_UPLOADS_URL_BASE || "/uploads/";
+  const base = raw.endsWith("/") ? raw : `${raw}/`;
+  const rel = relativePath.replace(/^\/+/, "");
+  return `${base}${rel}`;
 }
 
 // electron/ipc/media.ts
@@ -12822,12 +12817,6 @@ var ALLOWED_TYPES = {
   "application/json": "json"
 };
 var MAX_SIZE = 100 * 1024 * 1024;
-function resolveUploadsDir() {
-  return import_electron6.app.isPackaged ? getUserUploadsDir() : import_node_path6.default.join(process.cwd(), "public", "uploads");
-}
-function urlFor(filename) {
-  return import_electron6.app.isPackaged ? `cench://uploads/${filename}` : `/uploads/${filename}`;
-}
 async function upload(args) {
   if (!args || typeof args !== "object") throw new IpcValidationError("upload args required");
   if (!(args.data instanceof ArrayBuffer)) throw new IpcValidationError("data must be an ArrayBuffer");
@@ -12851,7 +12840,7 @@ async function upload(args) {
       throw new IpcValidationError("Invalid JSON file");
     }
   }
-  const uploadsDir2 = resolveUploadsDir();
+  const uploadsDir2 = getUploadsDir();
   await import_promises5.default.mkdir(uploadsDir2, { recursive: true });
   const filename = `${(0, import_uuid.v4)()}.${ext}`;
   const destPath = import_node_path6.default.resolve(import_node_path6.default.join(uploadsDir2, filename));
@@ -12859,7 +12848,7 @@ async function upload(args) {
     throw new IpcValidationError("Invalid upload path (escape)");
   }
   await import_promises5.default.writeFile(destPath, buffer);
-  return { url: urlFor(filename), filename };
+  return { url: uploadsUrlFor(filename), filename };
 }
 function register11(ipcMain2) {
   ipcMain2.handle("cench:media.upload", (_e, args) => upload(args));
@@ -12991,8 +12980,8 @@ var auroraProvider = {
 // lib/apis/heygen.ts
 var HEYGEN_BASE = "https://api.heygen.com/v2";
 var HEYGEN_KEY = () => process.env.HEYGEN_API_KEY;
-async function heygenFetch(path20, options = {}) {
-  const response = await fetch(`${HEYGEN_BASE}${path20}`, {
+async function heygenFetch(path23, options = {}) {
+  const response = await fetch(`${HEYGEN_BASE}${path23}`, {
     ...options,
     headers: {
       "X-Api-Key": HEYGEN_KEY(),
@@ -13841,6 +13830,473 @@ function register14(ipcMain2) {
   );
 }
 
+// lib/services/ingest.ts
+var import_promises18 = __toESM(require("node:fs/promises"));
+var import_node_path9 = __toESM(require("node:path"));
+var import_uuid3 = require("uuid");
+var import_node_child_process = require("node:child_process");
+var import_node_util = require("node:util");
+var import_sharp = __toESM(require("sharp"));
+var import_drizzle_orm13 = require("drizzle-orm");
+
+// lib/ingest/yt-dlp.ts
+var import_child_process2 = require("child_process");
+var import_util2 = require("util");
+var execFileAsync2 = (0, import_util2.promisify)(import_child_process2.execFile);
+var YtDlpNotInstalledError = class extends Error {
+  constructor() {
+    super("yt-dlp binary not found on PATH. Install with: brew install yt-dlp  (or  pip install yt-dlp)");
+    this.name = "YtDlpNotInstalledError";
+  }
+};
+async function runYtDlp(args, opts = {}) {
+  try {
+    return await execFileAsync2("yt-dlp", args, {
+      timeout: opts.timeoutMs ?? 12e4,
+      maxBuffer: 50 * 1024 * 1024
+    });
+  } catch (e) {
+    if (e?.code === "ENOENT" || /command not found|ENOENT/i.test(e?.message ?? "")) {
+      throw new YtDlpNotInstalledError();
+    }
+    throw e;
+  }
+}
+async function probe(url, opts = {}) {
+  const { stdout } = await runYtDlp(["-J", "--no-warnings", "--no-playlist", url], {
+    timeoutMs: opts.timeoutMs ?? 45e3
+  });
+  const info = JSON.parse(stdout);
+  const formats = (info.formats ?? []).filter((f) => f.vcodec && f.vcodec !== "none").map((f) => ({
+    formatId: f.format_id,
+    ext: f.ext,
+    resolution: f.resolution,
+    width: f.width,
+    height: f.height,
+    fps: f.fps,
+    filesize: f.filesize ?? f.filesize_approx,
+    vcodec: f.vcodec,
+    acodec: f.acodec,
+    formatNote: f.format_note
+  })).sort((a, b) => {
+    const aScore = (a.acodec && a.acodec !== "none" ? 1e3 : 0) + (a.ext === "mp4" ? 500 : 0) + (a.height ?? 0);
+    const bScore = (b.acodec && b.acodec !== "none" ? 1e3 : 0) + (b.ext === "mp4" ? 500 : 0) + (b.height ?? 0);
+    return bScore - aScore;
+  });
+  const reco = formats.find((f) => (f.height ?? 0) <= 1080 && f.acodec && f.acodec !== "none") ?? formats[0];
+  return {
+    title: info.title,
+    durationSec: info.duration,
+    thumbnail: info.thumbnail,
+    uploader: info.uploader,
+    webpageUrl: info.webpage_url,
+    extractor: info.extractor,
+    formats,
+    recommendedFormatId: reco?.formatId ?? info.format_id ?? "best[height<=1080]"
+  };
+}
+async function download(opts) {
+  const { url, destPath, maxDurationSec, formatId, timeoutMs = 3e5 } = opts;
+  const info = await probe(url, { timeoutMs: Math.min(timeoutMs, 45e3) });
+  if (maxDurationSec && info.durationSec > maxDurationSec) {
+    throw new Error(
+      `Video is ${Math.round(info.durationSec)}s, exceeds cap of ${maxDurationSec}s. Try a shorter clip or a different URL.`
+    );
+  }
+  const effectiveFormat = formatId ?? info.recommendedFormatId;
+  const args = [
+    "-f",
+    effectiveFormat,
+    "--merge-output-format",
+    "mp4",
+    "--no-warnings",
+    "--no-playlist",
+    "-o",
+    destPath,
+    url
+  ];
+  await runYtDlp(args, { timeoutMs });
+  const chosen = info.formats.find((f) => f.formatId === effectiveFormat) ?? info.formats[0];
+  return {
+    destPath,
+    title: info.title,
+    durationSec: info.durationSec,
+    width: chosen?.width,
+    height: chosen?.height,
+    formatId: effectiveFormat,
+    sourceUrl: info.webpageUrl
+  };
+}
+
+// lib/apis/media-cache.ts
+var import_crypto5 = __toESM(require("crypto"));
+var import_promises17 = __toESM(require("fs/promises"));
+var import_path11 = __toESM(require("path"));
+var GENERATED_DIR = import_path11.default.join(process.cwd(), "public", "generated");
+function computeContentHash(buffer) {
+  return import_crypto5.default.createHash("sha256").update(buffer).digest("hex").slice(0, 16);
+}
+
+// lib/services/ingest.ts
+var execFileAsync3 = (0, import_node_util.promisify)(import_node_child_process.execFile);
+var UUID_RE3 = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+var MAX_DURATION_SEC = 600;
+var MAX_FILE_SIZE_BYTES = 200 * 1024 * 1024;
+var INGESTED_SUBDIR = "ingested";
+var IngestValidationError = class extends Error {
+  code = "VALIDATION";
+  constructor(message) {
+    super(message);
+    this.name = "IngestValidationError";
+  }
+};
+var YtDlpMissingError = class extends Error {
+  code = "YT_DLP_MISSING";
+  constructor(message) {
+    super(message);
+    this.name = "YtDlpMissingError";
+  }
+};
+function assertProjectId(projectId) {
+  if (typeof projectId !== "string" || !UUID_RE3.test(projectId)) {
+    throw new IngestValidationError("projectId (uuid) is required");
+  }
+}
+function ingestedDir(projectId) {
+  return import_node_path9.default.join(getUploadsDir(), "projects", projectId, INGESTED_SUBDIR);
+}
+function ingestedUrl(projectId, filename) {
+  return uploadsUrlFor(`projects/${projectId}/${INGESTED_SUBDIR}/${filename}`);
+}
+async function ingestUrl(input) {
+  if (!input.url || typeof input.url !== "string") {
+    throw new IngestValidationError("url is required");
+  }
+  try {
+    new URL(input.url);
+  } catch {
+    throw new IngestValidationError("Invalid URL");
+  }
+  assertProjectId(input.projectId);
+  if (!input.formatId) {
+    try {
+      const info = await probe(input.url);
+      return {
+        mode: "probe",
+        title: info.title,
+        durationSec: info.durationSec,
+        thumbnail: info.thumbnail,
+        uploader: info.uploader,
+        extractor: info.extractor,
+        webpageUrl: info.webpageUrl,
+        recommendedFormatId: info.recommendedFormatId,
+        formats: info.formats.slice(0, 12),
+        ytDlpTooLong: info.durationSec > MAX_DURATION_SEC ? `Video is ${Math.round(info.durationSec)}s; hard cap is ${MAX_DURATION_SEC}s. Refuse or try a shorter clip.` : null
+      };
+    } catch (e) {
+      if (e instanceof YtDlpNotInstalledError) throw new YtDlpMissingError(e.message);
+      throw new Error(`yt-dlp probe failed: ${e.message}`);
+    }
+  }
+  const assetId = (0, import_uuid3.v4)();
+  const uploadsDir2 = ingestedDir(input.projectId);
+  await import_promises18.default.mkdir(uploadsDir2, { recursive: true });
+  const storagePath = import_node_path9.default.join(uploadsDir2, `${assetId}.mp4`);
+  let result;
+  try {
+    result = await download({
+      url: input.url,
+      destPath: storagePath,
+      formatId: input.formatId,
+      maxDurationSec: MAX_DURATION_SEC
+    });
+  } catch (e) {
+    if (e instanceof YtDlpNotInstalledError) throw new YtDlpMissingError(e.message);
+    throw new Error(`yt-dlp download failed: ${e.message}`);
+  }
+  const stat = await import_promises18.default.stat(storagePath);
+  if (stat.size > MAX_FILE_SIZE_BYTES) {
+    await import_promises18.default.unlink(storagePath).catch(() => {
+    });
+    throw new IngestValidationError(
+      `Downloaded file is ${Math.round(stat.size / 1024 / 1024)} MB, exceeds ${MAX_FILE_SIZE_BYTES / 1024 / 1024} MB cap.`
+    );
+  }
+  const fileBuffer = await import_promises18.default.readFile(storagePath);
+  const contentHash = computeContentHash(fileBuffer);
+  const existing = await db.select().from(projectAssets).where((0, import_drizzle_orm13.and)((0, import_drizzle_orm13.eq)(projectAssets.projectId, input.projectId), (0, import_drizzle_orm13.eq)(projectAssets.contentHash, contentHash))).limit(1);
+  if (existing.length > 0) {
+    await import_promises18.default.unlink(storagePath).catch(() => {
+    });
+    return {
+      mode: "download",
+      asset: existing[0],
+      contentHash,
+      sourceUrl: result.sourceUrl,
+      deduped: true
+    };
+  }
+  let thumbnailUrl = null;
+  try {
+    const thumbFilename = `${assetId}_thumb.jpg`;
+    const thumbPath = import_node_path9.default.join(uploadsDir2, thumbFilename);
+    await execFileAsync3("ffmpeg", ["-i", storagePath, "-vframes", "1", "-vf", "scale=300:-1", "-y", thumbPath], {
+      timeout: 3e4
+    });
+    thumbnailUrl = ingestedUrl(input.projectId, thumbFilename);
+  } catch {
+  }
+  const filename = `${assetId}.mp4`;
+  const publicUrl = ingestedUrl(input.projectId, filename);
+  const [asset] = await db.insert(projectAssets).values({
+    id: assetId,
+    projectId: input.projectId,
+    filename: `${result.title.slice(0, 200).replace(/[^\w -]/g, "_")}.mp4`,
+    storagePath,
+    publicUrl,
+    type: "video",
+    mimeType: "video/mp4",
+    sizeBytes: stat.size,
+    width: result.width ?? null,
+    height: result.height ?? null,
+    durationSeconds: result.durationSec,
+    name: result.title.slice(0, 200),
+    tags: [],
+    thumbnailUrl,
+    extractedColors: [],
+    source: "yt-dlp",
+    contentHash,
+    sourceUrl: result.sourceUrl
+  }).returning();
+  return {
+    mode: "download",
+    asset,
+    contentHash,
+    sourceUrl: result.sourceUrl,
+    deduped: false
+  };
+}
+var MIME_TO_TYPE = {
+  "image/jpeg": { type: "image", ext: "jpg" },
+  "image/png": { type: "image", ext: "png" },
+  "image/webp": { type: "image", ext: "webp" },
+  "image/gif": { type: "image", ext: "gif" },
+  "image/svg+xml": { type: "svg", ext: "svg" },
+  "video/mp4": { type: "video", ext: "mp4" },
+  "video/webm": { type: "video", ext: "webm" },
+  "video/quicktime": { type: "video", ext: "mov" },
+  "video/ogg": { type: "video", ext: "ogv" },
+  "application/ogg": { type: "video", ext: "ogv" }
+};
+function extFromUrl(url) {
+  try {
+    const u = new URL(url);
+    const ext = import_node_path9.default.extname(u.pathname).toLowerCase().slice(1);
+    return ext || null;
+  } catch {
+    return null;
+  }
+}
+function typeFromExt(ext) {
+  const e = ext.toLowerCase();
+  if (["jpg", "jpeg"].includes(e)) return { type: "image", ext: "jpg" };
+  if (["png", "webp", "gif"].includes(e)) return { type: "image", ext: e };
+  if (e === "svg") return { type: "svg", ext: "svg" };
+  if (["mp4", "webm", "mov", "ogv", "m4v"].includes(e)) return { type: "video", ext: e === "m4v" ? "mp4" : e };
+  return null;
+}
+function deriveNameFromUrl(url) {
+  try {
+    const u = new URL(url);
+    const name = import_node_path9.default.basename(u.pathname).replace(/\.[^.]+$/, "").replace(/[-_]/g, " ");
+    return name || u.hostname;
+  } catch {
+    return "Imported media";
+  }
+}
+async function ingestDirect(input) {
+  if (!input.url || typeof input.url !== "string") {
+    throw new IngestValidationError("url is required");
+  }
+  try {
+    new URL(input.url);
+  } catch {
+    throw new IngestValidationError("Invalid URL");
+  }
+  assertProjectId(input.projectId);
+  const head = await fetch(input.url, { method: "HEAD" }).catch(() => null);
+  const contentType = head?.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase();
+  const contentLength = head?.headers.get("content-length");
+  if (contentLength && Number(contentLength) > MAX_FILE_SIZE_BYTES) {
+    throw new IngestValidationError(
+      `File is ${Math.round(Number(contentLength) / 1024 / 1024)} MB, exceeds 200 MB cap.`
+    );
+  }
+  const response = await fetch(input.url);
+  if (!response.ok) throw new Error(`Download failed: ${response.status}`);
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("No response body");
+  const chunks = [];
+  let total = 0;
+  while (total < MAX_FILE_SIZE_BYTES) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+    chunks.push(value);
+    total += value.length;
+  }
+  if (total >= MAX_FILE_SIZE_BYTES) {
+    throw new IngestValidationError("File too large (over 200 MB)");
+  }
+  const buffer = Buffer.concat(chunks.map((c) => Buffer.from(c)));
+  let typeInfo = contentType ? MIME_TO_TYPE[contentType] : void 0;
+  if (!typeInfo) {
+    const urlExt = extFromUrl(input.url);
+    if (urlExt) typeInfo = typeFromExt(urlExt) ?? void 0;
+  }
+  if (!typeInfo) {
+    throw new IngestValidationError(
+      `Cannot determine media type from URL or content-type (${contentType ?? "unknown"}).`
+    );
+  }
+  const contentHash = computeContentHash(buffer);
+  const existing = await db.select().from(projectAssets).where((0, import_drizzle_orm13.and)((0, import_drizzle_orm13.eq)(projectAssets.projectId, input.projectId), (0, import_drizzle_orm13.eq)(projectAssets.contentHash, contentHash))).limit(1);
+  if (existing.length > 0) {
+    return { asset: existing[0], contentHash, sourceUrl: input.url, deduped: true };
+  }
+  const assetId = (0, import_uuid3.v4)();
+  const uploadsDir2 = ingestedDir(input.projectId);
+  await import_promises18.default.mkdir(uploadsDir2, { recursive: true });
+  let effectiveExt = typeInfo.ext;
+  const needsTranscode = typeInfo.type === "video" && (typeInfo.ext === "ogv" || typeInfo.ext === "mov");
+  const rawFilename = `${assetId}.${typeInfo.ext}`;
+  const rawPath = import_node_path9.default.join(uploadsDir2, rawFilename);
+  await import_promises18.default.writeFile(rawPath, buffer);
+  let storedFilename = rawFilename;
+  let storagePath = rawPath;
+  if (needsTranscode) {
+    const mp4Filename = `${assetId}.mp4`;
+    const mp4Path = import_node_path9.default.join(uploadsDir2, mp4Filename);
+    try {
+      await execFileAsync3(
+        "ffmpeg",
+        [
+          "-i",
+          rawPath,
+          "-c:v",
+          "libx264",
+          "-preset",
+          "veryfast",
+          "-crf",
+          "23",
+          "-c:a",
+          "aac",
+          "-movflags",
+          "+faststart",
+          "-y",
+          mp4Path
+        ],
+        { timeout: 18e4 }
+      );
+      await import_promises18.default.unlink(rawPath).catch(() => {
+      });
+      storedFilename = mp4Filename;
+      storagePath = mp4Path;
+      effectiveExt = "mp4";
+    } catch (e) {
+      console.warn("[ingest] transcode failed, keeping original:", e.message);
+    }
+  }
+  const publicUrl = ingestedUrl(input.projectId, storedFilename);
+  let width = null;
+  let height = null;
+  let durationSeconds = null;
+  let thumbnailUrl = null;
+  if (typeInfo.type === "image") {
+    try {
+      const meta = await (0, import_sharp.default)(buffer).metadata();
+      width = meta.width ?? null;
+      height = meta.height ?? null;
+      const thumbFilename = `${assetId}_thumb.jpg`;
+      const thumbPath = import_node_path9.default.join(uploadsDir2, thumbFilename);
+      await (0, import_sharp.default)(buffer, { animated: false }).resize(300, null, { withoutEnlargement: true }).jpeg({ quality: 80 }).toFile(thumbPath);
+      thumbnailUrl = ingestedUrl(input.projectId, thumbFilename);
+    } catch {
+    }
+  } else if (typeInfo.type === "video") {
+    try {
+      const { stdout } = await execFileAsync3(
+        "ffprobe",
+        ["-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", storagePath],
+        { timeout: 15e3 }
+      );
+      const info = JSON.parse(stdout);
+      const v = info.streams?.find((s) => s.codec_type === "video");
+      if (v) {
+        width = v.width ?? null;
+        height = v.height ?? null;
+      }
+      durationSeconds = info.format?.duration ? parseFloat(info.format.duration) : null;
+    } catch {
+    }
+    try {
+      const thumbFilename = `${assetId}_thumb.jpg`;
+      const thumbPath = import_node_path9.default.join(uploadsDir2, thumbFilename);
+      await execFileAsync3("ffmpeg", ["-i", storagePath, "-vframes", "1", "-vf", "scale=300:-1", "-y", thumbPath], {
+        timeout: 3e4
+      });
+      thumbnailUrl = ingestedUrl(input.projectId, thumbFilename);
+    } catch {
+    }
+  } else if (typeInfo.type === "svg") {
+    thumbnailUrl = publicUrl;
+  }
+  const displayName = input.name || deriveNameFromUrl(input.url);
+  const storedMime = typeInfo.type === "video" ? `video/${effectiveExt === "ogv" ? "ogg" : effectiveExt}` : typeInfo.type === "svg" ? "image/svg+xml" : `image/${effectiveExt === "jpg" ? "jpeg" : effectiveExt}`;
+  const [asset] = await db.insert(projectAssets).values({
+    id: assetId,
+    projectId: input.projectId,
+    filename: storedFilename,
+    storagePath,
+    publicUrl,
+    type: typeInfo.type,
+    mimeType: storedMime,
+    sizeBytes: (await import_promises18.default.stat(storagePath)).size,
+    width,
+    height,
+    durationSeconds,
+    name: displayName,
+    tags: Array.isArray(input.tags) ? input.tags.slice(0, 30) : [],
+    thumbnailUrl,
+    extractedColors: [],
+    source: "research",
+    contentHash,
+    sourceUrl: input.url
+  }).returning();
+  return { asset, contentHash, sourceUrl: input.url, deduped: false };
+}
+
+// electron/ipc/ingest.ts
+function register15(ipcMain2) {
+  ipcMain2.handle("cench:ingest.fromUrl", async (_e, args) => {
+    try {
+      return await ingestUrl(args);
+    } catch (err) {
+      if (err instanceof IngestValidationError) throw new IpcValidationError(err.message);
+      if (err instanceof YtDlpMissingError) throw new IpcValidationError(`yt-dlp not installed: ${err.message}`);
+      throw err;
+    }
+  });
+  ipcMain2.handle("cench:ingest.fromDirectUrl", async (_e, args) => {
+    try {
+      return await ingestDirect(args);
+    } catch (err) {
+      if (err instanceof IngestValidationError) throw new IpcValidationError(err.message);
+      throw err;
+    }
+  });
+}
+
 // electron/ipc/index.ts
 function registerAllIpc(ipcMain2) {
   register(ipcMain2);
@@ -13857,6 +14313,23 @@ function registerAllIpc(ipcMain2) {
   register12(ipcMain2);
   register13(ipcMain2);
   register14(ipcMain2);
+  register15(ipcMain2);
+}
+
+// electron/paths.ts
+var import_electron5 = require("electron");
+var import_node_path10 = __toESM(require("node:path"));
+function getUserScenesDir() {
+  return import_node_path10.default.join(import_electron5.app.getPath("userData"), "scenes");
+}
+function getUserUploadsDir() {
+  return import_node_path10.default.join(import_electron5.app.getPath("userData"), "uploads");
+}
+function getUserAudioDir() {
+  return import_node_path10.default.join(import_electron5.app.getPath("userData"), "audio");
+}
+function getStaticAppDir() {
+  return import_node_path10.default.join(__dirname, "..", "out");
 }
 
 // electron/main.ts
@@ -13868,26 +14341,28 @@ function loadEnvFiles() {
       (0, import_dotenv.config)({ path: p, override: false });
     }
   };
-  if (import_electron7.app.isPackaged) {
-    tryLoad(import_path11.default.join(import_electron7.app.getPath("userData"), "cench.env"));
-    tryLoad(import_path11.default.join(process.resourcesPath, ".env.defaults"));
+  if (import_electron6.app.isPackaged) {
+    tryLoad(import_path12.default.join(import_electron6.app.getPath("userData"), "cench.env"));
+    tryLoad(import_path12.default.join(process.resourcesPath, ".env.defaults"));
   } else {
-    const repoRoot = import_path11.default.resolve(__dirname, "..");
-    tryLoad(import_path11.default.join(repoRoot, ".env.local"));
-    tryLoad(import_path11.default.join(repoRoot, ".env"));
+    const repoRoot = import_path12.default.resolve(__dirname, "..");
+    tryLoad(import_path12.default.join(repoRoot, ".env.local"));
+    tryLoad(import_path12.default.join(repoRoot, ".env"));
   }
 }
 loadEnvFiles();
-if (import_electron7.app.isPackaged) {
+if (import_electron6.app.isPackaged) {
   process.env.CENCH_AUDIO_DIR = getUserAudioDir();
   process.env.CENCH_AUDIO_URL_BASE = "cench://audio/";
+  process.env.CENCH_UPLOADS_DIR = getUserUploadsDir();
+  process.env.CENCH_UPLOADS_URL_BASE = "cench://uploads/";
 }
-var execFileAsync2 = (0, import_util2.promisify)(import_child_process2.execFile);
+var execFileAsync4 = (0, import_util3.promisify)(import_child_process3.execFile);
 function webZoomTargetWindow() {
-  return import_electron7.BrowserWindow.getFocusedWindow() ?? import_electron7.BrowserWindow.getAllWindows()[0] ?? null;
+  return import_electron6.BrowserWindow.getFocusedWindow() ?? import_electron6.BrowserWindow.getAllWindows()[0] ?? null;
 }
 var DEV_URL = process.env.ELECTRON_START_URL || "http://localhost:3000";
-import_electron7.protocol.registerSchemesAsPrivileged([
+import_electron6.protocol.registerSchemesAsPrivileged([
   {
     scheme: "cench",
     privileges: {
@@ -13900,14 +14375,14 @@ import_electron7.protocol.registerSchemesAsPrivileged([
   }
 ]);
 async function registerCenchProtocol() {
-  const staticDir = import_path11.default.resolve(getStaticAppDir());
-  const scenesDir = import_path11.default.resolve(getUserScenesDir());
-  const uploadsDir2 = import_path11.default.resolve(getUserUploadsDir());
-  const audioDir = import_path11.default.resolve(getUserAudioDir());
-  await import_promises17.default.mkdir(scenesDir, { recursive: true });
-  await import_promises17.default.mkdir(uploadsDir2, { recursive: true });
-  await import_promises17.default.mkdir(audioDir, { recursive: true });
-  import_electron7.protocol.handle("cench", async (request) => {
+  const staticDir = import_path12.default.resolve(getStaticAppDir());
+  const scenesDir = import_path12.default.resolve(getUserScenesDir());
+  const uploadsDir2 = import_path12.default.resolve(getUserUploadsDir());
+  const audioDir = import_path12.default.resolve(getUserAudioDir());
+  await import_promises19.default.mkdir(scenesDir, { recursive: true });
+  await import_promises19.default.mkdir(uploadsDir2, { recursive: true });
+  await import_promises19.default.mkdir(audioDir, { recursive: true });
+  import_electron6.protocol.handle("cench", async (request) => {
     try {
       const url = new URL(request.url);
       const host = url.hostname;
@@ -13924,32 +14399,32 @@ async function registerCenchProtocol() {
       } else {
         return new Response(`Unknown cench:// host "${host}"`, { status: 404 });
       }
-      let filePath = import_path11.default.resolve(baseDir, rawPath || "index.html");
-      if (!filePath.startsWith(baseDir + import_path11.default.sep) && filePath !== baseDir) {
+      let filePath = import_path12.default.resolve(baseDir, rawPath || "index.html");
+      if (!filePath.startsWith(baseDir + import_path12.default.sep) && filePath !== baseDir) {
         return new Response("Forbidden", { status: 403 });
       }
       try {
-        const stat = await import_promises17.default.stat(filePath);
-        if (stat.isDirectory()) filePath = import_path11.default.join(filePath, "index.html");
+        const stat = await import_promises19.default.stat(filePath);
+        if (stat.isDirectory()) filePath = import_path12.default.join(filePath, "index.html");
       } catch {
         if (!filePath.endsWith(".html")) {
           const htmlVariant = `${filePath}.html`;
           try {
-            await import_promises17.default.access(htmlVariant);
+            await import_promises19.default.access(htmlVariant);
             filePath = htmlVariant;
           } catch {
           }
         }
       }
       try {
-        const realPath = await import_promises17.default.realpath(filePath);
-        if (!realPath.startsWith(baseDir + import_path11.default.sep) && realPath !== baseDir) {
+        const realPath = await import_promises19.default.realpath(filePath);
+        if (!realPath.startsWith(baseDir + import_path12.default.sep) && realPath !== baseDir) {
           return new Response("Forbidden (symlink escape)", { status: 403 });
         }
         filePath = realPath;
       } catch {
       }
-      return import_electron7.net.fetch((0, import_url.pathToFileURL)(filePath).toString());
+      return import_electron6.net.fetch((0, import_url.pathToFileURL)(filePath).toString());
     } catch (err) {
       console.error("[cench-protocol] failed to serve", request.url, err);
       return new Response("Internal error", { status: 500 });
@@ -13959,28 +14434,28 @@ async function registerCenchProtocol() {
 function sanitizeFilename(hint, fallback = "recording") {
   return (hint || fallback).toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").slice(0, 100) || fallback;
 }
-import_electron7.app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
+import_electron6.app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 function createWindow() {
-  const win = new import_electron7.BrowserWindow({
+  const win = new import_electron6.BrowserWindow({
     width: 1600,
     height: 960,
     backgroundColor: "#0b0b0f",
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 12, y: 16 },
     webPreferences: {
-      preload: import_path11.default.join(__dirname, "preload.js"),
+      preload: import_path12.default.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
       autoplayPolicy: "no-user-gesture-required"
     }
   });
-  const appUrl = import_electron7.app.isPackaged ? "cench://app/index.html" : DEV_URL;
+  const appUrl = import_electron6.app.isPackaged ? "cench://app/index.html" : DEV_URL;
   win.loadURL(appUrl);
   win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   const template = [
     ...process.platform === "darwin" ? [
       {
-        label: import_electron7.app.name,
+        label: import_electron6.app.name,
         submenu: [
           { role: "about" },
           { type: "separator" },
@@ -14001,7 +14476,7 @@ function createWindow() {
           label: "Home",
           accelerator: "CmdOrCtrl+Shift+H",
           click: () => {
-            const w = import_electron7.BrowserWindow.getFocusedWindow() ?? import_electron7.BrowserWindow.getAllWindows()[0];
+            const w = import_electron6.BrowserWindow.getFocusedWindow() ?? import_electron6.BrowserWindow.getAllWindows()[0];
             if (w)
               w.webContents.executeJavaScript(`
               (() => {
@@ -14022,7 +14497,7 @@ function createWindow() {
           label: "Undo",
           accelerator: "CmdOrCtrl+Z",
           click: () => {
-            const w = import_electron7.BrowserWindow.getFocusedWindow() ?? import_electron7.BrowserWindow.getAllWindows()[0];
+            const w = import_electron6.BrowserWindow.getFocusedWindow() ?? import_electron6.BrowserWindow.getAllWindows()[0];
             if (w)
               w.webContents.executeJavaScript(`
               (() => {
@@ -14040,7 +14515,7 @@ function createWindow() {
           label: "Redo",
           accelerator: "CmdOrCtrl+Shift+Z",
           click: () => {
-            const w = import_electron7.BrowserWindow.getFocusedWindow() ?? import_electron7.BrowserWindow.getAllWindows()[0];
+            const w = import_electron6.BrowserWindow.getFocusedWindow() ?? import_electron6.BrowserWindow.getAllWindows()[0];
             if (w)
               w.webContents.executeJavaScript(`
               (() => {
@@ -14068,7 +14543,7 @@ function createWindow() {
           label: "Toggle Preview Fullscreen",
           accelerator: "CmdOrCtrl+Shift+F",
           click: () => {
-            const w = import_electron7.BrowserWindow.getFocusedWindow() ?? import_electron7.BrowserWindow.getAllWindows()[0];
+            const w = import_electron6.BrowserWindow.getFocusedWindow() ?? import_electron6.BrowserWindow.getAllWindows()[0];
             if (w)
               w.webContents.executeJavaScript(`
               (() => {
@@ -14093,7 +14568,7 @@ function createWindow() {
     {
       label: "Documentation",
       click: () => {
-        import_electron7.shell.openExternal(`${DEV_URL.replace(/\/$/, "")}/docs`);
+        import_electron6.shell.openExternal(`${DEV_URL.replace(/\/$/, "")}/docs`);
       }
     },
     {
@@ -14105,21 +14580,21 @@ function createWindow() {
       ]
     }
   ];
-  import_electron7.Menu.setApplicationMenu(import_electron7.Menu.buildFromTemplate(template));
+  import_electron6.Menu.setApplicationMenu(import_electron6.Menu.buildFromTemplate(template));
 }
-import_electron7.app.whenReady().then(async () => {
-  import_electron7.ipcMain.handle("cench:gitStatus", async () => {
-    if (import_electron7.app.isPackaged) {
+import_electron6.app.whenReady().then(async () => {
+  import_electron6.ipcMain.handle("cench:gitStatus", async () => {
+    if (import_electron6.app.isPackaged) {
       return { ok: false, branch: null, dirty: false };
     }
     const cwd = process.cwd();
     try {
-      const { stdout: branchOut } = await execFileAsync2("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
+      const { stdout: branchOut } = await execFileAsync4("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
         cwd,
         timeout: 8e3,
         maxBuffer: 1024 * 1024
       });
-      const { stdout: por } = await execFileAsync2("git", ["status", "--porcelain"], {
+      const { stdout: por } = await execFileAsync4("git", ["status", "--porcelain"], {
         cwd,
         timeout: 8e3,
         maxBuffer: 1024 * 1024
@@ -14131,7 +14606,7 @@ import_electron7.app.whenReady().then(async () => {
       return { ok: false, branch: null, dirty: false };
     }
   });
-  import_electron7.ipcMain.handle("cench:webZoomIn", () => {
+  import_electron6.ipcMain.handle("cench:webZoomIn", () => {
     const win = webZoomTargetWindow();
     if (!win) return { ok: false, factor: 1 };
     const z = win.webContents.getZoomFactor();
@@ -14139,7 +14614,7 @@ import_electron7.app.whenReady().then(async () => {
     win.webContents.setZoomFactor(next);
     return { ok: true, factor: win.webContents.getZoomFactor() };
   });
-  import_electron7.ipcMain.handle("cench:webZoomOut", () => {
+  import_electron6.ipcMain.handle("cench:webZoomOut", () => {
     const win = webZoomTargetWindow();
     if (!win) return { ok: false, factor: 1 };
     const z = win.webContents.getZoomFactor();
@@ -14147,13 +14622,13 @@ import_electron7.app.whenReady().then(async () => {
     win.webContents.setZoomFactor(next);
     return { ok: true, factor: win.webContents.getZoomFactor() };
   });
-  import_electron7.ipcMain.handle("cench:webZoomReset", () => {
+  import_electron6.ipcMain.handle("cench:webZoomReset", () => {
     const win = webZoomTargetWindow();
     if (!win) return { ok: false, factor: 1 };
     win.webContents.setZoomFactor(1);
     return { ok: true, factor: 1 };
   });
-  import_electron7.ipcMain.handle(
+  import_electron6.ipcMain.handle(
     "cench:capturePage",
     async (_evt, args) => {
       const win = webZoomTargetWindow();
@@ -14167,61 +14642,72 @@ import_electron7.app.whenReady().then(async () => {
       }
     }
   );
-  import_electron7.ipcMain.handle("cench:saveDialog", async (_evt, suggestedName) => {
-    const res = await import_electron7.dialog.showSaveDialog({
+  import_electron6.ipcMain.handle("cench:saveDialog", async (_evt, suggestedName) => {
+    const res = await import_electron6.dialog.showSaveDialog({
       title: "Save exported video",
       defaultPath: suggestedName || `export-${Date.now()}.mp4`,
       filters: [{ name: "MP4 Video", extensions: ["mp4"] }]
     });
     return { canceled: res.canceled, filePath: res.filePath ?? null };
   });
-  import_electron7.ipcMain.handle("cench:chooseDirectory", async (_evt, defaultPath) => {
-    const res = await import_electron7.dialog.showOpenDialog({
+  import_electron6.ipcMain.handle("cench:chooseDirectory", async (_evt, defaultPath) => {
+    const res = await import_electron6.dialog.showOpenDialog({
       title: "Choose export folder",
-      defaultPath: defaultPath || import_electron7.app.getPath("downloads"),
+      defaultPath: defaultPath || import_electron6.app.getPath("downloads"),
       properties: ["openDirectory", "createDirectory"]
     });
     const dirPath = res.canceled || res.filePaths.length === 0 ? null : res.filePaths[0];
     return { canceled: res.canceled, dirPath };
   });
-  import_electron7.ipcMain.handle("cench:getDefaultExportDir", async () => {
-    return { dirPath: import_electron7.app.getPath("downloads") };
+  import_electron6.ipcMain.handle("cench:getDefaultExportDir", async () => {
+    return { dirPath: import_electron6.app.getPath("downloads") };
   });
-  import_electron7.ipcMain.handle("cench:writeFile", async (_evt, args) => {
-    await import_promises17.default.mkdir(import_path11.default.dirname(args.filePath), { recursive: true });
-    await import_promises17.default.writeFile(args.filePath, Buffer.from(args.bytes));
+  import_electron6.ipcMain.handle("cench:showItemInFolder", async (_evt, filePath) => {
+    if (!filePath) return { ok: false, error: "No file path provided" };
+    import_electron6.shell.showItemInFolder(filePath);
     return { ok: true };
   });
-  import_electron7.ipcMain.handle(
+  import_electron6.ipcMain.handle("cench:openPath", async (_evt, filePath) => {
+    if (!filePath) return { ok: false, error: "No file path provided" };
+    const err = await import_electron6.shell.openPath(filePath);
+    if (err) return { ok: false, error: err };
+    return { ok: true };
+  });
+  import_electron6.ipcMain.handle("cench:writeFile", async (_evt, args) => {
+    await import_promises19.default.mkdir(import_path12.default.dirname(args.filePath), { recursive: true });
+    await import_promises19.default.writeFile(args.filePath, Buffer.from(args.bytes));
+    return { ok: true };
+  });
+  import_electron6.ipcMain.handle(
     "cench:saveRecording",
     async (_evt, args) => {
       const extRaw = (args.extension || "webm").toLowerCase().replace(/[^a-z0-9]/g, "");
       const ext = extRaw || "webm";
-      const dir = import_path11.default.join(import_electron7.app.getPath("userData"), "recordings");
-      await import_promises17.default.mkdir(dir, { recursive: true });
+      const dir = import_path12.default.join(import_electron6.app.getPath("userData"), "recordings");
+      await import_promises19.default.mkdir(dir, { recursive: true });
       const safeBase = sanitizeFilename(args.nameHint || "");
-      const filePath = import_path11.default.join(dir, `${safeBase}-${Date.now()}.${ext}`);
-      await import_promises17.default.writeFile(filePath, Buffer.from(args.bytes));
+      const filePath = import_path12.default.join(dir, `${safeBase}-${Date.now()}.${ext}`);
+      await import_promises19.default.writeFile(filePath, Buffer.from(args.bytes));
       const fileUrl = (0, import_url.pathToFileURL)(filePath).href;
       return { ok: true, filePath, fileUrl };
     }
   );
-  import_electron7.ipcMain.handle(
+  import_electron6.ipcMain.handle(
     "cench:concatMp4",
     async (_evt, args) => {
       const inputs = (args.inputs ?? []).filter(Boolean);
       if (inputs.length === 0) throw new Error("concatMp4: no input files");
       if (inputs.length === 1) {
-        await import_promises17.default.copyFile(inputs[0], args.output);
+        await import_promises19.default.copyFile(inputs[0], args.output);
         if (args.cleanup) {
-          await import_promises17.default.unlink(inputs[0]).catch(() => {
+          await import_promises19.default.unlink(inputs[0]).catch(() => {
           });
         }
         return { ok: true };
       }
       const transitions = args.transitions ?? [];
       try {
-        const stitcherPath = import_electron7.app.isPackaged ? import_path11.default.join(process.resourcesPath, "render-server", "stitcher.js") : import_path11.default.join(process.cwd(), "render-server", "stitcher.js");
+        const stitcherPath = import_electron6.app.isPackaged ? import_path12.default.join(process.resourcesPath, "render-server", "stitcher.js") : import_path12.default.join(process.cwd(), "render-server", "stitcher.js");
         const mod = await import((0, import_url.pathToFileURL)(stitcherPath).href);
         const stitchScenes = mod?.stitchScenes;
         if (typeof stitchScenes !== "function") {
@@ -14234,7 +14720,7 @@ import_electron7.app.whenReady().then(async () => {
         await stitchScenes(inputs, stitchedTransitions, args.output);
       } finally {
         if (args.cleanup) {
-          await Promise.all(inputs.map((p) => import_promises17.default.unlink(p).catch(() => {
+          await Promise.all(inputs.map((p) => import_promises19.default.unlink(p).catch(() => {
           })));
         }
       }
@@ -14246,18 +14732,18 @@ import_electron7.app.whenReady().then(async () => {
   let cursorSamples = [];
   let cursorStartTime = 0;
   let cursorSourceDisplay = null;
-  import_electron7.ipcMain.handle("cench:startCursorTelemetry", (_evt, args) => {
+  import_electron6.ipcMain.handle("cench:startCursorTelemetry", (_evt, args) => {
     cursorSamples = [];
     cursorStartTime = Date.now();
     cursorSourceDisplay = null;
     if (args?.displayId) {
       const numId = Number(args.displayId);
-      const all = import_electron7.screen.getAllDisplays();
+      const all = import_electron6.screen.getAllDisplays();
       cursorSourceDisplay = all.find((d) => d.id === numId || String(d.id) === args.displayId) ?? null;
     }
     cursorInterval = setInterval(() => {
-      const point = import_electron7.screen.getCursorScreenPoint();
-      const display = cursorSourceDisplay ?? import_electron7.screen.getDisplayNearestPoint(point);
+      const point = import_electron6.screen.getCursorScreenPoint();
+      const display = cursorSourceDisplay ?? import_electron6.screen.getDisplayNearestPoint(point);
       const { x, y, width, height } = display.bounds;
       const nx = Math.max(0, Math.min(1, (point.x - x) / width));
       const ny = Math.max(0, Math.min(1, (point.y - y) / height));
@@ -14268,7 +14754,7 @@ import_electron7.app.whenReady().then(async () => {
     }, 100);
     return { ok: true };
   });
-  import_electron7.ipcMain.handle("cench:stopCursorTelemetry", () => {
+  import_electron6.ipcMain.handle("cench:stopCursorTelemetry", () => {
     if (cursorInterval) {
       clearInterval(cursorInterval);
       cursorInterval = null;
@@ -14278,20 +14764,20 @@ import_electron7.app.whenReady().then(async () => {
     cursorSamples = [];
     return { samples };
   });
-  import_electron7.ipcMain.handle(
+  import_electron6.ipcMain.handle(
     "cench:saveRecordingSession",
     async (_evt, args) => {
       if (!args.screenBytes || args.screenBytes.byteLength === 0) {
         throw new Error("Screen recording is empty \u2014 nothing to save");
       }
-      const dir = import_path11.default.join(import_electron7.app.getPath("userData"), "recordings");
-      await import_promises17.default.mkdir(dir, { recursive: true });
+      const dir = import_path12.default.join(import_electron6.app.getPath("userData"), "recordings");
+      await import_promises19.default.mkdir(dir, { recursive: true });
       const ts = Date.now();
       const safeBase = sanitizeFilename(args.nameHint || "");
       const writtenFiles = [];
       try {
-        const screenPath = import_path11.default.join(dir, `${safeBase}-${ts}.webm`);
-        await import_promises17.default.writeFile(screenPath, Buffer.from(args.screenBytes));
+        const screenPath = import_path12.default.join(dir, `${safeBase}-${ts}.webm`);
+        await import_promises19.default.writeFile(screenPath, Buffer.from(args.screenBytes));
         writtenFiles.push(screenPath);
         const result = {
           screenVideoPath: screenPath,
@@ -14299,34 +14785,34 @@ import_electron7.app.whenReady().then(async () => {
           createdAt: ts
         };
         if (args.webcamBytes && args.webcamBytes.byteLength > 0) {
-          const webcamPath = import_path11.default.join(dir, `${safeBase}-${ts}-webcam.webm`);
-          await import_promises17.default.writeFile(webcamPath, Buffer.from(args.webcamBytes));
+          const webcamPath = import_path12.default.join(dir, `${safeBase}-${ts}-webcam.webm`);
+          await import_promises19.default.writeFile(webcamPath, Buffer.from(args.webcamBytes));
           writtenFiles.push(webcamPath);
           result.webcamVideoPath = webcamPath;
           result.webcamVideoUrl = (0, import_url.pathToFileURL)(webcamPath).href;
         }
-        const manifestPath = import_path11.default.join(dir, `${safeBase}-${ts}.session.json`);
-        await import_promises17.default.writeFile(manifestPath, JSON.stringify(result, null, 2));
+        const manifestPath = import_path12.default.join(dir, `${safeBase}-${ts}.session.json`);
+        await import_promises19.default.writeFile(manifestPath, JSON.stringify(result, null, 2));
         return result;
       } catch (err) {
-        await Promise.all(writtenFiles.map((f) => import_promises17.default.unlink(f).catch(() => {
+        await Promise.all(writtenFiles.map((f) => import_promises19.default.unlink(f).catch(() => {
         })));
         throw err;
       }
     }
   );
-  import_electron7.session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {
+  import_electron6.session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {
     const allowed = ["media", "audioCapture", "microphone", "videoCapture", "camera"];
     return allowed.includes(permission);
   });
-  import_electron7.session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+  import_electron6.session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
     const allowed = ["media", "audioCapture", "microphone", "videoCapture", "camera"];
     callback(allowed.includes(permission));
   });
   await registerCenchProtocol();
-  registerAllIpc(import_electron7.ipcMain);
+  registerAllIpc(import_electron6.ipcMain);
   createWindow();
-  import_electron7.session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
+  import_electron6.session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
     console.log("[Electron] setDisplayMediaRequestHandler called");
     console.log("[Electron]   videoRequested:", !!request.videoRequested);
     console.log("[Electron]   audioRequested:", !!request.audioRequested);
@@ -14340,11 +14826,11 @@ import_electron7.app.whenReady().then(async () => {
       callback(null);
     }
   });
-  import_electron7.app.on("activate", () => {
-    if (import_electron7.BrowserWindow.getAllWindows().length === 0) createWindow();
+  import_electron6.app.on("activate", () => {
+    if (import_electron6.BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
-import_electron7.app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") import_electron7.app.quit();
+import_electron6.app.on("window-all-closed", () => {
+  if (process.platform !== "darwin") import_electron6.app.quit();
 });
 //# sourceMappingURL=main.js.map

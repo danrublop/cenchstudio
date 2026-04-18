@@ -96,11 +96,19 @@ var cenchApi = {
   },
   music: {
     search: (args) => import_electron.ipcRenderer.invoke("cench:music.search", args)
+  },
+  ingest: {
+    fromUrl: (args) => import_electron.ipcRenderer.invoke("cench:ingest.fromUrl", args),
+    fromDirectUrl: (args) => import_electron.ipcRenderer.invoke("cench:ingest.fromDirectUrl", args)
   }
 };
 import_electron.contextBridge.exposeInMainWorld("cenchApi", cenchApi);
 var api = {
   saveDialog: (suggestedName) => import_electron.ipcRenderer.invoke("cench:saveDialog", suggestedName),
+  chooseDirectory: (defaultPath) => import_electron.ipcRenderer.invoke("cench:chooseDirectory", defaultPath),
+  getDefaultExportDir: () => import_electron.ipcRenderer.invoke("cench:getDefaultExportDir"),
+  showItemInFolder: (filePath) => import_electron.ipcRenderer.invoke("cench:showItemInFolder", filePath),
+  openPath: (filePath) => import_electron.ipcRenderer.invoke("cench:openPath", filePath),
   writeFile: (args) => import_electron.ipcRenderer.invoke("cench:writeFile", args),
   saveRecording: (args) => import_electron.ipcRenderer.invoke("cench:saveRecording", args),
   concatMp4: (args) => import_electron.ipcRenderer.invoke("cench:concatMp4", args),

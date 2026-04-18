@@ -184,6 +184,15 @@ export type CenchApi = {
       download?: boolean
     }) => Promise<Record<string, unknown>>
   }
+  ingest: {
+    fromUrl: (args: { url: string; projectId: string; formatId?: string }) => Promise<Record<string, unknown>>
+    fromDirectUrl: (args: {
+      url: string
+      projectId: string
+      name?: string
+      tags?: string[]
+    }) => Promise<Record<string, unknown>>
+  }
 }
 
 const cenchApi: CenchApi = {
@@ -266,6 +275,10 @@ const cenchApi: CenchApi = {
   music: {
     search: (args) => ipcRenderer.invoke('cench:music.search', args),
   },
+  ingest: {
+    fromUrl: (args) => ipcRenderer.invoke('cench:ingest.fromUrl', args),
+    fromDirectUrl: (args) => ipcRenderer.invoke('cench:ingest.fromDirectUrl', args),
+  },
 }
 
 contextBridge.exposeInMainWorld('cenchApi', cenchApi)
@@ -273,6 +286,14 @@ contextBridge.exposeInMainWorld('cenchApi', cenchApi)
 // ── window.electronAPI — legacy namespace, superseded by cenchApi ──────────
 export type ElectronAPI = {
   saveDialog: (suggestedName?: string) => Promise<{ canceled: boolean; filePath: string | null }>
+  /** Pick a directory (no filename). Used by Export panel "Save to" field. */
+  chooseDirectory: (defaultPath?: string) => Promise<{ canceled: boolean; dirPath: string | null }>
+  /** Default location for saving exports (the system Downloads folder). */
+  getDefaultExportDir: () => Promise<{ dirPath: string }>
+  /** Reveal the file in Finder/Explorer/Files. */
+  showItemInFolder: (filePath: string) => Promise<{ ok: true } | { ok: false; error: string }>
+  /** Open the file with its default OS application. */
+  openPath: (filePath: string) => Promise<{ ok: true } | { ok: false; error: string }>
   writeFile: (args: { filePath: string; bytes: ArrayBuffer }) => Promise<{ ok: true }>
   saveRecording: (args: {
     bytes: ArrayBuffer
@@ -305,6 +326,10 @@ export type ElectronAPI = {
 
 const api: ElectronAPI = {
   saveDialog: (suggestedName?: string) => ipcRenderer.invoke('cench:saveDialog', suggestedName),
+  chooseDirectory: (defaultPath?: string) => ipcRenderer.invoke('cench:chooseDirectory', defaultPath),
+  getDefaultExportDir: () => ipcRenderer.invoke('cench:getDefaultExportDir'),
+  showItemInFolder: (filePath: string) => ipcRenderer.invoke('cench:showItemInFolder', filePath),
+  openPath: (filePath: string) => ipcRenderer.invoke('cench:openPath', filePath),
   writeFile: (args) => ipcRenderer.invoke('cench:writeFile', args),
   saveRecording: (args) => ipcRenderer.invoke('cench:saveRecording', args),
   concatMp4: (args) => ipcRenderer.invoke('cench:concatMp4', args),

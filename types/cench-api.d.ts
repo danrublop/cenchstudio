@@ -313,6 +313,26 @@ export interface CenchApi {
       download?: boolean
     }): Promise<Record<string, unknown>>
   }
+  ingest: {
+    /**
+     * yt-dlp probe (no `formatId`) or download (with `formatId`). Rejects
+     * with a validation error if yt-dlp binary isn't on PATH; the UI
+     * should prompt the user to install it.
+     */
+    fromUrl(args: { url: string; projectId: string; formatId?: string }): Promise<Record<string, unknown>>
+    /**
+     * Direct-URL fetch (assumes `url` points at an actual media file).
+     * Downloads, dedups by content hash, transcodes `.mov`/`.ogv` to
+     * `.mp4` via ffmpeg, generates a thumbnail, inserts into
+     * `project_assets`.
+     */
+    fromDirectUrl(args: {
+      url: string
+      projectId: string
+      name?: string
+      tags?: string[]
+    }): Promise<Record<string, unknown>>
+  }
 }
 
 declare global {

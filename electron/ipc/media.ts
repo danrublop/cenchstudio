@@ -1,9 +1,8 @@
 import type { IpcMain } from 'electron'
-import { app } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs/promises'
 import { v4 as uuidv4 } from 'uuid'
-import { getUserUploadsDir } from '../paths'
+import { getUploadsDir, uploadsUrlFor } from '@/lib/uploads/paths'
 import { IpcValidationError } from './_helpers'
 
 /**
@@ -50,14 +49,6 @@ type UploadResult = {
   filename: string
 }
 
-function resolveUploadsDir(): string {
-  return app.isPackaged ? getUserUploadsDir() : path.join(process.cwd(), 'public', 'uploads')
-}
-
-function urlFor(filename: string): string {
-  return app.isPackaged ? `cench://uploads/${filename}` : `/uploads/${filename}`
-}
-
 async function upload(args: UploadArgs): Promise<UploadResult> {
   if (!args || typeof args !== 'object') throw new IpcValidationError('upload args required')
   if (!(args.data instanceof ArrayBuffer)) throw new IpcValidationError('data must be an ArrayBuffer')
@@ -87,7 +78,7 @@ async function upload(args: UploadArgs): Promise<UploadResult> {
     }
   }
 
-  const uploadsDir = resolveUploadsDir()
+  const uploadsDir = getUploadsDir()
   await fs.mkdir(uploadsDir, { recursive: true })
 
   const filename = `${uuidv4()}.${ext}`
@@ -97,7 +88,7 @@ async function upload(args: UploadArgs): Promise<UploadResult> {
   }
   await fs.writeFile(destPath, buffer)
 
-  return { url: urlFor(filename), filename }
+  return { url: uploadsUrlFor(filename), filename }
 }
 
 export function register(ipcMain: IpcMain): void {
