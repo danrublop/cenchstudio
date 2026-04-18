@@ -79,6 +79,21 @@ export class Runtime {
     this.loadScene(sceneId).then(() => this.play())
   }
 
+  /** Scrub the currently loaded scene to `time` (seconds, scene-local).
+   * Preserves the playing/paused state — a scrub during playback keeps
+   * playing from the new position, a scrub while paused stays paused. */
+  seek(time: number): void {
+    const scene = this.getScene(this.currentSceneId)
+    if (!scene) return
+    const clamped = Math.max(0, Math.min(scene.duration, time))
+    this.sceneStartTime = clamped
+    // Realign the RAF clock so the next tick() computes elapsed = clamped
+    this.startTime = performance.now() - clamped * 1000
+    this.renderer.seek(clamped)
+    this.overlay.tick(clamped)
+    this.onTimeUpdate(clamped, scene.duration)
+  }
+
   private tick(): void {
     const scene = this.getScene(this.currentSceneId)
     if (!scene) return
