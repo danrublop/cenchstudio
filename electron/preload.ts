@@ -109,6 +109,13 @@ export type CenchApi = {
       resolution?: string
     }) => Promise<{ success: true; path: string }>
   }
+  media: {
+    upload: (args: {
+      data: ArrayBuffer
+      mimeType: string
+      originalName?: string
+    }) => Promise<{ url: string; filename: string }>
+  }
 }
 
 const cenchApi: CenchApi = {
@@ -167,6 +174,9 @@ const cenchApi: CenchApi = {
     writeHtml: (args) => ipcRenderer.invoke('cench:scene.writeHtml', args),
     get: (args) => ipcRenderer.invoke('cench:scene.get', args),
     generateWorld: (args) => ipcRenderer.invoke('cench:scene.generateWorld', args),
+  },
+  media: {
+    upload: (args) => ipcRenderer.invoke('cench:media.upload', args),
   },
 }
 

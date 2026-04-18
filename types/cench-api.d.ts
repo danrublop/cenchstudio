@@ -218,6 +218,20 @@ export interface CenchApi {
       resolution?: string
     }): Promise<{ success: true; path: string }>
   }
+  media: {
+    /**
+     * Write a file to the uploads dir. Dev returns `/uploads/<filename>`
+     * (served by Next); packaged returns `cench://uploads/<filename>`
+     * (served by the cench protocol handler). Enforces 100MB cap +
+     * whitelist of video/audio/json mime types; validates Lottie JSON
+     * before writing.
+     */
+    upload(args: {
+      data: ArrayBuffer
+      mimeType: string
+      originalName?: string
+    }): Promise<{ url: string; filename: string }>
+  }
 }
 
 declare global {

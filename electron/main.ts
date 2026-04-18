@@ -7,6 +7,9 @@ import fsSync from 'fs'
 import { pathToFileURL } from 'url'
 import { config as loadDotenv } from 'dotenv'
 import { registerAllIpc } from './ipc'
+// Path helpers live in `./paths.ts` so `electron/ipc/*.ts` can reuse them
+// without creating circular imports with main.ts.
+import { getUserScenesDir, getUserUploadsDir, getStaticAppDir } from './paths'
 
 // ── .env loading ────────────────────────────────────────────────────────────
 // The main process does not inherit the Next.js auto-dotenv behavior. Without
@@ -48,21 +51,11 @@ function webZoomTargetWindow() {
 // via the protocol handler registered below — no HTTP server is ever reached.
 const DEV_URL = process.env.ELECTRON_START_URL || 'http://localhost:3000'
 
-// Runtime-writable scene HTML directory. In the packaged app, scenes cannot
-// be written back into the read-only `out/` bundle, so we split:
-//   cench://app/...     → Next static export (read-only bundle)
-//   cench://scenes/...  → user-data directory (writable at runtime)
-function getUserScenesDir(): string {
-  return path.join(app.getPath('userData'), 'scenes')
-}
-
-function getStaticAppDir(): string {
-  // In dev this resolves to `<repo>/out`. In the packaged app, `__dirname`
-  // is `<Resources>/app.asar/dist-electron`, so `../out` resolves to
-  // `<Resources>/app.asar/out`. Electron's fs layer reads through the asar
-  // transparently, so no separate packaged branch is needed.
-  return path.join(__dirname, '..', 'out')
-}
+// Runtime-writable user-data layout. In the packaged app, scenes and
+// uploads cannot be written back into the read-only `out/` bundle, so:
+//   cench://app/...      → Next static export (read-only bundle)
+//   cench://scenes/...   → `<userData>/scenes`   (writable)
+//   cench://uploads/...  → `<userData>/uploads`  (writable)
 
 // Privileged scheme must be registered synchronously before `app.ready`.
 protocol.registerSchemesAsPrivileged([
@@ -81,7 +74,9 @@ protocol.registerSchemesAsPrivileged([
 async function registerCenchProtocol(): Promise<void> {
   const staticDir = path.resolve(getStaticAppDir())
   const scenesDir = path.resolve(getUserScenesDir())
+  const uploadsDir = path.resolve(getUserUploadsDir())
   await fs.mkdir(scenesDir, { recursive: true })
+  await fs.mkdir(uploadsDir, { recursive: true })
 
   protocol.handle('cench', async (request) => {
     try {
@@ -92,6 +87,8 @@ async function registerCenchProtocol(): Promise<void> {
       let baseDir: string
       if (host === 'scenes') {
         baseDir = scenesDir
+      } else if (host === 'uploads') {
+        baseDir = uploadsDir
       } else if (host === 'app' || host === '') {
         baseDir = staticDir
       } else {
