@@ -434,8 +434,10 @@ export default function Editor({ showWelcome, onEnterEditor }: { showWelcome?: b
       for (let attempt = 0; attempt < 3; attempt++) {
         try {
           const persistedId = useVideoStore.getState().project?.id
-          const r = await fetch('/api/projects')
-          const list: any[] = r.ok ? await r.json() : []
+          const ipc = typeof window !== 'undefined' ? window.cenchApi?.projects : undefined
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const raw: any = ipc ? await ipc.list() : await fetch('/api/projects').then((r) => (r.ok ? r.json() : []))
+          const list: { id: string }[] = Array.isArray(raw) ? raw : (raw?.items ?? [])
           if (list.length === 0) {
             useVideoStore.getState()._setDbLoadComplete(true)
             return
@@ -551,8 +553,12 @@ export default function Editor({ showWelcome, onEnterEditor }: { showWelcome?: b
               useVideoStore.setState({ projectLoadFailed: false })
               const persistedId = useVideoStore.getState().project?.id
               try {
-                const r = await fetch('/api/projects')
-                const list: any[] = r.ok ? await r.json() : []
+                const ipc = typeof window !== 'undefined' ? window.cenchApi?.projects : undefined
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const raw: any = ipc
+                  ? await ipc.list()
+                  : await fetch('/api/projects').then((r) => (r.ok ? r.json() : []))
+                const list: { id: string }[] = Array.isArray(raw) ? raw : (raw?.items ?? [])
                 if (list.length > 0) {
                   const ids = new Set(list.map((p: { id: string }) => p.id))
                   const targetId = persistedId && ids.has(persistedId) ? persistedId : list[0].id

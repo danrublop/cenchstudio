@@ -248,10 +248,13 @@ export const useVideoStore = create<VideoStore>()(
       loadProjectAssets: async (projectId: string) => {
         set({ assetsLoading: true })
         try {
-          const res = await fetch(`/api/projects/${projectId}/assets`)
-          if (res.ok) {
-            const data = await res.json()
-            set({ projectAssets: data.assets ?? [] })
+          const ipc = typeof window !== 'undefined' ? window.cenchApi?.projects : undefined
+          const data = ipc
+            ? await ipc.listAssets({ projectId })
+            : await fetch(`/api/projects/${projectId}/assets`).then((r) => (r.ok ? r.json() : null))
+          if (data) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            set({ projectAssets: ((data as { assets?: unknown[] }).assets ?? []) as any })
           }
         } catch (e) {
           console.error('[loadProjectAssets]', e)
@@ -295,11 +298,16 @@ export const useVideoStore = create<VideoStore>()(
         set({ brandKit: merged })
         set((s) => ({ project: { ...s.project, brandKit: merged } }))
         try {
-          await fetch(`/api/projects/${project.id}/brand-kit`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(updates),
-          })
+          const ipc = typeof window !== 'undefined' ? window.cenchApi?.projects : undefined
+          if (ipc) {
+            await ipc.updateBrandKit({ projectId: project.id, updates: updates as Record<string, unknown> })
+          } else {
+            await fetch(`/api/projects/${project.id}/brand-kit`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(updates),
+            })
+          }
         } catch (e) {
           console.error('[store] updateBrandKit failed:', e)
         }

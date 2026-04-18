@@ -5,6 +5,9 @@ import * as usage from './usage'
 import * as generationLog from './generation-log'
 import * as permissions from './permissions'
 import * as skills from './skills'
+import * as projects from './projects'
+import * as workspaces from './workspaces'
+import * as publish from './publish'
 
 /**
  * Central IPC registration. Each category module exports
@@ -23,4 +26,7 @@ export function registerAllIpc(ipcMain: IpcMain): void {
   generationLog.register(ipcMain)
   permissions.register(ipcMain)
   skills.register(ipcMain)
+  projects.register(ipcMain)
+  workspaces.register(ipcMain)
+  publish.register(ipcMain)
 }

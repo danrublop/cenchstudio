@@ -162,10 +162,11 @@ export default function ProjectPanel({ onClose }: { onClose: () => void }) {
   const fetchProjects = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch('/api/projects')
-      if (res.ok) {
-        const list = await res.json()
-        setProjects(list)
+      const ipc = typeof window !== 'undefined' ? window.cenchApi?.projects : undefined
+      const raw = ipc ? await ipc.list() : await fetch('/api/projects').then((r) => (r.ok ? r.json() : null))
+      if (raw) {
+        const list = Array.isArray(raw) ? raw : ((raw as { items?: unknown[] }).items ?? [])
+        setProjects(list as Parameters<typeof setProjects>[0])
       }
     } catch {
     } finally {

@@ -166,6 +166,46 @@ export interface CenchApi {
     /** Read a markdown skill file from the bundled skill trees. */
     readFile(args: { source: string; file: string }): Promise<{ content: string; file: string; source: string }>
   }
+  projects: {
+    list(args?: {
+      limit?: number
+      cursor?: string
+      workspaceId?: string | 'none'
+    }): Promise<Array<Record<string, unknown>> | { items: Array<Record<string, unknown>>; nextCursor: string | null }>
+    create(args: Record<string, unknown>): Promise<Record<string, unknown>>
+    get(projectId: string): Promise<Record<string, unknown>>
+    update(args: { projectId: string; updates: Record<string, unknown> }): Promise<Record<string, unknown>>
+    delete(projectId: string): Promise<{ ok: true }>
+    listAssets(args: {
+      projectId: string
+      type?: 'image' | 'video' | 'svg'
+      source?: 'upload' | 'generated'
+    }): Promise<{ assets: unknown[] }>
+    getBrandKit(projectId: string): Promise<{ brandKit: unknown }>
+    updateBrandKit(args: { projectId: string; updates: Record<string, unknown> }): Promise<{ brandKit: unknown }>
+  }
+  workspaces: {
+    list(): Promise<Array<Record<string, unknown>>>
+    get(workspaceId: string): Promise<Record<string, unknown>>
+    create(args: {
+      name: string
+      description?: string | null
+      color?: string | null
+      icon?: string | null
+      isDefault?: boolean
+    }): Promise<Record<string, unknown>>
+    update(args: { workspaceId: string; updates: Record<string, unknown> }): Promise<Record<string, unknown>>
+    delete(workspaceId: string): Promise<{ success: true }>
+    assignProjects(args: { workspaceId: string; projectIds: string[] }): Promise<{ success: true }>
+    unassignProjects(args: { projectIds: string[] }): Promise<{ success: true }>
+  }
+  publish: {
+    run(args: {
+      project: Record<string, unknown>
+      scenes: unknown[]
+      globalStyle?: unknown
+    }): Promise<{ publishedUrl: string; version: number }>
+  }
 }
 
 declare global {

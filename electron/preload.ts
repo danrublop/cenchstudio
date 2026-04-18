@@ -63,6 +63,43 @@ export type CenchApi = {
       source: string
     }>
   }
+  projects: {
+    list: (args?: { limit?: number; cursor?: string; workspaceId?: string | 'none' }) => Promise<unknown>
+    create: (args: Record<string, unknown>) => Promise<unknown>
+    get: (projectId: string) => Promise<unknown>
+    update: (args: { projectId: string; updates: Record<string, unknown> }) => Promise<unknown>
+    delete: (projectId: string) => Promise<{ ok: true }>
+    listAssets: (args: {
+      projectId: string
+      type?: 'image' | 'video' | 'svg'
+      source?: 'upload' | 'generated'
+    }) => Promise<{ assets: unknown[] }>
+    getBrandKit: (projectId: string) => Promise<{ brandKit: unknown }>
+    updateBrandKit: (args: { projectId: string; updates: Record<string, unknown> }) => Promise<{
+      brandKit: unknown
+    }>
+  }
+  workspaces: {
+    list: () => Promise<unknown[]>
+    get: (workspaceId: string) => Promise<unknown>
+    create: (args: {
+      name: string
+      description?: string | null
+      color?: string | null
+      icon?: string | null
+      isDefault?: boolean
+    }) => Promise<unknown>
+    update: (args: { workspaceId: string; updates: Record<string, unknown> }) => Promise<unknown>
+    delete: (workspaceId: string) => Promise<{ success: true }>
+    assignProjects: (args: { workspaceId: string; projectIds: string[] }) => Promise<{ success: true }>
+    unassignProjects: (args: { projectIds: string[] }) => Promise<{ success: true }>
+  }
+  publish: {
+    run: (args: { project: Record<string, unknown>; scenes: unknown[]; globalStyle?: unknown }) => Promise<{
+      publishedUrl: string
+      version: number
+    }>
+  }
 }
 
 const cenchApi: CenchApi = {
@@ -94,6 +131,28 @@ const cenchApi: CenchApi = {
   },
   skills: {
     readFile: (args) => ipcRenderer.invoke('cench:skills.readFile', args),
+  },
+  projects: {
+    list: (args) => ipcRenderer.invoke('cench:projects.list', args),
+    create: (args) => ipcRenderer.invoke('cench:projects.create', args),
+    get: (projectId) => ipcRenderer.invoke('cench:projects.get', projectId),
+    update: (args) => ipcRenderer.invoke('cench:projects.update', args),
+    delete: (projectId) => ipcRenderer.invoke('cench:projects.delete', projectId),
+    listAssets: (args) => ipcRenderer.invoke('cench:projects.listAssets', args),
+    getBrandKit: (projectId) => ipcRenderer.invoke('cench:projects.getBrandKit', projectId),
+    updateBrandKit: (args) => ipcRenderer.invoke('cench:projects.updateBrandKit', args),
+  },
+  workspaces: {
+    list: () => ipcRenderer.invoke('cench:workspaces.list'),
+    get: (workspaceId) => ipcRenderer.invoke('cench:workspaces.get', workspaceId),
+    create: (args) => ipcRenderer.invoke('cench:workspaces.create', args),
+    update: (args) => ipcRenderer.invoke('cench:workspaces.update', args),
+    delete: (workspaceId) => ipcRenderer.invoke('cench:workspaces.delete', workspaceId),
+    assignProjects: (args) => ipcRenderer.invoke('cench:workspaces.assignProjects', args),
+    unassignProjects: (args) => ipcRenderer.invoke('cench:workspaces.unassignProjects', args),
+  },
+  publish: {
+    run: (args) => ipcRenderer.invoke('cench:publish.run', args),
   },
 }
 

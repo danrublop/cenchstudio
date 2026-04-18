@@ -46,6 +46,28 @@ var cenchApi = {
   },
   skills: {
     readFile: (args) => import_electron.ipcRenderer.invoke("cench:skills.readFile", args)
+  },
+  projects: {
+    list: (args) => import_electron.ipcRenderer.invoke("cench:projects.list", args),
+    create: (args) => import_electron.ipcRenderer.invoke("cench:projects.create", args),
+    get: (projectId) => import_electron.ipcRenderer.invoke("cench:projects.get", projectId),
+    update: (args) => import_electron.ipcRenderer.invoke("cench:projects.update", args),
+    delete: (projectId) => import_electron.ipcRenderer.invoke("cench:projects.delete", projectId),
+    listAssets: (args) => import_electron.ipcRenderer.invoke("cench:projects.listAssets", args),
+    getBrandKit: (projectId) => import_electron.ipcRenderer.invoke("cench:projects.getBrandKit", projectId),
+    updateBrandKit: (args) => import_electron.ipcRenderer.invoke("cench:projects.updateBrandKit", args)
+  },
+  workspaces: {
+    list: () => import_electron.ipcRenderer.invoke("cench:workspaces.list"),
+    get: (workspaceId) => import_electron.ipcRenderer.invoke("cench:workspaces.get", workspaceId),
+    create: (args) => import_electron.ipcRenderer.invoke("cench:workspaces.create", args),
+    update: (args) => import_electron.ipcRenderer.invoke("cench:workspaces.update", args),
+    delete: (workspaceId) => import_electron.ipcRenderer.invoke("cench:workspaces.delete", workspaceId),
+    assignProjects: (args) => import_electron.ipcRenderer.invoke("cench:workspaces.assignProjects", args),
+    unassignProjects: (args) => import_electron.ipcRenderer.invoke("cench:workspaces.unassignProjects", args)
+  },
+  publish: {
+    run: (args) => import_electron.ipcRenderer.invoke("cench:publish.run", args)
   }
 };
 import_electron.contextBridge.exposeInMainWorld("cenchApi", cenchApi);

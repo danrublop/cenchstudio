@@ -12,11 +12,11 @@ var __export = (target, all) => {
   for (var name in all)
     __defProp(target, name, { get: all[name], enumerable: true });
 };
-var __copyProps = (to, from, except, desc3) => {
+var __copyProps = (to, from, except, desc5) => {
   if (from && typeof from === "object" || typeof from === "function") {
     for (let key of __getOwnPropNames(from))
       if (!__hasOwnProp.call(to, key) && key !== except)
-        __defProp(to, key, { get: () => from[key], enumerable: !(desc3 = __getOwnPropDesc(from, key)) || desc3.enumerable });
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc5 = __getOwnPropDesc(from, key)) || desc5.enumerable });
   }
   return to;
 };
@@ -137,12 +137,94 @@ var init_budget_tracker = __esm({
   }
 });
 
+// lib/crypto.ts
+var crypto_exports = {};
+__export(crypto_exports, {
+  decrypt: () => decrypt,
+  encrypt: () => encrypt,
+  hashPassword: () => hashPassword,
+  isEncryptionConfigured: () => isEncryptionConfigured,
+  verifyPassword: () => verifyPassword
+});
+function getEncryptionKey() {
+  const key = process.env.ENCRYPTION_KEY;
+  if (!key) {
+    throw new Error(
+      `ENCRYPTION_KEY is not set. Generate one with: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`
+    );
+  }
+  const buf = Buffer.from(key, "hex");
+  if (buf.length !== 32) {
+    throw new Error("ENCRYPTION_KEY must be a 64-character hex string (32 bytes)");
+  }
+  return buf;
+}
+function encrypt(plaintext) {
+  const key = getEncryptionKey();
+  const iv = (0, import_crypto2.randomBytes)(IV_LENGTH);
+  const cipher = (0, import_crypto2.createCipheriv)(ALGORITHM, key, iv);
+  const encrypted = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  const combined = Buffer.concat([iv, tag, encrypted]);
+  return combined.toString("base64");
+}
+function decrypt(encryptedBase64) {
+  const key = getEncryptionKey();
+  const combined = Buffer.from(encryptedBase64, "base64");
+  if (combined.length < IV_LENGTH + TAG_LENGTH) {
+    throw new Error("Invalid encrypted data: too short");
+  }
+  const iv = combined.subarray(0, IV_LENGTH);
+  const tag = combined.subarray(IV_LENGTH, IV_LENGTH + TAG_LENGTH);
+  const ciphertext = combined.subarray(IV_LENGTH + TAG_LENGTH);
+  const decipher = (0, import_crypto2.createDecipheriv)(ALGORITHM, key, iv);
+  decipher.setAuthTag(tag);
+  const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+  return decrypted.toString("utf8");
+}
+function isEncryptionConfigured() {
+  const key = process.env.ENCRYPTION_KEY;
+  if (!key) return false;
+  try {
+    const buf = Buffer.from(key, "hex");
+    return buf.length === 32;
+  } catch {
+    return false;
+  }
+}
+function hashPassword(password) {
+  const salt = (0, import_crypto2.randomBytes)(SALT_LENGTH);
+  const derived = (0, import_crypto2.scryptSync)(password, salt, SCRYPT_KEYLEN);
+  return `${salt.toString("hex")}:${derived.toString("hex")}`;
+}
+function verifyPassword(password, stored) {
+  const [saltHex, hashHex] = stored.split(":");
+  if (!saltHex || !hashHex) return false;
+  const salt = Buffer.from(saltHex, "hex");
+  const storedHash = Buffer.from(hashHex, "hex");
+  const derived = (0, import_crypto2.scryptSync)(password, salt, SCRYPT_KEYLEN);
+  if (derived.length !== storedHash.length) return false;
+  return (0, import_crypto2.timingSafeEqual)(derived, storedHash);
+}
+var import_crypto2, ALGORITHM, IV_LENGTH, TAG_LENGTH, SCRYPT_KEYLEN, SALT_LENGTH;
+var init_crypto = __esm({
+  "lib/crypto.ts"() {
+    "use strict";
+    import_crypto2 = require("crypto");
+    ALGORITHM = "aes-256-gcm";
+    IV_LENGTH = 12;
+    TAG_LENGTH = 16;
+    SCRYPT_KEYLEN = 64;
+    SALT_LENGTH = 16;
+  }
+});
+
 // electron/main.ts
 var import_path = __toESM(require("path"));
 var import_child_process = require("child_process");
 var import_util = require("util");
-var import_electron2 = require("electron");
-var import_promises2 = __toESM(require("fs/promises"));
+var import_electron4 = require("electron");
+var import_promises4 = __toESM(require("fs/promises"));
 var import_fs = __toESM(require("fs"));
 var import_url = require("url");
 var import_dotenv = require("dotenv");
@@ -1403,7 +1485,8 @@ async function updateMessage(messageId, updates) {
   if (updates.modelUsed !== void 0) setClauses.push(import_drizzle_orm3.sql`model_used = ${updates.modelUsed}`);
   if (updates.thinkingContent !== void 0) setClauses.push(import_drizzle_orm3.sql`thinking_content = ${updates.thinkingContent}`);
   if (updates.toolCalls !== void 0) setClauses.push(import_drizzle_orm3.sql`tool_calls = ${JSON.stringify(updates.toolCalls)}::jsonb`);
-  if (updates.contentSegments !== void 0) setClauses.push(import_drizzle_orm3.sql`content_segments = ${JSON.stringify(updates.contentSegments)}::jsonb`);
+  if (updates.contentSegments !== void 0)
+    setClauses.push(import_drizzle_orm3.sql`content_segments = ${JSON.stringify(updates.contentSegments)}::jsonb`);
   if (updates.inputTokens !== void 0) setClauses.push(import_drizzle_orm3.sql`input_tokens = ${updates.inputTokens}`);
   if (updates.outputTokens !== void 0) setClauses.push(import_drizzle_orm3.sql`output_tokens = ${updates.outputTokens}`);
   if (updates.costUsd !== void 0) setClauses.push(import_drizzle_orm3.sql`cost_usd = ${updates.costUsd}`);
@@ -1504,6 +1587,16 @@ async function loadConversationOrThrow(conversationId) {
     throw new IpcNotFoundError(`Conversation ${conversationId} not found`);
   }
   return conv;
+}
+async function loadWorkspaceOrThrow(workspaceId) {
+  assertValidUuid(workspaceId, "workspaceId");
+  const ws = await db.query.workspaces.findFirst({
+    where: (0, import_drizzle_orm4.eq)(workspaces.id, workspaceId)
+  });
+  if (!ws) {
+    throw new IpcNotFoundError(`Workspace ${workspaceId} not found`);
+  }
+  return ws;
 }
 
 // electron/ipc/conversations.ts
@@ -1946,6 +2039,1112 @@ function register6(ipcMain2) {
   ipcMain2.handle("cench:skills.readFile", (_e, args) => readSkillFile(args));
 }
 
+// electron/ipc/projects.ts
+var import_electron2 = require("electron");
+var import_node_path2 = __toESM(require("node:path"));
+var import_promises2 = __toESM(require("node:fs/promises"));
+var import_drizzle_orm7 = require("drizzle-orm");
+
+// lib/charts/compile.ts
+var CHART_PANEL_CONFIG_KEYS = /* @__PURE__ */ new Set([
+  "chartPanelBackground",
+  "chartPanelOpacity",
+  "chartPanelBorderRadius",
+  "chartPanelBoxShadow"
+]);
+function withReadableDefaults(layer) {
+  const raw = layer.config || {};
+  if (layer.chartType === "plotly" || layer.chartType === "recharts") return { ...raw };
+  const readableOptOut = raw.readableDefaults === false;
+  if (readableOptOut) return raw;
+  const merged = {
+    ...raw,
+    // Keep typography and labels readable by default unless user explicitly overrides.
+    fontFamily: raw.fontFamily,
+    fontSize: raw.fontSize ?? 18,
+    title: raw.title ?? layer.name,
+    showGrid: raw.showGrid ?? true,
+    showValues: raw.showValues ?? true,
+    // Match cench-charts resolveConfig default (avoid huge legends / layout surprises).
+    showLegend: raw.showLegend ?? false,
+    axisLabelSize: raw.axisLabelSize ?? 24,
+    dataLabelSize: raw.dataLabelSize ?? 20,
+    contrastMode: raw.contrastMode ?? "auto"
+  };
+  const axisLike = ["bar", "horizontalBar", "stackedBar", "groupedBar", "line", "area", "scatter"].includes(
+    layer.chartType
+  );
+  if (axisLike) {
+    merged.xLabel = raw.xLabel ?? "Category";
+    merged.yLabel = raw.yLabel ?? "Value";
+  }
+  return merged;
+}
+function chartSdkConfig(layer) {
+  const merged = withReadableDefaults(layer);
+  const out = { ...merged };
+  for (const k of CHART_PANEL_CONFIG_KEYS) delete out[k];
+  delete out.plotlyLayout;
+  delete out.plotlyConfig;
+  delete out.rechartsVariant;
+  return out;
+}
+function panelDivOpen(layer) {
+  const lid = layer.id.replace(/[^a-zA-Z0-9_-]/g, "");
+  const rawPanel = layer.config || {};
+  const panelBg = typeof rawPanel.chartPanelBackground === "string" && rawPanel.chartPanelBackground.trim() ? rawPanel.chartPanelBackground.trim() : "transparent";
+  const panelOp = typeof rawPanel.chartPanelOpacity === "number" && Number.isFinite(rawPanel.chartPanelOpacity) && rawPanel.chartPanelOpacity >= 0 && rawPanel.chartPanelOpacity <= 1 ? rawPanel.chartPanelOpacity : 1;
+  const panelRad = typeof rawPanel.chartPanelBorderRadius === "number" && Number.isFinite(rawPanel.chartPanelBorderRadius) ? Math.max(0, rawPanel.chartPanelBorderRadius) : 0;
+  const panelSh = typeof rawPanel.chartPanelBoxShadow === "string" && rawPanel.chartPanelBoxShadow.trim() ? rawPanel.chartPanelBoxShadow.trim() : "none";
+  return `
+{
+  const el = document.createElement('div');
+  el.id = 'chart-layer-${lid}';
+  el.style.position = 'absolute';
+  el.style.left = '${layer.layout.x}%';
+  el.style.top = '${layer.layout.y}%';
+  el.style.width = '${layer.layout.width}%';
+  el.style.height = '${layer.layout.height}%';
+  el.style.overflow = 'hidden';
+  el.style.background = ${JSON.stringify(panelBg)};
+  el.style.opacity = ${JSON.stringify(String(panelOp))};
+  el.style.borderRadius = ${JSON.stringify(`${panelRad}px`)};
+  el.style.boxShadow = ${JSON.stringify(panelSh)};
+  chartRoot.appendChild(el);
+`.trim();
+}
+function isPlainObject(v) {
+  return v !== null && typeof v === "object" && !Array.isArray(v);
+}
+var PLOTLY_DEFAULT_MARGIN = { l: 48, r: 24, t: 48, b: 48 };
+function mergePlotlyLayoutForCompile(userLayout, fontFamilyFromConfig) {
+  const user = userLayout && isPlainObject(userLayout) ? userLayout : {};
+  const userMargin = isPlainObject(user.margin) ? user.margin : {};
+  const userFont = isPlainObject(user.font) ? user.font : {};
+  const { margin: _dropM, font: _dropF, ...userTop } = user;
+  const baseFont = {
+    ...fontFamilyFromConfig ? { family: fontFamilyFromConfig } : {},
+    ...userFont
+  };
+  const mergedMargin = { ...PLOTLY_DEFAULT_MARGIN, ...userMargin };
+  const out = {
+    autosize: true,
+    paper_bgcolor: "rgba(0,0,0,0)",
+    plot_bgcolor: "rgba(0,0,0,0)",
+    ...userTop,
+    margin: mergedMargin
+  };
+  if (Object.keys(baseFont).length > 0) {
+    out.font = baseFont;
+  }
+  return out;
+}
+function compilePlotlyLayerBlock(layer) {
+  const open = panelDivOpen(layer);
+  const raw = layer.data;
+  let traces = [];
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    const o = raw;
+    if (Array.isArray(o.traces)) traces = o.traces;
+  } else if (Array.isArray(raw)) {
+    traces = raw;
+  }
+  const conf = layer.config || {};
+  const fontFamily = typeof conf.fontFamily === "string" && conf.fontFamily.trim() ? conf.fontFamily.trim() : void 0;
+  const userLayout = isPlainObject(conf.plotlyLayout) ? conf.plotlyLayout : {};
+  const plotlyLayout = mergePlotlyLayoutForCompile(userLayout, fontFamily);
+  const userPlotCfg = typeof conf.plotlyConfig === "object" && conf.plotlyConfig !== null && !Array.isArray(conf.plotlyConfig) ? conf.plotlyConfig : {};
+  const plotlyConfig = {
+    staticPlot: true,
+    responsive: true,
+    displayModeBar: false,
+    ...userPlotCfg
+  };
+  const tracesLit = JSON.stringify(traces);
+  const layoutLit = JSON.stringify(plotlyLayout);
+  const configLit = JSON.stringify(plotlyConfig);
+  return `
+${open}
+  if (typeof Plotly === 'undefined') {
+    console.warn('Plotly.js not loaded; chart layer skipped');
+  } else {
+    Plotly.newPlot(el.id, ${tracesLit}, ${layoutLit}, ${configLit});
+  }
+}
+`.trim();
+}
+function buildRechartsSpec(layer) {
+  const raw = layer.config || {};
+  const v = raw.rechartsVariant;
+  const variant = v === "line" || v === "area" ? v : "bar";
+  const data = Array.isArray(layer.data) ? layer.data : [];
+  const colors = Array.isArray(raw.colors) ? raw.colors : void 0;
+  return {
+    variant,
+    categoryKey: typeof raw.categoryKey === "string" ? raw.categoryKey : "label",
+    valueKey: typeof raw.valueKey === "string" ? raw.valueKey : "value",
+    data,
+    colors,
+    title: typeof raw.title === "string" && raw.title.trim() ? raw.title.trim() : layer.name,
+    titleSize: typeof raw.titleSize === "number" && Number.isFinite(raw.titleSize) ? raw.titleSize : void 0,
+    showGrid: raw.showGrid !== false
+  };
+}
+function compileRechartsLayerBlock(layer) {
+  const open = panelDivOpen(layer);
+  const spec = buildRechartsSpec(layer);
+  const specStr = JSON.stringify(spec).replace(/</g, "\\u003c");
+  const specJsLiteral = JSON.stringify(specStr);
+  return `
+${open}
+  el.style.display = 'flex';
+  el.style.flexDirection = 'column';
+  el.setAttribute('data-cench-recharts', '1');
+  var _spec = document.createElement('script');
+  _spec.type = 'application/json';
+  _spec.className = 'cench-recharts-json';
+  _spec.textContent = ${specJsLiteral};
+  el.appendChild(_spec);
+}
+`.trim();
+}
+function compileD3SceneFromLayers(layers2) {
+  const safeLayers = (layers2 || []).filter(Boolean);
+  const blocks = safeLayers.map((layer) => {
+    if (layer.chartType === "plotly") {
+      return compilePlotlyLayerBlock(layer);
+    }
+    if (layer.chartType === "recharts") {
+      return compileRechartsLayerBlock(layer);
+    }
+    const cfg = JSON.stringify(chartSdkConfig(layer));
+    const open = panelDivOpen(layer);
+    const data = layer.data === void 0 || layer.data === null ? "[]" : typeof layer.data === "object" ? JSON.stringify(layer.data) : JSON.stringify(layer.data);
+    const animateCall = layer.timing?.animated ? ".animate(window.__tl)" : "";
+    return `
+${open}
+  CenchCharts.${layer.chartType}('#' + el.id, ${data}, ${cfg})${animateCall};
+}
+`.trim();
+  });
+  const indented = blocks.map(
+    (b) => b.split("\n").map((line) => line ? `  ${line}` : line).join("\n")
+  ).join("\n");
+  const sceneCode = `
+const chartRoot = document.getElementById('chart');
+if (chartRoot) {
+  while (chartRoot.firstChild) chartRoot.removeChild(chartRoot.firstChild);
+  chartRoot.style.position = 'relative';
+  chartRoot.style.width = '100%';
+  chartRoot.style.height = '100%';
+${indented}
+}
+`.trim();
+  return {
+    sceneCode,
+    d3Data: { chartLayers: safeLayers.map((l) => ({ id: l.id, chartType: l.chartType, data: l.data })) }
+  };
+}
+
+// lib/charts/normalize-scenes.ts
+function autoGridLayouts(layers2) {
+  const n = layers2.length;
+  if (n <= 1) return layers2;
+  const presets = n === 2 ? [
+    { x: 4, y: 12, width: 44, height: 76 },
+    { x: 52, y: 12, width: 44, height: 76 }
+  ] : n === 3 ? [
+    { x: 4, y: 10, width: 44, height: 36 },
+    { x: 52, y: 10, width: 44, height: 36 },
+    { x: 28, y: 54, width: 44, height: 36 }
+  ] : [
+    { x: 4, y: 10, width: 44, height: 36 },
+    { x: 52, y: 10, width: 44, height: 36 },
+    { x: 4, y: 54, width: 44, height: 36 },
+    { x: 52, y: 54, width: 44, height: 36 }
+  ];
+  return layers2.map((l, i) => ({ ...l, layout: presets[i] ?? l.layout }));
+}
+function normalizeScenesForPersistence(scenes2) {
+  return (scenes2 || []).map((scene) => {
+    if (scene.sceneType !== "d3") {
+      return { ...scene, chartLayers: [], d3Data: null };
+    }
+    const layers2 = Array.isArray(scene.chartLayers) ? scene.chartLayers : [];
+    if (layers2.length === 0) return scene;
+    const normalizedLayers = layers2.length <= 4 ? autoGridLayouts(layers2) : layers2;
+    const compiled = compileD3SceneFromLayers(normalizedLayers);
+    return {
+      ...scene,
+      chartLayers: normalizedLayers,
+      sceneCode: compiled.sceneCode,
+      d3Data: compiled.d3Data
+    };
+  });
+}
+
+// lib/db/project-scene-storage.ts
+function readProjectSceneBlob(description) {
+  if (!description) {
+    return { scenes: [], sceneGraph: null, zdogLibrary: [] };
+  }
+  try {
+    const parsed = JSON.parse(description);
+    return {
+      scenes: parsed.scenes || [],
+      sceneGraph: parsed.sceneGraph || null,
+      zdogLibrary: parsed.zdogLibrary || [],
+      timeline: parsed.timeline || null
+    };
+  } catch {
+    return { scenes: [], sceneGraph: null, zdogLibrary: [] };
+  }
+}
+function writeProjectSceneBlob(existingDescription, updates) {
+  let existingData = {};
+  if (existingDescription) {
+    try {
+      existingData = JSON.parse(existingDescription);
+    } catch {
+      existingData = {};
+    }
+  }
+  const result = {
+    ...existingData,
+    scenes: updates.scenes !== void 0 ? updates.scenes : existingData.scenes || [],
+    sceneGraph: updates.sceneGraph !== void 0 ? updates.sceneGraph : existingData.sceneGraph || null
+  };
+  if (updates.zdogLibrary !== void 0) result.zdogLibrary = updates.zdogLibrary;
+  if (updates.zdogStudioLibrary !== void 0) result.zdogStudioLibrary = updates.zdogStudioLibrary;
+  if (updates.timeline !== void 0) result.timeline = updates.timeline;
+  return JSON.stringify(result);
+}
+
+// lib/db/project-scene-table.ts
+var import_drizzle_orm6 = require("drizzle-orm");
+var import_crypto = require("crypto");
+
+// lib/transitions.ts
+var TRANSITION_CATALOG = [
+  { id: "none", label: "Cut", category: "Basics", xfade: null },
+  { id: "crossfade", label: "Crossfade", category: "Basics", xfade: "fade" },
+  { id: "dissolve", label: "Dissolve", category: "Basics", xfade: "dissolve" },
+  { id: "fade-black", label: "Fade through black", category: "Basics", xfade: "fadeblack" },
+  { id: "fade-white", label: "Fade through white", category: "Basics", xfade: "fadewhite" },
+  { id: "wipe-left", label: "Wipe left", category: "Wipe", xfade: "wipeleft" },
+  { id: "wipe-right", label: "Wipe right", category: "Wipe", xfade: "wiperight" },
+  { id: "wipe-up", label: "Wipe up", category: "Wipe", xfade: "wipeup" },
+  { id: "wipe-down", label: "Wipe down", category: "Wipe", xfade: "wipedown" },
+  { id: "wipe-tl", label: "Wipe corner TL", category: "Wipe", xfade: "wipetl" },
+  { id: "wipe-tr", label: "Wipe corner TR", category: "Wipe", xfade: "wipetr" },
+  { id: "wipe-bl", label: "Wipe corner BL", category: "Wipe", xfade: "wipebl" },
+  { id: "wipe-br", label: "Wipe corner BR", category: "Wipe", xfade: "wipebr" },
+  { id: "slide-left", label: "Slide left", category: "Slide", xfade: "slideleft" },
+  { id: "slide-right", label: "Slide right", category: "Slide", xfade: "slideright" },
+  { id: "slide-up", label: "Slide up", category: "Slide", xfade: "slideup" },
+  { id: "slide-down", label: "Slide down", category: "Slide", xfade: "slidedown" },
+  { id: "smooth-left", label: "Smooth left", category: "Smooth", xfade: "smoothleft" },
+  { id: "smooth-right", label: "Smooth right", category: "Smooth", xfade: "smoothright" },
+  { id: "smooth-up", label: "Smooth up", category: "Smooth", xfade: "smoothup" },
+  { id: "smooth-down", label: "Smooth down", category: "Smooth", xfade: "smoothdown" },
+  { id: "circle-open", label: "Iris open", category: "Shape", xfade: "circleopen" },
+  { id: "circle-close", label: "Iris close", category: "Shape", xfade: "circleclose" },
+  { id: "radial", label: "Radial", category: "Shape", xfade: "radial" },
+  { id: "vert-open", label: "Vertical open", category: "Shape", xfade: "vertopen" },
+  { id: "horz-open", label: "Horizontal open", category: "Shape", xfade: "horzopen" },
+  { id: "cover-left", label: "Cover left", category: "Cover / reveal", xfade: "coverleft" },
+  { id: "cover-right", label: "Cover right", category: "Cover / reveal", xfade: "coverright" },
+  { id: "reveal-left", label: "Reveal left", category: "Cover / reveal", xfade: "revealleft" },
+  { id: "reveal-right", label: "Reveal right", category: "Cover / reveal", xfade: "revealright" },
+  { id: "diag-tl", label: "Diagonal TL", category: "Diagonal", xfade: "diagtl" },
+  { id: "diag-tr", label: "Diagonal TR", category: "Diagonal", xfade: "diagtr" },
+  { id: "diag-bl", label: "Diagonal BL", category: "Diagonal", xfade: "diagbl" },
+  { id: "diag-br", label: "Diagonal BR", category: "Diagonal", xfade: "diagbr" },
+  { id: "zoom-in", label: "Zoom in", category: "Depth", xfade: "zoomin" },
+  { id: "distance", label: "Distance", category: "Depth", xfade: "distance" }
+];
+var TRANSITION_UI_GROUPS = (() => {
+  const order = [];
+  const map = /* @__PURE__ */ new Map();
+  for (const row of TRANSITION_CATALOG) {
+    if (!map.has(row.category)) {
+      order.push(row.category);
+      map.set(row.category, []);
+    }
+    map.get(row.category).push({ id: row.id, label: row.label });
+  }
+  return order.map((category) => ({ category, items: map.get(category) }));
+})();
+var ALL_TRANSITION_IDS = TRANSITION_CATALOG.map((r) => r.id);
+var VALID = new Set(ALL_TRANSITION_IDS);
+function isValidTransition(s) {
+  return VALID.has(s);
+}
+function normalizeTransition(raw) {
+  if (typeof raw === "string" && isValidTransition(raw)) return raw;
+  if (raw && typeof raw === "object" && "type" in raw) {
+    const t = raw.type;
+    if (typeof t === "string" && isValidTransition(t)) return t;
+  }
+  return "none";
+}
+
+// lib/db/project-scene-table.ts
+var UUID_RE2 = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function buildFallbackSceneFromRow(row) {
+  return {
+    id: row.id,
+    name: row.name ?? "",
+    prompt: "",
+    summary: "",
+    svgContent: "",
+    duration: row.duration ?? 8,
+    bgColor: row.bgColor ?? "#ffffff",
+    thumbnail: row.thumbnailUrl ?? null,
+    videoLayer: row.videoLayer ?? { enabled: false, src: null, opacity: 1, trimStart: 0, trimEnd: null },
+    audioLayer: row.audioLayer ?? {
+      enabled: false,
+      src: null,
+      volume: 1,
+      fadeIn: false,
+      fadeOut: false,
+      startOffset: 0
+    },
+    textOverlays: [],
+    svgObjects: [],
+    primaryObjectId: null,
+    svgBranches: [],
+    activeBranchId: null,
+    transition: normalizeTransition(row.transition?.type ?? "none"),
+    usage: null,
+    sceneType: "svg",
+    canvasCode: "",
+    canvasBackgroundCode: "",
+    sceneCode: "",
+    reactCode: "",
+    sceneHTML: "",
+    sceneStyles: "",
+    lottieSource: "",
+    d3Data: null,
+    chartLayers: [],
+    physicsLayers: [],
+    interactions: [],
+    variables: [],
+    aiLayers: [],
+    messages: [],
+    styleOverride: row.styleOverride ?? {},
+    cameraMotion: row.cameraMotion ?? null,
+    worldConfig: row.worldConfig ?? null
+  };
+}
+function isUuid(value) {
+  if (!value) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+function normalizeEdgeCondition(cond) {
+  const c = cond && typeof cond === "object" ? cond : {};
+  return {
+    type: c.type ?? "auto",
+    interactionId: c.interactionId ?? null,
+    variableName: c.variableName ?? null,
+    variableValue: c.variableValue ?? null
+  };
+}
+function edgeSemanticKey(edge) {
+  return `${edge.fromSceneId}::${edge.toSceneId}::${JSON.stringify(edge.condition)}`;
+}
+async function writeProjectScenesToTables(projectId, projectScenes, sceneGraph) {
+  await db.transaction(async (tx) => {
+    await writeProjectScenesToTablesTx(tx, projectId, projectScenes, sceneGraph);
+  });
+}
+async function writeProjectScenesToTablesTx(tx, projectId, projectScenes, sceneGraph) {
+  const incomingSceneIds = projectScenes.map((s) => s.id);
+  const uuidSceneIds = incomingSceneIds.filter((id) => UUID_RE2.test(id));
+  if (uuidSceneIds.length > 0) {
+    const crossProjectRows = await tx.select({ id: scenes.id }).from(scenes).where((0, import_drizzle_orm6.and)((0, import_drizzle_orm6.ne)(scenes.projectId, projectId), (0, import_drizzle_orm6.inArray)(scenes.id, uuidSceneIds))).limit(1);
+    if (crossProjectRows.length > 0) {
+      throw new Error(`scene id collision across projects for id ${crossProjectRows[0].id}`);
+    }
+  }
+  await tx.update(projects).set({ sceneGraphStartSceneId: sceneGraph?.startSceneId || null, updatedAt: /* @__PURE__ */ new Date() }).where((0, import_drizzle_orm6.eq)(projects.id, projectId));
+  if (uuidSceneIds.length > 0) {
+    await tx.delete(scenes).where((0, import_drizzle_orm6.and)((0, import_drizzle_orm6.eq)(scenes.projectId, projectId), (0, import_drizzle_orm6.notInArray)(scenes.id, uuidSceneIds)));
+  } else {
+    await tx.delete(scenes).where((0, import_drizzle_orm6.eq)(scenes.projectId, projectId));
+  }
+  const uuidScenes = projectScenes.filter((s) => UUID_RE2.test(s.id));
+  if (uuidScenes.length > 0) {
+    await tx.insert(scenes).values(
+      uuidScenes.map((s, idx) => ({
+        id: s.id,
+        projectId,
+        name: s.name ?? "",
+        position: idx,
+        duration: s.duration ?? 8,
+        bgColor: s.bgColor ?? "#ffffff",
+        styleOverride: s.styleOverride ?? {},
+        transition: { type: normalizeTransition(s.transition), duration: 0.5 },
+        audioLayer: s.audioLayer ?? null,
+        videoLayer: s.videoLayer ?? null,
+        thumbnailUrl: s.thumbnail ?? null,
+        cameraMotion: s.cameraMotion ?? null,
+        worldConfig: s.worldConfig ?? null,
+        sceneBlob: s,
+        updatedAt: /* @__PURE__ */ new Date()
+      }))
+    ).onConflictDoUpdate({
+      target: scenes.id,
+      set: {
+        // Keep projectId immutable on conflicts to avoid cross-project reassignment.
+        name: import_drizzle_orm6.sql`excluded.name`,
+        position: import_drizzle_orm6.sql`excluded.position`,
+        duration: import_drizzle_orm6.sql`excluded.duration`,
+        bgColor: import_drizzle_orm6.sql`excluded.bg_color`,
+        styleOverride: import_drizzle_orm6.sql`excluded.style_override`,
+        transition: import_drizzle_orm6.sql`excluded.transition`,
+        audioLayer: import_drizzle_orm6.sql`excluded.audio_layer`,
+        videoLayer: import_drizzle_orm6.sql`excluded.video_layer`,
+        thumbnailUrl: import_drizzle_orm6.sql`excluded.thumbnail_url`,
+        cameraMotion: import_drizzle_orm6.sql`excluded.camera_motion`,
+        worldConfig: import_drizzle_orm6.sql`excluded.world_config`,
+        sceneBlob: import_drizzle_orm6.sql`excluded.scene_blob`,
+        updatedAt: /* @__PURE__ */ new Date()
+      }
+    });
+  }
+  const nodes = sceneGraph?.nodes ?? [];
+  const incomingNodeSceneIds = nodes.map((n) => n.id);
+  if (incomingNodeSceneIds.length > 0) {
+    await tx.delete(sceneNodes).where((0, import_drizzle_orm6.and)((0, import_drizzle_orm6.eq)(sceneNodes.projectId, projectId), (0, import_drizzle_orm6.notInArray)(sceneNodes.sceneId, incomingNodeSceneIds)));
+    await tx.insert(sceneNodes).values(
+      nodes.map((n) => ({
+        projectId,
+        sceneId: n.id,
+        position: n.position ?? { x: 0, y: 0 }
+      }))
+    ).onConflictDoUpdate({
+      target: [sceneNodes.projectId, sceneNodes.sceneId],
+      set: { position: import_drizzle_orm6.sql`excluded.position` }
+    });
+  } else {
+    await tx.delete(sceneNodes).where((0, import_drizzle_orm6.eq)(sceneNodes.projectId, projectId));
+  }
+  const existingEdges = await tx.select({
+    id: sceneEdges.id,
+    fromSceneId: sceneEdges.fromSceneId,
+    toSceneId: sceneEdges.toSceneId,
+    condition: sceneEdges.condition
+  }).from(sceneEdges).where((0, import_drizzle_orm6.eq)(sceneEdges.projectId, projectId));
+  const existingBySemantic = /* @__PURE__ */ new Map();
+  for (const ee of existingEdges) {
+    const key = edgeSemanticKey({
+      fromSceneId: ee.fromSceneId ?? "",
+      toSceneId: ee.toSceneId ?? "",
+      condition: normalizeEdgeCondition(ee.condition)
+    });
+    const list5 = existingBySemantic.get(key) ?? [];
+    list5.push(ee.id);
+    existingBySemantic.set(key, list5);
+  }
+  const edges = sceneGraph?.edges ?? [];
+  const edgeRows = edges.map((e) => {
+    const normalizedCondition = normalizeEdgeCondition(e.condition);
+    let edgeId = isUuid(e.id) ? e.id : null;
+    if (!edgeId) {
+      const key = edgeSemanticKey({
+        fromSceneId: e.fromSceneId,
+        toSceneId: e.toSceneId,
+        condition: normalizedCondition
+      });
+      const existing = existingBySemantic.get(key);
+      edgeId = existing?.shift() ?? null;
+    }
+    return {
+      id: edgeId ?? (0, import_crypto.randomUUID)(),
+      projectId,
+      fromSceneId: e.fromSceneId,
+      toSceneId: e.toSceneId,
+      condition: normalizedCondition
+    };
+  });
+  const incomingEdgeIds = edgeRows.map((e) => e.id);
+  if (incomingEdgeIds.length > 0) {
+    await tx.delete(sceneEdges).where((0, import_drizzle_orm6.and)((0, import_drizzle_orm6.eq)(sceneEdges.projectId, projectId), (0, import_drizzle_orm6.notInArray)(sceneEdges.id, incomingEdgeIds)));
+    await tx.insert(sceneEdges).values(edgeRows).onConflictDoUpdate({
+      target: sceneEdges.id,
+      set: {
+        fromSceneId: import_drizzle_orm6.sql`excluded.from_scene_id`,
+        toSceneId: import_drizzle_orm6.sql`excluded.to_scene_id`,
+        condition: import_drizzle_orm6.sql`excluded.condition`
+      }
+    });
+  } else {
+    await tx.delete(sceneEdges).where((0, import_drizzle_orm6.eq)(sceneEdges.projectId, projectId));
+  }
+}
+async function readProjectScenesFromTables(projectId) {
+  const rows = await db.query.scenes.findMany({
+    where: (0, import_drizzle_orm6.eq)(scenes.projectId, projectId),
+    orderBy: (s, { asc: asc2 }) => [asc2(s.position)]
+  });
+  if (!rows || rows.length === 0) return null;
+  const edgeRows = await db.query.sceneEdges.findMany({
+    where: (0, import_drizzle_orm6.eq)(sceneEdges.projectId, projectId)
+  });
+  const nodeRows = await db.query.sceneNodes.findMany({
+    where: (0, import_drizzle_orm6.eq)(sceneNodes.projectId, projectId)
+  });
+  const [projectRow] = await db.select({ startSceneId: projects.sceneGraphStartSceneId }).from(projects).where((0, import_drizzle_orm6.eq)(projects.id, projectId)).limit(1);
+  const outScenes = rows.map((r) => {
+    const blob = r.sceneBlob;
+    if (blob && typeof blob === "object") return blob;
+    return buildFallbackSceneFromRow(r);
+  });
+  const outGraph = {
+    nodes: nodeRows.length > 0 ? nodeRows.map((n) => ({
+      id: n.sceneId,
+      position: n.position ?? { x: 0, y: 0 }
+    })) : outScenes.map((s, i) => ({ id: s.id, position: { x: i * 300, y: 100 } })),
+    edges: edgeRows.map((e) => ({
+      id: e.id,
+      fromSceneId: e.fromSceneId,
+      toSceneId: e.toSceneId,
+      condition: e.condition ?? { type: "auto", interactionId: null, variableName: null, variableValue: null }
+    })),
+    startSceneId: projectRow?.startSceneId ?? outScenes[0]?.id ?? ""
+  };
+  return { scenes: outScenes, sceneGraph: outGraph };
+}
+
+// electron/ipc/projects.ts
+var MAX_PROJECTS_PER_PAGE = 100;
+var MAX_SCENES = 200;
+var MAX_GLOBAL_STYLE_SIZE = 16 * 1024;
+var MAX_SETTINGS_SIZE = 16 * 1024;
+var SCRYPT_HASH_RE = /^[0-9a-f]{32}:[0-9a-f]{128}$/i;
+var DEFAULT_BRAND_KIT = {
+  brandName: null,
+  logoAssetIds: [],
+  palette: [],
+  fontPrimary: null,
+  fontSecondary: null,
+  guidelines: null
+};
+async function list3(args = {}) {
+  const paginated = args.limit !== void 0 || args.cursor !== void 0;
+  const limit = Math.min(Math.max(args.limit ?? 50, 1), MAX_PROJECTS_PER_PAGE);
+  const conditions = [];
+  if (args.workspaceId === "none") {
+    conditions.push((0, import_drizzle_orm7.isNull)(projects.workspaceId));
+  } else if (args.workspaceId) {
+    assertValidUuid(args.workspaceId, "workspaceId");
+    conditions.push((0, import_drizzle_orm7.eq)(projects.workspaceId, args.workspaceId));
+  }
+  if (args.cursor) {
+    const cursorDate = new Date(args.cursor);
+    if (!isNaN(cursorDate.getTime())) {
+      conditions.push((0, import_drizzle_orm7.lt)(projects.updatedAt, cursorDate));
+    }
+  }
+  const rows = await db.select({
+    id: projects.id,
+    name: projects.name,
+    description: projects.description,
+    outputMode: projects.outputMode,
+    thumbnailUrl: projects.thumbnailUrl,
+    workspaceId: projects.workspaceId,
+    updatedAt: projects.updatedAt,
+    createdAt: projects.createdAt
+  }).from(projects).where(conditions.length > 0 ? (0, import_drizzle_orm7.and)(...conditions) : void 0).orderBy((0, import_drizzle_orm7.desc)(projects.updatedAt)).limit(paginated ? limit + 1 : limit);
+  if (!paginated) return rows;
+  const hasMore = rows.length > limit;
+  const items = hasMore ? rows.slice(0, limit) : rows;
+  const nextCursor = hasMore ? items[items.length - 1].updatedAt?.toISOString() ?? null : null;
+  return { items, nextCursor };
+}
+async function create2(args) {
+  if (args.outputMode && !["mp4", "interactive"].includes(args.outputMode)) {
+    throw new IpcValidationError(`Invalid outputMode: ${args.outputMode}`);
+  }
+  if (args.scenes && !Array.isArray(args.scenes)) {
+    throw new IpcValidationError("scenes must be an array");
+  }
+  if (args.scenes && args.scenes.length > MAX_SCENES) {
+    throw new IpcValidationError(`scenes array exceeds ${MAX_SCENES} item limit`);
+  }
+  if (Array.isArray(args.sceneGraph?.nodes) && args.sceneGraph.nodes.length > MAX_SCENES) {
+    throw new IpcValidationError(`sceneGraph.nodes exceeds ${MAX_SCENES} item limit`);
+  }
+  const [project] = await db.insert(projects).values({
+    ...args.id ? { id: args.id } : {},
+    userId: null,
+    workspaceId: args.workspaceId || null,
+    name: (args.name || "Untitled Project").slice(0, 255),
+    outputMode: args.outputMode || "mp4",
+    globalStyle: args.globalStyle || {
+      presetId: null,
+      paletteOverride: null,
+      bgColorOverride: null,
+      fontOverride: null,
+      bodyFontOverride: null,
+      strokeColorOverride: null
+    },
+    mp4Settings: args.mp4Settings || void 0,
+    interactiveSettings: args.interactiveSettings || void 0,
+    apiPermissions: args.apiPermissions || {},
+    audioSettings: args.audioSettings || void 0,
+    audioProviderEnabled: args.audioProviderEnabled || {},
+    mediaGenEnabled: args.mediaGenEnabled || {},
+    description: JSON.stringify({
+      scenes: args.scenes || [],
+      sceneGraph: args.sceneGraph || null,
+      timeline: args.timeline || null
+    })
+  }).returning();
+  return project;
+}
+async function get2(projectId) {
+  const project = await loadProjectOrThrow(projectId);
+  const tableBacked = await readProjectScenesFromTables(projectId);
+  const blobBacked = readProjectSceneBlob(project.description);
+  if (!tableBacked && blobBacked.scenes.length > 0) {
+    try {
+      await writeProjectScenesToTables(projectId, blobBacked.scenes, blobBacked.sceneGraph);
+    } catch (e) {
+      console.error("[projects.get] lazy table backfill failed:", e);
+    }
+  }
+  return {
+    ...project,
+    scenes: tableBacked?.scenes ?? blobBacked.scenes,
+    sceneGraph: tableBacked?.sceneGraph ?? blobBacked.sceneGraph,
+    zdogLibrary: blobBacked.zdogLibrary,
+    timeline: blobBacked.timeline
+  };
+}
+async function update3({ projectId, updates }) {
+  assertValidUuid(projectId, "projectId");
+  const updateData = { updatedAt: /* @__PURE__ */ new Date() };
+  if (updates.workspaceId !== void 0) updateData.workspaceId = updates.workspaceId || null;
+  if (updates.name !== void 0) updateData.name = updates.name;
+  if (updates.outputMode !== void 0) {
+    if (!["mp4", "interactive"].includes(String(updates.outputMode))) {
+      throw new IpcValidationError(`Invalid outputMode: ${updates.outputMode}`);
+    }
+    updateData.outputMode = updates.outputMode;
+  }
+  if (updates.globalStyle !== void 0) {
+    if (JSON.stringify(updates.globalStyle).length > MAX_GLOBAL_STYLE_SIZE) {
+      throw new IpcValidationError("globalStyle exceeds size limit");
+    }
+    updateData.globalStyle = updates.globalStyle;
+  }
+  if (updates.mp4Settings !== void 0) {
+    if (JSON.stringify(updates.mp4Settings).length > MAX_SETTINGS_SIZE) {
+      throw new IpcValidationError("mp4Settings exceeds size limit");
+    }
+    updateData.mp4Settings = updates.mp4Settings;
+  }
+  if (updates.interactiveSettings !== void 0) {
+    const settings = updates.interactiveSettings;
+    if (settings?.password && !SCRYPT_HASH_RE.test(settings.password)) {
+      const { hashPassword: hashPassword2 } = await Promise.resolve().then(() => (init_crypto(), crypto_exports));
+      settings.password = hashPassword2(settings.password);
+    }
+    updateData.interactiveSettings = settings;
+  }
+  for (const key of [
+    "apiPermissions",
+    "audioSettings",
+    "audioProviderEnabled",
+    "mediaGenEnabled",
+    "thumbnailUrl",
+    "watermark",
+    "brandKit",
+    "storyboardProposed",
+    "storyboardEdited",
+    "storyboardApplied",
+    "pausedAgentRun",
+    "runCheckpoint"
+  ]) {
+    if (updates[key] !== void 0) updateData[key] = updates[key];
+  }
+  const [existing] = await db.select({ description: projects.description, version: projects.version }).from(projects).where((0, import_drizzle_orm7.eq)(projects.id, projectId));
+  if (!existing) throw new IpcNotFoundError(`Project ${projectId} not found`);
+  const currentVersion = existing.version ?? 1;
+  if (updates.scenes !== void 0 || updates.sceneGraph !== void 0 || updates.timeline !== void 0) {
+    const normalizedScenes = updates.scenes !== void 0 ? (
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      normalizeScenesForPersistence(updates.scenes)
+    ) : readProjectSceneBlob(existing.description).scenes;
+    updateData.description = writeProjectSceneBlob(existing.description, {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      scenes: normalizedScenes,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      sceneGraph: updates.sceneGraph !== void 0 ? updates.sceneGraph : void 0,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      timeline: updates.timeline !== void 0 ? updates.timeline : void 0
+    });
+  }
+  updateData.version = currentVersion + 1;
+  const [project] = await db.update(projects).set(updateData).where((0, import_drizzle_orm7.and)((0, import_drizzle_orm7.eq)(projects.id, projectId), (0, import_drizzle_orm7.eq)(projects.version, currentVersion))).returning();
+  if (!project) {
+    throw new IpcValidationError("Conflict: project was modified concurrently. Please retry.");
+  }
+  if (updates.scenes !== void 0 || updates.sceneGraph !== void 0) {
+    try {
+      const normalizedScenes = updates.scenes !== void 0 ? (
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        normalizeScenesForPersistence(updates.scenes)
+      ) : readProjectSceneBlob(existing.description).scenes;
+      const graphToWrite = updates.sceneGraph !== void 0 ? updates.sceneGraph : readProjectSceneBlob(existing.description).sceneGraph;
+      await writeProjectScenesToTables(projectId, normalizedScenes, graphToWrite);
+    } catch (e) {
+      console.error("[projects.update] table sync failed \u2014 blob is source of truth:", e);
+    }
+  }
+  return project;
+}
+function resolveScenesDir() {
+  return import_electron2.app.isPackaged ? import_node_path2.default.join(import_electron2.app.getPath("userData"), "scenes") : import_node_path2.default.join(process.cwd(), "public", "scenes");
+}
+function resolvePublishedDir(projectId) {
+  const base = import_electron2.app.isPackaged ? import_node_path2.default.join(import_electron2.app.getPath("userData"), "published") : import_node_path2.default.join(process.cwd(), "public", "published");
+  return import_node_path2.default.join(base, projectId);
+}
+async function remove2(projectId) {
+  const project = await loadProjectOrThrow(projectId);
+  await db.delete(projects).where((0, import_drizzle_orm7.eq)(projects.id, projectId));
+  const cleanup = async () => {
+    const scenesDir = resolveScenesDir();
+    const publishedDir = resolvePublishedDir(projectId);
+    if (project.description) {
+      try {
+        const parsed = readProjectSceneBlob(project.description);
+        const sceneIds = (parsed.scenes || []).map((s) => s.id);
+        await Promise.allSettled(
+          sceneIds.map((sid) => import_promises2.default.unlink(import_node_path2.default.join(scenesDir, `${sid}.html`)).catch(() => {
+          }))
+        );
+      } catch {
+      }
+    }
+    await import_promises2.default.rm(publishedDir, { recursive: true, force: true }).catch(() => {
+    });
+  };
+  cleanup().catch((err) => console.error(`[projects.remove] Cleanup failed for ${projectId}:`, err));
+  return { ok: true };
+}
+async function listAssets(args) {
+  await loadProjectOrThrow(args.projectId);
+  const conditions = [(0, import_drizzle_orm7.eq)(projectAssets.projectId, args.projectId)];
+  if (args.type && ["image", "video", "svg"].includes(args.type)) {
+    conditions.push((0, import_drizzle_orm7.eq)(projectAssets.type, args.type));
+  }
+  if (args.source === "upload" || args.source === "generated") {
+    conditions.push((0, import_drizzle_orm7.eq)(projectAssets.source, args.source));
+  }
+  const assets2 = await db.select().from(projectAssets).where((0, import_drizzle_orm7.and)(...conditions)).orderBy((0, import_drizzle_orm7.desc)(projectAssets.createdAt));
+  return { assets: assets2 };
+}
+async function getBrandKit(projectId) {
+  assertValidUuid(projectId, "projectId");
+  const [project] = await db.select({ brandKit: projects.brandKit }).from(projects).where((0, import_drizzle_orm7.eq)(projects.id, projectId));
+  if (!project) throw new IpcNotFoundError(`Project ${projectId} not found`);
+  return { brandKit: project.brandKit ?? DEFAULT_BRAND_KIT };
+}
+async function updateBrandKit(args) {
+  assertValidUuid(args.projectId, "projectId");
+  const [project] = await db.select({ brandKit: projects.brandKit }).from(projects).where((0, import_drizzle_orm7.eq)(projects.id, args.projectId));
+  if (!project) throw new IpcNotFoundError(`Project ${args.projectId} not found`);
+  const current = project.brandKit ?? { ...DEFAULT_BRAND_KIT };
+  const updated = { ...current };
+  const { updates } = args;
+  if (typeof updates.brandName === "string" || updates.brandName === null) {
+    updated.brandName = updates.brandName;
+  }
+  if (Array.isArray(updates.logoAssetIds)) {
+    if (updates.logoAssetIds.length > 0) {
+      const existing = await db.select({ id: projectAssets.id }).from(projectAssets).where((0, import_drizzle_orm7.and)((0, import_drizzle_orm7.eq)(projectAssets.projectId, args.projectId), (0, import_drizzle_orm7.inArray)(projectAssets.id, updates.logoAssetIds)));
+      const existingIds = new Set(existing.map((a) => a.id));
+      updated.logoAssetIds = updates.logoAssetIds.filter((id) => existingIds.has(id));
+    } else {
+      updated.logoAssetIds = [];
+    }
+  }
+  if (Array.isArray(updates.palette)) {
+    updated.palette = updates.palette.filter((c) => typeof c === "string").slice(0, 8);
+  }
+  if (typeof updates.fontPrimary === "string" || updates.fontPrimary === null) {
+    updated.fontPrimary = updates.fontPrimary;
+  }
+  if (typeof updates.fontSecondary === "string" || updates.fontSecondary === null) {
+    updated.fontSecondary = updates.fontSecondary;
+  }
+  if (typeof updates.guidelines === "string" || updates.guidelines === null) {
+    updated.guidelines = updates.guidelines;
+  }
+  await db.update(projects).set({ brandKit: updated }).where((0, import_drizzle_orm7.eq)(projects.id, args.projectId));
+  return { brandKit: updated };
+}
+function register7(ipcMain2) {
+  ipcMain2.handle("cench:projects.list", (_e, args) => list3(args ?? {}));
+  ipcMain2.handle("cench:projects.create", (_e, args) => create2(args));
+  ipcMain2.handle("cench:projects.get", (_e, projectId) => get2(projectId));
+  ipcMain2.handle("cench:projects.update", (_e, args) => update3(args));
+  ipcMain2.handle("cench:projects.delete", (_e, projectId) => remove2(projectId));
+  ipcMain2.handle(
+    "cench:projects.listAssets",
+    (_e, args) => listAssets(args)
+  );
+  ipcMain2.handle("cench:projects.getBrandKit", (_e, projectId) => getBrandKit(projectId));
+  ipcMain2.handle(
+    "cench:projects.updateBrandKit",
+    (_e, args) => updateBrandKit(args)
+  );
+}
+
+// lib/db/queries/workspaces.ts
+var import_drizzle_orm8 = require("drizzle-orm");
+async function getUserWorkspaces(userId) {
+  const ownerFilter = userId ? (0, import_drizzle_orm8.eq)(workspaces.userId, userId) : (0, import_drizzle_orm8.isNull)(workspaces.userId);
+  const rows = await db.select({
+    id: workspaces.id,
+    name: workspaces.name,
+    description: workspaces.description,
+    color: workspaces.color,
+    icon: workspaces.icon,
+    isDefault: workspaces.isDefault,
+    isArchived: workspaces.isArchived,
+    updatedAt: workspaces.updatedAt,
+    projectCount: import_drizzle_orm8.sql`count(${projects.id})::int`
+  }).from(workspaces).leftJoin(projects, (0, import_drizzle_orm8.eq)(projects.workspaceId, workspaces.id)).where(ownerFilter).groupBy(workspaces.id).orderBy((0, import_drizzle_orm8.desc)(workspaces.updatedAt));
+  return rows;
+}
+async function getWorkspace(workspaceId) {
+  return db.query.workspaces.findFirst({
+    where: (0, import_drizzle_orm8.eq)(workspaces.id, workspaceId)
+  });
+}
+async function createWorkspace(data) {
+  if (data.isDefault && data.userId) {
+    await db.update(workspaces).set({ isDefault: false }).where((0, import_drizzle_orm8.and)((0, import_drizzle_orm8.eq)(workspaces.userId, data.userId), (0, import_drizzle_orm8.eq)(workspaces.isDefault, true)));
+  }
+  const [workspace] = await db.insert(workspaces).values(data).returning();
+  return workspace;
+}
+async function updateWorkspace(workspaceId, data) {
+  if (data.isDefault) {
+    const existing = await getWorkspace(workspaceId);
+    if (existing?.userId) {
+      await db.update(workspaces).set({ isDefault: false }).where((0, import_drizzle_orm8.and)((0, import_drizzle_orm8.eq)(workspaces.userId, existing.userId), (0, import_drizzle_orm8.eq)(workspaces.isDefault, true)));
+    }
+  }
+  const [workspace] = await db.update(workspaces).set({ ...data, updatedAt: /* @__PURE__ */ new Date() }).where((0, import_drizzle_orm8.eq)(workspaces.id, workspaceId)).returning();
+  return workspace;
+}
+async function deleteWorkspace(workspaceId) {
+  await db.delete(workspaces).where((0, import_drizzle_orm8.eq)(workspaces.id, workspaceId));
+}
+async function assignProjectsToWorkspace(workspaceId, projectIds) {
+  if (projectIds.length === 0) return;
+  await db.update(projects).set({ workspaceId, updatedAt: /* @__PURE__ */ new Date() }).where(import_drizzle_orm8.sql`${projects.id} = ANY(${projectIds})`);
+}
+async function removeProjectsFromWorkspace(projectIds) {
+  if (projectIds.length === 0) return;
+  await db.update(projects).set({ workspaceId: null, updatedAt: /* @__PURE__ */ new Date() }).where(import_drizzle_orm8.sql`${projects.id} = ANY(${projectIds})`);
+}
+
+// electron/ipc/workspaces.ts
+var MAX_NAME = 255;
+var MAX_PROJECTS_PER_ASSIGN = 100;
+async function list4() {
+  return getUserWorkspaces(null);
+}
+async function get3(workspaceId) {
+  assertValidUuid(workspaceId, "workspaceId");
+  const row = await getWorkspace(workspaceId);
+  if (!row) throw new IpcValidationError(`Workspace ${workspaceId} not found`);
+  return row;
+}
+async function create3(args) {
+  if (!args.name || typeof args.name !== "string" || args.name.trim().length === 0) {
+    throw new IpcValidationError("name is required");
+  }
+  return createWorkspace({
+    userId: null,
+    name: args.name.trim().slice(0, MAX_NAME),
+    description: args.description ?? null,
+    color: args.color ?? null,
+    icon: args.icon ?? null,
+    isDefault: args.isDefault ?? false
+  });
+}
+async function update4({ workspaceId, updates }) {
+  await loadWorkspaceOrThrow(workspaceId);
+  const patch = {};
+  if (updates.name !== void 0) patch.name = String(updates.name).trim().slice(0, MAX_NAME);
+  if (updates.description !== void 0) patch.description = updates.description;
+  if (updates.color !== void 0) patch.color = updates.color;
+  if (updates.icon !== void 0) patch.icon = updates.icon;
+  if (updates.brandKit !== void 0) patch.brandKit = updates.brandKit;
+  if (updates.globalStyle !== void 0) patch.globalStyle = updates.globalStyle;
+  if (updates.settings !== void 0) patch.settings = updates.settings;
+  if (updates.isDefault !== void 0) patch.isDefault = updates.isDefault;
+  return updateWorkspace(workspaceId, patch);
+}
+async function remove3(workspaceId) {
+  await loadWorkspaceOrThrow(workspaceId);
+  await deleteWorkspace(workspaceId);
+  return { success: true };
+}
+async function assignProjects(args) {
+  await loadWorkspaceOrThrow(args.workspaceId);
+  if (!Array.isArray(args.projectIds) || args.projectIds.length === 0) {
+    throw new IpcValidationError("projectIds must be a non-empty array");
+  }
+  if (args.projectIds.length > MAX_PROJECTS_PER_ASSIGN) {
+    throw new IpcValidationError(`Maximum ${MAX_PROJECTS_PER_ASSIGN} projects per request`);
+  }
+  args.projectIds.forEach((id) => assertValidUuid(id, "projectId"));
+  await assignProjectsToWorkspace(args.workspaceId, args.projectIds);
+  return { success: true };
+}
+async function unassignProjects(args) {
+  if (!Array.isArray(args.projectIds) || args.projectIds.length === 0) {
+    throw new IpcValidationError("projectIds must be a non-empty array");
+  }
+  args.projectIds.forEach((id) => assertValidUuid(id, "projectId"));
+  await removeProjectsFromWorkspace(args.projectIds);
+  return { success: true };
+}
+function register8(ipcMain2) {
+  ipcMain2.handle("cench:workspaces.list", () => list4());
+  ipcMain2.handle("cench:workspaces.get", (_e, workspaceId) => get3(workspaceId));
+  ipcMain2.handle("cench:workspaces.create", (_e, args) => create3(args));
+  ipcMain2.handle("cench:workspaces.update", (_e, args) => update4(args));
+  ipcMain2.handle("cench:workspaces.delete", (_e, workspaceId) => remove3(workspaceId));
+  ipcMain2.handle(
+    "cench:workspaces.assignProjects",
+    (_e, args) => assignProjects(args)
+  );
+  ipcMain2.handle(
+    "cench:workspaces.unassignProjects",
+    (_e, args) => unassignProjects(args)
+  );
+}
+
+// electron/ipc/publish.ts
+var import_electron3 = require("electron");
+var import_node_path3 = __toESM(require("node:path"));
+var import_promises3 = __toESM(require("node:fs/promises"));
+var import_node_fs = __toESM(require("node:fs"));
+function scenesSourceDir() {
+  return import_electron3.app.isPackaged ? import_node_path3.default.join(import_electron3.app.getPath("userData"), "scenes") : import_node_path3.default.join(process.cwd(), "public", "scenes");
+}
+function publishBase() {
+  return import_electron3.app.isPackaged ? import_node_path3.default.join(import_electron3.app.getPath("userData"), "published") : import_node_path3.default.join(process.cwd(), "public", "published");
+}
+function uploadsDir() {
+  return import_electron3.app.isPackaged ? import_node_path3.default.join(import_electron3.app.getPath("userData"), "uploads") : import_node_path3.default.join(process.cwd(), "public", "uploads");
+}
+async function publish(args) {
+  if (!args.project?.id || !args.scenes?.length) {
+    throw new IpcValidationError("Missing project or scenes");
+  }
+  await loadProjectOrThrow(args.project.id);
+  const publishDir = import_node_path3.default.join(publishBase(), args.project.id);
+  const scenesDir = import_node_path3.default.join(publishDir, "scenes");
+  const assetsDir = import_node_path3.default.join(publishDir, "assets");
+  await import_promises3.default.mkdir(scenesDir, { recursive: true });
+  await import_promises3.default.mkdir(assetsDir, { recursive: true });
+  const publishedScenes = [];
+  const missingSceneIds = [];
+  const srcScenesDir = scenesSourceDir();
+  for (const scene of args.scenes) {
+    const srcPath = import_node_path3.default.join(srcScenesDir, `${scene.id}.html`);
+    const destPath = import_node_path3.default.join(scenesDir, `${scene.id}.html`);
+    try {
+      await import_promises3.default.access(srcPath);
+    } catch {
+      console.warn(`[publish] Scene HTML missing: ${scene.id}.html`);
+      missingSceneIds.push(scene.id);
+      continue;
+    }
+    try {
+      await import_promises3.default.copyFile(srcPath, destPath);
+    } catch (e) {
+      console.error(`[publish] Failed to copy scene HTML for ${scene.id}:`, e);
+      missingSceneIds.push(scene.id);
+      continue;
+    }
+    publishedScenes.push({
+      id: scene.id,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      type: scene.sceneType ?? "svg",
+      duration: scene.duration,
+      htmlUrl: `/published/${args.project.id}/scenes/${scene.id}.html`,
+      htmlContent: null,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      interactions: scene.interactions ?? [],
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      variables: scene.variables ?? [],
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      transition: normalizeTransition(scene.transition)
+    });
+  }
+  if (missingSceneIds.length > 0) {
+    throw new IpcValidationError(
+      `Failed to publish: ${missingSceneIds.length} scene(s) are missing HTML files. Regenerate them and try again.`
+    );
+  }
+  const uploads = uploadsDir();
+  if (import_node_fs.default.existsSync(uploads)) {
+    try {
+      const files = await import_promises3.default.readdir(uploads);
+      for (const file of files) {
+        const src = import_node_path3.default.join(uploads, file);
+        const dest = import_node_path3.default.join(assetsDir, file);
+        try {
+          const stat = await import_promises3.default.stat(src);
+          if (stat.isFile()) await import_promises3.default.copyFile(src, dest);
+        } catch {
+        }
+      }
+    } catch (e) {
+      console.warn("[publish] uploads copy failed:", e);
+    }
+  }
+  const manifestPath = import_node_path3.default.join(publishDir, "manifest.json");
+  let version = 1;
+  try {
+    const existing = JSON.parse(await import_promises3.default.readFile(manifestPath, "utf-8"));
+    version = (existing.version ?? 0) + 1;
+  } catch {
+  }
+  const manifest = {
+    id: args.project.id,
+    version,
+    name: args.project.name || "Untitled Project",
+    playerOptions: {
+      theme: args.project.interactiveSettings?.playerTheme ?? "dark",
+      showProgressBar: args.project.interactiveSettings?.showProgressBar ?? true,
+      showSceneNav: args.project.interactiveSettings?.showSceneNav ?? false,
+      allowFullscreen: args.project.interactiveSettings?.allowFullscreen ?? true,
+      brandColor: args.project.interactiveSettings?.brandColor ?? "#e84545",
+      autoplay: true
+    },
+    sceneGraph: args.project.sceneGraph,
+    scenes: publishedScenes
+  };
+  await import_promises3.default.writeFile(manifestPath, JSON.stringify(manifest, null, 2));
+  return { publishedUrl: `/v/${args.project.id}`, version };
+}
+function register9(ipcMain2) {
+  ipcMain2.handle("cench:publish.run", (_e, args) => publish(args));
+}
+
 // electron/ipc/index.ts
 function registerAllIpc(ipcMain2) {
   register(ipcMain2);
@@ -1954,6 +3153,9 @@ function registerAllIpc(ipcMain2) {
   register4(ipcMain2);
   register5(ipcMain2);
   register6(ipcMain2);
+  register7(ipcMain2);
+  register8(ipcMain2);
+  register9(ipcMain2);
 }
 
 // electron/main.ts
@@ -1965,8 +3167,8 @@ function loadEnvFiles() {
       (0, import_dotenv.config)({ path: p, override: false });
     }
   };
-  if (import_electron2.app.isPackaged) {
-    tryLoad(import_path.default.join(import_electron2.app.getPath("userData"), "cench.env"));
+  if (import_electron4.app.isPackaged) {
+    tryLoad(import_path.default.join(import_electron4.app.getPath("userData"), "cench.env"));
     tryLoad(import_path.default.join(process.resourcesPath, ".env.defaults"));
   } else {
     const repoRoot = import_path.default.resolve(__dirname, "..");
@@ -1977,16 +3179,16 @@ function loadEnvFiles() {
 loadEnvFiles();
 var execFileAsync = (0, import_util.promisify)(import_child_process.execFile);
 function webZoomTargetWindow() {
-  return import_electron2.BrowserWindow.getFocusedWindow() ?? import_electron2.BrowserWindow.getAllWindows()[0] ?? null;
+  return import_electron4.BrowserWindow.getFocusedWindow() ?? import_electron4.BrowserWindow.getAllWindows()[0] ?? null;
 }
 var DEV_URL = process.env.ELECTRON_START_URL || "http://localhost:3000";
 function getUserScenesDir() {
-  return import_path.default.join(import_electron2.app.getPath("userData"), "scenes");
+  return import_path.default.join(import_electron4.app.getPath("userData"), "scenes");
 }
 function getStaticAppDir() {
   return import_path.default.join(__dirname, "..", "out");
 }
-import_electron2.protocol.registerSchemesAsPrivileged([
+import_electron4.protocol.registerSchemesAsPrivileged([
   {
     scheme: "cench",
     privileges: {
@@ -2001,8 +3203,8 @@ import_electron2.protocol.registerSchemesAsPrivileged([
 async function registerCenchProtocol() {
   const staticDir = import_path.default.resolve(getStaticAppDir());
   const scenesDir = import_path.default.resolve(getUserScenesDir());
-  await import_promises2.default.mkdir(scenesDir, { recursive: true });
-  import_electron2.protocol.handle("cench", async (request) => {
+  await import_promises4.default.mkdir(scenesDir, { recursive: true });
+  import_electron4.protocol.handle("cench", async (request) => {
     try {
       const url = new URL(request.url);
       const host = url.hostname;
@@ -2020,27 +3222,27 @@ async function registerCenchProtocol() {
         return new Response("Forbidden", { status: 403 });
       }
       try {
-        const stat = await import_promises2.default.stat(filePath);
+        const stat = await import_promises4.default.stat(filePath);
         if (stat.isDirectory()) filePath = import_path.default.join(filePath, "index.html");
       } catch {
         if (!filePath.endsWith(".html")) {
           const htmlVariant = `${filePath}.html`;
           try {
-            await import_promises2.default.access(htmlVariant);
+            await import_promises4.default.access(htmlVariant);
             filePath = htmlVariant;
           } catch {
           }
         }
       }
       try {
-        const realPath = await import_promises2.default.realpath(filePath);
+        const realPath = await import_promises4.default.realpath(filePath);
         if (!realPath.startsWith(baseDir + import_path.default.sep) && realPath !== baseDir) {
           return new Response("Forbidden (symlink escape)", { status: 403 });
         }
         filePath = realPath;
       } catch {
       }
-      return import_electron2.net.fetch((0, import_url.pathToFileURL)(filePath).toString());
+      return import_electron4.net.fetch((0, import_url.pathToFileURL)(filePath).toString());
     } catch (err) {
       console.error("[cench-protocol] failed to serve", request.url, err);
       return new Response("Internal error", { status: 500 });
@@ -2050,9 +3252,9 @@ async function registerCenchProtocol() {
 function sanitizeFilename(hint, fallback = "recording") {
   return (hint || fallback).toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").slice(0, 100) || fallback;
 }
-import_electron2.app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
+import_electron4.app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 function createWindow() {
-  const win = new import_electron2.BrowserWindow({
+  const win = new import_electron4.BrowserWindow({
     width: 1600,
     height: 960,
     backgroundColor: "#0b0b0f",
@@ -2065,13 +3267,13 @@ function createWindow() {
       autoplayPolicy: "no-user-gesture-required"
     }
   });
-  const appUrl = import_electron2.app.isPackaged ? "cench://app/index.html" : DEV_URL;
+  const appUrl = import_electron4.app.isPackaged ? "cench://app/index.html" : DEV_URL;
   win.loadURL(appUrl);
   win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   const template = [
     ...process.platform === "darwin" ? [
       {
-        label: import_electron2.app.name,
+        label: import_electron4.app.name,
         submenu: [
           { role: "about" },
           { type: "separator" },
@@ -2092,7 +3294,7 @@ function createWindow() {
           label: "Home",
           accelerator: "CmdOrCtrl+Shift+H",
           click: () => {
-            const w = import_electron2.BrowserWindow.getFocusedWindow() ?? import_electron2.BrowserWindow.getAllWindows()[0];
+            const w = import_electron4.BrowserWindow.getFocusedWindow() ?? import_electron4.BrowserWindow.getAllWindows()[0];
             if (w)
               w.webContents.executeJavaScript(`
               (() => {
@@ -2113,7 +3315,7 @@ function createWindow() {
           label: "Undo",
           accelerator: "CmdOrCtrl+Z",
           click: () => {
-            const w = import_electron2.BrowserWindow.getFocusedWindow() ?? import_electron2.BrowserWindow.getAllWindows()[0];
+            const w = import_electron4.BrowserWindow.getFocusedWindow() ?? import_electron4.BrowserWindow.getAllWindows()[0];
             if (w)
               w.webContents.executeJavaScript(`
               (() => {
@@ -2131,7 +3333,7 @@ function createWindow() {
           label: "Redo",
           accelerator: "CmdOrCtrl+Shift+Z",
           click: () => {
-            const w = import_electron2.BrowserWindow.getFocusedWindow() ?? import_electron2.BrowserWindow.getAllWindows()[0];
+            const w = import_electron4.BrowserWindow.getFocusedWindow() ?? import_electron4.BrowserWindow.getAllWindows()[0];
             if (w)
               w.webContents.executeJavaScript(`
               (() => {
@@ -2159,7 +3361,7 @@ function createWindow() {
           label: "Toggle Preview Fullscreen",
           accelerator: "CmdOrCtrl+Shift+F",
           click: () => {
-            const w = import_electron2.BrowserWindow.getFocusedWindow() ?? import_electron2.BrowserWindow.getAllWindows()[0];
+            const w = import_electron4.BrowserWindow.getFocusedWindow() ?? import_electron4.BrowserWindow.getAllWindows()[0];
             if (w)
               w.webContents.executeJavaScript(`
               (() => {
@@ -2184,7 +3386,7 @@ function createWindow() {
     {
       label: "Documentation",
       click: () => {
-        import_electron2.shell.openExternal(`${DEV_URL.replace(/\/$/, "")}/docs`);
+        import_electron4.shell.openExternal(`${DEV_URL.replace(/\/$/, "")}/docs`);
       }
     },
     {
@@ -2196,11 +3398,11 @@ function createWindow() {
       ]
     }
   ];
-  import_electron2.Menu.setApplicationMenu(import_electron2.Menu.buildFromTemplate(template));
+  import_electron4.Menu.setApplicationMenu(import_electron4.Menu.buildFromTemplate(template));
 }
-import_electron2.app.whenReady().then(async () => {
-  import_electron2.ipcMain.handle("cench:gitStatus", async () => {
-    if (import_electron2.app.isPackaged) {
+import_electron4.app.whenReady().then(async () => {
+  import_electron4.ipcMain.handle("cench:gitStatus", async () => {
+    if (import_electron4.app.isPackaged) {
       return { ok: false, branch: null, dirty: false };
     }
     const cwd = process.cwd();
@@ -2222,7 +3424,7 @@ import_electron2.app.whenReady().then(async () => {
       return { ok: false, branch: null, dirty: false };
     }
   });
-  import_electron2.ipcMain.handle("cench:webZoomIn", () => {
+  import_electron4.ipcMain.handle("cench:webZoomIn", () => {
     const win = webZoomTargetWindow();
     if (!win) return { ok: false, factor: 1 };
     const z = win.webContents.getZoomFactor();
@@ -2230,7 +3432,7 @@ import_electron2.app.whenReady().then(async () => {
     win.webContents.setZoomFactor(next);
     return { ok: true, factor: win.webContents.getZoomFactor() };
   });
-  import_electron2.ipcMain.handle("cench:webZoomOut", () => {
+  import_electron4.ipcMain.handle("cench:webZoomOut", () => {
     const win = webZoomTargetWindow();
     if (!win) return { ok: false, factor: 1 };
     const z = win.webContents.getZoomFactor();
@@ -2238,13 +3440,13 @@ import_electron2.app.whenReady().then(async () => {
     win.webContents.setZoomFactor(next);
     return { ok: true, factor: win.webContents.getZoomFactor() };
   });
-  import_electron2.ipcMain.handle("cench:webZoomReset", () => {
+  import_electron4.ipcMain.handle("cench:webZoomReset", () => {
     const win = webZoomTargetWindow();
     if (!win) return { ok: false, factor: 1 };
     win.webContents.setZoomFactor(1);
     return { ok: true, factor: 1 };
   });
-  import_electron2.ipcMain.handle(
+  import_electron4.ipcMain.handle(
     "cench:capturePage",
     async (_evt, args) => {
       const win = webZoomTargetWindow();
@@ -2258,49 +3460,49 @@ import_electron2.app.whenReady().then(async () => {
       }
     }
   );
-  import_electron2.ipcMain.handle("cench:saveDialog", async (_evt, suggestedName) => {
-    const res = await import_electron2.dialog.showSaveDialog({
+  import_electron4.ipcMain.handle("cench:saveDialog", async (_evt, suggestedName) => {
+    const res = await import_electron4.dialog.showSaveDialog({
       title: "Save exported video",
       defaultPath: suggestedName || `export-${Date.now()}.mp4`,
       filters: [{ name: "MP4 Video", extensions: ["mp4"] }]
     });
     return { canceled: res.canceled, filePath: res.filePath ?? null };
   });
-  import_electron2.ipcMain.handle("cench:writeFile", async (_evt, args) => {
-    await import_promises2.default.mkdir(import_path.default.dirname(args.filePath), { recursive: true });
-    await import_promises2.default.writeFile(args.filePath, Buffer.from(args.bytes));
+  import_electron4.ipcMain.handle("cench:writeFile", async (_evt, args) => {
+    await import_promises4.default.mkdir(import_path.default.dirname(args.filePath), { recursive: true });
+    await import_promises4.default.writeFile(args.filePath, Buffer.from(args.bytes));
     return { ok: true };
   });
-  import_electron2.ipcMain.handle(
+  import_electron4.ipcMain.handle(
     "cench:saveRecording",
     async (_evt, args) => {
       const extRaw = (args.extension || "webm").toLowerCase().replace(/[^a-z0-9]/g, "");
       const ext = extRaw || "webm";
-      const dir = import_path.default.join(import_electron2.app.getPath("userData"), "recordings");
-      await import_promises2.default.mkdir(dir, { recursive: true });
+      const dir = import_path.default.join(import_electron4.app.getPath("userData"), "recordings");
+      await import_promises4.default.mkdir(dir, { recursive: true });
       const safeBase = sanitizeFilename(args.nameHint || "");
       const filePath = import_path.default.join(dir, `${safeBase}-${Date.now()}.${ext}`);
-      await import_promises2.default.writeFile(filePath, Buffer.from(args.bytes));
+      await import_promises4.default.writeFile(filePath, Buffer.from(args.bytes));
       const fileUrl = (0, import_url.pathToFileURL)(filePath).href;
       return { ok: true, filePath, fileUrl };
     }
   );
-  import_electron2.ipcMain.handle(
+  import_electron4.ipcMain.handle(
     "cench:concatMp4",
     async (_evt, args) => {
       const inputs = (args.inputs ?? []).filter(Boolean);
       if (inputs.length === 0) throw new Error("concatMp4: no input files");
       if (inputs.length === 1) {
-        await import_promises2.default.copyFile(inputs[0], args.output);
+        await import_promises4.default.copyFile(inputs[0], args.output);
         if (args.cleanup) {
-          await import_promises2.default.unlink(inputs[0]).catch(() => {
+          await import_promises4.default.unlink(inputs[0]).catch(() => {
           });
         }
         return { ok: true };
       }
       const transitions = args.transitions ?? [];
       try {
-        const stitcherPath = import_electron2.app.isPackaged ? import_path.default.join(process.resourcesPath, "render-server", "stitcher.js") : import_path.default.join(process.cwd(), "render-server", "stitcher.js");
+        const stitcherPath = import_electron4.app.isPackaged ? import_path.default.join(process.resourcesPath, "render-server", "stitcher.js") : import_path.default.join(process.cwd(), "render-server", "stitcher.js");
         const mod = await import((0, import_url.pathToFileURL)(stitcherPath).href);
         const stitchScenes = mod?.stitchScenes;
         if (typeof stitchScenes !== "function") {
@@ -2313,7 +3515,7 @@ import_electron2.app.whenReady().then(async () => {
         await stitchScenes(inputs, stitchedTransitions, args.output);
       } finally {
         if (args.cleanup) {
-          await Promise.all(inputs.map((p) => import_promises2.default.unlink(p).catch(() => {
+          await Promise.all(inputs.map((p) => import_promises4.default.unlink(p).catch(() => {
           })));
         }
       }
@@ -2325,18 +3527,18 @@ import_electron2.app.whenReady().then(async () => {
   let cursorSamples = [];
   let cursorStartTime = 0;
   let cursorSourceDisplay = null;
-  import_electron2.ipcMain.handle("cench:startCursorTelemetry", (_evt, args) => {
+  import_electron4.ipcMain.handle("cench:startCursorTelemetry", (_evt, args) => {
     cursorSamples = [];
     cursorStartTime = Date.now();
     cursorSourceDisplay = null;
     if (args?.displayId) {
       const numId = Number(args.displayId);
-      const all = import_electron2.screen.getAllDisplays();
+      const all = import_electron4.screen.getAllDisplays();
       cursorSourceDisplay = all.find((d) => d.id === numId || String(d.id) === args.displayId) ?? null;
     }
     cursorInterval = setInterval(() => {
-      const point = import_electron2.screen.getCursorScreenPoint();
-      const display = cursorSourceDisplay ?? import_electron2.screen.getDisplayNearestPoint(point);
+      const point = import_electron4.screen.getCursorScreenPoint();
+      const display = cursorSourceDisplay ?? import_electron4.screen.getDisplayNearestPoint(point);
       const { x, y, width, height } = display.bounds;
       const nx = Math.max(0, Math.min(1, (point.x - x) / width));
       const ny = Math.max(0, Math.min(1, (point.y - y) / height));
@@ -2347,7 +3549,7 @@ import_electron2.app.whenReady().then(async () => {
     }, 100);
     return { ok: true };
   });
-  import_electron2.ipcMain.handle("cench:stopCursorTelemetry", () => {
+  import_electron4.ipcMain.handle("cench:stopCursorTelemetry", () => {
     if (cursorInterval) {
       clearInterval(cursorInterval);
       cursorInterval = null;
@@ -2357,20 +3559,20 @@ import_electron2.app.whenReady().then(async () => {
     cursorSamples = [];
     return { samples };
   });
-  import_electron2.ipcMain.handle(
+  import_electron4.ipcMain.handle(
     "cench:saveRecordingSession",
     async (_evt, args) => {
       if (!args.screenBytes || args.screenBytes.byteLength === 0) {
         throw new Error("Screen recording is empty \u2014 nothing to save");
       }
-      const dir = import_path.default.join(import_electron2.app.getPath("userData"), "recordings");
-      await import_promises2.default.mkdir(dir, { recursive: true });
+      const dir = import_path.default.join(import_electron4.app.getPath("userData"), "recordings");
+      await import_promises4.default.mkdir(dir, { recursive: true });
       const ts = Date.now();
       const safeBase = sanitizeFilename(args.nameHint || "");
       const writtenFiles = [];
       try {
         const screenPath = import_path.default.join(dir, `${safeBase}-${ts}.webm`);
-        await import_promises2.default.writeFile(screenPath, Buffer.from(args.screenBytes));
+        await import_promises4.default.writeFile(screenPath, Buffer.from(args.screenBytes));
         writtenFiles.push(screenPath);
         const result = {
           screenVideoPath: screenPath,
@@ -2379,33 +3581,33 @@ import_electron2.app.whenReady().then(async () => {
         };
         if (args.webcamBytes && args.webcamBytes.byteLength > 0) {
           const webcamPath = import_path.default.join(dir, `${safeBase}-${ts}-webcam.webm`);
-          await import_promises2.default.writeFile(webcamPath, Buffer.from(args.webcamBytes));
+          await import_promises4.default.writeFile(webcamPath, Buffer.from(args.webcamBytes));
           writtenFiles.push(webcamPath);
           result.webcamVideoPath = webcamPath;
           result.webcamVideoUrl = (0, import_url.pathToFileURL)(webcamPath).href;
         }
         const manifestPath = import_path.default.join(dir, `${safeBase}-${ts}.session.json`);
-        await import_promises2.default.writeFile(manifestPath, JSON.stringify(result, null, 2));
+        await import_promises4.default.writeFile(manifestPath, JSON.stringify(result, null, 2));
         return result;
       } catch (err) {
-        await Promise.all(writtenFiles.map((f) => import_promises2.default.unlink(f).catch(() => {
+        await Promise.all(writtenFiles.map((f) => import_promises4.default.unlink(f).catch(() => {
         })));
         throw err;
       }
     }
   );
-  import_electron2.session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {
+  import_electron4.session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {
     const allowed = ["media", "audioCapture", "microphone", "videoCapture", "camera"];
     return allowed.includes(permission);
   });
-  import_electron2.session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+  import_electron4.session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
     const allowed = ["media", "audioCapture", "microphone", "videoCapture", "camera"];
     callback(allowed.includes(permission));
   });
   await registerCenchProtocol();
-  registerAllIpc(import_electron2.ipcMain);
+  registerAllIpc(import_electron4.ipcMain);
   createWindow();
-  import_electron2.session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
+  import_electron4.session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
     console.log("[Electron] setDisplayMediaRequestHandler called");
     console.log("[Electron]   videoRequested:", !!request.videoRequested);
     console.log("[Electron]   audioRequested:", !!request.audioRequested);
@@ -2419,11 +3621,11 @@ import_electron2.app.whenReady().then(async () => {
       callback(null);
     }
   });
-  import_electron2.app.on("activate", () => {
-    if (import_electron2.BrowserWindow.getAllWindows().length === 0) createWindow();
+  import_electron4.app.on("activate", () => {
+    if (import_electron4.BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
-import_electron2.app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") import_electron2.app.quit();
+import_electron4.app.on("window-all-closed", () => {
+  if (process.platform !== "darwin") import_electron4.app.quit();
 });
 //# sourceMappingURL=main.js.map
