@@ -172,24 +172,15 @@ export function createAvatarToolHandler(deps: {
         }
 
         try {
-          const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
           const projectId = world.projectId
           if (!projectId) return err('projectId not available in world state')
-          const response = await fetch(`${baseUrl}/api/projects/${projectId}/avatar/generate`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              text: narrationText,
-              sceneId,
-              avatarConfigId: cfgId ?? undefined,
-              sourceImageUrl: srcImg ?? undefined,
-            }),
+          const { generateAvatar } = await import('@/lib/services/avatar')
+          const avatarVideo = await generateAvatar(projectId, {
+            text: narrationText,
+            sceneId,
+            avatarConfigId: cfgId ?? null,
+            sourceImageUrl: srcImg ?? null,
           })
-          if (!response.ok) {
-            const errData = await response.json().catch(() => ({}))
-            return err(`Avatar generation failed: ${errData.error ?? response.statusText}`)
-          }
-          const avatarVideo = await response.json()
           const videoUrl = avatarVideo.videoUrl
           const provider = avatarVideo.provider
           const cost = avatarVideo.costUsd ?? 0
@@ -204,8 +195,18 @@ export function createAvatarToolHandler(deps: {
             voiceId: '',
             script: narrationText,
             removeBackground: false,
-            x: avatarPlacement === 'fullscreen' ? Math.round(dims.width / 2) : avatarPlacement.includes('right') ? 1640 : 280,
-            y: avatarPlacement === 'fullscreen' ? Math.round(dims.height / 2) : avatarPlacement.includes('top') ? 280 : 800,
+            x:
+              avatarPlacement === 'fullscreen'
+                ? Math.round(dims.width / 2)
+                : avatarPlacement.includes('right')
+                  ? 1640
+                  : 280,
+            y:
+              avatarPlacement === 'fullscreen'
+                ? Math.round(dims.height / 2)
+                : avatarPlacement.includes('top')
+                  ? 280
+                  : 800,
             width: avatarPlacement === 'fullscreen' ? dims.width : 280,
             height: avatarPlacement === 'fullscreen' ? dims.height : 280,
             opacity: 1,
@@ -262,25 +263,15 @@ export function createAvatarToolHandler(deps: {
 
         try {
           scene.sceneType = 'avatar_scene'
-          const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
           const projectId = world.projectId
           if (!projectId) return err('projectId not available in world state')
           const firstLineText = narration_script.lines?.map((l: any) => l.text).join(' ') || 'Avatar scene'
-          const response = await fetch(`${baseUrl}/api/projects/${projectId}/avatar/generate`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              text: firstLineText,
-              sceneId,
-              avatarConfigId: avatar_config_id ?? undefined,
-            }),
+          const { generateAvatar } = await import('@/lib/services/avatar')
+          const avatarVideo = await generateAvatar(projectId, {
+            text: firstLineText,
+            sceneId,
+            avatarConfigId: avatar_config_id ?? null,
           })
-          if (!response.ok) {
-            const errData = await response.json().catch(() => ({}))
-            return err(`Avatar scene generation failed: ${errData.error ?? response.statusText}`)
-          }
-
-          const avatarVideo = await response.json()
           const videoUrl = avatarVideo.videoUrl
           const provider = avatarVideo.provider
           const isTalkingHead = videoUrl?.startsWith('talkinghead://')

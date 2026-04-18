@@ -154,27 +154,21 @@ loader.load('${url}', (gltf) => {
       case 'search_lottie': {
         const { query, category, limit } = args as { query: string; category?: string; limit?: number }
         try {
-          const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-          const params = new URLSearchParams({ q: query, limit: String(limit || 5) })
-          if (category) params.set('category', category)
-          const response = await fetch(`${baseUrl}/api/lottie/search?${params}`)
-          if (!response.ok) {
-            return {
-              success: false,
-              error: `Lottie search failed: ${response.statusText}`,
-            }
-          }
-          const data = await response.json()
+          const { searchLottie } = await import('@/lib/services/lottie')
+          const data = await searchLottie({
+            query,
+            category: (category as Parameters<typeof searchLottie>[0]['category']) ?? null,
+            limit: limit ?? 5,
+          })
           // Add usage hints to each result
-          if (data.results) {
-            for (const r of data.results) {
-              r.usageHint = {
-                motionScene: `CenchMotion.lottieSync('#lottie-wrap', { src: '${r.url}', tl: window.__tl, delay: 0.3 })`,
-                reactScene: `<LottieLayer data="${r.url}" />`,
-              }
-            }
-          }
-          return { success: true, affectedSceneId: null, data }
+          const resultsWithHints = data.results.map((r) => ({
+            ...r,
+            usageHint: {
+              motionScene: `CenchMotion.lottieSync('#lottie-wrap', { src: '${r.url}', tl: window.__tl, delay: 0.3 })`,
+              reactScene: `<LottieLayer data="${r.url}" />`,
+            },
+          }))
+          return { success: true, affectedSceneId: null, data: { ...data, results: resultsWithHints } }
         } catch (e) {
           return {
             success: false,
