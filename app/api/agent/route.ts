@@ -17,6 +17,9 @@ import type { AgentType, ModelId, SSEEvent } from '@/lib/agents/types'
 import type { Scene } from '@/lib/types'
 import { assertProjectAccess } from '@/lib/auth-helpers'
 import { runAgentRequest, reserveRunSlot, releaseRunSlot, type AgentAPIRequest } from '@/lib/services/agent-runner'
+import { createLogger } from '@/lib/logger'
+
+const log = createLogger('api.agent')
 
 export const runtime = 'nodejs'
 export const maxDuration = 300 // 5 minutes — multi-scene videos need time for sequential code generation
@@ -29,7 +32,7 @@ export async function POST(req: NextRequest) {
   try {
     body = await req.json()
   } catch {
-    console.warn('[Agent API] Invalid JSON body received')
+    log.warn('invalid JSON body received')
     return new Response('Invalid JSON body', { status: 400 })
   }
 
@@ -37,12 +40,12 @@ export async function POST(req: NextRequest) {
     (typeof body.message === 'string' && body.message.trim().length > 0) ||
     (Array.isArray(body.message) && body.message.length > 0)
   if (!isValidMessage) {
-    console.warn('[Agent API] Missing required field: message')
+    log.warn('missing required field: message')
     return new Response('Missing required field: message', { status: 400 })
   }
 
   if (!body.scenes || !Array.isArray(body.scenes)) {
-    console.warn('[Agent API] Missing required field: scenes')
+    log.warn('missing required field: scenes')
     return new Response('Missing required field: scenes', { status: 400 })
   }
 
@@ -82,7 +85,7 @@ export async function POST(req: NextRequest) {
         serverScenes = dbProject.scenes as unknown as Scene[]
       }
     } catch (e) {
-      console.warn(`[Agent API] Could not read server scenes: ${(e as Error).message}`)
+      log.warn('could not read server scenes', { extra: { message: (e as Error).message } })
     }
   }
 
@@ -129,7 +132,7 @@ export async function POST(req: NextRequest) {
   // Abort controller — signals the runner to stop when the client disconnects
   const abortController = new AbortController()
   req.signal.addEventListener('abort', () => {
-    console.log('[Agent API] Client disconnected, aborting runner')
+    log.debug('client disconnected, aborting runner')
     abortController.abort()
   })
 
@@ -150,14 +153,14 @@ export async function POST(req: NextRequest) {
 
   function emitToStream(event: SSEEvent) {
     if (streamClosed) {
-      console.warn('[Agent API] Attempted to send after stream closed', event.type)
+      log.warn('attempted to send after stream closed', { extra: { eventType: event.type } })
       return
     }
     try {
       streamController.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
     } catch (e) {
       streamClosed = true
-      console.error('[Agent API] Stream write failed:', (e as Error).message)
+      log.error('stream write failed', { extra: { message: (e as Error).message } })
       abortController.abort()
     }
   }

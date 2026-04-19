@@ -6,6 +6,9 @@ import {
   editSvg,
   GenerationValidationError,
 } from '@/lib/services/generation'
+import { createLogger } from '@/lib/logger'
+
+const log = createLogger('api.generate')
 
 /**
  * Multi-mode generation endpoint. Body flags select the operation:
@@ -60,7 +63,7 @@ export async function POST(req: NextRequest) {
     if (err instanceof GenerationValidationError) {
       return NextResponse.json({ error: err.message }, { status: 400 })
     }
-    console.error('Generate error:', err)
+    log.error('Generate error:', { error: err })
     const message =
       err instanceof Error ? err.message.replace(/[a-zA-Z0-9_\-]{20,}/g, '[REDACTED]').slice(0, 200) : 'Internal error'
     return NextResponse.json({ error: message }, { status: 500 })

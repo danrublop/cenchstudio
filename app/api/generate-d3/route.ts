@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { D3_SYSTEM_PROMPT } from '../../../lib/generation/prompts'
 import { runStructuredD3Generation } from '../../../lib/generation/d3-structured-run'
+import { createLogger } from '@/lib/logger'
+
+const log = createLogger('api.generate-d3')
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -96,7 +99,7 @@ Regenerate the full JSON and fix those issues. Keep the same chart intent and st
           usageOutput += second.result.usage.output_tokens
         }
       } catch {
-        console.error('[D3 generate legacy] JSON parse failed, raw length:', raw.length)
+        log.error('legacy: JSON parse failed', { extra: { rawLength: raw.length } })
         return NextResponse.json(
           {
             error: 'Failed to parse generated code — the model returned invalid JSON. Please try again.',
@@ -135,11 +138,11 @@ Regenerate the full JSON and fix those issues. Keep the same chart intent and st
       return NextResponse.json(result)
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Structured D3 generation failed'
-      console.error('[D3 generate structured]', e)
+      log.error('error', { error: e })
       return NextResponse.json({ error: msg }, { status: 500 })
     }
   } catch (err: unknown) {
-    console.error('D3 generate error:', err)
+    log.error('D3 generate error:', { error: err })
     const message =
       err instanceof Error ? err.message.replace(/[a-zA-Z0-9_\-]{20,}/g, '[REDACTED]').slice(0, 200) : 'Internal error'
     return NextResponse.json({ error: message }, { status: 500 })

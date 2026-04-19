@@ -4,6 +4,9 @@ import { validateBody } from '@/lib/api/validate'
 import { apiError } from '@/lib/api/response'
 import { generateCanvasSchema } from '@/lib/api/schemas/generate'
 import { generateCanvas, GenerationValidationError } from '@/lib/services/generation'
+import { createLogger } from '@/lib/logger'
+
+const log = createLogger('api.generate-canvas')
 
 export const POST = withHandler(async (req: NextRequest) => {
   const body = await req.json()
@@ -35,7 +38,7 @@ export const POST = withHandler(async (req: NextRequest) => {
     if (err instanceof GenerationValidationError) {
       return apiError(err.message, 400)
     }
-    console.error('[generate-canvas]', err)
+    log.error('error', { error: err })
     return apiError((err as Error).message ?? 'Canvas generation failed', 500)
   }
 })

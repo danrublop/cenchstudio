@@ -11,6 +11,9 @@ import {
   type CreateRuleInput,
 } from '@/lib/db/queries/permission-rules'
 import type { APIName, PermissionDecision, PermissionScope, RuleSpecifier } from '@/lib/types/permissions'
+import { createLogger } from '@/lib/logger'
+
+const log = createLogger('api.permissions')
 
 export const runtime = 'nodejs'
 
@@ -21,7 +24,7 @@ export async function GET() {
     // Opportunistic cleanup (5% of listing calls) so expired session rules
     // don't pile up indefinitely without a cron.
     if (Math.random() < 0.05) {
-      purgeExpiredRules().catch((e) => console.warn('[permissions] purge failed', e))
+      purgeExpiredRules().catch((e) => log.warn('purge failed', { error: e }))
     }
     const rules = await listRulesForUser(user.id)
     return NextResponse.json({ rules: rules.map(serializeRule) })

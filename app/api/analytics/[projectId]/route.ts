@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { analyticsEvents } from '@/lib/db/schema'
 import { eq, sql, count, and } from 'drizzle-orm'
+import { createLogger } from '@/lib/logger'
+
+const log = createLogger('api.analytics-project')
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -133,7 +136,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
       { headers: CORS_HEADERS },
     )
   } catch (err) {
-    console.error('[Analytics Project] Error:', err)
+    log.error('Error:', { error: err })
     return NextResponse.json({ error: 'Internal error' }, { status: 500, headers: CORS_HEADERS })
   }
 }

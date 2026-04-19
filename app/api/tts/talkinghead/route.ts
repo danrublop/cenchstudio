@@ -15,6 +15,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getBestTTSProvider, getTTSProvider } from '@/lib/audio/router'
 import fs from 'fs/promises'
 import path from 'path'
+import { createLogger } from '@/lib/logger'
+
+const log = createLogger('api.tts-talkinghead')
 
 export async function POST(req: NextRequest) {
   try {
@@ -43,7 +46,7 @@ export async function POST(req: NextRequest) {
     const provider = await getTTSProvider(providerName)
     const sceneId = `talkinghead-${Date.now()}`
 
-    console.log(`[TTS/TalkingHead] Generating via ${providerName}: "${text.slice(0, 60)}..."`)
+    log.debug('generating', { extra: { providerName, textHead: text.slice(0, 60) } })
 
     const result = await provider.generate({
       text,
@@ -57,14 +60,14 @@ export async function POST(req: NextRequest) {
     const audioBuffer = await fs.readFile(audioPath)
     const base64Audio = audioBuffer.toString('base64')
 
-    console.log(`[TTS/TalkingHead] Done: ${providerName}, ${audioBuffer.length} bytes, ${result.duration ?? '?'}s`)
+    log.debug('done', { extra: { providerName, bytes: audioBuffer.length, duration: result.duration ?? null } })
 
     // Return in Google Cloud TTS response format (what TalkingHead expects)
     return NextResponse.json({
       audioContent: base64Audio,
     })
   } catch (err) {
-    console.error('[TTS/TalkingHead] Error:', err)
+    log.error('Error:', { error: err })
     const message = err instanceof Error ? err.message : 'TTS proxy failed'
     return NextResponse.json({ error: message }, { status: 500 })
   }

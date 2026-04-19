@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getOptionalUser } from '@/lib/auth-helpers'
 import { synthesizeTTS, AudioValidationError } from '@/lib/services/audio'
 import { sanitizeErrorMessage } from '@/lib/audio/sanitize'
+import { createLogger } from '@/lib/logger'
+
+const log = createLogger('api.tts')
 
 export async function POST(req: NextRequest) {
   await getOptionalUser()
@@ -19,7 +22,7 @@ export async function POST(req: NextRequest) {
     if (err instanceof AudioValidationError) {
       return NextResponse.json({ error: err.message }, { status: 400 })
     }
-    console.error('TTS error:', err)
+    log.error('TTS error:', { error: err })
     return NextResponse.json({ error: sanitizeErrorMessage(err) }, { status: 500 })
   }
 }

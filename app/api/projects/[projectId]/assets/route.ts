@@ -11,6 +11,9 @@ import { eq, and, desc } from 'drizzle-orm'
 import { assertProjectAccess } from '@/lib/auth-helpers'
 import { sanitizeSvg } from '@/lib/api/sanitize-svg'
 import { extractColorsFromSvg, extractColorsFromImage } from '@/lib/brand/extract-colors'
+import { createLogger } from '@/lib/logger'
+
+const log = createLogger('api.assets')
 
 const execFileAsync = promisify(execFile)
 
@@ -120,12 +123,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
           .toFile(thumbPath)
         thumbnailUrl = `/uploads/projects/${projectId}/${thumbFilename}`
       } catch (e) {
-        console.warn('[asset-upload] sharp metadata/thumbnail failed:', e)
+        log.warn('upload: sharp metadata/thumbnail failed', { error: e })
       }
       try {
         extractedColors = await extractColorsFromImage(buffer)
       } catch (e) {
-        console.warn('[asset-upload] color extraction failed:', e)
+        log.warn('upload: color extraction failed', { error: e })
       }
     } else if (assetType === 'svg') {
       // Sanitize SVG to strip XSS vectors (script tags, event handlers, javascript: URIs)
@@ -151,7 +154,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
       try {
         extractedColors = extractColorsFromSvg(cleanSvg)
       } catch (e) {
-        console.warn('[asset-upload] SVG color extraction failed:', e)
+        log.warn('upload: SVG color extraction failed', { error: e })
       }
     } else if (assetType === 'video') {
       // Extract duration and first frame via ffprobe/ffmpeg
@@ -169,7 +172,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
         }
         durationSeconds = info.format?.duration ? parseFloat(info.format.duration) : null
       } catch (e) {
-        console.warn('[asset-upload] ffprobe failed:', e)
+        log.warn('upload: ffprobe failed', { error: e })
       }
 
       // Generate thumbnail from first frame
@@ -181,7 +184,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
         })
         thumbnailUrl = `/uploads/projects/${projectId}/${thumbFilename}`
       } catch (e) {
-        console.warn('[asset-upload] ffmpeg thumbnail failed:', e)
+        log.warn('upload: ffmpeg thumbnail failed', { error: e })
       }
     }
 
@@ -208,7 +211,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
 
     return NextResponse.json({ asset })
   } catch (err: unknown) {
-    console.error('[asset-upload] error:', err)
+    log.error('upload error', { error: err })
     return NextResponse.json({ error: 'Upload failed' }, { status: 500 })
   }
 }
@@ -240,7 +243,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ proj
 
     return NextResponse.json({ assets })
   } catch (err: unknown) {
-    console.error('[asset-list] error:', err)
+    log.error('list error', { error: err })
     return NextResponse.json({ error: 'Failed to list assets' }, { status: 500 })
   }
 }

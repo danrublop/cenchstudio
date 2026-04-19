@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { assertProjectAccess } from '@/lib/auth-helpers'
 import { regenerateAsset, AssetValidationError, AssetNotFoundError } from '@/lib/services/assets'
+import { createLogger } from '@/lib/logger'
+
+const log = createLogger('api.asset-regenerate')
 
 // POST /api/projects/:projectId/assets/:assetId/regenerate
 // Body (all optional): { promptOverride, model, aspectRatio, enhanceTags }
@@ -30,7 +33,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
   } catch (err) {
     if (err instanceof AssetValidationError) return NextResponse.json({ error: err.message }, { status: 400 })
     if (err instanceof AssetNotFoundError) return NextResponse.json({ error: err.message }, { status: 404 })
-    console.error('[asset-regenerate] error:', err)
+    log.error('error:', { error: err })
     return NextResponse.json({ error: (err as Error)?.message ?? 'Regeneration failed' }, { status: 500 })
   }
 }

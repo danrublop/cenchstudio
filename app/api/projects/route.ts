@@ -3,6 +3,9 @@ import { db } from '@/lib/db'
 import { projects } from '@/lib/db/schema'
 import { desc, eq, isNull, lt, and, or, SQL } from 'drizzle-orm'
 import { getOptionalUser } from '@/lib/auth-helpers'
+import { createLogger } from '@/lib/logger'
+
+const log = createLogger('api.projects-list')
 
 /**
  * Guest projects (userId NULL) are hidden from logged-in users by default so lists stay per-user.
@@ -75,7 +78,7 @@ export async function GET(req: NextRequest) {
     const nextCursor = hasMore ? items[items.length - 1].updatedAt?.toISOString() : null
     return NextResponse.json({ items, nextCursor })
   } catch (error: any) {
-    console.error('Failed to list projects:', error)
+    log.error('Failed to list projects:', { error: error })
     return NextResponse.json({ error: 'Failed to list projects' }, { status: 500 })
   }
 }
@@ -155,7 +158,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(project)
   } catch (error: any) {
-    console.error('Failed to create project:', error)
+    log.error('Failed to create project:', { error: error })
     return NextResponse.json({ error: 'Failed to create project' }, { status: 500 })
   }
 }

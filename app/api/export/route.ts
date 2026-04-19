@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createLogger } from '@/lib/logger'
+
+const log = createLogger('api.export')
 
 const RENDER_SERVER_URL = process.env.NEXT_PUBLIC_RENDER_SERVER_URL || 'http://localhost:3001'
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    console.log(`[Export API] Request: ${body.scenes?.length ?? 0} scenes, output="${body.outputName ?? 'unnamed'}"`)
+    log.debug('request', { extra: { scenes: body.scenes?.length ?? 0, output: body.outputName ?? 'unnamed' } })
 
     // Proxy to render server and stream SSE back (5 min timeout)
     const renderRes = await fetch(`${RENDER_SERVER_URL}/render`, {
@@ -17,7 +20,7 @@ export async function POST(req: NextRequest) {
 
     if (!renderRes.ok) {
       const err = await renderRes.text()
-      console.error(`[Export API] Render server error (${renderRes.status}):`, err)
+      log.error('render server error', { extra: { status: renderRes.status, body: err } })
       const errorEvent = `data: ${JSON.stringify({ type: 'error', message: `Render server error: ${err}` })}\n\n`
       return new Response(errorEvent, {
         status: renderRes.status,
@@ -26,7 +29,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (!renderRes.body) {
-      console.error('[Export API] Render server returned empty body')
+      log.error('render server returned empty body')
       const errorEvent = `data: ${JSON.stringify({ type: 'error', message: 'Render server returned empty response' })}\n\n`
       return new Response(errorEvent, {
         status: 500,
@@ -44,7 +47,7 @@ export async function POST(req: NextRequest) {
       },
     })
   } catch (err: unknown) {
-    console.error('Export proxy error:', err)
+    log.error('export proxy error', { error: err })
     const message = err instanceof Error ? err.message : 'Export failed'
 
     // Return error as SSE event

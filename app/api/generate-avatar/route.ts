@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { generateAvatarVideo } from '@/lib/apis/heygen'
 import { logSpend } from '@/lib/db'
+import { createLogger } from '@/lib/logger'
+
+const log = createLogger('api.generate-avatar')
 
 export async function POST(req: NextRequest) {
   try {
@@ -40,7 +43,7 @@ export async function POST(req: NextRequest) {
       layerId,
     })
   } catch (error: any) {
-    console.error('Avatar generation error:', error)
+    log.error('Avatar generation error:', { error: error })
     return NextResponse.json({ error: error.message ?? 'Avatar generation failed' }, { status: 500 })
   }
 }
@@ -57,7 +60,7 @@ export async function GET(req: NextRequest) {
     const result = await pollHeygenStatus(videoId)
     return NextResponse.json(result)
   } catch (err) {
-    console.error('Avatar status poll error:', err)
+    log.error('Avatar status poll error:', { error: err })
     return NextResponse.json({ error: (err as Error)?.message ?? 'Failed to check avatar status' }, { status: 500 })
   }
 }

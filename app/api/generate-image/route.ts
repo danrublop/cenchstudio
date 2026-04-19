@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { generateImageAsset, GenerationValidationError } from '@/lib/services/generation'
+import { createLogger } from '@/lib/logger'
+
+const log = createLogger('api.generate-image')
 
 export async function POST(req: NextRequest) {
   try {
@@ -10,7 +13,7 @@ export async function POST(req: NextRequest) {
     if (err instanceof GenerationValidationError) {
       return NextResponse.json({ error: err.message }, { status: 400 })
     }
-    console.error('Image generation error:', err)
+    log.error('Image generation error:', { error: err })
     return NextResponse.json({ error: (err as Error)?.message ?? 'Image generation failed' }, { status: 500 })
   }
 }

@@ -9,6 +9,9 @@ import { readProjectSceneBlob, writeProjectSceneBlob } from '@/lib/db/project-sc
 import { readProjectScenesFromTables, writeProjectScenesToTables } from '@/lib/db/project-scene-table'
 import { assertProjectAccess } from '@/lib/auth-helpers'
 import { SCRYPT_HASH_RE, LIMITS } from '@/lib/api/constants'
+import { createLogger } from '@/lib/logger'
+
+const log = createLogger('api.projects')
 
 // GET: load a single project with full data
 export async function GET(req: NextRequest, { params }: { params: Promise<{ projectId: string }> }) {
@@ -23,7 +26,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ proj
       try {
         await writeProjectScenesToTables(projectId, blobBacked.scenes as any, blobBacked.sceneGraph as any)
       } catch (e) {
-        console.error('[projects GET] lazy table backfill failed:', e)
+        log.error('GET: lazy table backfill failed', { error: e })
       }
     }
     const scenes = tableBacked?.scenes ?? blobBacked.scenes
@@ -39,7 +42,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ proj
       timeline,
     })
   } catch (error: any) {
-    console.error('Failed to load project:', error)
+    log.error('failed to load project', { error })
     return NextResponse.json({ error: 'Failed to load project' }, { status: 500 })
   }
 }
@@ -163,7 +166,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pr
           sceneGraph !== undefined ? sceneGraph : readProjectSceneBlob(existing.description).sceneGraph
         await writeProjectScenesToTables(projectId, normalizedScenes as any, graphToWrite as any)
       } catch (e) {
-        console.error('[projects PATCH] table sync failed — blob is source of truth:', e)
+        log.error('PATCH: table sync failed (blob is source of truth)', { error: e })
         // Don't rethrow — blob write already succeeded, client will load from blob on next GET
         // The GET's lazy backfill will repopulate tables from blob next time
       }
@@ -171,7 +174,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pr
 
     return NextResponse.json(project)
   } catch (error: any) {
-    console.error('Failed to update project:', error)
+    log.error('failed to update project', { error })
     return NextResponse.json({ error: 'Failed to update project' }, { status: 500 })
   }
 }
@@ -206,11 +209,11 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ p
       await fs.rm(publishedDir, { recursive: true, force: true }).catch(() => {})
     }
 
-    cleanup().catch((err) => console.error(`[DELETE project] Cleanup failed for ${projectId}:`, err))
+    cleanup().catch((err) => log.error('DELETE: cleanup failed', { extra: { projectId }, error: err }))
 
     return NextResponse.json({ ok: true })
   } catch (error: any) {
-    console.error('Failed to delete project:', error)
+    log.error('failed to delete project', { error })
     return NextResponse.json({ error: 'Failed to delete project' }, { status: 500 })
   }
 }

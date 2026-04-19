@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getOptionalUser } from '@/lib/auth-helpers'
 import { searchSFX, AudioValidationError } from '@/lib/services/audio'
 import { sanitizeErrorMessage } from '@/lib/audio/sanitize'
+import { createLogger } from '@/lib/logger'
+
+const log = createLogger('api.sfx')
 
 export async function POST(req: NextRequest) {
   await getOptionalUser()
@@ -13,7 +16,7 @@ export async function POST(req: NextRequest) {
     if (err instanceof AudioValidationError) {
       return NextResponse.json({ error: err.message }, { status: 400 })
     }
-    console.error('SFX error:', err)
+    log.error('SFX error:', { error: err })
     return NextResponse.json({ error: sanitizeErrorMessage(err) }, { status: 500 })
   }
 }

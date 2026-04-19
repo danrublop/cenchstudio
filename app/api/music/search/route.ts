@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getOptionalUser } from '@/lib/auth-helpers'
 import { searchMusic, AudioValidationError } from '@/lib/services/audio'
 import { sanitizeErrorMessage } from '@/lib/audio/sanitize'
+import { createLogger } from '@/lib/logger'
+
+const log = createLogger('api.music')
 
 export async function POST(req: NextRequest) {
   await getOptionalUser()
@@ -13,7 +16,7 @@ export async function POST(req: NextRequest) {
     if (err instanceof AudioValidationError) {
       return NextResponse.json({ error: err.message }, { status: 400 })
     }
-    console.error('Music search error:', err)
+    log.error('Music search error:', { error: err })
     return NextResponse.json({ error: sanitizeErrorMessage(err) }, { status: 500 })
   }
 }

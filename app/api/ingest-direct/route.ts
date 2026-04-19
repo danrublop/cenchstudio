@@ -6,6 +6,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { assertProjectAccess } from '@/lib/auth-helpers'
 import { ingestDirect, IngestValidationError } from '@/lib/services/ingest'
+import { createLogger } from '@/lib/logger'
+
+const log = createLogger('api.ingest-direct')
 
 export async function POST(req: NextRequest) {
   try {
@@ -21,7 +24,7 @@ export async function POST(req: NextRequest) {
     if (err instanceof IngestValidationError) {
       return NextResponse.json({ error: err.message }, { status: 400 })
     }
-    console.error('[ingest-direct]', err)
+    log.error('error', { error: err })
     return NextResponse.json({ error: (err as Error)?.message ?? 'Ingest failed' }, { status: 500 })
   }
 }

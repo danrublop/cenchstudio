@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { assertProjectAccess } from '@/lib/auth-helpers'
 import { patchAsset, deleteAsset, AssetValidationError, AssetNotFoundError } from '@/lib/services/assets'
+import { createLogger } from '@/lib/logger'
+
+const log = createLogger('api.asset-item')
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ projectId: string; assetId: string }> }) {
   const { projectId, assetId } = await params
@@ -14,7 +17,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pr
   } catch (err) {
     if (err instanceof AssetValidationError) return NextResponse.json({ error: err.message }, { status: 400 })
     if (err instanceof AssetNotFoundError) return NextResponse.json({ error: err.message }, { status: 404 })
-    console.error('[asset-patch] error:', err)
+    log.error('error:', { error: err })
     return NextResponse.json({ error: 'Update failed' }, { status: 500 })
   }
 }
@@ -33,7 +36,7 @@ export async function DELETE(
   } catch (err) {
     if (err instanceof AssetValidationError) return NextResponse.json({ error: err.message }, { status: 400 })
     if (err instanceof AssetNotFoundError) return NextResponse.json({ error: err.message }, { status: 404 })
-    console.error('[asset-delete] error:', err)
+    log.error('error:', { error: err })
     return NextResponse.json({ error: 'Delete failed' }, { status: 500 })
   }
 }

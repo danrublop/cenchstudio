@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { assertProjectAccess } from '@/lib/auth-helpers'
 import { generateAsset, AssetValidationError, AssetNotFoundError } from '@/lib/services/assets'
+import { createLogger } from '@/lib/logger'
+
+const log = createLogger('api.assets-generate')
 
 // POST /api/projects/:projectId/assets/generate
 // Body: { prompt, model?, aspectRatio?, enhanceTags?, referenceAssetId? }
@@ -23,7 +26,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
   } catch (err) {
     if (err instanceof AssetValidationError) return NextResponse.json({ error: err.message }, { status: 400 })
     if (err instanceof AssetNotFoundError) return NextResponse.json({ error: err.message }, { status: 404 })
-    console.error('[assets-generate] error:', err)
+    log.error('error:', { error: err })
     return NextResponse.json({ error: (err as Error)?.message ?? 'Generation failed' }, { status: 500 })
   }
 }

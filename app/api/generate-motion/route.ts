@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { generateMotion, GenerationValidationError } from '@/lib/services/generation'
+import { createLogger } from '@/lib/logger'
+
+const log = createLogger('api.generate-motion')
 
 export async function POST(req: NextRequest) {
   const body = await req.json()
@@ -19,7 +22,7 @@ export async function POST(req: NextRequest) {
     if (err instanceof GenerationValidationError) {
       return NextResponse.json({ error: err.message }, { status: 400 })
     }
-    console.error('[generate-motion]', err)
+    log.error('error', { error: err })
     const message =
       err instanceof Error ? err.message.replace(/[a-zA-Z0-9_\-]{20,}/g, '[REDACTED]').slice(0, 200) : 'Internal error'
     return NextResponse.json({ error: message }, { status: 500 })

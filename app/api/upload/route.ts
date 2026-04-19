@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import fs from 'fs/promises'
 import path from 'path'
 import { v4 as uuidv4 } from 'uuid'
+import { createLogger } from '@/lib/logger'
+
+const log = createLogger('api.upload')
 
 const ALLOWED_TYPES: Record<string, string> = {
   'video/mp4': 'mp4',
@@ -16,7 +19,7 @@ const ALLOWED_TYPES: Record<string, string> = {
 const MAX_SIZE = 100 * 1024 * 1024 // 100MB
 
 export async function POST(req: NextRequest) {
-  console.warn('[upload] Legacy /api/upload endpoint used — prefer /api/projects/[projectId]/assets')
+  log.warn('Legacy /api/upload endpoint used — prefer /api/projects/[projectId]/assets')
 
   try {
     const formData = await req.formData()
@@ -60,7 +63,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ url: `/uploads/${filename}`, filename })
   } catch (err: unknown) {
-    console.error('Upload error:', err)
+    log.error('Upload error:', { error: err })
     const message = err instanceof Error ? err.message : 'Upload failed'
     return NextResponse.json({ error: message }, { status: 500 })
   }

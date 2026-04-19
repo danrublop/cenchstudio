@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { assertProjectAccess } from '@/lib/auth-helpers'
 import { ingestUrl, IngestValidationError, YtDlpMissingError } from '@/lib/services/ingest'
+import { createLogger } from '@/lib/logger'
+
+const log = createLogger('api.ingest-url')
 
 export async function POST(req: NextRequest) {
   try {
@@ -19,7 +22,7 @@ export async function POST(req: NextRequest) {
     if (err instanceof YtDlpMissingError) {
       return NextResponse.json({ error: err.message, ytDlpMissing: true }, { status: 503 })
     }
-    console.error('[ingest-url]', err)
+    log.error('error', { error: err })
     return NextResponse.json({ error: (err as Error)?.message ?? 'yt-dlp ingest failed' }, { status: 500 })
   }
 }

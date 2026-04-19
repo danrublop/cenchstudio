@@ -19,6 +19,9 @@ import { eq } from 'drizzle-orm'
 import { readProjectScenesFromTables, writeProjectScenesToTables } from '@/lib/db/project-scene-table'
 import { readProjectSceneBlob } from '@/lib/db/project-scene-storage'
 import { createDefaultAPIPermissions } from '@/lib/permissions'
+import { createLogger } from '@/lib/logger'
+
+const log = createLogger('api.mcp-tool')
 import { generateSceneHTML } from '@/lib/sceneTemplate'
 import { resolveProjectDimensions } from '@/lib/dimensions'
 import { resolveStyle } from '@/lib/styles/presets'
@@ -80,7 +83,7 @@ export async function POST(req: NextRequest) {
       try {
         await writeProjectScenesToTables(projectId, world.scenes, world.sceneGraph)
       } catch (e) {
-        console.error('[mcp-tool] Failed to persist scenes to tables:', e)
+        log.error('failed to persist scenes to tables', { error: e })
       }
 
       // Write HTML files for affected scenes
@@ -100,7 +103,7 @@ export async function POST(req: NextRequest) {
             await fs.mkdir(scenesDir, { recursive: true })
             await fs.writeFile(path.join(scenesDir, `${scene.id}.html`), html, 'utf-8')
           } catch (e) {
-            console.error('[mcp-tool] Failed to write scene HTML:', e)
+            log.error('failed to write scene HTML', { error: e })
           }
         }
       }
@@ -113,7 +116,7 @@ export async function POST(req: NextRequest) {
             .set({ globalStyle: world.globalStyle } as any)
             .where(eq(schema.projects.id, projectId))
         } catch (e) {
-          console.error('[mcp-tool] Failed to persist global style:', e)
+          log.error('failed to persist global style', { error: e })
         }
       }
     }
@@ -135,7 +138,7 @@ export async function POST(req: NextRequest) {
       permissionNeeded: result.permissionNeeded,
     })
   } catch (err: any) {
-    console.error('[mcp-tool] Error:', err)
+    log.error('error', { error: err })
     return NextResponse.json({ error: err.message ?? 'Internal error' }, { status: 500 })
   }
 }

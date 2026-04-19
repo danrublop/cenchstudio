@@ -12,6 +12,9 @@ import {
 } from '@/lib/permissions'
 import type { APIName, APIPermissions } from '@/lib/types'
 import { reserveSpend } from '@/lib/agents/budget-tracker'
+import { createLogger } from '@/lib/logger'
+
+const log = createLogger('api.generate-video')
 
 function requireProvider(id: string | undefined | null) {
   if (!id || id === 'auto') {
@@ -146,7 +149,7 @@ export async function POST(req: NextRequest) {
       layerId,
     })
   } catch (error: any) {
-    console.error('Video generation error:', error)
+    log.error('Video generation error:', { error: error })
     return NextResponse.json({ error: error?.message ?? 'Video generation failed' }, { status: 500 })
   }
 }
@@ -175,7 +178,7 @@ export async function GET(req: NextRequest) {
     if (err instanceof svc.GenerationValidationError) {
       return NextResponse.json({ error: err.message }, { status: 400 })
     }
-    console.error('Video status poll error:', err)
+    log.error('Video status poll error:', { error: err })
     return NextResponse.json({ error: (err as Error)?.message ?? 'Failed to check status' }, { status: 500 })
   }
 }
