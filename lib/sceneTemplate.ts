@@ -2183,7 +2183,15 @@ function generateWorldHTML(
 
   const environment = wc.environment || 'meadow'
   const worldHtmlFile = worldTemplateFilename(environment)
-  const configJSON = JSON.stringify(wc)
+  // Merge the TalkingHead TTS endpoint into worldConfig so the avatar overlay
+  // helper (public/worlds/world-avatar-overlay.js) can bake it into
+  // TalkingHead at boot. Null when no server TTS provider is configured —
+  // the helper falls back to fakeLipsync in that case.
+  const configWithAudio = {
+    ...wc,
+    ttsEndpoint: talkingHeadTtsEndpointForEmbed(audioSettings),
+  }
+  const configJSON = JSON.stringify(configWithAudio)
   const appBaseUrl = process.env.NEXT_PUBLIC_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
 
   // Server-side: read the world template from disk and inject __worldConfig
@@ -2776,6 +2784,7 @@ function generateReactHTML(
   const audioHTML = generateAudioHTML(scene.audioLayer)
   const palette = style.palette ?? ['#1a1a2e', '#16213e', '#0f3460', '#e94560']
   const duration = scene.duration ?? 8
+  const textOverlaysHTML = renderTextOverlaysHTML(scene.textOverlays ?? [])
 
   return `<!DOCTYPE html>
 <html>
@@ -2800,6 +2809,7 @@ function generateReactHTML(
       width: ${W}px; height: ${H}px;
       overflow: hidden;
     }
+    ${TEXT_OVERLAY_CSS}
     ${sanitizeCssBlock(sceneStyles)}
   </style>
   <script>
@@ -2822,6 +2832,7 @@ function generateReactHTML(
 <body>
   <div id="scene-camera">
     <div id="react-root"></div>
+    ${textOverlaysHTML}
     ${audioHTML}
     ${generateAILayersHTML(scene.aiLayers, audioSettings)}
   </div>
@@ -3201,6 +3212,41 @@ function getWatermarkPositionCSS(position: WatermarkConfig['position']): string 
   }
 }
 
+// ── Text overlay renderer (shared: used by SVG + React templates) ────────────
+
+function renderTextOverlaysHTML(textOverlays: Array<import('./types').TextOverlay>): string {
+  if (!textOverlays?.length) return ''
+  const animMap: Record<string, string> = {
+    'fade-in': 'fadeInOverlay',
+    'slide-up': 'slideUpOverlay',
+    typewriter: 'fadeInOverlay',
+  }
+  return textOverlays
+    .map(
+      (t) =>
+        `<div class="text-overlay" style="left:${t.x}%;top:${t.y}%;font-family:${t.font};font-size:${t.size}px;color:${t.color};animation:${animMap[t.animation] ?? 'fadeInOverlay'} ${t.duration}s ease ${t.delay}s forwards;">${t.content}</div>`,
+    )
+    .join('\n  ')
+}
+
+const TEXT_OVERLAY_CSS = `
+  .text-overlay {
+    position: absolute;
+    z-index: 3;
+    opacity: 0;
+    white-space: pre-wrap;
+    pointer-events: none;
+  }
+  @keyframes fadeInOverlay {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes slideUpOverlay {
+    from { opacity: 0; transform: translateY(30px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+`
+
 function generateSVGHTML(
   scene: Scene,
   style: ResolvedStyle,
@@ -3222,16 +3268,7 @@ function generateSVGHTML(
     )
     .join('\n  ')
 
-  const textOverlaysHTML = textOverlays
-    .map((t) => {
-      const animMap = {
-        'fade-in': 'fadeInOverlay',
-        'slide-up': 'slideUpOverlay',
-        typewriter: 'fadeInOverlay',
-      }
-      return `<div class="text-overlay" style="left:${t.x}%;top:${t.y}%;font-family:${t.font};font-size:${t.size}px;color:${t.color};animation:${animMap[t.animation]} ${t.duration}s ease ${t.delay}s forwards;">${t.content}</div>`
-    })
-    .join('\n  ')
+  const textOverlaysHTML = renderTextOverlaysHTML(textOverlays)
 
   const videoDisplay = videoLayer?.enabled ? 'block' : 'none'
   const videoOpacity = videoLayer?.opacity ?? 1

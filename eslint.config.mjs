@@ -36,6 +36,7 @@ export default tseslint.config(
       '.next/',
       'dist/',
       'dist-electron/',
+      'release/',
       'renders/',
       'render-server/',
       'public/',

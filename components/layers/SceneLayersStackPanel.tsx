@@ -6,6 +6,7 @@ import {
   Atom,
   BarChart3,
   Box,
+  Camera,
   ChevronDown,
   ChevronRight,
   ChevronUp,
@@ -15,6 +16,7 @@ import {
   EyeOff,
   Film,
   Globe,
+  Hash,
   Image as ImageIcon,
   Layers,
   LayoutTemplate,
@@ -22,6 +24,7 @@ import {
   Music,
   Palette,
   Sparkles,
+  SplitSquareHorizontal,
   Type,
   User,
   Volume2,
@@ -251,6 +254,56 @@ export function labelForKey(scene: Scene, key: StackKey): string {
     }
     return id ?? 'Element'
   }
+  if (kind === 'camera') {
+    const n = scene.cameraMotion?.length ?? 0
+    return n > 0 ? `Camera (${n})` : 'Camera'
+  }
+  if (kind === 'transition')
+    return scene.transition && scene.transition !== 'none' ? `Transition: ${scene.transition}` : 'Transition'
+  if (kind === 'style') return 'Style Override'
+  if (kind === 'variables') {
+    const n = scene.variables?.length ?? 0
+    return n > 0 ? `Variables (${n})` : 'Variables'
+  }
+  if (kind === 'tts') {
+    const t = (scene.audioLayer?.tts?.text ?? '').trim()
+    return t ? `TTS · ${t.slice(0, 28)}${t.length > 28 ? '…' : ''}` : 'Narration'
+  }
+  if (kind === 'music') {
+    const name = (scene.audioLayer?.music?.name ?? '').trim()
+    return name ? `Music · ${name.slice(0, 28)}${name.length > 28 ? '…' : ''}` : 'Music'
+  }
+  if (kind === 'sfx' && id) {
+    const s = (scene.audioLayer?.sfx ?? []).find((x) => x.id === id)
+    return s?.name ?? 'SFX'
+  }
+  if (kind === '3d' && id) {
+    const parts = id.split(':')
+    const sub = parts[0]
+    const subIdx = parseInt(parts[1] ?? '0', 10)
+    const wc = scene.worldConfig
+    if (sub === 'env') return `Env: ${wc?.environment ?? '—'}`
+    if (sub === 'obj') {
+      const o = wc?.objects?.[subIdx]
+      return o?.assetId
+        ? `Object: ${o.assetId.slice(0, 22)}${o.assetId.length > 22 ? '…' : ''}`
+        : `Object ${subIdx + 1}`
+    }
+    if (sub === 'panel') {
+      const p = wc?.panels?.[subIdx]
+      const preview = (p?.html ?? '').replace(/<[^>]+>/g, '').slice(0, 22)
+      return preview ? `Panel: ${preview}${(p?.html ?? '').length > 22 ? '…' : ''}` : `Panel ${subIdx + 1}`
+    }
+    if (sub === 'avatar') {
+      const a = wc?.avatars?.[subIdx]
+      return a?.mood ? `Avatar: ${a.mood}` : `Avatar ${subIdx + 1}`
+    }
+    if (sub === 'camera') {
+      const n = wc?.cameraPath?.length ?? 0
+      return `Camera path (${n})`
+    }
+    if (sub === 'preset') return `Preset: ${scene.threeEnvironmentPresetId ?? '—'}`
+  }
   return kind
 }
 
@@ -400,6 +453,30 @@ export function iconForKey(scene: Scene, key: StackKey) {
       if (sub === 'heading' || sub === 'paragraph' || sub === 'text') return Type
       if (sub === 'image') return ImageIcon
       return Sparkles
+    }
+    case 'camera':
+      return Camera
+    case 'transition':
+      return SplitSquareHorizontal
+    case 'style':
+      return Palette
+    case 'variables':
+      return Hash
+    case 'tts':
+      return Volume2
+    case 'music':
+      return Music
+    case 'sfx':
+      return Volume2
+    case '3d': {
+      const sub = (id ?? '').split(':')[0]
+      if (sub === 'env') return Globe
+      if (sub === 'obj') return Box
+      if (sub === 'panel') return LayoutTemplate
+      if (sub === 'avatar') return User
+      if (sub === 'camera') return Camera
+      if (sub === 'preset') return Sparkles
+      return Globe
     }
     default:
       return Layers

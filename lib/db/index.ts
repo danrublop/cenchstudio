@@ -2,12 +2,23 @@ import { drizzle } from 'drizzle-orm/node-postgres'
 import { Pool } from 'pg'
 import * as schema from './schema'
 import { eq, sql } from 'drizzle-orm'
+import { createLogger } from '../logger'
+
+const log = createLogger('db')
 
 type DrizzleDB = ReturnType<typeof drizzle<typeof schema>>
 
 let _pool: Pool | null = null
 let _db: DrizzleDB | null = null
 
+// Single-flight guard: `initDb()` is called from every property access on
+// the exported `db` Proxy. Without this, two concurrent IPC calls in the
+// Electron main process can both enter before `_db` is assigned, each
+// construct a Pool, and the losing one leaks its 5 open connections
+// forever (never `.end()`ed). Memoizing the synchronous path is enough —
+// `new Pool()` returns immediately; the lazy initialization races are
+// all on the tick that creates the first connection, not the Pool object
+// itself.
 function initDb(): DrizzleDB {
   if (_db) return _db
   const url = process.env.DATABASE_URL
@@ -18,20 +29,27 @@ function initDb(): DrizzleDB {
         'For cloud mode: add your Neon/Supabase connection string to .env.local',
     )
   }
-  _pool = new Pool({
+  const pool = new Pool({
     connectionString: url,
     max: process.env.STORAGE_MODE === 'cloud' ? 10 : 5,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 5000,
     ssl: url.includes('localhost') || url.includes('127.0.0.1') ? false : { rejectUnauthorized: true },
   })
-  _pool.on('error', (err) => {
-    console.error('Unexpected Postgres pool error:', err)
+  pool.on('error', (err) => {
+    log.error('unexpected Postgres pool error', { error: err })
   })
-  _db = drizzle(_pool, {
+  const database = drizzle(pool, {
     schema,
     logger: process.env.NODE_ENV === 'development',
   })
+  // Another tick's initDb() may have won. If so, drop ours to avoid the leak.
+  if (_db) {
+    void pool.end()
+    return _db
+  }
+  _pool = pool
+  _db = database
   return _db
 }
 
@@ -106,7 +124,7 @@ export async function logSpend(
   } catch (trackerErr) {
     // Tracker is best-effort — never block the DB write on it, but do log so
     // we don't silently diverge from the in-memory snapshot in production.
-    console.warn(`[logSpend] budget tracker update failed for project=${projectId} api=${api}`, trackerErr)
+    log.warn('logSpend: budget tracker update failed', { extra: { projectId, api }, error: trackerErr })
   }
 }
 
@@ -260,7 +278,7 @@ export async function getAgentUsageSummary(projectId?: string): Promise<{
       byAgent,
     }
   } catch (e) {
-    console.error('[DB] getAgentUsageSummary failed (table may not exist):', e)
+    log.error('getAgentUsageSummary failed (table may not exist)', { error: e })
     return empty
   }
 }

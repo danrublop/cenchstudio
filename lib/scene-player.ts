@@ -109,6 +109,16 @@ export class ScenePlayer {
     this.send({ type: 'seek', time })
   }
 
+  /** Enter scrub mode — mutes all audio/video for the duration of the drag. */
+  startScrub() {
+    this.send({ type: 'scrub_start' })
+  }
+
+  /** Exit scrub mode — restores per-element muted state captured at scrub_start. */
+  endScrub() {
+    this.send({ type: 'scrub_end' })
+  }
+
   reset() {
     this.send({ type: 'reset' })
   }

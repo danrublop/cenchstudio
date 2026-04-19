@@ -12,6 +12,9 @@
 import { registerPreToolHook, registerPostToolHook, removeHooksByName } from './tool-executor'
 import type { PreToolHookContext, PreToolHookResult, PostToolHookContext, PostToolHookResult } from './tool-executor'
 import vm from 'vm'
+import { createLogger } from '../logger'
+
+const log = createLogger('agent.hook')
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -140,7 +143,7 @@ function wrapPreHook(hook: DeclaredHook): (ctx: PreToolHookContext) => Promise<P
 
     if (hook.type === 'webhook' && hook.url) {
       if (!isValidWebhookUrl(hook.url)) {
-        console.warn(`[hook:${hook.name}] Invalid webhook URL: ${hook.url}`)
+        log.warn(`${hook.name}: invalid webhook URL: ${hook.url}`)
         return {}
       }
       response = await executeWebhook(hook.url, payload, timeoutMs)
@@ -152,7 +155,7 @@ function wrapPreHook(hook: DeclaredHook): (ctx: PreToolHookContext) => Promise<P
 
     if (response.error) {
       // Hook errors don't block execution — log as warning
-      console.warn(`[hook:${hook.name}] Error: ${response.error}`)
+      log.warn(`${hook.name}: error`, { extra: { error: response.error } })
       return {}
     }
 
@@ -180,7 +183,7 @@ function wrapPostHook(hook: DeclaredHook): (ctx: PostToolHookContext) => Promise
 
     if (hook.type === 'webhook' && hook.url) {
       if (!isValidWebhookUrl(hook.url)) {
-        console.warn(`[hook:${hook.name}] Invalid webhook URL: ${hook.url}`)
+        log.warn(`${hook.name}: invalid webhook URL: ${hook.url}`)
         return {}
       }
       response = await executeWebhook(hook.url, payload, timeoutMs)
@@ -191,7 +194,7 @@ function wrapPostHook(hook: DeclaredHook): (ctx: PostToolHookContext) => Promise
     }
 
     if (response.error) {
-      console.warn(`[hook:${hook.name}] Error: ${response.error}`)
+      log.warn(`${hook.name}: error`, { extra: { error: response.error } })
       return {}
     }
 

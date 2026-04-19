@@ -54,6 +54,8 @@ export interface ExportProgress {
   totalScenes: number
   sceneProgress: number // 0–100
   downloadUrl: string | null
+  /** Absolute file path of the written MP4 (Electron only). */
+  filePath?: string | null
   error: string | null
   diagnostics?: string[]
 }

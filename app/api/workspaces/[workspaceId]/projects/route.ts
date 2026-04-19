@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { assertWorkspaceAccess } from '@/lib/auth-helpers'
 import { assignProjectsToWorkspace, removeProjectsFromWorkspace } from '@/lib/db/queries/workspaces'
+import { createLogger } from '@/lib/logger'
+
+const log = createLogger('api.workspace-projects')
 
 // POST: assign projects to this workspace
 export async function POST(req: NextRequest, { params }: { params: Promise<{ workspaceId: string }> }) {
@@ -22,7 +25,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ wor
     await assignProjectsToWorkspace(workspaceId, projectIds)
     return NextResponse.json({ success: true })
   } catch (error: any) {
-    console.error('Failed to assign projects:', error)
+    log.error('Failed to assign projects:', { error: error })
     return NextResponse.json({ error: 'Failed to assign projects' }, { status: 500 })
   }
 }
@@ -44,7 +47,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ w
     await removeProjectsFromWorkspace(projectIds)
     return NextResponse.json({ success: true })
   } catch (error: any) {
-    console.error('Failed to remove projects:', error)
+    log.error('Failed to remove projects:', { error: error })
     return NextResponse.json({ error: 'Failed to remove projects' }, { status: 500 })
   }
 }

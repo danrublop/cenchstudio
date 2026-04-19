@@ -2,6 +2,7 @@ import fs from 'fs/promises'
 import path from 'path'
 import crypto from 'crypto'
 import type { SFXProviderInterface, SFXResult, SFXSearchOptions } from '../types'
+import { getAudioDir, audioUrlFor } from '../paths'
 
 const API_BASE = 'https://api.elevenlabs.io/v1'
 
@@ -34,7 +35,7 @@ async function generateSFX(prompt: string, duration?: number): Promise<SFXResult
 
   const audioBuffer = Buffer.from(await response.arrayBuffer())
 
-  const audioDir = path.join(process.cwd(), 'public', 'audio')
+  const audioDir = getAudioDir()
   await fs.mkdir(audioDir, { recursive: true })
 
   const timestamp = Date.now()
@@ -46,13 +47,14 @@ async function generateSFX(prompt: string, duration?: number): Promise<SFXResult
   // Estimate duration from MP3 file size (rough: 128kbps VBR average)
   const durationEstimate = (audioBuffer.length * 8) / (128 * 1000)
 
+  const localUrl = audioUrlFor(filename)
   return {
     id: `elevenlabs-sfx-${timestamp}`,
     name: prompt,
-    audioUrl: `/audio/${filename}`,
+    audioUrl: localUrl,
     duration: Math.round(durationEstimate * 10) / 10,
     provider: 'elevenlabs-sfx',
-    previewUrl: `/audio/${filename}`,
+    previewUrl: localUrl,
   }
 }
 

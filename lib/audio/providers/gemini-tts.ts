@@ -2,6 +2,7 @@ import fs from 'fs/promises'
 import path from 'path'
 import type { TTSProviderInterface, TTSParams, TTSResult, Voice } from '../types'
 import { safeAudioFilename } from '../sanitize'
+import { getAudioDir, audioUrlFor } from '../paths'
 
 const DEFAULT_MODEL = 'gemini-2.5-flash-preview-tts'
 const DEFAULT_VOICE = 'Kore'
@@ -181,7 +182,7 @@ export const geminiTTS: TTSProviderInterface = {
       throw new Error('Either GEMINI_API_KEY or GOOGLE_TTS_API_KEY must be set for Gemini TTS')
     }
 
-    const audioDir = path.join(process.cwd(), 'public', 'audio')
+    const audioDir = getAudioDir()
     await fs.mkdir(audioDir, { recursive: true })
 
     let audioBuffer: Buffer
@@ -214,7 +215,7 @@ export const geminiTTS: TTSProviderInterface = {
     }
 
     return {
-      audioUrl: `/audio/${filename}`,
+      audioUrl: audioUrlFor(filename),
       duration: Math.round(durationEstimate * 10) / 10,
       provider: 'gemini-tts',
     }

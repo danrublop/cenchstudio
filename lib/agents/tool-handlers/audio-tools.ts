@@ -1,6 +1,7 @@
 import type { APIName } from '@/lib/types'
 import type { WorldStateMutable } from '@/lib/agents/tool-executor'
 import { ok, err, findScene, updateScene, type ToolResult } from './_shared'
+import { synthesizeTTS, searchSFX, searchMusic } from '@/lib/services/audio'
 
 export const AUDIO_TOOL_NAMES = ['elevenlabs_tts', 'add_narration', 'add_sound_effect', 'add_background_music'] as const
 
@@ -48,13 +49,8 @@ export function createAudioToolHandler(deps: {
         const scene = findScene(world, sceneId)
         if (!scene) return err(`Scene not found: ${sceneId}`)
         try {
-          const res = await fetch(`${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}/api/tts`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text, sceneId, voiceId }),
-          })
-          const data = await res.json()
-          if (!res.ok) return err(data.error ?? 'TTS failed')
+          const data = await synthesizeTTS({ text, sceneId, voiceId, provider: 'elevenlabs' })
+          if ('mode' in data) return err('TTS returned client-only config; expected a url')
           return ok(sceneId, 'TTS audio generated', { audioUrl: data.url })
         } catch (e: any) {
           return err(`TTS failed: ${e.message}`)
@@ -121,26 +117,16 @@ export function createAudioToolHandler(deps: {
         }
 
         try {
-          const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-          const res = await fetch(`${baseUrl}/api/tts`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              text,
-              sceneId,
-              voiceId,
-              provider: effectiveProvider ?? undefined,
-              instructions,
-              localMode: world.localMode,
-            }),
+          const data = await synthesizeTTS({
+            text,
+            sceneId,
+            voiceId,
+            provider: effectiveProvider ?? undefined,
+            instructions,
+            localMode: world.localMode,
           })
-          if (!res.ok) {
-            const errData = await res.json().catch(() => ({ error: 'TTS request failed' }))
-            return err(`TTS failed: ${errData.error || res.statusText}`)
-          }
-          const data = await res.json()
 
-          if (data.mode === 'client') {
+          if ('mode' in data) {
             const audioLayer = scene.audioLayer || {
               enabled: false,
               src: null,
@@ -175,6 +161,8 @@ export function createAudioToolHandler(deps: {
             )
           }
 
+          // After the `'mode' in data` branch returns, TypeScript narrows
+          // `data` to the server-audio variant for the rest of this case.
           const audioLayer = scene.audioLayer || {
             enabled: false,
             src: null,
@@ -254,23 +242,16 @@ export function createAudioToolHandler(deps: {
         }
 
         try {
-          const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-          const res = await fetch(`${baseUrl}/api/sfx`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              query,
-              prompt: query,
-              provider: effectiveSfxProvider ?? undefined,
-              limit: 1,
-              download: true,
-            }),
+          const data = await searchSFX({
+            query,
+            prompt: query,
+            provider: effectiveSfxProvider ?? undefined,
+            limit: 1,
+            download: true,
           })
-          if (!res.ok) return err('SFX search failed')
-          const data = await res.json()
           if (!data.results || data.results.length === 0) return err(`No sound effects found for: ${query}`)
 
-          const sfxResult = data.results[0]
+          const sfxResult = data.results[0] as Record<string, any>
           const newSfx = {
             id: `sfx-${Date.now()}`,
             name: sfxResult.name || query,
@@ -336,17 +317,15 @@ export function createAudioToolHandler(deps: {
         }
 
         try {
-          const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-          const res = await fetch(`${baseUrl}/api/music/search`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ query, provider: effectiveMusicProvider ?? undefined, limit: 1, download: true }),
+          const data = await searchMusic({
+            query,
+            provider: effectiveMusicProvider ?? undefined,
+            limit: 1,
+            download: true,
           })
-          if (!res.ok) return err('Music search failed')
-          const data = await res.json()
           if (!data.results || data.results.length === 0) return err(`No music found for: ${query}`)
 
-          const musicResult = data.results[0]
+          const musicResult = data.results[0] as Record<string, any>
           const musicTrack = {
             name: musicResult.name || query,
             provider: musicResult.provider || data.provider,

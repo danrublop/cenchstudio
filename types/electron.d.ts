@@ -34,6 +34,11 @@ declare global {
   interface Window {
     electronAPI?: {
       saveDialog: (suggestedName?: string) => Promise<{ canceled: boolean; filePath: string | null }>
+      chooseDirectory: (defaultPath?: string) => Promise<{ canceled: boolean; dirPath: string | null }>
+      getDefaultExportDir: () => Promise<{ dirPath: string }>
+      showItemInFolder: (filePath: string) => Promise<{ ok: true } | { ok: false; error: string }>
+      openPath: (filePath: string) => Promise<{ ok: true } | { ok: false; error: string }>
+
       writeFile: (args: { filePath: string; bytes: ArrayBuffer }) => Promise<{ ok: true }>
       saveRecording: (args: {
         bytes: ArrayBuffer

@@ -13,6 +13,9 @@ import path from 'path'
 import { v4 as uuidv4 } from 'uuid'
 import sharp from 'sharp'
 import { db } from '@/lib/db'
+import { createLogger } from '@/lib/logger'
+
+const log = createLogger('media.provenance')
 import { projectAssets } from '@/lib/db/schema'
 import type { AssetGenerationMetadata, AssetSource, AssetType } from '@/lib/types'
 
@@ -80,7 +83,7 @@ export async function persistGeneratedAsset(input: PersistGeneratedAssetInput): 
         .toFile(thumbPath)
       thumbnailUrl = `/uploads/projects/${input.projectId}/${thumbFilename}`
     } catch (e) {
-      console.warn('[provenance] image meta/thumbnail failed:', e)
+      log.warn('image meta/thumbnail failed', { error: e })
     }
   }
 

@@ -181,7 +181,8 @@ export async function updateMessage(
   if (updates.modelUsed !== undefined) setClauses.push(sql`model_used = ${updates.modelUsed}`)
   if (updates.thinkingContent !== undefined) setClauses.push(sql`thinking_content = ${updates.thinkingContent}`)
   if (updates.toolCalls !== undefined) setClauses.push(sql`tool_calls = ${JSON.stringify(updates.toolCalls)}::jsonb`)
-  if (updates.contentSegments !== undefined) setClauses.push(sql`content_segments = ${JSON.stringify(updates.contentSegments)}::jsonb`)
+  if (updates.contentSegments !== undefined)
+    setClauses.push(sql`content_segments = ${JSON.stringify(updates.contentSegments)}::jsonb`)
   if (updates.inputTokens !== undefined) setClauses.push(sql`input_tokens = ${updates.inputTokens}`)
   if (updates.outputTokens !== undefined) setClauses.push(sql`output_tokens = ${updates.outputTokens}`)
   if (updates.costUsd !== undefined) setClauses.push(sql`cost_usd = ${updates.costUsd}`)
@@ -255,6 +256,7 @@ export async function upsertMessage(data: {
       agent_type = EXCLUDED.agent_type,
       model_used = EXCLUDED.model_used
     WHERE messages.status = 'streaming'
+      AND messages.conversation_id = ${data.conversationId}
   `)
 }
 

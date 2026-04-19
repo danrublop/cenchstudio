@@ -14,6 +14,17 @@ import {
   ensureStoryboardSceneIdsForPair,
   getPersistedTheme,
 } from './helpers'
+import { createLogger } from '../logger'
+
+const log = createLogger('store.project')
+
+// IPC bridges — prefer `window.cenchApi.*` when Electron's preload has
+// attached it (both dev and packaged). Fall back to the legacy Next route
+// only when running in pure browser preview during the migration window.
+// Once the rest of Week 2 lands and the /api routes are all deleted, these
+// fallbacks collapse to the `throw` path.
+const projectsIpc = () => (typeof window !== 'undefined' ? window.cenchApi?.projects : undefined)
+const publishIpc = () => (typeof window !== 'undefined' ? window.cenchApi?.publish : undefined)
 
 export function createProjectActions(set: Set, get: Get) {
   return {
@@ -42,36 +53,43 @@ export function createProjectActions(set: Set, get: Get) {
         // Ensure all scene HTML files exist on disk before publishing
         await Promise.all(scenes.map((s) => get().saveSceneHTML(s.id, true)))
 
-        const res = await fetch('/api/publish', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            projectId: project.id,
-            project: {
-              id: project.id,
-              name: project.name,
-              interactiveSettings: project.interactiveSettings,
-              sceneGraph: project.sceneGraph,
-            },
-            scenes: scenes.map((s) => ({
-              id: s.id,
-              sceneType: s.sceneType,
-              duration: s.duration,
-              interactions: s.interactions,
-              variables: s.variables,
-              transition: s.transition,
-            })),
-          }),
-        })
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({ error: 'Publish failed' }))
-          throw new Error(data.error || 'Publish failed')
+        const payload = {
+          project: {
+            id: project.id,
+            name: project.name,
+            interactiveSettings: project.interactiveSettings,
+            sceneGraph: project.sceneGraph,
+          },
+          scenes: scenes.map((s) => ({
+            id: s.id,
+            sceneType: s.sceneType,
+            duration: s.duration,
+            interactions: s.interactions,
+            variables: s.variables,
+            transition: s.transition,
+          })),
         }
-        const data = await res.json()
+
+        const ipc = publishIpc()
+        let data: { publishedUrl: string; version: number }
+        if (ipc) {
+          data = await ipc.run(payload as unknown as Parameters<typeof ipc.run>[0])
+        } else {
+          const res = await fetch('/api/publish', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ projectId: project.id, ...payload }),
+          })
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({ error: 'Publish failed' }))
+            throw new Error(errData.error || 'Publish failed')
+          }
+          data = await res.json()
+        }
         set({ publishedUrl: data.publishedUrl, showPublishPanel: true })
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Publish failed'
-        console.error('Publish error:', message)
+        log.error('publish error', { extra: { message }, error: err })
         set({ publishError: message })
       } finally {
         set({ isPublishing: false })
@@ -84,29 +102,31 @@ export function createProjectActions(set: Set, get: Get) {
     fetchProjectList: async () => {
       set({ isLoadingProjects: true })
       try {
-        const res = await fetch('/api/projects')
-        if (res.ok) {
-          const list = await res.json()
-          set({
-            projectList: list.map((p: any) => ({
-              id: p.id,
-              name: p.name,
-              updatedAt: p.updatedAt,
-              thumbnailUrl: p.thumbnailUrl,
-              outputMode: p.outputMode,
-              createdAt: p.createdAt,
-              workspaceId: p.workspaceId ?? null,
-            })),
-          })
-        }
+        const ipc = projectsIpc()
+        const raw = ipc ? await ipc.list() : await fetch('/api/projects').then((r) => (r.ok ? r.json() : null))
+        if (!raw) return
+        // list() returns flat array when no pagination args; our store consumes the array shape.
+        const list = Array.isArray(raw) ? raw : (raw as { items: unknown[] }).items
+        set({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          projectList: (list as any[]).map((p) => ({
+            id: p.id,
+            name: p.name,
+            updatedAt: p.updatedAt,
+            thumbnailUrl: p.thumbnailUrl,
+            outputMode: p.outputMode,
+            createdAt: p.createdAt,
+            workspaceId: p.workspaceId ?? null,
+          })),
+        })
       } catch (e) {
-        console.error('Failed to fetch projects:', e)
+        log.error('failed to fetch projects', { error: e })
       } finally {
         set({ isLoadingProjects: false })
       }
     },
 
-    createNewProject: async (name?: string) => {
+    createNewProject: async (name?: string, aspectRatio?: import('../dimensions').AspectRatio) => {
       const state = get()
       // Don't save current project — auto-save handles it.
       // Saving here overwrites externally-added scenes.
@@ -123,6 +143,9 @@ export function createProjectActions(set: Set, get: Get) {
         newProject.name = `Untitled Project ${n}`
       } else {
         newProject.name = name
+      }
+      if (aspectRatio) {
+        newProject.mp4Settings = { ...newProject.mp4Settings, aspectRatio }
       }
       set({
         project: newProject,
@@ -142,41 +165,48 @@ export function createProjectActions(set: Set, get: Get) {
       })
 
       const st = get()
+      const createPayload = {
+        id: st.project.id,
+        name: st.project.name,
+        outputMode: st.project.outputMode,
+        globalStyle: st.globalStyle,
+        mp4Settings: st.project.mp4Settings,
+        interactiveSettings: st.project.interactiveSettings,
+        apiPermissions: st.project.apiPermissions,
+        audioSettings: st.project.audioSettings,
+        audioProviderEnabled: st.audioProviderEnabled,
+        mediaGenEnabled: st.mediaGenEnabled,
+        scenes: st.scenes,
+        sceneGraph: st.project.sceneGraph,
+        workspaceId: st.activeWorkspaceId,
+      }
       try {
-        const res = await fetch('/api/projects', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            id: st.project.id,
-            name: st.project.name,
-            outputMode: st.project.outputMode,
-            globalStyle: st.globalStyle,
-            mp4Settings: st.project.mp4Settings,
-            interactiveSettings: st.project.interactiveSettings,
-            apiPermissions: st.project.apiPermissions,
-            audioSettings: st.project.audioSettings,
-            audioProviderEnabled: st.audioProviderEnabled,
-            mediaGenEnabled: st.mediaGenEnabled,
-            scenes: st.scenes,
-            sceneGraph: st.project.sceneGraph,
-            workspaceId: st.activeWorkspaceId,
-          }),
-        })
-        if (res.ok) {
-          const saved = await res.json()
+        const ipc = projectsIpc()
+        const saved = ipc
+          ? ((await ipc.create(createPayload)) as Record<string, unknown>)
+          : await (async () => {
+              const res = await fetch('/api/projects', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(createPayload),
+              })
+              if (!res.ok) {
+                const err = await res.json().catch(() => ({}))
+                log.error('createNewProject: POST /api/projects failed', { extra: { status: res.status, err } })
+                return null
+              }
+              return res.json()
+            })()
+        if (saved) {
           const toIso = (v: unknown) => (typeof v === 'string' ? v : v instanceof Date ? v.toISOString() : '')
           const createdAt = toIso(saved.createdAt) || st.project.createdAt
           const updatedAt = toIso(saved.updatedAt) || st.project.updatedAt
-          set({
-            project: { ...get().project, createdAt, updatedAt },
-          })
+          set({ project: { ...get().project, createdAt, updatedAt } })
         } else {
-          const err = await res.json().catch(() => ({}))
-          console.error('[createNewProject] POST /api/projects failed:', res.status, err)
           await get().saveProjectToDb()
         }
       } catch (e) {
-        console.error('[createNewProject] persist error:', e)
+        log.error('createNewProject: persist error', { error: e })
         await get().saveProjectToDb()
       }
 
@@ -188,11 +218,18 @@ export function createProjectActions(set: Set, get: Get) {
     refreshProjectFromServer: async () => {
       const { project, _dbLoadComplete } = get()
       if (!project?.id || !_dbLoadComplete) return
-      console.log(`[Store] refreshProjectFromServer: chatMessages=${get().chatMessages.length} before refresh`)
+      log.debug('refreshProjectFromServer start', { extra: { chatMessages: get().chatMessages.length } })
       try {
-        const res = await fetch(`/api/projects/${project.id}`)
-        if (!res.ok) return
-        const data = await res.json()
+        const ipc = projectsIpc()
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let data: any
+        if (ipc) {
+          data = await ipc.get(project.id)
+        } else {
+          const res = await fetch(`/api/projects/${project.id}`)
+          if (!res.ok) return
+          data = await res.json()
+        }
         const newScenes: Scene[] = (data.scenes || []).map(normalizeScene)
         const loadedProject: Project = {
           id: data.id,
@@ -259,9 +296,9 @@ export function createProjectActions(set: Set, get: Get) {
           runCheckpoint: loadedRunCheckpoint,
           brandKit: loadedProject.brandKit,
         })
-        console.log(
-          `[Store] refreshProjectFromServer: chatMessages=${get().chatMessages.length} after set (should be unchanged)`,
-        )
+        log.debug('refreshProjectFromServer after set', {
+          extra: { chatMessages: get().chatMessages.length },
+        })
         // Regenerate HTML directly from API data (bypasses store which persist may strip)
         try {
           const { generateSceneHTML } = await import('@/lib/sceneTemplate')
@@ -280,13 +317,20 @@ export function createProjectActions(set: Set, get: Get) {
                   loadedProject.audioSettings,
                   dims,
                 )
-                fetch('/api/scene', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ id: scene.id, html }),
-                }).catch(() => {})
+                ;(async () => {
+                  const sceneIpc = typeof window !== 'undefined' ? window.cenchApi?.scene : undefined
+                  if (sceneIpc) {
+                    await sceneIpc.writeHtml({ id: scene.id, html })
+                  } else {
+                    await fetch('/api/scene', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ id: scene.id, html }),
+                    })
+                  }
+                })().catch(() => {})
               } catch (e) {
-                console.error(`[refreshProject] generateSceneHTML failed for ${scene.id}:`, e)
+                log.error('refreshProject: generateSceneHTML failed', { extra: { sceneId: scene.id }, error: e })
               }
             }
           }
@@ -299,7 +343,7 @@ export function createProjectActions(set: Set, get: Get) {
           }
         }
       } catch (e) {
-        console.error('[Store] refreshProjectFromServer failed:', e)
+        log.error('refreshProjectFromServer failed', { error: e })
       }
     },
 
@@ -325,12 +369,24 @@ export function createProjectActions(set: Set, get: Get) {
         await get().saveProjectToDb()
       }
       try {
-        const res = await fetch(`/api/projects/${projectId}`)
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}))
-          throw new Error(`Failed to load project: ${res.status} ${err.error || ''}`)
+        const ipc = projectsIpc()
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let data: any
+        if (ipc) {
+          try {
+            data = await ipc.get(projectId)
+          } catch (err) {
+            log.error('loadProject: IPC get failed', { error: err })
+            return
+          }
+        } else {
+          const res = await fetch(`/api/projects/${projectId}`)
+          if (!res.ok) {
+            const errPayload = await res.json().catch(() => ({}))
+            throw new Error(`Failed to load project: ${res.status} ${errPayload.error || ''}`)
+          }
+          data = await res.json()
         }
-        const data = await res.json()
 
         const loadedProject: Project = {
           id: data.id,
@@ -420,14 +476,21 @@ export function createProjectActions(set: Set, get: Get) {
             if (sceneHasRenderableContent(scene)) {
               try {
                 const html = generateSceneHTML(scene, loadedStyle, undefined, loadedProject.audioSettings, dims)
-                fetch('/api/scene', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ id: scene.id, html }),
-                }).catch(() => {})
+                ;(async () => {
+                  const sceneIpc = typeof window !== 'undefined' ? window.cenchApi?.scene : undefined
+                  if (sceneIpc) {
+                    await sceneIpc.writeHtml({ id: scene.id, html })
+                  } else {
+                    await fetch('/api/scene', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ id: scene.id, html }),
+                    })
+                  }
+                })().catch(() => {})
                 savedAny = true
               } catch (e) {
-                console.error(`[loadProject] generateSceneHTML failed for ${scene.id}:`, e)
+                log.error('loadProject: generateSceneHTML failed', { extra: { sceneId: scene.id }, error: e })
               }
             }
           }
@@ -464,13 +527,13 @@ export function createProjectActions(set: Set, get: Get) {
               return s && !sceneHasRenderableContent(s)
             })
             if (clobbered) {
-              console.warn('[loadProject] Persist merge clobbered scene code — refreshing from server')
+              log.warn('loadProject: persist merge clobbered scene code, refreshing from server')
               get().refreshProjectFromServer()
             }
           }, 500)
         }
       } catch (e) {
-        console.error('Failed to load project:', e)
+        log.error('failed to load project', { error: e })
       }
     },
 
@@ -481,10 +544,16 @@ export function createProjectActions(set: Set, get: Get) {
       if (!_dbLoadComplete) return
       const localRich = scenes.some(sceneHasRenderableContent)
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let dbProject: any = null
       try {
-        const check = await fetch(`/api/projects/${project.id}`, { method: 'GET' })
-        if (check.ok) dbProject = await check.json()
+        const ipc = projectsIpc()
+        if (ipc) {
+          dbProject = await ipc.get(project.id).catch(() => null)
+        } else {
+          const check = await fetch(`/api/projects/${project.id}`, { method: 'GET' })
+          if (check.ok) dbProject = await check.json()
+        }
       } catch {
         /* proceed without snapshot */
       }
@@ -505,8 +574,8 @@ export function createProjectActions(set: Set, get: Get) {
 
       // Only skip when local looks like stripped localStorage (same scenes as DB, no code) but DB still has content.
       if (sameSceneIds && !localRich && dbRich) {
-        console.warn(
-          'saveProjectToDb: skipping save — local has no renderable content but DB does (likely stripped localStorage)',
+        log.warn(
+          'saveProjectToDb: skipping save, local has no renderable content but DB does (likely stripped localStorage)',
         )
         pullFromDb()
         return
@@ -522,7 +591,7 @@ export function createProjectActions(set: Set, get: Get) {
           }
 
           if (!localRich && dbRich && dbScenes.length > scenes.length) {
-            console.warn('saveProjectToDb: skipping — DB has more scenes than local (rehydration/stale client)')
+            log.warn('saveProjectToDb: skipping, DB has more scenes than local (rehydration/stale client)')
             pullFromDb()
             return
           }
@@ -531,15 +600,14 @@ export function createProjectActions(set: Set, get: Get) {
             const dbIds = new Set(dbScenes.map((s) => s.id))
             const sameSet = localIds.size === dbIds.size && [...localIds].every((id) => dbIds.has(id))
             if (sameSet) {
-              console.warn('saveProjectToDb: skipping — DB has scene content, local is empty (stripped localStorage)')
+              log.warn('saveProjectToDb: skipping, DB has scene content, local is empty (stripped localStorage)')
               pullFromDb()
               return
             }
           }
         }
 
-        // PATCH the project with retry on 409 conflict
-        const patchBody = JSON.stringify({
+        const patchUpdates = {
           name: project.name,
           outputMode: project.outputMode,
           globalStyle,
@@ -554,75 +622,114 @@ export function createProjectActions(set: Set, get: Get) {
           scenes,
           sceneGraph: project.sceneGraph,
           timeline: project.timeline ?? null,
-        })
-
-        let res: Response | null = null
-        for (let attempt = 0; attempt < 3; attempt++) {
-          res = await fetch(`/api/projects/${project.id}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: patchBody,
-          })
-          if (res.status === 409 && attempt < 2) {
-            // Version conflict — refresh server timestamp and retry with backoff
-            console.warn(`[saveProjectToDb] 409 conflict on attempt ${attempt + 1}, retrying…`)
-            await new Promise((r) => setTimeout(r, 200 * Math.pow(2, attempt)))
-            // Re-read server version so next attempt has correct updatedAt
-            try {
-              const refresh = await fetch(`/api/projects/${project.id}`, { method: 'GET' })
-              if (refresh.ok) {
-                const freshProject = await refresh.json()
-                if (freshProject.updatedAt) {
-                  set({ project: { ...get().project, updatedAt: freshProject.updatedAt } })
-                }
-              }
-            } catch {
-              /* proceed with retry anyway */
-            }
-            continue
-          }
-          break
         }
-        if (res && res.ok) {
-          // Sync local updatedAt so subsequent auto-saves aren't blocked
-          // by the conflict check (DB timestamp would be newer otherwise)
-          const saved = await res.json()
-          if (saved.updatedAt) {
-            set({ project: { ...get().project, updatedAt: saved.updatedAt } })
+
+        const ipc = projectsIpc()
+        if (ipc) {
+          // IPC path: update with conflict-retry, fall back to create on 404/NotFound.
+          let savedProject: Record<string, unknown> | null = null
+          for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+              savedProject = (await ipc.update({ projectId: project.id, updates: patchUpdates })) as Record<
+                string,
+                unknown
+              >
+              break
+            } catch (err) {
+              // Narrow to OUR shaped errors via message prefix, not substring.
+              // IpcConflictError serializes as `Error: Project was modified concurrently…`;
+              // IpcNotFoundError serializes as `Error: Project <uuid> not found`.
+              // Electron's structured-clone error passthrough strips custom
+              // subclass identity but preserves the `message`, so prefix-match
+              // is the portable form. Broader substring checks (e.g. `.includes('conflict')`)
+              // catch pg errors that mention "ON CONFLICT" and trigger wrong retries.
+              const msg = (err as Error).message ?? ''
+              const isConflict = msg.startsWith('Project was modified concurrently')
+              const isNotFound = /^Project\s+[0-9a-f-]+\s+not found$/i.test(msg)
+              if (isConflict && attempt < 2) {
+                log.warn('saveProjectToDb: conflict, retrying', { extra: { attempt: attempt + 1 } })
+                await new Promise((r) => setTimeout(r, 200 * Math.pow(2, attempt)))
+                try {
+                  const fresh = (await ipc.get(project.id)) as { updatedAt?: string }
+                  if (fresh?.updatedAt) {
+                    set({ project: { ...get().project, updatedAt: fresh.updatedAt } })
+                  }
+                } catch {
+                  /* proceed with retry */
+                }
+                continue
+              }
+              if (isNotFound) {
+                // Project doesn't exist yet — create it
+                await ipc.create({
+                  id: project.id,
+                  ...patchUpdates,
+                })
+                return
+              }
+              throw err
+            }
           }
-        } else if (res && res.status === 404) {
-          // Project doesn't exist in DB yet — create it
-          await fetch('/api/projects', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              id: project.id,
-              name: project.name,
-              outputMode: project.outputMode,
-              globalStyle,
-              mp4Settings: project.mp4Settings,
-              interactiveSettings: project.interactiveSettings,
-              apiPermissions: project.apiPermissions,
-              audioSettings: project.audioSettings,
-              audioProviderEnabled,
-              mediaGenEnabled,
-              scenes,
-              sceneGraph: project.sceneGraph,
-              timeline: project.timeline ?? null,
-            }),
-          })
+          if (savedProject && typeof savedProject.updatedAt === 'string') {
+            set({ project: { ...get().project, updatedAt: savedProject.updatedAt } })
+          }
+        } else {
+          // HTTP fallback — legacy path, kept for pure-web dev preview.
+          const patchBody = JSON.stringify(patchUpdates)
+          let res: Response | null = null
+          for (let attempt = 0; attempt < 3; attempt++) {
+            res = await fetch(`/api/projects/${project.id}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: patchBody,
+            })
+            if (res.status === 409 && attempt < 2) {
+              log.warn('saveProjectToDb: 409 conflict, retrying', { extra: { attempt: attempt + 1 } })
+              await new Promise((r) => setTimeout(r, 200 * Math.pow(2, attempt)))
+              try {
+                const refresh = await fetch(`/api/projects/${project.id}`, { method: 'GET' })
+                if (refresh.ok) {
+                  const freshProject = await refresh.json()
+                  if (freshProject.updatedAt) {
+                    set({ project: { ...get().project, updatedAt: freshProject.updatedAt } })
+                  }
+                }
+              } catch {
+                /* proceed with retry */
+              }
+              continue
+            }
+            break
+          }
+          if (res && res.ok) {
+            const saved = await res.json()
+            if (saved.updatedAt) {
+              set({ project: { ...get().project, updatedAt: saved.updatedAt } })
+            }
+          } else if (res && res.status === 404) {
+            await fetch('/api/projects', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id: project.id, ...patchUpdates }),
+            })
+          }
         }
       } catch (e) {
-        console.error('Failed to save project:', e)
+        log.error('failed to save project', { error: e })
       }
     },
 
     deleteProjectFromDb: async (projectId: string) => {
       try {
-        await fetch(`/api/projects/${projectId}`, { method: 'DELETE' })
+        const ipc = projectsIpc()
+        if (ipc) {
+          await ipc.delete(projectId)
+        } else {
+          await fetch(`/api/projects/${projectId}`, { method: 'DELETE' })
+        }
         await get().fetchProjectList()
       } catch (e) {
-        console.error('Failed to delete project:', e)
+        log.error('failed to delete project', { error: e })
       }
     },
   }

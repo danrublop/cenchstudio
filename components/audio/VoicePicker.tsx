@@ -34,9 +34,14 @@ export function VoicePicker({ provider, selectedVoiceId, onSelect }: VoicePicker
   useEffect(() => {
     if (!provider || provider === 'web-speech' || provider === 'auto') return
     setLoading(true)
-    fetch(`/api/tts/voices?provider=${provider}`)
-      .then((r) => r.json())
-      .then((d) => setVoices(d.voices || []))
+    const ipc = typeof window !== 'undefined' ? window.cenchApi?.tts : undefined
+    const load = ipc
+      ? ipc.listVoices(provider as Parameters<typeof ipc.listVoices>[0]).then((d) => (d.voices as Voice[]) ?? [])
+      : fetch(`/api/tts/voices?provider=${provider}`)
+          .then((r) => r.json())
+          .then((d) => (d.voices as Voice[]) ?? [])
+    load
+      .then(setVoices)
       .catch(() => setVoices([]))
       .finally(() => setLoading(false))
   }, [provider])

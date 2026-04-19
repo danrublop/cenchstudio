@@ -48,9 +48,11 @@ export default function PromptEngineeringDashboard() {
   const fetchDimension = useCallback(async (dim: DimensionKey) => {
     setLoading(true)
     try {
-      const res = await fetch(`/api/generation-log?dimension=${dim}`)
-      const json = await res.json()
-      setDimensionData(json.data ?? [])
+      const ipc = typeof window !== 'undefined' ? window.cenchApi?.generationLog : undefined
+      const json = ipc
+        ? await ipc.listByDimension({ dimension: dim })
+        : await fetch(`/api/generation-log?dimension=${dim}`).then((r) => r.json())
+      setDimensionData((json.data as DimensionRow[]) ?? [])
     } catch (e) {
       console.error('Failed to fetch dimension data:', e)
       setDimensionData([])

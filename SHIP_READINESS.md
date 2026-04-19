@@ -13,7 +13,7 @@
 - [x] **P0-3** All 5 ESLint errors fixed. `eslint .` returns exit 0 (3868 warnings remain as P3).
 - [x] **P0-5** `lib/db/index.ts` lazy-initialized via Proxy. Tests run without `DATABASE_URL`: 14 files / 110 tests / 2.64s.
 - [x] **P0-6** Error boundaries added: `app/error.tsx`, `app/global-error.tsx`, `app/not-found.tsx`.
-- [ ] **P0-4** Electron production packaging (electron-builder, icons, signing, auto-update). Large, still ahead.
+- [~] **P0-4** Electron production packaging — **Week 1 shell complete.** `electron-builder` + `electron-icon-builder` installed. `cench://` privileged protocol registered in `electron/main.ts` with two hosts: `cench://app/*` (static UI bundle) and `cench://scenes/*` (runtime-writable user data dir). Dead 127.0.0.1:3002 export HTTP server deleted (248 lines, zero callers confirmed via grep). `package.json > build` config complete: appId `com.cench.studio`, macOS `.dmg` (arm64 + x64) with hardened runtime, Windows `.exe` NSIS, Linux AppImage, `extraResources` bundles `render-server/stitcher.js` + `audio-mixer.js`. `build/entitlements.mac.plist` written (allow-jit, allow-unsigned-executable-memory, device.camera, device.audio-input). Env validator at `scripts/validate-env.ts`. `npm run dist:dir` produces a working `.app` bundle (unsigned, 116MB Electron runtime downloaded on first build). See `SHIP_READINESS.md` Week 2+ for route migration that populates `out/` with real static export. **Still ahead:** icon artwork (user supplies `build/icon.png` 1024×1024), Apple Developer cert + notarization env vars, Windows EV cert, `electron-updater` + publish target.
 
 ### Week 1 P1 progress
 

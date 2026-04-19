@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { logAnalyticsEvent } from '@/lib/db/queries/analytics'
+import { createLogger } from '@/lib/logger'
+
+const log = createLogger('api.analytics-track')
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -65,7 +68,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true }, { headers: CORS_HEADERS })
   } catch (err) {
-    console.error('[Analytics Track] Error:', err)
+    log.error('Error:', { error: err })
     return NextResponse.json({ error: 'Internal error' }, { status: 500, headers: CORS_HEADERS })
   }
 }

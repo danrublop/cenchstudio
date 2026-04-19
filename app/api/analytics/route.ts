@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import fs from 'fs'
 import path from 'path'
+import { createLogger } from '@/lib/logger'
+
+const log = createLogger('api.analytics')
 
 const DB_DIR = path.join(process.cwd(), 'data')
 const DB_PATH = path.join(DB_DIR, 'analytics.json')
@@ -50,7 +53,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true })
   } catch (err: unknown) {
-    console.error('Analytics error:', err)
+    log.error('Analytics error:', { error: err })
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })
   }
 }
@@ -108,7 +111,7 @@ export async function GET(req: NextRequest) {
       totalEvents: events.length,
     })
   } catch (err: unknown) {
-    console.error('Analytics GET error:', err)
+    log.error('Analytics GET error:', { error: err })
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })
   }
 }

@@ -539,36 +539,21 @@ async function init() {
     Promise.resolve(addPanel(p.html, p.position, p.rotation, p.width || 3.6, p.height || 2.2))
   )
 
-  // Avatar placeholder — load GLB models for avatars
-  // TODO: Integrate TalkingHead avatar system when available
-  const avatarPromises = avatarsCfg.map(async (av) => {
-    if (av.glbUrl) {
-      return new Promise((resolve) => {
-        gltfLoader.load(av.glbUrl, (gltf) => {
-          const model = gltf.scene
-          model.position.set(...(av.position || [1.5, 0, -2]))
-          model.rotation.set(...(av.rotation || [0, 0, 0]))
-          model.scale.setScalar(av.scale || 1)
-          model.traverse(c => {
-            if (c.isMesh) { c.castShadow = true; c.receiveShadow = true }
-          })
-          scene.add(model)
-          if (gltf.animations && gltf.animations.length > 0) {
-            const mixer = new THREE.AnimationMixer(model)
-            mixers.push(mixer)
-            gltf.animations.forEach(clip => mixer.clipAction(clip).play())
-          }
-          const id = av.glbUrl.split('/').pop().replace('.glb', '')
-          loadedAvatars[id] = model
-          resolve(model)
-        }, undefined, (err) => {
-          console.warn('Failed to load avatar:', err)
-          resolve(null)
-        })
-      })
-    }
-    return null
-  })
+  // Avatar layers render as TalkingHead PIP overlays on the canvas wrapper.
+  // The worlds own their own Three.js scene, so embedding TalkingHead's
+  // renderer directly would fight for the GL context. Overlay is the same
+  // pattern sceneTemplate.ts uses for PIP avatars in 2D scenes.
+  const { createWorldAvatar } = await import('/worlds/world-avatar-overlay.js')
+  const avatarPromises = avatarsCfg.map((av, i) =>
+    createWorldAvatar(document.body, av, tl, {
+      ttsEndpoint: cfg.ttsEndpoint || null,
+      duration: window.DURATION || 10,
+      index: i,
+    }).then((handle) => {
+      if (handle) loadedAvatars[`avatar-${i}`] = handle
+      return handle
+    }),
+  )
 
   await Promise.all([...assetPromises, ...panelPromises, ...avatarPromises])
 

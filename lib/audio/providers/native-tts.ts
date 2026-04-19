@@ -5,6 +5,10 @@ import path from 'path'
 import os from 'os'
 import type { TTSProviderInterface, TTSParams, TTSResult, Voice } from '../types'
 import { safeAudioFilename } from '../sanitize'
+import { getAudioDir, audioUrlFor } from '../paths'
+import { createLogger } from '../../logger'
+
+const log = createLogger('audio.native-tts')
 
 const execFileAsync = promisify(execFile)
 
@@ -17,7 +21,7 @@ function sanitizeVoiceId(id: string): string {
   // Real voice names are alphanumeric with spaces, hyphens, periods, and underscores
   const cleaned = id.replace(/[^a-zA-Z0-9 \-_.]/g, '')
   if (cleaned !== id) {
-    console.warn(`[native-tts] Stripped unsafe characters from voiceId: "${id}" -> "${cleaned}"`)
+    log.warn('stripped unsafe characters from voiceId', { extra: { from: id, to: cleaned } })
   }
   return cleaned
 }
@@ -135,7 +139,7 @@ export const nativeTTS: TTSProviderInterface = {
       throw new Error('Native TTS is only available on macOS and Windows')
     }
 
-    const audioDir = path.join(process.cwd(), 'public', 'audio')
+    const audioDir = getAudioDir()
     await fs.mkdir(audioDir, { recursive: true })
     const filename = safeAudioFilename('tts', params.sceneId, 'mp3')
     const outMp3 = path.join(audioDir, filename)
@@ -143,7 +147,7 @@ export const nativeTTS: TTSProviderInterface = {
     const duration = platform === 'darwin' ? await generateMac(params, outMp3) : await generateWin(params, outMp3)
 
     return {
-      audioUrl: `/audio/${filename}`,
+      audioUrl: audioUrlFor(filename),
       duration,
       provider: 'native-tts',
     }

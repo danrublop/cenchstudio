@@ -57,11 +57,6 @@ export async function buildZzfxWavObjectUrl(preset: ZzfxSfxPreset): Promise<{
 }
 
 export async function uploadAudioBlob(blob: Blob, filename: string): Promise<string> {
-  const form = new FormData()
-  form.append('file', blob, filename)
-  const res = await fetch('/api/upload', { method: 'POST', body: form })
-  if (!res.ok) throw new Error('Upload failed')
-  const data = (await res.json()) as { url?: string }
-  if (!data.url) throw new Error('Upload response missing url')
-  return data.url
+  const { uploadBlob } = await import('@/lib/upload')
+  return uploadBlob(blob, filename)
 }

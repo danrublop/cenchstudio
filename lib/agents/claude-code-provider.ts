@@ -13,6 +13,9 @@ import { spawn, type ChildProcess } from 'child_process'
 import { v4 as uuidv4 } from 'uuid'
 import path from 'path'
 import fs from 'fs/promises'
+import { createLogger } from '../logger'
+
+const log = createLogger('agent.claude-code')
 import os from 'os'
 import type { SSEEvent, UsageStats, ToolCallRecord, ToolResult } from './types'
 
@@ -221,9 +224,12 @@ export async function runWithClaudeCode(opts: ClaudeCodeOptions): Promise<Claude
       // Logging only the flag (not full args — those include the prompt text).
       const allowedToolsIdx = args.indexOf('--allowedTools')
       const allowedToolsValue = allowedToolsIdx >= 0 ? args[allowedToolsIdx + 1] : '(missing)'
-      console.error(
-        `[claude-code-provider] spawning claude --model ${model} --allowedTools="${allowedToolsValue.slice(0, 300)}${allowedToolsValue.length > 300 ? '…' : ''}"`,
-      )
+      log.info('spawning claude CLI', {
+        extra: {
+          model,
+          allowedTools: allowedToolsValue.slice(0, 300) + (allowedToolsValue.length > 300 ? '…' : ''),
+        },
+      })
       proc = spawn('claude', args, {
         cwd,
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -499,7 +505,7 @@ export async function runWithClaudeCode(opts: ClaudeCodeOptions): Promise<Claude
     proc.stderr?.on('data', (chunk: Buffer) => {
       const text = chunk.toString().trim()
       if (text) {
-        console.error('[claude-code-provider] stderr:', text)
+        log.error('stderr from claude CLI', { extra: { text } })
       }
     })
 
@@ -517,14 +523,14 @@ export async function runWithClaudeCode(opts: ClaudeCodeOptions): Promise<Claude
       // Fetch final scene state from DB and emit a state_change so the client
       // gets an authoritative sync (MCP tools persist each call to DB).
       if (scenesCreated > 0) {
-        console.log(`[claude-code-provider] Fetching final state for ${scenesCreated} created scenes`)
+        log.debug('fetching final state for created scenes', { extra: { scenesCreated } })
         try {
           const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
           const listRes = await fetch(`${baseUrl}/api/scene?projectId=${projectId}`)
           if (listRes.ok) {
             const listData = await listRes.json()
             const sceneIds: string[] = (listData.scenes ?? []).map((s: any) => s.id)
-            console.log(`[claude-code-provider] Found ${sceneIds.length} scenes in project`)
+            log.debug('found scenes in project', { extra: { count: sceneIds.length } })
             if (sceneIds.length > 0) {
               // Fetch full scene data for each scene (includes code, HTML, audio)
               const fullScenes = await Promise.all(
@@ -540,7 +546,7 @@ export async function runWithClaudeCode(opts: ClaudeCodeOptions): Promise<Claude
                 }),
               )
               const validScenes = fullScenes.filter(Boolean)
-              console.log(`[claude-code-provider] Emitting final state_change with ${validScenes.length} scenes`)
+              log.debug('emitting final state_change', { extra: { scenes: validScenes.length } })
               if (validScenes.length > 0) {
                 emit({
                   type: 'state_change',
@@ -551,10 +557,10 @@ export async function runWithClaudeCode(opts: ClaudeCodeOptions): Promise<Claude
               }
             }
           } else {
-            console.warn(`[claude-code-provider] Scene list fetch failed: ${listRes.status}`)
+            log.warn('scene list fetch failed', { extra: { status: listRes.status } })
           }
         } catch (e) {
-          console.error('[claude-code-provider] Failed to fetch final state for sync:', e)
+          log.error('failed to fetch final state for sync', { error: e })
         }
       }
 

@@ -12,7 +12,8 @@ export function useTimelineZoom(
   /** Pixels reserved for non-scrollable UI (e.g. track headers) */
   reservedWidth: number = 0,
 ) {
-  const { timelineZoom, timelineScrollX, setTimelineZoom, setTimelineScrollX } = useVideoStore()
+  const { timelineZoom, timelineScrollX, setTimelineZoom, setTimelineScrollX, setTimelineFollowPaused } =
+    useVideoStore()
 
   const [containerWidth, setContainerWidth] = useState(1)
 
@@ -32,15 +33,15 @@ export function useTimelineZoom(
 
   // Usable width for timeline content (subtract track headers etc.)
   const usableWidth = Math.max(1, containerWidth - reservedWidth)
-  
+
   // Use a 'working duration' that provides plenty of room beyond the actual content
   const contentDuration = Math.max(totalDuration, 0.1)
   const workingDuration = Math.max(contentDuration + 600, contentDuration * 2) // At least 10 mins extra or 2x
-  
+
   // Allow zooming out much further than just 'fit all'
-  const minPPS = 0.1 
+  const minPPS = 0.1
   const pps = timelineZoom === 0 ? 20 : clamp(timelineZoom, minPPS, MAX_PPS)
-  
+
   const totalWidth = Math.max(usableWidth, workingDuration * pps)
   const maxScrollX = Math.max(0, totalWidth - usableWidth)
 
@@ -109,12 +110,16 @@ export function useTimelineZoom(
       } else {
         // Horizontal scroll (both no-modifier and shift)
         const delta = e.shiftKey ? e.deltaY : e.deltaY
-        setTimelineScrollX(clamp(timelineScrollX + delta, 0, maxScrollX))
+        const next = clamp(timelineScrollX + delta, 0, maxScrollX)
+        if (next !== timelineScrollX) {
+          setTimelineFollowPaused(true)
+          setTimelineScrollX(next)
+        }
       }
     }
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)
-  }, [containerRef, pps, timelineScrollX, maxScrollX, zoomAtCursor, setTimelineScrollX])
+  }, [containerRef, pps, timelineScrollX, maxScrollX, zoomAtCursor, setTimelineScrollX, setTimelineFollowPaused])
 
   return { pps, totalWidth, maxScrollX, containerWidth, usableWidth, minPPS, zoomAtCursor, zoomIn, zoomOut, fitAll }
 }

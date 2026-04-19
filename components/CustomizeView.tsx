@@ -302,12 +302,18 @@ function SkillsSection() {
     setLoadingFile(true)
     setFileContent(null)
     try {
-      const res = await fetch(`/api/skills?source=${skill.source}&file=${encodeURIComponent(file)}`)
-      if (res.ok) {
-        const data = await res.json()
+      const ipc = typeof window !== 'undefined' ? window.cenchApi?.skills : undefined
+      if (ipc) {
+        const data = await ipc.readFile({ source: skill.source, file })
         setFileContent(data.content)
       } else {
-        setFileContent('Failed to load file.')
+        const res = await fetch(`/api/skills?source=${skill.source}&file=${encodeURIComponent(file)}`)
+        if (res.ok) {
+          const data = await res.json()
+          setFileContent(data.content)
+        } else {
+          setFileContent('Failed to load file.')
+        }
       }
     } catch {
       setFileContent('Failed to load file.')

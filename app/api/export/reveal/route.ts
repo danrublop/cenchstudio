@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { execFile } from 'child_process'
 import path from 'path'
 import fs from 'fs'
+import { createLogger } from '@/lib/logger'
+
+const log = createLogger('api.export-reveal')
 
 export async function POST(req: NextRequest) {
   try {
@@ -42,7 +45,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true })
   } catch (err: unknown) {
-    console.error('Reveal error:', err)
+    log.error('Reveal error:', { error: err })
     const message = err instanceof Error ? err.message : 'Failed to reveal file'
     return NextResponse.json({ error: message }, { status: 500 })
   }

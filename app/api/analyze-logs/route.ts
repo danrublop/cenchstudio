@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { getLogsForAnalysis } from '@/lib/db/queries/generation-logs'
 import { getOptionalUser } from '@/lib/auth-helpers'
+import { createLogger } from '@/lib/logger'
+
+const log = createLogger('api.analyze-logs')
 
 const client = new Anthropic()
 
@@ -76,7 +79,7 @@ ${JSON.stringify(logs, null, 2)}`,
       logsAnalyzed: logs.length,
     })
   } catch (error) {
-    console.error('[analyze-logs] Error:', error)
+    log.error('Error:', { error: error })
     return NextResponse.json({ error: 'Log analysis failed' }, { status: 500 })
   }
 }

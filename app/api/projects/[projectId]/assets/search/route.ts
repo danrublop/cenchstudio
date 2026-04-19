@@ -3,6 +3,9 @@ import { db } from '@/lib/db'
 import { projectAssets } from '@/lib/db/schema'
 import { and, eq, desc, sql } from 'drizzle-orm'
 import { assertProjectAccess } from '@/lib/auth-helpers'
+import { createLogger } from '@/lib/logger'
+
+const log = createLogger('api.assets-search')
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -47,7 +50,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ proj
       .limit(limit)
     return NextResponse.json({ assets: rows, count: rows.length })
   } catch (err) {
-    console.error('[assets-search] error:', err)
+    log.error('error:', { error: err })
     return NextResponse.json({ error: 'Search failed' }, { status: 500 })
   }
 }

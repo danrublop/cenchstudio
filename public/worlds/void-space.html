@@ -497,13 +497,19 @@ async function init() {
     addPanel(p.html || '', pos, p.rotation, p.widthM ?? p.width, p.heightM ?? p.height);
   });
 
-  // Avatar placeholder
-  // TalkingHead avatar integration would go here.
-  // For now, avatars from config are logged.
+  // Avatar layers render as TalkingHead PIP overlays. See
+  // public/worlds/world-avatar-overlay.js for the rationale.
   const loadedAvatars = [];
   if (configAvatars.length > 0) {
-    console.log('Avatar config received:', configAvatars);
-    // Future: instantiate TalkingHead or avatar meshes here
+    const { createWorldAvatar } = await import('/worlds/world-avatar-overlay.js');
+    for (let i = 0; i < configAvatars.length; i++) {
+      const handle = await createWorldAvatar(document.body, configAvatars[i], tl, {
+        ttsEndpoint: config.ttsEndpoint || null,
+        duration: window.DURATION || 10,
+        index: i,
+      });
+      if (handle) loadedAvatars.push(handle);
+    }
   }
 
   // Notify world setup callback

@@ -44,6 +44,7 @@ const BRIDGE_SCENE_TYPES = new Set(['canvas2d', 'd3', 'three', 'motion', 'zdog']
 
 export interface SceneBridge {
   seekAndCopy: (timeSec: number) => Promise<void>
+  setMuted: (muted: boolean) => void
   dispose: () => void
 }
 
@@ -287,6 +288,13 @@ export async function createSceneBridge(
     texture.update()
   }
 
+  const setMuted = (muted: boolean) => {
+    iframe.contentWindow?.postMessage(
+      { target: 'cench-scene', sceneId: config.sceneId ?? null, type: muted ? 'scrub_start' : 'scrub_end' },
+      '*',
+    )
+  }
+
   const dispose = () => {
     try {
       iframe.remove()
@@ -294,7 +302,7 @@ export async function createSceneBridge(
   }
 
   onLog?.(`scene bridge initialized for type: ${sceneType}`)
-  return { bridge: { seekAndCopy, dispose }, sprite, texture }
+  return { bridge: { seekAndCopy, setMuted, dispose }, sprite, texture }
 }
 
 // ── Camera motion ────────────────────────────────────────────────────────────

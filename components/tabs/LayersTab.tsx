@@ -75,6 +75,7 @@ import {
   patchThreeEnvironmentInSceneCode,
 } from '@/lib/three-environments/patch-scene-code-environment'
 import { buildThreeEnvironmentShowcaseSceneCode } from '@/lib/threeEnvironmentShowcaseScenes'
+import { uploadBlob } from '@/lib/upload'
 
 const CAMERA_MOVE_TYPES: CameraMove['type'][] = [
   'presetReveal',
@@ -379,12 +380,7 @@ function CollapsibleSection({
 }
 
 async function uploadFile(file: File): Promise<string> {
-  const form = new FormData()
-  form.append('file', file)
-  const res = await fetch('/api/upload', { method: 'POST', body: form })
-  if (!res.ok) throw new Error('Upload failed')
-  const { url } = await res.json()
-  return url
+  return uploadBlob(file, file.name)
 }
 
 export default function LayersTab({

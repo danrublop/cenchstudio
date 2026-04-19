@@ -1,11 +1,15 @@
 import fs from 'fs/promises'
 import path from 'path'
+import { getAudioDir } from './paths'
+import { createLogger } from '../logger'
+
+const log = createLogger('audio.cleanup')
 
 /** Default max age for audio files: 24 hours */
 const DEFAULT_MAX_AGE_MS = 24 * 60 * 60 * 1000
 
 /**
- * Clean up old audio files from public/audio/ to prevent unbounded disk growth.
+ * Clean up old audio files to prevent unbounded disk growth.
  * Deletes files older than maxAgeMs. Skips non-audio files.
  *
  * Call this periodically (e.g., on server startup or via a cron endpoint).
@@ -14,7 +18,7 @@ export async function cleanupAudioFiles(maxAgeMs: number = DEFAULT_MAX_AGE_MS): 
   deleted: number
   errors: number
 }> {
-  const audioDir = path.join(process.cwd(), 'public', 'audio')
+  const audioDir = getAudioDir()
   const now = Date.now()
   let deleted = 0
   let errors = 0
@@ -46,7 +50,7 @@ export async function cleanupAudioFiles(maxAgeMs: number = DEFAULT_MAX_AGE_MS): 
   }
 
   if (deleted > 0) {
-    console.log(`[audio-cleanup] Deleted ${deleted} old audio files${errors > 0 ? ` (${errors} errors)` : ''}`)
+    log.info('deleted old audio files', { extra: { deleted, errors } })
   }
 
   return { deleted, errors }

@@ -13,6 +13,9 @@
 
 import { v4 as uuidv4 } from 'uuid'
 import fs from 'fs/promises'
+import { createLogger } from '../logger'
+
+const log = createLogger('agent.tool-executor')
 import path from 'path'
 import type { Scene, GlobalStyle, SceneType, APIPermissions, SceneGraph, ZdogPersonAsset } from '../types'
 import type { ToolResult, StateSnapshot } from './types'
@@ -1623,7 +1626,7 @@ function ensureRegistryCoverage(): void {
     throw new Error(`Tool registry missing explicit handlers for canonical tools: ${unresolved.join(', ')}`)
   }
   if (process.env.NODE_ENV !== 'production' && !registryCoverageLogged) {
-    console.info(`[ToolRegistry] All ${CANONICAL_TOOL_NAMES.size} canonical tools are explicitly registered.`)
+    log.debug('all canonical tools explicitly registered', { extra: { count: CANONICAL_TOOL_NAMES.size } })
     registryCoverageLogged = true
   }
   registryCoverageChecked = true
@@ -1785,7 +1788,7 @@ async function regenerateHTML(
     return { htmlWritten: true }
   } catch (e) {
     logger?.error('html', `HTML regeneration failed for ${sceneId}: ${(e as Error).message}`)
-    console.error('[ToolExecutor] HTML regeneration failed:', e)
+    log.error('HTML regeneration failed', { error: e })
     return { htmlWritten: false }
   }
 }

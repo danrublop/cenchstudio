@@ -1,6 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { saveToCache } from '@/lib/apis/media-cache'
-import { logSpend } from '@/lib/db'
 import { firstConfiguredVideoProvider, getVideoProvider } from '@/lib/apis/video/registry'
 import { db } from '@/lib/db'
 import { projects as projectsTable } from '@/lib/db/schema'
@@ -14,6 +12,9 @@ import {
 } from '@/lib/permissions'
 import type { APIName, APIPermissions } from '@/lib/types'
 import { reserveSpend } from '@/lib/agents/budget-tracker'
+import { createLogger } from '@/lib/logger'
+
+const log = createLogger('api.generate-video')
 
 function requireProvider(id: string | undefined | null) {
   if (!id || id === 'auto') {
@@ -148,58 +149,36 @@ export async function POST(req: NextRequest) {
       layerId,
     })
   } catch (error: any) {
-    console.error('Video generation error:', error)
+    log.error('Video generation error:', { error: error })
     return NextResponse.json({ error: error?.message ?? 'Video generation failed' }, { status: 500 })
   }
 }
 
+// GET: poll for video generation status — thin wrapper around
+// `pollVideoStatus` in `lib/services/generation.ts`.
 export async function GET(req: NextRequest) {
   const operationName = req.nextUrl.searchParams.get('operationName')
-  const projectId = req.nextUrl.searchParams.get('projectId')
-  const prompt = req.nextUrl.searchParams.get('prompt')
-  const providerId = req.nextUrl.searchParams.get('provider')
-  const reservationId = req.nextUrl.searchParams.get('reservationId')
   if (!operationName) {
     return NextResponse.json({ error: 'operationName is required' }, { status: 400 })
   }
-
-  const { error, provider } = requireProvider(providerId)
-  if (error || !provider) {
-    return NextResponse.json({ error: error ?? 'Provider not available' }, { status: 503 })
-  }
-
+  // Hoist the service import so the catch block can instanceof-check without
+  // a second `await import`. Node's module cache would make the second cheap,
+  // but the pattern reads awkward.
+  const svc = await import('@/lib/services/generation')
   try {
-    const result = await provider.pollStatus(operationName)
-
-    if (result.done && result.videoUri) {
-      const buffer = await provider.download(result.videoUri)
-      const publicPath = await saveToCache(provider.id, { operationName }, buffer, 'mp4')
-
-      if (projectId) {
-        const api = providerToApiName(provider.id)
-        await logSpend(
-          projectId,
-          api ?? provider.id,
-          provider.costPerCallUsd,
-          `${provider.name}: ${(prompt || '').slice(0, 100)}`,
-          reservationId ?? undefined,
-        )
-      }
-
-      return NextResponse.json({
-        done: true,
-        videoUrl: publicPath,
-        provider: provider.id,
-      })
+    const result = await svc.pollVideoStatus({
+      operationName,
+      projectId: req.nextUrl.searchParams.get('projectId') ?? undefined,
+      prompt: req.nextUrl.searchParams.get('prompt') ?? undefined,
+      providerId: req.nextUrl.searchParams.get('provider') ?? undefined,
+      reservationId: req.nextUrl.searchParams.get('reservationId') ?? undefined,
+    })
+    return NextResponse.json(result)
+  } catch (err) {
+    if (err instanceof svc.GenerationValidationError) {
+      return NextResponse.json({ error: err.message }, { status: 400 })
     }
-
-    if (result.done && result.error) {
-      return NextResponse.json({ done: true, error: result.error, provider: provider.id })
-    }
-
-    return NextResponse.json({ done: false, provider: provider.id })
-  } catch (error: any) {
-    console.error(`${provider.name} status poll error:`, error)
-    return NextResponse.json({ error: error?.message ?? 'Failed to check status' }, { status: 500 })
+    log.error('Video status poll error:', { error: err })
+    return NextResponse.json({ error: (err as Error)?.message ?? 'Failed to check status' }, { status: 500 })
   }
 }

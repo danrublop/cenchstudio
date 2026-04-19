@@ -313,7 +313,6 @@ Built-in hooks: scene existence validation, duration range check (2-60s), slow t
 | POST   | `/api/generate-three`  | prompt, palette  | { sceneCode }                        |
 | POST   | `/api/generate-motion` | prompt, palette  | { sceneCode, styles, htmlContent }   |
 | POST   | `/api/generate-lottie` | prompt, palette  | Lottie JSON                          |
-| POST   | `/api/generate-zdog`   | prompt, palette  | Zdog JS                              |
 | POST   | `/api/generate-image`  | prompt, provider | Image URL                            |
 | POST   | `/api/generate-video`  | prompt           | Veo3 video URL                       |
 | POST   | `/api/generate-avatar` | script, config   | Avatar video URL                     |

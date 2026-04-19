@@ -28,15 +28,17 @@ The JSX is transpiled in-browser via Babel. No imports needed — all APIs are a
 
 ### Core hooks & components
 
-| API                                                                    | Purpose                                                       |
-| ---------------------------------------------------------------------- | ------------------------------------------------------------- |
-| `useCurrentFrame()`                                                    | Returns integer frame number (0, 1, 2, ...)                   |
-| `useVideoConfig()`                                                     | Returns `{ fps, width, height, durationInFrames }`            |
-| `interpolate(value, inputRange, outputRange, opts?)`                   | Map values between ranges                                     |
-| `spring({ frame, fps, config?, from?, to? })`                          | Physics-based spring animation                                |
-| `Easing.ease / .easeIn / .easeOut / .easeInOut / .bezier(x1,y1,x2,y2)` | Easing functions for interpolate                              |
-| `<Sequence from={frame} durationInFrames={n}>`                         | Temporal composition — children see local frame starting at 0 |
-| `<AbsoluteFill style={{...}}>`                                         | Full-frame (WIDTH×HEIGHT) absolute layer, stacks via z-index  |
+| API                                                                    | Purpose                                                                                     |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `useCurrentFrame()`                                                    | Returns integer frame number (0, 1, 2, ...)                                                 |
+| `useVideoConfig()`                                                     | Returns `{ fps, width, height, durationInFrames }`                                          |
+| `interpolate(value, inputRange, outputRange, opts?)`                   | Map values between ranges                                                                   |
+| `spring({ frame, fps, config?, from?, to? })`                          | Physics-based spring animation                                                              |
+| `Easing.ease / .easeIn / .easeOut / .easeInOut / .bezier(x1,y1,x2,y2)` | Easing functions for interpolate                                                            |
+| `<Sequence from={frame} durationInFrames={n}>`                         | Temporal composition — children see local frame starting at 0                               |
+| `<AbsoluteFill style={{...}}>`                                         | Full-frame (WIDTH×HEIGHT) absolute layer, stacks via z-index                                |
+| `useCenchSeek(cb)`                                                     | Fire `cb(timeSec)` on every seek/scrub — for animations that live outside the GSAP timeline |
+| `useCenchTime()`                                                       | Current scene time in seconds, synced with playback + scrub                                 |
 
 ### Bridge components (for imperative renderers)
 

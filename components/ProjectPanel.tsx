@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useVideoStore } from '@/lib/store'
-import { Plus, ChevronDown, Package2, MoreHorizontal, Briefcase } from 'lucide-react'
+import { ChevronDown, MoreHorizontal, Plus } from 'lucide-react'
 import type { WorkspaceListItem } from '@/lib/types'
 
 interface ProjectListItem {
@@ -151,6 +151,7 @@ export default function ProjectPanel({ onClose }: { onClose: () => void }) {
     fetchWorkspaces,
     moveProjectToWorkspace,
     setCenterTab,
+    openNewProjectModal,
   } = useVideoStore()
 
   const [projects, setProjects] = useState<ProjectListItem[]>([])
@@ -162,10 +163,11 @@ export default function ProjectPanel({ onClose }: { onClose: () => void }) {
   const fetchProjects = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch('/api/projects')
-      if (res.ok) {
-        const list = await res.json()
-        setProjects(list)
+      const ipc = typeof window !== 'undefined' ? window.cenchApi?.projects : undefined
+      const raw = ipc ? await ipc.list() : await fetch('/api/projects').then((r) => (r.ok ? r.json() : null))
+      if (raw) {
+        const list = Array.isArray(raw) ? raw : ((raw as { items?: unknown[] }).items ?? [])
+        setProjects(list as Parameters<typeof setProjects>[0])
       }
     } catch {
     } finally {
@@ -199,10 +201,6 @@ export default function ProjectPanel({ onClose }: { onClose: () => void }) {
     }
     fetchProjects()
     fetchWorkspaces()
-  }
-
-  const handleCreate = async () => {
-    await createNewProject()
   }
 
   const handleSelect = async (id: string) => {
@@ -283,58 +281,18 @@ export default function ProjectPanel({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="px-4 pt-1 pb-4">
-          {/* Workspaces button */}
-          <div
-            onClick={handleCreate}
-            className="group flex items-center gap-2 px-2 py-1.5 mb-0 rounded-lg hover:bg-[var(--color-panel)]/50 cursor-pointer transition-colors"
-          >
-            <span className="flex items-center justify-center w-6 h-6 shrink-0">
-              <span className="flex items-center justify-center w-6 h-6 rounded-full bg-[color:color-mix(in_srgb,var(--color-text-muted)_22%,var(--color-bg))] group-hover:bg-[color:color-mix(in_srgb,var(--color-text-muted)_32%,var(--color-bg))] transition-colors">
-                <Plus
-                  size={16}
-                  className="text-[var(--color-text-secondary)] group-hover:text-[var(--color-text-primary)] transition-colors"
-                />
-              </span>
-            </span>
-            <span className="text-[15px] font-medium text-[var(--color-text-secondary)] opacity-80 group-hover:opacity-100 group-hover:text-[var(--color-text-primary)] transition-colors flex-1">
-              New project
-            </span>
-          </div>
-
-          <div
-            onClick={() => setCenterTab('workspace')}
-            className="group flex items-center gap-2 px-2 py-1.5 mb-0 rounded-lg hover:bg-[var(--color-panel)]/50 cursor-pointer transition-colors"
-          >
-            <span className="flex items-center justify-center w-6 h-6 shrink-0">
-              <Package2
-                size={16}
-                className="text-[var(--color-text-muted)] group-hover:text-[var(--color-text-secondary)] transition-colors"
-              />
-            </span>
-            <span className="text-[15px] font-medium text-[var(--color-text-secondary)] opacity-80 group-hover:opacity-100 group-hover:text-[var(--color-text-primary)] transition-colors flex-1">
-              Workspaces
-            </span>
-          </div>
-
-          {/* Customize button */}
-          <div
-            onClick={() => setCenterTab('customize')}
-            className="group flex items-center gap-2 px-2 py-1.5 mb-4 rounded-lg hover:bg-[var(--color-panel)]/50 cursor-pointer transition-colors"
-          >
-            <span className="flex items-center justify-center w-6 h-6 shrink-0">
-              <Briefcase
-                size={16}
-                className="text-[var(--color-text-muted)] group-hover:text-[var(--color-text-secondary)] transition-colors"
-              />
-            </span>
-            <span className="text-[15px] font-medium text-[var(--color-text-secondary)] opacity-80 group-hover:opacity-100 group-hover:text-[var(--color-text-primary)] transition-colors flex-1">
-              Customize
-            </span>
-          </div>
-
           {/* Recents */}
           <div className="flex items-center justify-between mb-0 px-2">
             <span className="text-sm font-semibold text-[var(--color-text-muted)]">Recents</span>
+            <button
+              onClick={openNewProjectModal}
+              aria-label="New project"
+              data-tooltip="New project"
+              data-tooltip-pos="left"
+              className="no-style flex items-center justify-center w-7 h-7 rounded-full text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-[color:color-mix(in_srgb,var(--color-text-muted)_22%,var(--color-bg))] transition-colors"
+            >
+              <Plus size={16} />
+            </button>
           </div>
 
           {loading ? (

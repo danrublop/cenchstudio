@@ -6,6 +6,9 @@
 
 import { ALL_TOOLS } from './tools'
 import type { ClaudeToolDefinition } from './types'
+import { createLogger } from '../logger'
+
+const log = createLogger('agent.mcp-adapter')
 
 const BASE_URL = process.env.CENCH_STUDIO_URL || 'http://localhost:3000'
 
@@ -185,9 +188,9 @@ export async function executeToolCall(
     if (!shouldRetry) break
     // Exponential-ish backoff with a small jitter.
     const waitMs = 400 * attempt + Math.floor(Math.random() * 250)
-    console.warn(
-      `[mcp-adapter] ${toolName} attempt ${attempt} failed (transient: ${result.error?.slice(0, 120)}); retrying in ${waitMs}ms`,
-    )
+    log.warn('transient tool failure, retrying', {
+      extra: { toolName, attempt, error: result.error?.slice(0, 120), waitMs },
+    })
     await new Promise((r) => setTimeout(r, waitMs))
   }
 

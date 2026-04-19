@@ -1,4 +1,7 @@
 import { z } from 'zod'
+import { createLogger } from './logger'
+
+const log = createLogger('env')
 
 /**
  * Server-side environment variables schema.
@@ -36,10 +39,12 @@ const serverSchema = z.object({
   CLOUD_STORAGE_ENDPOINT: z.string().default(''),
 
   // ── Auth (Auth.js / NextAuth) ──────────────────────────
-  NEXTAUTH_SECRET: z.string().refine(
-    (val) => process.env.NODE_ENV !== 'production' || val.length > 0,
-    { message: 'NEXTAUTH_SECRET is required in production' },
-  ).default(''),
+  NEXTAUTH_SECRET: z
+    .string()
+    .refine((val) => process.env.NODE_ENV !== 'production' || val.length > 0, {
+      message: 'NEXTAUTH_SECRET is required in production',
+    })
+    .default(''),
   NEXTAUTH_URL: z.string().default('http://localhost:3000'),
   GOOGLE_CLIENT_ID: z.string().default(''),
   GOOGLE_CLIENT_SECRET: z.string().default(''),
@@ -63,13 +68,13 @@ function validateEnv() {
 
   if (!serverResult.success) {
     const formatted = serverResult.error.flatten().fieldErrors
-    console.error('Invalid server environment variables:', formatted)
+    log.error('invalid server environment variables', { extra: { formatted } })
     throw new Error(`Invalid environment variables: ${Object.keys(formatted).join(', ')}`)
   }
 
   if (!clientResult.success) {
     const formatted = clientResult.error.flatten().fieldErrors
-    console.error('Invalid client environment variables:', formatted)
+    log.error('invalid client environment variables', { extra: { formatted } })
     throw new Error(`Invalid environment variables: ${Object.keys(formatted).join(', ')}`)
   }
 

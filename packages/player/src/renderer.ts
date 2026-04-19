@@ -84,6 +84,31 @@ export class Renderer {
     }
   }
 
+  /** Seek the currently loaded scene to `time` seconds. Routed to the
+   * scene's playback-controller via postMessage so GSAP, raw anime.js,
+   * lottie, and scrub-registered callbacks all pick up the new position. */
+  seek(time: number): void {
+    try {
+      this.iframe.contentWindow?.postMessage({ target: 'cench-scene', type: 'seek', time }, '*')
+      // Nudge SVG/media that don't listen on postMessage
+      const doc = this.iframe.contentDocument
+      if (doc) {
+        doc.querySelectorAll<SVGSVGElement>('svg').forEach((svg) => {
+          try {
+            ;(svg as any).setCurrentTime?.(time)
+          } catch {}
+        })
+        doc.querySelectorAll<HTMLMediaElement>('audio, video').forEach((m) => {
+          try {
+            m.currentTime = time
+          } catch {}
+        })
+      }
+    } catch {
+      /* cross-origin iframe access may throw */
+    }
+  }
+
   destroy(): void {
     this.iframe.remove()
   }

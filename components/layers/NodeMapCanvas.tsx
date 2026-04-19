@@ -9,8 +9,10 @@ import {
   Image as ImageIcon,
   Layers,
   LayoutTemplate,
+  Minus,
   Music,
   Paintbrush,
+  Plus,
   Type,
   User,
   Variable,
@@ -48,6 +50,44 @@ export interface NodeMapEntry {
   label: string
   kind: string
   ring: 'center' | 'inner' | 'outer'
+  /** Category column for the hierarchical layout. */
+  group: NodeGroup
+}
+
+export type NodeGroup = 'content' | 'text' | 'interaction' | 'bridge' | 'audio' | 'world' | 'meta'
+
+const GROUP_ORDER: NodeGroup[] = ['content', 'text', 'interaction', 'bridge', 'audio', 'world', 'meta']
+
+const GROUP_LABELS: Record<NodeGroup, string> = {
+  content: 'Visual content',
+  text: 'Text',
+  interaction: 'Interactions',
+  bridge: 'Bridges',
+  audio: 'Audio',
+  world: '3D world',
+  meta: 'Scene props',
+}
+
+function groupForKind(kind: string): NodeGroup {
+  if (kind === 'text' || kind === 'rx_heading' || kind === 'rx_paragraph' || kind === 'rx_text') return 'text'
+  if (kind === 'interaction') return 'interaction'
+  if (kind === 'tts' || kind === 'music' || kind === 'sfx' || kind === 'audio') return 'audio'
+  if (kind === '3d_env' || kind === '3d_obj' || kind === '3d_panel' || kind === '3d_avatar' || kind === '3d_camera')
+    return 'world'
+  if (kind === 'camera' || kind === 'transition' || kind === 'style' || kind === 'variables' || kind === 'bg')
+    return 'meta'
+  if (kind === 'rx_three' || kind === 'rx_canvas2d' || kind === 'rx_d3' || kind === 'rx_svg' || kind === 'rx_lottie')
+    return 'bridge'
+  // svg, ai, chart, physics, video, rx_image → content column
+  return 'content'
+}
+
+function sceneHasOwnBackground(scene: Scene): boolean {
+  // 3D worlds + Three.js environment presets manage their own background/sky.
+  // Don't surface the flat bg node in those contexts — it's misleading.
+  if (scene.worldConfig) return true
+  if (scene.threeEnvironmentPresetId) return true
+  return false
 }
 
 // ── Color mapping per kind ───────────────────────────────────────────────────
@@ -95,13 +135,19 @@ function colorForKind(kind: string): string {
 
 export function buildNodeList(scene: Scene): NodeMapEntry[] {
   const nodes: NodeMapEntry[] = []
+  const hasOwnBg = sceneHasOwnBackground(scene)
+
+  const push = (entry: Omit<NodeMapEntry, 'group'>) => {
+    nodes.push({ ...entry, group: groupForKind(entry.kind) })
+  }
 
   const stackKeys = buildDefaultOrder(scene)
   for (const k of stackKeys) {
     const { kind } = parseLayerStackKey(k)
     if (k === 'audio') continue
     if (kind === 'rx') continue // handled by extraction loop below
-    nodes.push({
+    if (kind === 'bg' && hasOwnBg) continue // 3D worlds / env presets manage their own background
+    push({
       key: k,
       label: labelForKey(scene, k),
       kind,
@@ -113,46 +159,46 @@ export function buildNodeList(scene: Scene): NodeMapEntry[] {
   if (a) {
     if (a.tts?.text?.trim() || a.tts?.status === 'generating' || a.tts?.status === 'ready') {
       const preview = (a.tts.text ?? '').trim().slice(0, 24)
-      nodes.push({ key: 'tts', label: preview ? `TTS: ${preview}...` : 'TTS / Narration', kind: 'tts', ring: 'outer' })
+      push({ key: 'tts', label: preview ? `TTS: ${preview}...` : 'TTS / Narration', kind: 'tts', ring: 'outer' })
     }
     if (a.music?.src) {
-      nodes.push({ key: 'music', label: a.music.name || 'Music', kind: 'music', ring: 'outer' })
+      push({ key: 'music', label: a.music.name || 'Music', kind: 'music', ring: 'outer' })
     }
     for (const s of a.sfx ?? []) {
-      nodes.push({ key: `sfx:${s.id}` as NodeMapKey, label: s.name || 'SFX', kind: 'sfx', ring: 'outer' })
+      push({ key: `sfx:${s.id}` as NodeMapKey, label: s.name || 'SFX', kind: 'sfx', ring: 'outer' })
     }
     if (audioRowVisible(a) && nodes.every((n) => !['tts', 'music', 'sfx'].includes(n.kind))) {
-      nodes.push({ key: 'audio' as NodeMapKey, label: 'Audio', kind: 'audio', ring: 'inner' })
+      push({ key: 'audio' as NodeMapKey, label: 'Audio', kind: 'audio', ring: 'inner' })
     }
   }
 
   if (scene.cameraMotion?.length) {
-    nodes.push({ key: 'camera', label: 'Camera Animation', kind: 'camera', ring: 'inner' })
+    push({ key: 'camera', label: 'Camera Animation', kind: 'camera', ring: 'inner' })
   }
   if (scene.transition && scene.transition !== 'none') {
-    nodes.push({ key: 'transition', label: `Transition: ${scene.transition}`, kind: 'transition', ring: 'inner' })
+    push({ key: 'transition', label: `Transition: ${scene.transition}`, kind: 'transition', ring: 'inner' })
   }
   const so = scene.styleOverride
   if (so && (so.palette?.length || so.font || so.bgColor)) {
-    nodes.push({ key: 'style', label: 'Style Override', kind: 'style', ring: 'inner' })
+    push({ key: 'style', label: 'Style Override', kind: 'style', ring: 'inner' })
   }
   if (scene.variables?.length) {
-    nodes.push({ key: 'variables', label: `Variables (${scene.variables.length})`, kind: 'variables', ring: 'outer' })
+    push({ key: 'variables', label: `Variables (${scene.variables.length})`, kind: 'variables', ring: 'outer' })
   }
 
   // 3D world sub-elements
   if (scene.worldConfig) {
     const wc = scene.worldConfig
-    nodes.push({ key: '3d:env' as NodeMapKey, label: `Environment: ${wc.environment}`, kind: '3d_env', ring: 'outer' })
+    push({ key: '3d:env' as NodeMapKey, label: `Environment: ${wc.environment}`, kind: '3d_env', ring: 'outer' })
     for (const [i, obj] of (wc.objects ?? []).entries()) {
-      nodes.push({ key: `3d:obj:${i}` as NodeMapKey, label: obj.assetId, kind: '3d_obj', ring: 'outer' })
+      push({ key: `3d:obj:${i}` as NodeMapKey, label: obj.assetId, kind: '3d_obj', ring: 'outer' })
     }
     for (const [i, panel] of (wc.panels ?? []).entries()) {
       const preview = panel.html?.replace(/<[^>]+>/g, '').slice(0, 20) || `Panel ${i + 1}`
-      nodes.push({ key: `3d:panel:${i}` as NodeMapKey, label: preview, kind: '3d_panel', ring: 'outer' })
+      push({ key: `3d:panel:${i}` as NodeMapKey, label: preview, kind: '3d_panel', ring: 'outer' })
     }
     for (const [i, av] of (wc.avatars ?? []).entries()) {
-      nodes.push({
+      push({
         key: `3d:avatar:${i}` as NodeMapKey,
         label: av.mood || `Avatar ${i + 1}`,
         kind: '3d_avatar',
@@ -160,7 +206,7 @@ export function buildNodeList(scene: Scene): NodeMapEntry[] {
       })
     }
     if (wc.cameraPath?.length) {
-      nodes.push({
+      push({
         key: '3d:camera' as NodeMapKey,
         label: `Camera Path (${wc.cameraPath.length} keys)`,
         kind: '3d_camera',
@@ -171,7 +217,7 @@ export function buildNodeList(scene: Scene): NodeMapEntry[] {
 
   // Three.js environment preset (non-world scenes)
   if (scene.threeEnvironmentPresetId && !scene.worldConfig) {
-    nodes.push({ key: '3d:preset' as NodeMapKey, label: scene.threeEnvironmentPresetId, kind: '3d_env', ring: 'outer' })
+    push({ key: '3d:preset' as NodeMapKey, label: scene.threeEnvironmentPresetId, kind: '3d_env', ring: 'outer' })
   }
 
   // React code elements (bridge components, text, images extracted from JSX)
@@ -192,7 +238,7 @@ export function buildNodeList(scene: Scene): NodeMapEntry[] {
       const dedupKey = `${el.kind}:${el.label}`
       if (seen.has(dedupKey)) continue
       seen.add(dedupKey)
-      nodes.push({
+      push({
         key: `rx:${el.kind}:${idx}` as NodeMapKey,
         label: el.label,
         kind: `rx_${el.kind}`,
@@ -234,19 +280,104 @@ interface PositionedNode extends NodeMapEntry {
   y: number
 }
 
-function computeLayout(nodes: NodeMapEntry[], _w: number, h: number): PositionedNode[] {
-  const rootX = 40
-  const rootCy = h / 2
-  const childX = rootX + ROOT_W + 80
-  const n = nodes.length
-  const totalChildH = n * CARD_H + Math.max(0, n - 1) * 8
-  const startY = Math.max(8, rootCy - totalChildH / 2)
+interface PositionedColumn {
+  group: NodeGroup
+  label: string
+  x: number
+  headerY: number
+  collapsed: boolean
+  /** Size of the full group (before collapse), so the summary card can show the count. */
+  totalCount: number
+  /** Rendered nodes: full list when expanded, a single synthetic summary when collapsed. */
+  nodes: PositionedNode[]
+}
 
-  return nodes.map((node, i) => ({
-    ...node,
-    x: childX,
-    y: startY + i * (CARD_H + 8),
-  }))
+interface ComputedLayout {
+  columns: PositionedColumn[]
+  rootCy: number
+  totalHeight: number
+  totalWidth: number
+  /** Summary keys keyed on group, for selection routing. */
+  summaryKeyByGroup: Record<string, string>
+}
+
+const COLUMN_GAP = 44
+const COLUMN_HEADER_H = 18
+const COLUMN_HEADER_GAP = 6
+const NODE_GAP = 8
+const COLUMN_TOP_PAD = 16
+const COLUMN_BOTTOM_PAD = 16
+const ROOT_X = 40
+
+function summaryKeyForGroup(group: NodeGroup): string {
+  return `group:${group}`
+}
+
+function representativeKindForGroup(group: NodeGroup, groupNodes: NodeMapEntry[]): string {
+  // Use the first node's kind as the color anchor when available, else fall back to group.
+  return groupNodes[0]?.kind ?? group
+}
+
+function computeLayout(nodes: NodeMapEntry[], minH: number, collapsed: Record<NodeGroup, boolean>): ComputedLayout {
+  // Bucket nodes by group, preserve insertion order within each group.
+  const buckets = new Map<NodeGroup, NodeMapEntry[]>()
+  for (const g of GROUP_ORDER) buckets.set(g, [])
+  for (const n of nodes) buckets.get(n.group)?.push(n)
+  const activeGroups = GROUP_ORDER.filter((g) => (buckets.get(g)?.length ?? 0) > 0)
+
+  const columns: PositionedColumn[] = []
+  const summaryKeyByGroup: Record<string, string> = {}
+  let x = ROOT_X + ROOT_W + COLUMN_GAP
+  let maxColumnHeight = 0
+  for (const group of activeGroups) {
+    const groupNodes = buckets.get(group) ?? []
+    const isCollapsed = !!collapsed[group]
+    // Rendered list: full when expanded; a single synthetic summary when collapsed.
+    const renderedNodes: NodeMapEntry[] = isCollapsed
+      ? [
+          {
+            key: summaryKeyForGroup(group) as NodeMapKey,
+            label: `${GROUP_LABELS[group]} · ${groupNodes.length}`,
+            kind: representativeKindForGroup(group, groupNodes),
+            ring: 'inner',
+            group,
+          },
+        ]
+      : groupNodes
+    summaryKeyByGroup[group] = summaryKeyForGroup(group)
+    const n = renderedNodes.length
+    const columnHeight =
+      COLUMN_TOP_PAD + COLUMN_HEADER_H + COLUMN_HEADER_GAP + n * CARD_H + (n - 1) * NODE_GAP + COLUMN_BOTTOM_PAD
+    maxColumnHeight = Math.max(maxColumnHeight, columnHeight)
+    columns.push({
+      group,
+      label: GROUP_LABELS[group],
+      x,
+      headerY: 0, // filled below once total height known
+      collapsed: isCollapsed,
+      totalCount: groupNodes.length,
+      nodes: renderedNodes.map((n2) => ({ ...n2, x, y: 0 })),
+    })
+    x += CARD_W + COLUMN_GAP
+  }
+
+  const totalHeight = Math.max(minH, maxColumnHeight + 40)
+  const rootCy = totalHeight / 2
+
+  // Center each column's stack vertically around the canvas midline.
+  for (const col of columns) {
+    const n = col.nodes.length
+    const stackHeight = n * CARD_H + Math.max(0, n - 1) * NODE_GAP
+    const headerY = rootCy - (COLUMN_HEADER_H + COLUMN_HEADER_GAP + stackHeight) / 2
+    col.headerY = Math.max(COLUMN_TOP_PAD, headerY)
+    const firstNodeY = col.headerY + COLUMN_HEADER_H + COLUMN_HEADER_GAP
+    for (let i = 0; i < col.nodes.length; i++) {
+      col.nodes[i].y = firstNodeY + i * (CARD_H + NODE_GAP)
+    }
+  }
+
+  const totalWidth = x + 40
+  return { columns, rootCy, totalHeight, totalWidth, summaryKeyByGroup }
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -259,10 +390,26 @@ interface NodeMapCanvasProps {
   onAddNode: (type: string) => void
 }
 
+const ZOOM_MIN = 0.3
+const ZOOM_MAX = 2.5
+const ZOOM_STEP = 0.12
+
+const DEFAULT_COLLAPSED: Record<NodeGroup, boolean> = {
+  content: true,
+  text: true,
+  interaction: true,
+  bridge: true,
+  audio: true,
+  world: true,
+  meta: true,
+}
+
 export default function NodeMapCanvas({ scene, nodes, selectedKey, onSelect }: NodeMapCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ w: 500, h: CANVAS_H_DEFAULT })
   const [pan, setPan] = useState({ x: 0, y: 0 })
+  const [zoom, setZoom] = useState(1)
+  const [collapsed, setCollapsed] = useState<Record<NodeGroup, boolean>>(DEFAULT_COLLAPSED)
   const dragRef = useRef<{ startX: number; startY: number; startPanX: number; startPanY: number } | null>(null)
 
   useEffect(() => {
@@ -276,15 +423,33 @@ export default function NodeMapCanvas({ scene, nodes, selectedKey, onSelect }: N
     return () => ro.disconnect()
   }, [])
 
-  // Use enough height to fit all cards
-  const minCanvasH = Math.max(CANVAS_H_DEFAULT, nodes.length * (CARD_H + 8) + 40)
-  const positioned = useMemo(() => computeLayout(nodes, size.w, minCanvasH), [nodes, size.w, minCanvasH])
+  // If a specific node is selected externally, auto-expand its group so the
+  // selection is visible.
+  useEffect(() => {
+    if (!selectedKey || selectedKey === 'root') return
+    const hit = nodes.find((n) => n.key === selectedKey)
+    if (hit && collapsed[hit.group]) {
+      setCollapsed((prev) => ({ ...prev, [hit.group]: false }))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedKey])
 
-  const rootX = 40
-  const rootCy = minCanvasH / 2
-  // Root output port position
-  const rootPortX = rootX + ROOT_W
-  const rootPortY = rootCy + ROOT_H / 2 - ROOT_H / 2 + CARD_TITLE_H / 2 + 4
+  const toggleGroup = useCallback((group: NodeGroup) => {
+    setCollapsed((prev) => ({ ...prev, [group]: !prev[group] }))
+  }, [])
+
+  // Per-group counts for the toolbar chips.
+  const groupCounts = useMemo(() => {
+    const counts: Record<string, number> = {}
+    for (const g of GROUP_ORDER) counts[g] = 0
+    for (const n of nodes) counts[n.group] = (counts[n.group] ?? 0) + 1
+    return counts
+  }, [nodes])
+
+  const minCanvasH = Math.max(CANVAS_H_DEFAULT, nodes.length * (CARD_H + NODE_GAP) + 40)
+  const layout = useMemo(() => computeLayout(nodes, minCanvasH, collapsed), [nodes, minCanvasH, collapsed])
+  const rootCy = layout.rootCy
+  const rootPortX = ROOT_X + ROOT_W
 
   const onBgMouseDown = useCallback(
     (e: React.MouseEvent) => {
@@ -308,9 +473,48 @@ export default function NodeMapCanvas({ scene, nodes, selectedKey, onSelect }: N
     [pan],
   )
 
-  // SVG canvas dimensions (enough for all nodes)
-  const svgW = Math.max(size.w, rootX + ROOT_W + 80 + CARD_W + 40)
-  const svgH = minCanvasH
+  // Zoom with ctrl/meta + wheel, centered on cursor.
+  // Trackpad pinch-to-zoom arrives as wheel events with `ctrlKey=true` and tiny
+  // deltaY values (often <5); a classic mouse wheel arrives with large jumps
+  // (±100 in deltaMode=1 or ±1 in deltaMode=2). Scale by the magnitude so the
+  // same finger-gesture doesn't blow through the whole zoom range.
+  const onWheel = useCallback((e: React.WheelEvent) => {
+    if (!(e.ctrlKey || e.metaKey)) return
+    e.preventDefault()
+    const container = containerRef.current
+    if (!container) return
+    const rect = container.getBoundingClientRect()
+    const cx = e.clientX - rect.left
+    const cy = e.clientY - rect.top
+    // Normalize across deltaMode (0 = pixel, 1 = line, 2 = page).
+    const modeScale = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 100 : 1
+    const pixelsDelta = e.deltaY * modeScale
+    // Clamp a single event to +/-24px so a violent flick can't jump multiple steps.
+    const clampedPixels = Math.max(-24, Math.min(24, pixelsDelta))
+    // Sensitivity: 400px of scroll ≈ full zoom-step, trackpad gestures nudge tens of px.
+    const delta = -clampedPixels / 400
+    setZoom((z) => {
+      const nextZoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z + delta))
+      if (nextZoom === z) return z
+      const ratio = nextZoom / z
+      setPan((p) => ({
+        x: cx - (cx - p.x) * ratio,
+        y: cy - (cy - p.y) * ratio,
+      }))
+      return nextZoom
+    })
+  }, [])
+
+  const zoomIn = useCallback(() => setZoom((z) => Math.min(ZOOM_MAX, z + ZOOM_STEP)), [])
+  const zoomOut = useCallback(() => setZoom((z) => Math.max(ZOOM_MIN, z - ZOOM_STEP)), [])
+  const zoomReset = useCallback(() => {
+    setZoom(1)
+    setPan({ x: 0, y: 0 })
+  }, [])
+
+  // Size the inner wrapper to fit all columns.
+  const svgW = Math.max(size.w / Math.max(zoom, 0.5), layout.totalWidth)
+  const svgH = Math.max(minCanvasH, layout.totalHeight)
 
   return (
     <div className="relative flex flex-col">
@@ -325,50 +529,94 @@ export default function NodeMapCanvas({ scene, nodes, selectedKey, onSelect }: N
           backgroundSize: '20px 20px',
         }}
         onMouseDown={onBgMouseDown}
+        onWheel={onWheel}
       >
         <div
           style={{
-            transform: `translate(${pan.x}px, ${pan.y}px)`,
+            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+            transformOrigin: '0 0',
             width: svgW,
             height: svgH,
             position: 'relative',
           }}
         >
-          {/* Bezier connections */}
+          {/* Bezier connections: root → each column's first node (one edge per group) */}
           <svg
             className="absolute inset-0 pointer-events-none"
             width={svgW}
             height={svgH}
             style={{ overflow: 'visible' }}
           >
-            {positioned.map((n) => {
-              const isSelected = selectedKey === n.key
-              const color = colorForKind(n.kind)
-              // Root output port → child input port
+            {layout.columns.map((col) => {
+              const first = col.nodes[0]
+              if (!first) return null
+              const firstSelected = col.nodes.some((n) => n.key === selectedKey)
+              const color = colorForKind(first.kind)
               const x1 = rootPortX
               const y1 = rootCy
-              const x2 = n.x
-              const y2 = n.y + CARD_TITLE_H / 2
+              const x2 = first.x
+              const y2 = first.y + CARD_TITLE_H / 2
               const cpOffset = Math.min(80, Math.abs(x2 - x1) * 0.45)
               return (
                 <path
-                  key={`edge-${n.key}`}
+                  key={`edge-root-${col.group}`}
                   d={`M ${x1} ${y1} C ${x1 + cpOffset} ${y1}, ${x2 - cpOffset} ${y2}, ${x2} ${y2}`}
                   fill="none"
                   stroke={color}
-                  strokeWidth={isSelected ? 1.5 : 1}
-                  strokeOpacity={isSelected ? 0.5 : 0.2}
+                  strokeWidth={firstSelected ? 1.5 : 1}
+                  strokeOpacity={firstSelected ? 0.5 : 0.2}
                 />
               )
             })}
+            {/* Intra-column straight connectors linking siblings */}
+            {layout.columns.flatMap((col) =>
+              col.nodes.slice(1).map((n, i) => {
+                const prev = col.nodes[i]
+                const color = colorForKind(n.kind)
+                const x = col.x + CARD_W / 2
+                return (
+                  <line
+                    key={`edge-${col.group}-${n.key}`}
+                    x1={x}
+                    y1={prev.y + CARD_H}
+                    x2={x}
+                    y2={n.y}
+                    stroke={color}
+                    strokeWidth={1}
+                    strokeOpacity={0.15}
+                  />
+                )
+              }),
+            )}
           </svg>
+
+          {/* Column headers */}
+          {layout.columns.map((col) => (
+            <div
+              key={`header-${col.group}`}
+              className="absolute pointer-events-none"
+              style={{
+                left: col.x,
+                top: col.headerY,
+                width: CARD_W,
+                height: COLUMN_HEADER_H,
+              }}
+            >
+              <span
+                className="text-[9px] uppercase tracking-wider font-semibold"
+                style={{ color: 'rgba(255,255,255,0.4)' }}
+              >
+                {col.label}
+              </span>
+            </div>
+          ))}
 
           {/* ── Root / Scene node card ── */}
           <div
             data-node="root"
             className="absolute rounded-md overflow-hidden cursor-pointer"
             style={{
-              left: rootX,
+              left: ROOT_X,
               top: rootCy - ROOT_H / 2,
               width: ROOT_W,
               height: ROOT_H,
@@ -377,13 +625,11 @@ export default function NodeMapCanvas({ scene, nodes, selectedKey, onSelect }: N
             }}
             onClick={() => onSelect('root')}
           >
-            {/* Title bar */}
             <div className="flex items-center gap-1.5 px-2" style={{ height: CARD_TITLE_H, background: '#e84545' }}>
               <span className="text-[10px] font-semibold text-white truncate flex-1">{scene.name || 'Scene'}</span>
               <span className="shrink-0">
                 <SceneTypeIcon sceneType={scene.sceneType} size={13} />
               </span>
-              {/* Output port */}
               <div
                 className="absolute rounded-full"
                 style={{
@@ -396,7 +642,6 @@ export default function NodeMapCanvas({ scene, nodes, selectedKey, onSelect }: N
                 }}
               />
             </div>
-            {/* Body — thumbnail or iframe preview */}
             <div
               style={{
                 background: '#2a2a2e',
@@ -443,76 +688,322 @@ export default function NodeMapCanvas({ scene, nodes, selectedKey, onSelect }: N
             </div>
           </div>
 
-          {/* ── Child node cards ── */}
-          {positioned.map((n) => {
-            const Icon = getNodeIcon(scene, n)
-            const isSelected = selectedKey === n.key
-            const color = colorForKind(n.kind)
-            const isBg = n.kind === 'bg'
-            const bgSize = CARD_TITLE_H + 50
-            const nodeW = isBg ? 70 : CARD_W
-            const nodeH = isBg ? bgSize : CARD_H
-            const bodyH = isBg ? bgSize - CARD_TITLE_H : CARD_BODY_H
-            return (
-              <div
-                key={n.key}
-                data-node={n.key}
-                className="absolute rounded-md overflow-hidden cursor-pointer"
-                style={{
-                  left: n.x,
-                  top: n.y,
-                  width: nodeW,
-                  height: nodeH,
-                  border: `1px solid ${isSelected ? '#555' : '#333'}`,
-                  boxShadow: '0 1px 4px rgba(0,0,0,0.3)',
-                }}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onSelect(n.key)
-                }}
-              >
-                {/* Input port */}
-                <div
-                  className="absolute rounded-full"
-                  style={{
-                    left: -PORT_R,
-                    top: CARD_TITLE_H / 2 - PORT_R,
-                    width: PORT_R * 2,
-                    height: PORT_R * 2,
-                    background: color,
-                    border: '2px solid #1a1a1e',
+          {/* ── Column node cards ── */}
+          {layout.columns.flatMap((col) =>
+            col.nodes.map((n) => {
+              const isSummary = n.key.startsWith('group:')
+              return (
+                <NodeCard
+                  key={n.key}
+                  scene={scene}
+                  node={n}
+                  isSelected={selectedKey === n.key}
+                  isSummary={isSummary}
+                  summaryCount={isSummary ? col.totalCount : 0}
+                  onClick={() => {
+                    if (isSummary) {
+                      toggleGroup(col.group)
+                    } else {
+                      onSelect(n.key)
+                    }
                   }}
                 />
-                {/* Title bar */}
-                <div className="flex items-center gap-1 px-2" style={{ height: CARD_TITLE_H, background: color }}>
-                  <span className="text-[9px] font-semibold text-white truncate flex-1">{n.label}</span>
-                  {Icon && <Icon size={10} strokeWidth={2.5} color="rgba(255,255,255,0.7)" className="shrink-0" />}
-                </div>
-                {/* Body */}
-                {isBg ? (
-                  <div className="flex items-center justify-center" style={{ height: bodyH, background: '#2a2a2e' }}>
-                    <div
-                      className="rounded-full"
-                      style={{
-                        width: 32,
-                        height: 32,
-                        background: scene.bgColor || '#000',
-                        border: '2px solid #444',
-                      }}
-                    />
-                  </div>
-                ) : (
-                  <div className="flex items-center px-2" style={{ height: bodyH, background: '#2a2a2e' }}>
-                    <span className="text-[8px] truncate" style={{ color: '#999' }}>
-                      {getNodeSummary(scene, n)}
-                    </span>
-                  </div>
-                )}
-              </div>
-            )
-          })}
+              )
+            }),
+          )}
         </div>
       </div>
+
+      {/* Inline toolbar: group toggles + zoom controls */}
+      <div
+        className="absolute right-2 top-2 flex items-center gap-1 rounded px-1 py-0.5"
+        style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}
+      >
+        {GROUP_ORDER.filter((g) => (groupCounts[g] ?? 0) > 0).map((g) => (
+          <GroupChip
+            key={g}
+            label={GROUP_LABELS[g]}
+            count={groupCounts[g] ?? 0}
+            open={!collapsed[g]}
+            onClick={() => toggleGroup(g)}
+          />
+        ))}
+        <div className="mx-1 h-4" style={{ width: 1, background: 'rgba(255,255,255,0.12)' }} />
+        <ZoomButton onClick={zoomOut} label="Zoom out">
+          <Minus size={11} />
+        </ZoomButton>
+        <span
+          role="button"
+          tabIndex={0}
+          title="Reset zoom"
+          className="text-[10px] tabular-nums cursor-pointer hover:text-white px-1 select-none"
+          style={{ color: 'rgba(255,255,255,0.7)', minWidth: 34, textAlign: 'center' }}
+          onClick={zoomReset}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') zoomReset()
+          }}
+        >
+          {Math.round(zoom * 100)}%
+        </span>
+        <ZoomButton onClick={zoomIn} label="Zoom in">
+          <Plus size={11} />
+        </ZoomButton>
+      </div>
+    </div>
+  )
+}
+
+function ZoomButton({ children, onClick, label }: { children: React.ReactNode; onClick: () => void; label: string }) {
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      title={label}
+      className="flex h-5 w-5 items-center justify-center rounded cursor-pointer"
+      style={{ color: 'rgba(255,255,255,0.75)', background: 'rgba(255,255,255,0.06)' }}
+      onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') onClick()
+      }}
+    >
+      {children}
+    </span>
+  )
+}
+
+function GroupChip({
+  label,
+  count,
+  open,
+  onClick,
+}: {
+  label: string
+  count: number
+  open: boolean
+  onClick: () => void
+}) {
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      title={`${open ? 'Collapse' : 'Expand'} ${label}`}
+      className="flex h-5 items-center gap-1 rounded px-1.5 text-[10px] font-medium cursor-pointer select-none"
+      style={{
+        color: open ? '#f5f2ea' : 'rgba(255,255,255,0.65)',
+        background: open ? 'rgba(232,69,69,0.55)' : 'rgba(255,255,255,0.06)',
+      }}
+      onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') onClick()
+      }}
+    >
+      <span>{label}</span>
+      <span
+        className="tabular-nums"
+        style={{
+          fontSize: 9,
+          opacity: 0.7,
+          padding: '0 4px',
+          borderRadius: 8,
+          background: 'rgba(0,0,0,0.25)',
+        }}
+      >
+        {count}
+      </span>
+    </span>
+  )
+}
+
+// ── Node card (handles summary + per-kind visual body) ──────────────────────
+
+function NodeCard({
+  scene,
+  node,
+  isSelected,
+  isSummary,
+  summaryCount,
+  onClick,
+}: {
+  scene: Scene
+  node: NodeMapEntry & { x: number; y: number }
+  isSelected: boolean
+  isSummary: boolean
+  summaryCount: number
+  onClick: () => void
+}) {
+  const Icon = getNodeIcon(scene, node)
+  const color = colorForKind(node.kind)
+  const isBg = node.kind === 'bg'
+  const bgSize = CARD_TITLE_H + 50
+  const nodeW = isBg ? 70 : CARD_W
+  const nodeH = isBg ? bgSize : CARD_H
+  const bodyH = isBg ? bgSize - CARD_TITLE_H : CARD_BODY_H
+  const title = isSummary ? `${node.label} · tap to expand` : node.label
+
+  return (
+    <div
+      data-node={node.key}
+      className="absolute rounded-md overflow-hidden cursor-pointer"
+      style={{
+        left: node.x,
+        top: node.y,
+        width: nodeW,
+        height: nodeH,
+        border: `1px solid ${isSelected ? '#555' : '#333'}`,
+        boxShadow: '0 1px 4px rgba(0,0,0,0.3)',
+      }}
+      onClick={(e) => {
+        e.stopPropagation()
+        onClick()
+      }}
+    >
+      {/* Input port */}
+      <div
+        className="absolute rounded-full"
+        style={{
+          left: -PORT_R,
+          top: CARD_TITLE_H / 2 - PORT_R,
+          width: PORT_R * 2,
+          height: PORT_R * 2,
+          background: color,
+          border: '2px solid #1a1a1e',
+        }}
+      />
+      {/* Title bar */}
+      <div className="flex items-center gap-1 px-2" style={{ height: CARD_TITLE_H, background: color }}>
+        <span className="text-[9px] font-semibold text-white truncate flex-1">{title}</span>
+        {isSummary ? (
+          <span className="text-[9px] font-semibold text-white/80 shrink-0 tabular-nums">{summaryCount}</span>
+        ) : (
+          Icon && <Icon size={10} strokeWidth={2.5} color="rgba(255,255,255,0.7)" className="shrink-0" />
+        )}
+      </div>
+      {/* Body — summary / bg / text / 3D iframe / generic */}
+      <NodeCardBody scene={scene} node={node} bodyH={bodyH} isSummary={isSummary} />
+    </div>
+  )
+}
+
+function NodeCardBody({
+  scene,
+  node,
+  bodyH,
+  isSummary,
+}: {
+  scene: Scene
+  node: NodeMapEntry
+  bodyH: number
+  isSummary: boolean
+}) {
+  if (isSummary) {
+    return (
+      <div className="flex items-center justify-center px-2" style={{ height: bodyH, background: '#2a2a2e' }}>
+        <span className="text-[8px]" style={{ color: '#888' }}>
+          Tap to expand
+        </span>
+      </div>
+    )
+  }
+
+  if (node.kind === 'bg') {
+    return (
+      <div className="flex items-center justify-center" style={{ height: bodyH, background: '#2a2a2e' }}>
+        <div
+          className="rounded-full"
+          style={{ width: 32, height: 32, background: scene.bgColor || '#000', border: '2px solid #444' }}
+        />
+      </div>
+    )
+  }
+
+  // Text overlay: render actual text in its font + color.
+  if (node.kind === 'text') {
+    const id = node.key.startsWith('text:') ? node.key.slice(5) : null
+    const overlay = scene.textOverlays?.find((t) => t.id === id)
+    if (overlay) {
+      return (
+        <div className="flex items-center px-2" style={{ height: bodyH, background: '#2a2a2e', overflow: 'hidden' }}>
+          <span
+            className="block truncate"
+            style={{
+              fontFamily: overlay.font || 'inherit',
+              color: overlay.color || '#f5f2ea',
+              fontSize: 11,
+              lineHeight: 1.1,
+              maxWidth: '100%',
+            }}
+          >
+            {overlay.content || '—'}
+          </span>
+        </div>
+      )
+    }
+  }
+
+  // rx heading / paragraph / text: strip "H1: " prefix from label and render plainly.
+  if (node.kind === 'rx_heading' || node.kind === 'rx_paragraph' || node.kind === 'rx_text') {
+    const text = node.label.replace(/^H[1-6]:\s*/i, '')
+    const isHeading = node.kind === 'rx_heading'
+    return (
+      <div className="flex items-center px-2" style={{ height: bodyH, background: '#2a2a2e', overflow: 'hidden' }}>
+        <span
+          className="block truncate"
+          style={{
+            fontFamily: 'inherit',
+            color: '#f5f2ea',
+            fontSize: isHeading ? 11 : 10,
+            fontWeight: isHeading ? 700 : 400,
+            lineHeight: 1.1,
+          }}
+        >
+          {text || '—'}
+        </span>
+      </div>
+    )
+  }
+
+  // 3D kinds: reuse the main scene iframe preview so users see the world.
+  if (
+    node.kind === '3d_env' ||
+    node.kind === '3d_obj' ||
+    node.kind === '3d_panel' ||
+    node.kind === '3d_avatar' ||
+    node.kind === '3d_camera'
+  ) {
+    return (
+      <div
+        style={{
+          height: bodyH,
+          background: '#2a2a2e',
+          position: 'relative',
+          overflow: 'hidden',
+        }}
+      >
+        <iframe
+          src={`/scenes/${scene.id}.html`}
+          title={`${node.label} preview`}
+          className="pointer-events-none"
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            border: 'none',
+            width: 1920,
+            height: 1080,
+            transformOrigin: '0 0',
+            transform: `scale(${Math.max(CARD_W / 1920, bodyH / 1080)})`,
+          }}
+        />
+      </div>
+    )
+  }
+
+  // Generic fallback: whatever one-line summary we have.
+  return (
+    <div className="flex items-center px-2" style={{ height: bodyH, background: '#2a2a2e' }}>
+      <span className="text-[8px] truncate" style={{ color: '#999' }}>
+        {getNodeSummary(scene, node)}
+      </span>
     </div>
   )
 }

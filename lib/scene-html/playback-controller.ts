@@ -252,6 +252,97 @@ export const PLAYBACK_CONTROLLER = `
   // Public API for scene code
   window.__tl = masterTL;
 
+  // ── Unified scrub registry ──────────────────────────────
+  // React hooks, raw anime.js, raw lottie, and custom animations
+  // register themselves here so a single seek message reaches
+  // every scene type — not just the GSAP master timeline.
+  if (!window.__cench) window.__cench = {};
+  window.__cench._seekCallbacks = [];
+  window.__cench._animeInstances = [];
+  window.__cench._lottieInstances = [];
+  window.__cench._scrubMutedState = null;
+  window.__cench.onSeek = function(cb) {
+    if (typeof cb !== 'function') return function(){};
+    window.__cench._seekCallbacks.push(cb);
+    return function off() {
+      var idx = window.__cench._seekCallbacks.indexOf(cb);
+      if (idx >= 0) window.__cench._seekCallbacks.splice(idx, 1);
+    };
+  };
+  window.__cench.registerAnime = function(inst) {
+    if (inst && window.__cench._animeInstances.indexOf(inst) < 0) {
+      window.__cench._animeInstances.push(inst);
+    }
+    return inst;
+  };
+  window.__cench.registerLottie = function(inst) {
+    if (inst && window.__cench._lottieInstances.indexOf(inst) < 0) {
+      window.__cench._lottieInstances.push(inst);
+    }
+    return inst;
+  };
+
+  // Auto-register anime.js calls by wrapping window.anime at assignment.
+  // Works whether the library loads before or after this controller.
+  function _wrapAnime(fn) {
+    if (typeof fn !== 'function') return fn;
+    var wrapped = function() {
+      var inst = fn.apply(this, arguments);
+      window.__cench.registerAnime(inst);
+      return inst;
+    };
+    try {
+      Object.keys(fn).forEach(function(k) {
+        try { wrapped[k] = fn[k]; } catch(e) {}
+      });
+    } catch(e) {}
+    wrapped.__cenchWrapped = true;
+    return wrapped;
+  }
+  if (typeof window.anime === 'function' && !window.anime.__cenchWrapped) {
+    window.anime = _wrapAnime(window.anime);
+  } else {
+    try {
+      var _animeStore;
+      Object.defineProperty(window, 'anime', {
+        configurable: true,
+        enumerable: true,
+        get: function() { return _animeStore; },
+        set: function(v) {
+          _animeStore = (v && !v.__cenchWrapped) ? _wrapAnime(v) : v;
+        },
+      });
+    } catch(e) {}
+  }
+
+  // Auto-register lottie.loadAnimation instances by wrapping the method.
+  function _wrapLottie(lib) {
+    if (!lib || typeof lib.loadAnimation !== 'function' || lib.__cenchWrapped) return lib;
+    var orig = lib.loadAnimation.bind(lib);
+    lib.loadAnimation = function() {
+      var inst = orig.apply(null, arguments);
+      window.__cench.registerLottie(inst);
+      return inst;
+    };
+    lib.__cenchWrapped = true;
+    return lib;
+  }
+  if (window.lottie) {
+    _wrapLottie(window.lottie);
+  } else {
+    try {
+      var _lottieStore;
+      Object.defineProperty(window, 'lottie', {
+        configurable: true,
+        enumerable: true,
+        get: function() { return _lottieStore; },
+        set: function(v) {
+          _lottieStore = _wrapLottie(v);
+        },
+      });
+    } catch(e) {}
+  }
+
   // ── Multi-track audio integration ───────────────────────
   var ttsAudio = null;
   var sfxElements = [];
@@ -519,6 +610,10 @@ export const PLAYBACK_CONTROLLER = `
 
   window.addEventListener('message', function(event) {
     if (!event.data || event.data.target !== 'cench-scene') return;
+    // Only accept playback commands from the parent window (the editor / published host).
+    // Standalone scenes have parent === self, so same-frame messages still pass.
+    // Nested iframes (embedded videos, widgets) are rejected — they can't spoof play/pause/scrub.
+    if (event.source && event.source !== window.parent) return;
     // Ignore messages for other scenes
     if (
       event.data.sceneId &&
@@ -591,6 +686,39 @@ export const PLAYBACK_CONTROLLER = `
         if (typeof window.__updateScene === 'function') {
           try { window.__updateScene(seekTime); } catch(e) {}
         }
+        // Registered scrub callbacks (React useCenchSeek, custom animations)
+        if (window.__cench && window.__cench._seekCallbacks) {
+          window.__cench._seekCallbacks.forEach(function(cb) {
+            try { cb(seekTime); } catch(e) {}
+          });
+        }
+        // Raw anime.js instances (direct anime({...}) calls not routed through GSAP)
+        if (window.__cench && window.__cench._animeInstances) {
+          window.__cench._animeInstances.forEach(function(inst) {
+            try {
+              if (inst && typeof inst.seek === 'function') {
+                inst.seek(Math.max(0, seekTime * 1000));
+              }
+            } catch(e) {}
+          });
+        }
+        // Raw lottie instances (direct lottie.loadAnimation not routed through GSAP)
+        if (window.__cench && window.__cench._lottieInstances) {
+          window.__cench._lottieInstances.forEach(function(inst) {
+            try {
+              if (!inst || typeof inst.getDuration !== 'function') return;
+              var totalFrames = inst.getDuration(true);
+              var durSec = inst.getDuration(false);
+              if (durSec > 0 && totalFrames > 0) {
+                // lottie-web uses 0-indexed frames; last valid frame is totalFrames - 1.
+                // Offset by firstFrame so segmented animations (non-zero start) seek correctly.
+                var firstFrame = typeof inst.firstFrame === 'number' ? inst.firstFrame : 0;
+                var rel = Math.max(0, Math.min(totalFrames - 1, (seekTime / durSec) * totalFrames));
+                inst.goToAndStop(firstFrame + rel, true);
+              }
+            } catch(e) {}
+          });
+        }
         // Sync all audio to seek position (optional startOffset skips into the file)
         if (ttsAudio) {
           var sOff = parseFloat(ttsAudio.dataset.startOffset || '0');
@@ -618,6 +746,33 @@ export const PLAYBACK_CONTROLLER = `
           type: 'seeked',
           currentTime: masterTL.time(),
         });
+        break;
+
+      case 'scrub_start':
+        // Silence every audio/video element for the duration of the drag.
+        // Capture prior .muted per element so we can restore exact state on scrub_end.
+        if (!window.__cench._scrubMutedState) {
+          var seen = [];
+          var record = [];
+          var all = document.querySelectorAll('audio, video');
+          for (var i = 0; i < all.length; i++) {
+            var el = all[i];
+            if (seen.indexOf(el) >= 0) continue;
+            seen.push(el);
+            record.push({ el: el, muted: !!el.muted });
+            try { el.muted = true; } catch(e) {}
+          }
+          window.__cench._scrubMutedState = record;
+        }
+        break;
+
+      case 'scrub_end':
+        if (window.__cench._scrubMutedState) {
+          window.__cench._scrubMutedState.forEach(function(rec) {
+            try { rec.el.muted = rec.muted; } catch(e) {}
+          });
+          window.__cench._scrubMutedState = null;
+        }
         break;
 
       case 'reset':

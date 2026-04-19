@@ -474,12 +474,20 @@
         loadPromises.push(p);
       }
 
-      // Load avatars
-      // TODO: TalkingHead avatar loading will be integrated here.
-      // For now, avatar config entries are stored but not loaded as 3D models.
-      for (const avatar of configAvatars) {
-        loadedAvatars[avatar.id || 'avatar'] = { config: avatar, model: null };
-      }
+      // Avatar layers render as TalkingHead PIP overlays. See
+      // public/worlds/world-avatar-overlay.js for the rationale.
+      const { createWorldAvatar } = await import('/worlds/world-avatar-overlay.js');
+      configAvatars.forEach((avatar, i) => {
+        loadPromises.push(
+          createWorldAvatar(document.body, avatar, tl, {
+            ttsEndpoint: worldConfig.ttsEndpoint || null,
+            duration: window.DURATION || 10,
+            index: i,
+          }).then((handle) => {
+            if (handle) loadedAvatars[avatar.id || `avatar-${i}`] = handle;
+          }),
+        );
+      });
 
       // Load panels
       for (const panel of configPanels) {

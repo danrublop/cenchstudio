@@ -3,6 +3,7 @@ import path from 'path'
 import type { TTSProviderInterface, TTSParams, TTSResult, Voice } from '../types'
 import { safeAudioFilename } from '../sanitize'
 import { buildCaptionBundle, type CharAlignment } from '../captions'
+import { getAudioDir, audioUrlFor } from '../paths'
 
 const API_BASE = 'https://api.elevenlabs.io/v1'
 const DEFAULT_VOICE_ID = '21m00Tcm4TlvDq8ikWAM' // Rachel
@@ -54,7 +55,7 @@ export const elevenlabsTTS: TTSProviderInterface = {
     }
     const audioBuffer = Buffer.from(payload.audio_base64, 'base64')
 
-    const audioDir = path.join(process.cwd(), 'public', 'audio')
+    const audioDir = getAudioDir()
     await fs.mkdir(audioDir, { recursive: true })
 
     const filename = safeAudioFilename('tts', params.sceneId, 'mp3')
@@ -65,7 +66,7 @@ export const elevenlabsTTS: TTSProviderInterface = {
     const durationEstimate = (audioBuffer.length * 8) / (128 * 1000)
 
     const result: TTSResult = {
-      audioUrl: `/audio/${filename}`,
+      audioUrl: audioUrlFor(filename),
       duration: Math.round(durationEstimate * 10) / 10,
       provider: 'elevenlabs',
     }
@@ -81,8 +82,8 @@ export const elevenlabsTTS: TTSProviderInterface = {
         fs.writeFile(path.join(audioDir, vttName), bundle.vtt, 'utf8'),
       ])
       result.captions = {
-        srtUrl: `/audio/${srtName}`,
-        vttUrl: `/audio/${vttName}`,
+        srtUrl: audioUrlFor(srtName),
+        vttUrl: audioUrlFor(vttName),
         kind: 'aligned',
         words: bundle.words,
       }

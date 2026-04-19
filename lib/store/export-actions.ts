@@ -77,10 +77,16 @@ export function createExportActions(set: Set, get: Get) {
             // (localStorage partialize strips svgContent, sceneCode, etc.)
             let fullScene = scene
             try {
-              const fullRes = await fetch(`/api/scene?projectId=${get().project.id}&sceneId=${scene.id}`)
-              if (fullRes.ok) {
-                const fullData = await fullRes.json()
-                if (fullData.scene) fullScene = { ...scene, ...fullData.scene }
+              const sceneIpc = typeof window !== 'undefined' ? window.cenchApi?.scene : undefined
+              if (sceneIpc) {
+                const fullData = await sceneIpc.get({ projectId: get().project.id, sceneId: scene.id })
+                if (fullData?.scene) fullScene = { ...scene, ...(fullData.scene as Partial<typeof scene>) }
+              } else {
+                const fullRes = await fetch(`/api/scene?projectId=${get().project.id}&sceneId=${scene.id}`)
+                if (fullRes.ok) {
+                  const fullData = await fullRes.json()
+                  if (fullData.scene) fullScene = { ...scene, ...fullData.scene }
+                }
               }
             } catch {}
             const freshHTML = generateSceneHTML(
@@ -205,9 +211,11 @@ export function createExportActions(set: Set, get: Get) {
               sceneProgress: 100,
               // Keep downloadUrl null (Electron save path is already chosen)
               downloadUrl: null,
+              filePath,
               error: null,
               diagnostics: [...diagnostics],
             },
+            lastExportStatus: 'success',
           })
         } catch (err) {
           set({
@@ -220,6 +228,7 @@ export function createExportActions(set: Set, get: Get) {
               error: String(err),
               diagnostics: [...diagnostics],
             },
+            lastExportStatus: 'error',
           })
         } finally {
           set({ isExporting: false })
@@ -336,6 +345,7 @@ export function createExportActions(set: Set, get: Get) {
                     downloadUrl: data.downloadUrl,
                     error: null,
                   },
+                  lastExportStatus: 'success',
                 })
               } else if (type === 'error') {
                 set({
@@ -347,6 +357,7 @@ export function createExportActions(set: Set, get: Get) {
                     downloadUrl: null,
                     error: data.message,
                   },
+                  lastExportStatus: 'error',
                 })
               }
             } catch {
@@ -364,6 +375,7 @@ export function createExportActions(set: Set, get: Get) {
               phase: 'error',
               error: 'Export connection lost unexpectedly. Check that the render server is running.',
             },
+            lastExportStatus: 'error',
           })
         }
       } catch (err) {
@@ -380,6 +392,7 @@ export function createExportActions(set: Set, get: Get) {
             downloadUrl: null,
             error: message,
           },
+          lastExportStatus: 'error',
         })
       } finally {
         clearTimeout(activityTimeout!)

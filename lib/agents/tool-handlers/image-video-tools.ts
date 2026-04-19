@@ -3,6 +3,9 @@ import type { APIName } from '@/lib/types'
 import type { WorldStateMutable } from '@/lib/agents/tool-executor'
 import { ok, err, findScene, updateScene, type ToolResult } from './_shared'
 import { persistGeneratedAsset } from '@/lib/media/provenance'
+import { createLogger } from '@/lib/logger'
+
+const log = createLogger('agent.image-video')
 
 export const IMAGE_VIDEO_TOOL_NAMES = [
   'search_images',
@@ -56,15 +59,14 @@ export function createImageVideoToolHandler(deps: {
         })
         if (permErr) return permErr
         try {
-          const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-          const response = await fetch(
-            `${baseUrl}/api/search-images?query=${encodeURIComponent(query)}&count=${count || 5}`,
-          )
-          if (!response.ok) return { success: false, error: `Image search failed: ${response.statusText}` }
-          const data = await response.json()
+          // Direct call to the Unsplash provider. The old path hit
+          // `/api/search-images` which was never implemented, so every
+          // agent `search_images` call 404'd silently until now.
+          const { unsplashImageSearch } = await import('@/lib/research/providers/unsplash')
+          const data = await unsplashImageSearch({ query, count: count ?? 5 })
           return { success: true, affectedSceneId: null, data }
         } catch (e) {
-          return { success: false, error: `Image search error: ${String(e)}` }
+          return { success: false, error: `Image search error: ${(e as Error).message}` }
         }
       }
 
@@ -175,7 +177,7 @@ export function createImageVideoToolHandler(deps: {
             } catch (e) {
               // Non-fatal: generation succeeded; we just couldn't persist. The tool result
               // still returns the upstream URL so the agent can place it directly.
-              console.warn('[image-video-tools] persist generated asset failed:', e)
+              log.warn('persist generated asset failed', { error: e })
             }
           }
           return ok(sceneId, `Image generated: ${prompt.slice(0, 60)}`, {
@@ -235,7 +237,7 @@ export function createImageVideoToolHandler(deps: {
               assetId = persisted.id
               stickerUrl = persisted.publicUrl
             } catch (e) {
-              console.warn('[image-video-tools] persist sticker failed:', e)
+              log.warn('persist sticker failed', { error: e })
             }
           }
           return ok(sceneId, `Sticker generated: ${prompt.slice(0, 60)}`, {

@@ -3,9 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "predev": "npm run validate-env",
     "dev": "next dev",
-    "build:electron": "tsc -p electron/tsconfig.json",
-    "dev:electron": "concurrently -k -n tsc,electron -c gray,magenta \"tsc -p electron/tsconfig.json -w\" \"wait-on http://localhost:3000 && wait-on dist-electron/main.js && ELECTRON_START_URL=http://localhost:3000 electron .\"",
+    "prebuild": "npm run validate-env",
+    "build:electron": "node electron/build.mjs",
+    "dev:electron": "concurrently -k -n esbuild,electron -c gray,magenta \"node electron/build.mjs --watch\" \"wait-on http://localhost:3000 && wait-on dist-electron/main.js && ELECTRON_START_URL=http://localhost:3000 electron .\"",
     "electron:dev": "npm run dev:electron",
     "build": "next build",
     "start": "next start",
@@ -24,6 +26,11 @@
     "mcp": "npx tsx scripts/mcp-server.ts",
     "sfx-library:fetch": "npx tsx scripts/fetch-sfx-library.ts",
     "sfx-library:zzfx": "npx tsx scripts/build-native-sfx-zzfx.ts",
+    "validate-env": "npx tsx scripts/validate-env.ts",
+    "dist": "npm run build:electron && electron-builder",
+    "dist:mac": "npm run build:electron && electron-builder --mac",
+    "dist:win": "npm run build:electron && electron-builder --win",
+    "dist:dir": "npm run build:electron && electron-builder --dir",
     "lint": "eslint .",
     "lint:strict": "eslint .",
     "lint:fix": "eslint . --fix",
@@ -82,6 +89,7 @@
     "clsx": "^2.1.1",
     "dotenv": "^17.3.1",
     "drizzle-orm": "^0.45.1",
+    "electron-updater": "^6.8.3",
     "fix-webm-duration": "^1.0.6",
     "geist": "^1.7.0",
     "html2canvas": "^1.4.1",
@@ -123,6 +131,9 @@
     "concurrently": "^9.2.1",
     "drizzle-kit": "^0.31.10",
     "electron": "^41.1.1",
+    "electron-builder": "^26.8.1",
+    "electron-icon-builder": "^2.0.1",
+    "esbuild": "^0.28.0",
     "eslint": "^10.2.0",
     "eslint-config-next": "^16.2.2",
     "eslint-config-prettier": "^10.1.8",
@@ -139,5 +150,104 @@
     "typescript-eslint": "^8.58.0",
     "vitest": "^4.1.2",
     "wait-on": "^9.0.4"
+  },
+  "main": "dist-electron/main.js",
+  "build": {
+    "appId": "com.cench.studio",
+    "productName": "Cench Studio",
+    "asar": true,
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "danrublop",
+        "repo": "cenchstudio",
+        "releaseType": "release"
+      }
+    ],
+    "files": [
+      "dist-electron/**/*",
+      "out/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "render-server/stitcher.js",
+        "to": "render-server/stitcher.js"
+      },
+      {
+        "from": "render-server/audio-mixer.js",
+        "to": "render-server/audio-mixer.js"
+      },
+      {
+        "from": "render-server/node_modules",
+        "to": "render-server/node_modules",
+        "filter": [
+          "fluent-ffmpeg/**",
+          "ffmpeg-static/**",
+          "uuid/**",
+          "async/**",
+          "isarray/**",
+          "lodash/**"
+        ]
+      },
+      {
+        "from": ".claude/skills/cench",
+        "to": "skill-data/cench"
+      },
+      {
+        "from": "lib/skills/library",
+        "to": "skill-data/library"
+      }
+    ],
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "category": "public.app-category.video",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extendInfo": {
+        "NSCameraUsageDescription": "Cench Studio uses the camera so you can record avatar walkthroughs and narration clips directly inside the editor.",
+        "NSMicrophoneUsageDescription": "Cench Studio uses the microphone so you can record narration and voiceover for scenes.",
+        "NSScreenCaptureUsageDescription": "Cench Studio captures the screen when you use the screen-recording source in a scene."
+      }
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "category": "AudioVideo"
+    }
   }
 }

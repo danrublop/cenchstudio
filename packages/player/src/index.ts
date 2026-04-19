@@ -98,9 +98,7 @@ export class CenchStudioPlayer {
         brandColor: this.options.brandColor,
         onPlay: () => this.play(),
         onPause: () => this.pause(),
-        onSeek: (t) => {
-          /* TODO: seek */
-        },
+        onSeek: (t) => this.runtime?.seek(t),
       })
     }
 

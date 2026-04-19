@@ -3,6 +3,9 @@ import { db } from '@/lib/db'
 import { projects } from '@/lib/db/schema'
 import { eq, isNull, inArray, and } from 'drizzle-orm'
 import { getRequiredUser, AuthError } from '@/lib/auth-helpers'
+import { createLogger } from '@/lib/logger'
+
+const log = createLogger('api.projects-claim')
 
 /**
  * POST /api/projects/claim
@@ -39,7 +42,7 @@ export async function POST(req: NextRequest) {
     if (error instanceof AuthError) {
       return NextResponse.json({ error: error.message }, { status: error.status })
     }
-    console.error('Failed to claim projects:', error)
+    log.error('Failed to claim projects:', { error: error })
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
