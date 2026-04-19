@@ -25,6 +25,9 @@ import {
   getMusicProvider,
 } from '@/lib/audio/router'
 import { downloadToLocal } from '@/lib/audio/download'
+import { createLogger } from '@/lib/logger'
+
+const log = createLogger('audio')
 import { validateTextLength, validateQueryLength, MAX_TTS_TEXT_LENGTH } from '@/lib/audio/sanitize'
 import { buildNaiveCaptions } from '@/lib/audio/captions'
 import { getZzfxCategory, SFX_LIBRARY_CATEGORIES } from '@/lib/audio/sfx-zzfx-presets'
@@ -135,7 +138,7 @@ export async function synthesizeTTS(input: TTSInput): Promise<TTSResult> {
           words: bundle.words,
         }
       } catch (captionErr) {
-        console.warn('[audio-service] naive caption write failed:', captionErr)
+        log.warn('naive caption write failed', { error: captionErr })
       }
     }
   }

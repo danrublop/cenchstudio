@@ -3,6 +3,9 @@ import type { APIName } from '@/lib/types'
 import type { WorldStateMutable } from '@/lib/agents/tool-executor'
 import { ok, err, findScene, updateScene, type ToolResult } from './_shared'
 import { persistGeneratedAsset } from '@/lib/media/provenance'
+import { createLogger } from '@/lib/logger'
+
+const log = createLogger('agent.image-video')
 
 export const IMAGE_VIDEO_TOOL_NAMES = [
   'search_images',
@@ -174,7 +177,7 @@ export function createImageVideoToolHandler(deps: {
             } catch (e) {
               // Non-fatal: generation succeeded; we just couldn't persist. The tool result
               // still returns the upstream URL so the agent can place it directly.
-              console.warn('[image-video-tools] persist generated asset failed:', e)
+              log.warn('persist generated asset failed', { error: e })
             }
           }
           return ok(sceneId, `Image generated: ${prompt.slice(0, 60)}`, {
@@ -234,7 +237,7 @@ export function createImageVideoToolHandler(deps: {
               assetId = persisted.id
               stickerUrl = persisted.publicUrl
             } catch (e) {
-              console.warn('[image-video-tools] persist sticker failed:', e)
+              log.warn('persist sticker failed', { error: e })
             }
           }
           return ok(sceneId, `Sticker generated: ${prompt.slice(0, 60)}`, {

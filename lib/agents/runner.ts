@@ -14,6 +14,9 @@ import OpenAI from 'openai'
 import { GoogleGenAI } from '@google/genai'
 import { v4 as uuidv4 } from 'uuid'
 import Ajv, { type ValidateFunction } from 'ajv'
+import { createLogger } from '../logger'
+
+const log = createLogger('agent')
 import type { Scene, GlobalStyle, APIPermissions, SceneGraph } from '../types'
 import { syncSceneGraphWithScenes } from '../scene-graph-sync'
 import type {
@@ -1151,7 +1154,7 @@ export async function runAgent(opts: RunnerOptions): Promise<{
             ccDurationMs,
           )
         } catch (e) {
-          console.error('[Agent CLI] Failed to log spend:', e)
+          log.error('CLI: failed to log spend', { error: e })
         }
       }
 
@@ -2588,7 +2591,7 @@ export async function runAgent(opts: RunnerOptions): Promise<{
             createParams as Parameters<typeof anthropicClient.messages.stream>[0],
           )
         } catch (err) {
-          console.error('[Agent] Anthropic stream creation failed:', err)
+          log.error('Anthropic stream creation failed', { error: err })
           throw err // outer catch emits error event to client
         }
 
@@ -2709,17 +2712,17 @@ export async function runAgent(opts: RunnerOptions): Promise<{
           }
         }
 
-        console.log(`[Agent] Stream complete: ${toolUseBlocks.length} tool calls, stopReason=${stopReason}`)
+        log.debug('stream complete', { extra: { toolCalls: toolUseBlocks.length, stopReason } })
 
         let finalMsg: Anthropic.Message
         try {
-          console.log('[Agent] Awaiting finalMessage...')
+          log.debug('awaiting finalMessage')
           finalMsg = await withTimeout(stream.finalMessage(), rc.finalMessageTimeoutMs, 'stream.finalMessage()')
-          console.log(
-            `[Agent] finalMessage received: ${finalMsg.content.length} content blocks, stop_reason=${finalMsg.stop_reason}`,
-          )
+          log.debug('finalMessage received', {
+            extra: { blocks: finalMsg.content.length, stopReason: finalMsg.stop_reason },
+          })
         } catch (err) {
-          console.error('[Agent] finalMessage() failed:', err)
+          log.error('finalMessage() failed', { error: err })
           // Abort the stream to release the underlying HTTP connection
           // instead of leaving it in a partially-consumed state.
           try {
@@ -3187,7 +3190,7 @@ export async function runAgent(opts: RunnerOptions): Promise<{
         totalDurationMs,
       )
     } catch (e) {
-      console.error('[Agent] Failed to log spend:', e)
+      log.error('failed to log spend', { error: e })
     }
 
     // ── 7. Emit done ─────────────────────────────────────────────────────────
@@ -3285,7 +3288,7 @@ export async function runAgent(opts: RunnerOptions): Promise<{
           totalDurationMs,
         )
       } catch (logErr) {
-        console.error('[Agent] Failed to log partial usage:', logErr)
+        log.error('failed to log partial usage', { error: logErr })
       }
     }
 

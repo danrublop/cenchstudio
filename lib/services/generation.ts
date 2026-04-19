@@ -19,6 +19,9 @@ import { generateCode, type GenerateCodeOptions } from '@/lib/generation/generat
 import { LOTTIE_OVERLAY_PROMPT } from '@/lib/generation/prompts'
 import { validateLottieJSON } from '@/lib/motion/lottie-validator'
 import { scoreLottieQuality } from '@/lib/motion/quality-score'
+import { createLogger } from '@/lib/logger'
+
+const log = createLogger('generation')
 import type { MotionPersonality } from '@/lib/motion/easing'
 import { getModelProvider } from '@/lib/agents/types'
 
@@ -288,16 +291,18 @@ export async function generateLottie(input: GenerateLottieInput): Promise<Genera
       .trim()
     parsed = JSON.parse(cleaned)
   } catch {
-    console.error('[generate-lottie] Model returned invalid JSON:', text.slice(0, 200))
+    log.error('generate-lottie: model returned invalid JSON', { extra: { sample: text.slice(0, 200) } })
     throw new LottieParseError('Model returned invalid Lottie JSON. Please try again.', usage)
   }
 
   const validation = validateLottieJSON(parsed, { fix: true })
   if (validation.warnings.length > 0) {
-    console.warn(`[generate-lottie] ${validation.warnings.length} warnings:`, validation.warnings)
+    log.warn('generate-lottie: validation warnings', {
+      extra: { count: validation.warnings.length, warnings: validation.warnings },
+    })
   }
   if (!validation.valid) {
-    console.error('[generate-lottie] Validation errors after auto-fix:', validation.errors)
+    log.error('generate-lottie: validation errors after auto-fix', { extra: { errors: validation.errors } })
   }
 
   const finalJson = validation.fixCount > 0 ? validation.fixed! : parsed
@@ -308,7 +313,9 @@ export async function generateLottie(input: GenerateLottieInput): Promise<Genera
     expectedDuration: duration,
   })
   if (quality.total < 40) {
-    console.warn(`[generate-lottie] Low quality score: ${quality.total}/100`, quality.suggestions)
+    log.warn('generate-lottie: low quality score', {
+      extra: { score: quality.total, suggestions: quality.suggestions },
+    })
   }
 
   return {

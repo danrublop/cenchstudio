@@ -26,6 +26,9 @@ import path from 'node:path'
 import { v4 as uuidv4 } from 'uuid'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
+import { createLogger } from '@/lib/logger'
+
+const log = createLogger('ingest')
 import sharp from 'sharp'
 import { db } from '@/lib/db'
 import { projectAssets } from '@/lib/db/schema'
@@ -424,7 +427,7 @@ export async function ingestDirect(input: IngestDirectInput): Promise<IngestDire
       storagePath = mp4Path
       effectiveExt = 'mp4'
     } catch (e) {
-      console.warn('[ingest] transcode failed, keeping original:', (e as Error).message)
+      log.warn('transcode failed, keeping original', { extra: { message: (e as Error).message } })
     }
   }
 

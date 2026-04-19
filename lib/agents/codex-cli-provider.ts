@@ -11,6 +11,9 @@ import { v4 as uuidv4 } from 'uuid'
 import path from 'path'
 import fs from 'fs/promises'
 import os from 'os'
+import { createLogger } from '../logger'
+
+const log = createLogger('agent.codex-cli')
 import type { SSEEvent, ToolCallRecord, ToolResult, UsageStats } from './types'
 
 interface CodexCliOptions {
@@ -372,7 +375,7 @@ export async function runWithCodexCli(opts: CodexCliOptions): Promise<CodexCliRe
 
     proc.stderr?.on('data', (chunk: Buffer) => {
       const text = chunk.toString().trim()
-      if (text) console.error('[codex-cli-provider] stderr:', text)
+      if (text) log.error('stderr from codex-cli', { extra: { text } })
     })
 
     proc.on('close', async (code) => {

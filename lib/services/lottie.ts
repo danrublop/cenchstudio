@@ -8,6 +8,10 @@
  * are thin wrappers.
  */
 
+import { createLogger } from '@/lib/logger'
+
+const log = createLogger('lottie')
+
 export type AnimCategory =
   | 'icon'
   | 'illustration'
@@ -397,7 +401,7 @@ export async function searchLottie(input: LottieSearchInput): Promise<LottieSear
         return { results: results.slice(0, limit), source: 'lottiefiles' }
       }
     } catch (err) {
-      console.error('[lottie] LottieFiles API error:', err)
+      log.error('LottieFiles API error', { error: err })
     }
   }
 

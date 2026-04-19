@@ -10,6 +10,9 @@ import { buildRouterContext } from './context-builder'
 import type { Scene, GlobalStyle } from '../types'
 import { logSpend } from '../db'
 import type { AgentLogger } from './logger'
+import { createLogger } from '../logger'
+
+const log = createLogger('agent.router')
 
 const client = new Anthropic()
 
@@ -105,7 +108,7 @@ export async function routeMessage(
         `Router (${modelId}): ${inputTokens} in / ${outputTokens} out`,
       )
     } catch (e) {
-      console.error('[Router] Failed to log spend:', e)
+      log.error('failed to log spend', { error: e })
     }
 
     const rawText = response.content
@@ -144,7 +147,7 @@ export async function routeMessage(
     // Fallback: use heuristic default
     return heuristicResult.agent
   } catch (err) {
-    console.error('[Router] Routing failed, using heuristics:', err)
+    log.error('routing failed, using heuristics', { error: err })
     return heuristicResult.agent
   }
 }
@@ -178,16 +181,12 @@ function heuristicRoute(message: string, ctx?: RouteContext): HeuristicResult {
   // ── High-confidence: Scene Maker (default for creation) ──
   // Video/project creation → Scene Maker (flexible, no forced storyboard)
   // Director is opt-in via explicit agent selection only.
-  if (
-    /\b(create a video|make a video|build a (video|presentation))\b/i.test(lower)
-  ) {
+  if (/\b(create a video|make a video|build a (video|presentation))\b/i.test(lower)) {
     return { agent: 'scene-maker', confidence: 'high' }
   }
 
   // Educational prompts → Scene Maker builds directly
-  if (
-    /^(explain|teach me|make a? ?(lesson|tutorial|walkthrough|overview) (about|on|for))\b/i.test(lower)
-  ) {
+  if (/^(explain|teach me|make a? ?(lesson|tutorial|walkthrough|overview) (about|on|for))\b/i.test(lower)) {
     return { agent: 'scene-maker', confidence: 'high' }
   }
 
@@ -197,10 +196,7 @@ function heuristicRoute(message: string, ctx?: RouteContext): HeuristicResult {
   }
 
   // "Continue" / "keep going" after a storyboard was approved → director (keeps storyboard context)
-  if (
-    ctx?.hasStoryboard &&
-    /\b(continue|keep going|build it|go ahead|proceed)\b/i.test(lower)
-  ) {
+  if (ctx?.hasStoryboard && /\b(continue|keep going|build it|go ahead|proceed)\b/i.test(lower)) {
     return { agent: 'director', confidence: 'high' }
   }
 
@@ -222,9 +218,7 @@ function heuristicRoute(message: string, ctx?: RouteContext): HeuristicResult {
   }
 
   // ── High-confidence: Scene-Maker ──
-  if (
-    /\b(add a (new )?scene|new scene|generate ?(a )?scene|create ?(a )?scene)\b/i.test(lower)
-  ) {
+  if (/\b(add a (new )?scene|new scene|generate ?(a )?scene|create ?(a )?scene)\b/i.test(lower)) {
     return { agent: 'scene-maker', confidence: 'high' }
   }
 
@@ -232,7 +226,9 @@ function heuristicRoute(message: string, ctx?: RouteContext): HeuristicResult {
 
   // Topic-like descriptions or creation verbs → scene-maker (flexible default)
   if (
-    /\b(explain|teach|lesson|tutorial|walkthrough|overview|introduction to|history of|how .+ works?|compare .+ (and|vs|versus))\b/i.test(lower) ||
+    /\b(explain|teach|lesson|tutorial|walkthrough|overview|introduction to|history of|how .+ works?|compare .+ (and|vs|versus))\b/i.test(
+      lower,
+    ) ||
     (lower.split(/,\s*| and /).length >= 3 && lower.length > 50)
   ) {
     return { agent: 'scene-maker', confidence: 'low' }
@@ -248,10 +244,7 @@ function heuristicRoute(message: string, ctx?: RouteContext): HeuristicResult {
   }
 
   // Vague improvement requests on existing projects → editor
-  if (
-    hasManyScenes &&
-    /\b(make it better|improve|polish|fix|tweak|adjust)\b/i.test(lower)
-  ) {
+  if (hasManyScenes && /\b(make it better|improve|polish|fix|tweak|adjust)\b/i.test(lower)) {
     return { agent: 'editor', confidence: 'low' }
   }
 

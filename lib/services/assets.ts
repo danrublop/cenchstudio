@@ -13,6 +13,9 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { and, eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
+import { createLogger } from '@/lib/logger'
+
+const log = createLogger('asset')
 import { projectAssets } from '@/lib/db/schema'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -97,7 +100,7 @@ export async function deleteAsset(input: DeleteAssetInput): Promise<{ success: t
     await fs.unlink(asset.storagePath)
   } catch (e: unknown) {
     const err = e as NodeJS.ErrnoException
-    if (err?.code !== 'ENOENT') console.warn('[asset-delete] failed to delete file:', err)
+    if (err?.code !== 'ENOENT') log.warn('failed to delete file', { error: err })
   }
 
   if (asset.thumbnailUrl && asset.thumbnailUrl !== asset.publicUrl) {
@@ -106,7 +109,7 @@ export async function deleteAsset(input: DeleteAssetInput): Promise<{ success: t
       await fs.unlink(thumbPath)
     } catch (e: unknown) {
       const err = e as NodeJS.ErrnoException
-      if (err?.code !== 'ENOENT') console.warn('[asset-delete] failed to delete thumbnail:', err)
+      if (err?.code !== 'ENOENT') log.warn('failed to delete thumbnail', { error: err })
     }
   }
 

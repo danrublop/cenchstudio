@@ -50,6 +50,9 @@ import { extractMemories } from '@/lib/agents/memory-extractor'
 import { registerBuiltInHooks } from '@/lib/agents/built-in-hooks'
 import { detectFrustration, computeRunMetrics, logRunAnalytics, serializeRunMetrics } from '@/lib/agents/run-analytics'
 import { eq, desc } from 'drizzle-orm'
+import { createLogger } from '@/lib/logger'
+
+const log = createLogger('agent.runner')
 
 // Ensure built-in hooks register once at module load. Moved here from the
 // route so IPC callers pick them up too.
@@ -180,7 +183,7 @@ export async function runAgentRequest({
       thinkingMode: body.thinkingMode ?? 'adaptive',
     })
   } catch (e) {
-    console.error('[agent-runner] Failed to create generation log:', e)
+    log.error('failed to create generation log', { error: e })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     emit({ type: 'warning', message: 'Usage tracking unavailable for this run.' } as any)
   }
@@ -202,7 +205,7 @@ export async function runAgentRequest({
           .where(eq(projectAssetsTable.projectId, body.projectId))
           .orderBy(desc(projectAssetsTable.createdAt))
           .catch((e) => {
-            console.warn('[agent-runner] Failed to fetch project assets:', e)
+            log.warn('failed to fetch project assets', { error: e })
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             return [] as any[]
           })
@@ -215,13 +218,13 @@ export async function runAgentRequest({
           .where(eq(projectsTable.id, body.projectId))
           .limit(1)
           .catch((e) => {
-            console.warn('[agent-runner] Failed to fetch project row:', e)
+            log.warn('failed to fetch project row', { error: e })
             return [] as Array<{ brandKit: unknown; workspaceId: string | null }>
           })
       : Promise.resolve([] as Array<{ brandKit: unknown; workspaceId: string | null }>),
     authenticatedUserId
       ? getMemoriesForUser(authenticatedUserId, 20).catch((e) => {
-          console.warn('[agent-runner] Failed to fetch user memories:', e)
+          log.warn('failed to fetch user memories', { error: e })
           return [] as Awaited<ReturnType<typeof getMemoriesForUser>>
         })
       : Promise.resolve([] as Awaited<ReturnType<typeof getMemoriesForUser>>),
@@ -257,7 +260,7 @@ export async function runAgentRequest({
         logger.log('api', `Loaded ${permissionRules.length} permission rules`, { userId: authenticatedUserId })
       }
     } catch (e) {
-      console.warn('[agent-runner] Failed to fetch permission rules:', e)
+      log.warn('failed to fetch permission rules', { error: e })
     }
   }
 
@@ -278,7 +281,7 @@ export async function runAgentRequest({
         logger.warn('api', 'resumeCheckpoint requested but no checkpoint found')
       }
     } catch (e) {
-      console.warn('[agent-runner] Failed to fetch run checkpoint:', e)
+      log.warn('failed to fetch run checkpoint', { error: e })
       emit({ type: 'warning', message: 'Failed to load checkpoint — starting fresh' })
     }
   }
@@ -463,7 +466,7 @@ export async function runAgentRequest({
         await clearRunCheckpoint(body.projectId)
         logger.log('api', 'Cleared run checkpoint after successful resume')
       } catch (e) {
-        console.warn('[agent-runner] Failed to clear run checkpoint:', e)
+        log.warn('failed to clear run checkpoint', { error: e })
       }
     }
 
@@ -478,7 +481,7 @@ export async function runAgentRequest({
           logger.log('api', `Extracted ${memories.length} memories`, { memories: memories.map((m) => m.key) })
         }
       } catch (e) {
-        console.warn('[agent-runner] Failed to extract/persist memories:', e)
+        log.warn('failed to extract/persist memories', { error: e })
       }
     }
 
@@ -528,7 +531,7 @@ export async function runAgentRequest({
           analysisNotes: serializeRunMetrics(runMetrics),
         })
       } catch (e) {
-        console.error('[agent-runner] Failed to update generation log:', e)
+        log.error('failed to update generation log', { error: e })
       }
     }
 
@@ -579,7 +582,7 @@ export async function runAgentRequest({
           runTrace: logger.getTrace(),
         })
       } catch (e) {
-        console.error('[agent-runner] Failed to update generation log on error:', e)
+        log.error('failed to update generation log on error', { error: e })
       }
     }
   }
