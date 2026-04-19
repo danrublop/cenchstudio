@@ -29,7 +29,12 @@ import { getElementPropertyMap } from '@/lib/types/elements'
 import { patchElementInIframe } from '@/lib/scene-patcher'
 import { TRANSITION_UI_GROUPS, type TransitionType } from '@/lib/transitions'
 import { CENCH_THREE_ENVIRONMENTS } from '@/lib/three-environments/registry'
-import { patchReactCodeText, readReactCodeText, type PatchableKind } from '@/lib/react-extract'
+import {
+  patchReactCodeText,
+  readReactCodeText,
+  rxGlobalIndexToPerKindIndex,
+  type PatchableKind,
+} from '@/lib/react-extract'
 import { ColorPicker } from '@/components/inspector/controls/ColorPicker'
 import { SliderInput } from '@/components/inspector/controls/SliderInput'
 import { SelectInput as InspectorSelect } from '@/components/inspector/controls/SelectInput'
@@ -1893,7 +1898,10 @@ function RxSourceTextEditor({
     return null
   }
   const source = pickSource()
-  const current = source ? readReactCodeText(source.code, kind, index) : null
+  // The node-map key index is a global dedup counter across ALL rx kinds. The
+  // patch helpers want the per-kind index; translate before calling them.
+  const perKindIdx = source ? rxGlobalIndexToPerKindIndex(source.code, kind, index) : null
+  const current = source && perKindIdx != null ? readReactCodeText(source.code, kind, perKindIdx) : null
 
   const labels: Record<PatchableKind, string> = {
     heading: 'Heading',
@@ -1901,7 +1909,7 @@ function RxSourceTextEditor({
     image: 'Alt text',
   }
 
-  if (!source || current == null) {
+  if (!source || perKindIdx == null || current == null) {
     return (
       <div className="space-y-1.5">
         <FieldRow label="Type">
@@ -1917,7 +1925,7 @@ function RxSourceTextEditor({
 
   const handleChange = (next: string) => {
     if (next === current) return
-    const rewritten = patchReactCodeText(source.code, kind, index, next)
+    const rewritten = patchReactCodeText(source.code, kind, perKindIdx, next)
     if (rewritten == null) return
     upd({ [source.field]: rewritten } as Partial<Scene>)
   }

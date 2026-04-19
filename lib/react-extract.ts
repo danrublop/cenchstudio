@@ -187,9 +187,44 @@ export function patchReactCodeText(code: string, kind: PatchableKind, index: num
 }
 
 /**
+ * Convert a node-map rx:* global index to the per-kind index expected by
+ * `patchReactCodeText` / `readReactCodeText`.
+ *
+ * The node-map UI emits keys `rx:${kind}:${idx}` where `idx` is a single
+ * counter shared across all rx kinds (heading, paragraph, image, three,
+ * canvas2d, …). The patch helpers want the index of the target heading
+ * within headings only. This walks the extractor output exactly like the
+ * UI does (dedup by `${kind}:${label}`) and returns how many same-kind
+ * elements precede the one at the global index.
+ *
+ * Returns `null` when the global index isn't present, or the element at
+ * that index doesn't match `rxKind`.
+ */
+export function rxGlobalIndexToPerKindIndex(code: string, rxKind: string, globalIdx: number): number | null {
+  if (!code) return null
+  const elements = extractElementsFromReactCode(code)
+  const seen = new Set<string>()
+  let g = 0
+  let perKind = 0
+  for (const el of elements) {
+    const dedupKey = `${el.kind}:${el.label}`
+    if (seen.has(dedupKey)) continue
+    seen.add(dedupKey)
+    if (g === globalIdx) return el.kind === rxKind ? perKind : null
+    if (el.kind === rxKind) perKind++
+    g++
+  }
+  return null
+}
+
+/**
  * Read the source text of the Nth unique match of a patchable element.
  * Returns `null` when the match isn't found. Mirrors the dedup semantics
  * used by `patchReactCodeText` so the getter/setter pair stays aligned.
+ *
+ * Note: `index` is the per-kind unique index, NOT the node-map global
+ * index. Callers working from an `rx:${kind}:${idx}` node key should first
+ * convert with `rxGlobalIndexToPerKindIndex`.
  */
 export function readReactCodeText(code: string, kind: PatchableKind, index: number): string | null {
   if (!code) return null

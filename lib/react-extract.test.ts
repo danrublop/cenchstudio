@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { patchReactCodeText, readReactCodeText } from './react-extract'
+import { patchReactCodeText, readReactCodeText, rxGlobalIndexToPerKindIndex } from './react-extract'
 
 describe('patchReactCodeText', () => {
   it('rewrites the first heading', () => {
@@ -65,5 +65,40 @@ describe('readReactCodeText', () => {
 
   it('returns null when index exceeds unique matches', () => {
     expect(readReactCodeText('<h1>One</h1>', 'heading', 3)).toBeNull()
+  })
+})
+
+describe('rxGlobalIndexToPerKindIndex', () => {
+  it('translates node-map global dedup index to per-kind index', () => {
+    // The extractor groups by kind (headings first, then paragraphs, then images).
+    // The UI's global counter increments across that grouped order.
+    const code = '<h1>A</h1><h2>B</h2><p>paragraph body</p><img alt="pic"/>'
+    // Global 0 → heading at per-kind 0.
+    expect(rxGlobalIndexToPerKindIndex(code, 'heading', 0)).toBe(0)
+    // Global 1 → heading at per-kind 1.
+    expect(rxGlobalIndexToPerKindIndex(code, 'heading', 1)).toBe(1)
+    // Global 2 → paragraph at per-kind 0 (paragraphs come after headings).
+    expect(rxGlobalIndexToPerKindIndex(code, 'paragraph', 2)).toBe(0)
+    // Global 3 → image at per-kind 0.
+    expect(rxGlobalIndexToPerKindIndex(code, 'image', 3)).toBe(0)
+  })
+
+  it('returns null when kind does not match the element at the global index', () => {
+    const code = '<h1>A</h1><p>paragraph body</p>'
+    // Global index 0 is a heading, not a paragraph.
+    expect(rxGlobalIndexToPerKindIndex(code, 'paragraph', 0)).toBeNull()
+  })
+
+  it('returns null when global index exceeds extraction count', () => {
+    expect(rxGlobalIndexToPerKindIndex('<h1>Only</h1>', 'heading', 5)).toBeNull()
+  })
+
+  it('roundtrips with patchReactCodeText for a paragraph after headings', () => {
+    // Without the translator, rx:paragraph:2 would be passed straight to the
+    // helper as per-kind index 2 and return null (only 1 paragraph exists).
+    const code = '<h1>A</h1><h2>B</h2><p>paragraph body</p>'
+    const perKind = rxGlobalIndexToPerKindIndex(code, 'paragraph', 2)
+    expect(perKind).toBe(0)
+    expect(patchReactCodeText(code, 'paragraph', perKind!, 'new body')).toBe('<h1>A</h1><h2>B</h2><p>new body</p>')
   })
 })
