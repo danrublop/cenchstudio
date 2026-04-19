@@ -1056,15 +1056,7 @@ function LayerSettings({
     }
 
     case 'scene':
-      return (
-        <div className="space-y-1">
-          <Muted>
-            Scene renderer:{' '}
-            <strong style={{ color: 'var(--color-text-primary)' }}>{labelForKey(scene, layerKey)}</strong>
-          </Muted>
-          <Muted className="text-[9px]">Use the Code tab or Prompt tab to edit scene code.</Muted>
-        </div>
-      )
+      return <SceneRendererEditor scene={scene} layerKey={layerKey} rowId={rowId} upd={upd} />
 
     case 'rx': {
       // Code-extracted elements — match to Inspector elements for property editing
@@ -1850,6 +1842,87 @@ function WorldCameraEditor({ wc, upd, updAndDelete }: { wc: WorldConfig; upd: Wo
           <Plus size={10} /> Add keyframe
         </span>
       </div>
+    </div>
+  )
+}
+
+// ── Scene renderer editor (scene:three / scene:3d_world / etc.) ────────────
+
+function SceneRendererEditor({
+  scene,
+  layerKey,
+  rowId,
+  upd,
+}: {
+  scene: Scene
+  layerKey: LayerStackKey
+  rowId: string | null
+  upd: (updates: Partial<Scene>) => void
+}) {
+  const rendererId = rowId ?? ''
+
+  // Plain Three.js: surface the environment preset picker inline so the row is
+  // actually editable instead of punting the user to the Code tab.
+  if (rendererId === 'three' && !scene.worldConfig) {
+    return (
+      <div className="space-y-2">
+        <Muted className="text-[9px]">Three.js renderer — pick an environment preset below.</Muted>
+        <ThreePresetEditor scene={scene} upd={upd} />
+      </div>
+    )
+  }
+
+  // 3D world: the world sub-elements (3d:env / 3d:obj / etc.) have their own
+  // rows. The scene row itself summarises what's configured.
+  if (rendererId === '3d_world' && scene.worldConfig) {
+    const wc = scene.worldConfig
+    const counts = {
+      objects: wc.objects?.length ?? 0,
+      panels: wc.panels?.length ?? 0,
+      avatars: wc.avatars?.length ?? 0,
+      camera: wc.cameraPath?.length ?? 0,
+    }
+    return (
+      <div className="space-y-1">
+        <Muted>
+          3D world: <strong style={{ color: 'var(--color-text-primary)' }}>{wc.environment}</strong>
+        </Muted>
+        <Muted className="text-[9px]">
+          {counts.objects} object{counts.objects === 1 ? '' : 's'} · {counts.panels} panel
+          {counts.panels === 1 ? '' : 's'} · {counts.avatars} avatar{counts.avatars === 1 ? '' : 's'} · {counts.camera}{' '}
+          camera keyframe{counts.camera === 1 ? '' : 's'}. Edit each via its own row above.
+        </Muted>
+      </div>
+    )
+  }
+
+  // D3: chart editors already exist via the `chart` rows; point users there.
+  if (rendererId === 'd3') {
+    const n = scene.chartLayers?.length ?? 0
+    return (
+      <div className="space-y-1">
+        <Muted>
+          D3 scene: <strong style={{ color: 'var(--color-text-primary)' }}>{n}</strong> chart layer
+          {n === 1 ? '' : 's'}
+        </Muted>
+        <Muted className="text-[9px]">
+          Each chart appears as its own row. {n === 0 ? 'No chart layers yet — add one via the + menu.' : ''} For
+          renderer-level code, use the Code tab.
+        </Muted>
+      </div>
+    )
+  }
+
+  // Motion / lottie / canvas2d / zdog / avatar_scene: no structured sub-elements
+  // to edit. Keep the read-only summary but make the next step explicit.
+  return (
+    <div className="space-y-1">
+      <Muted>
+        Scene renderer: <strong style={{ color: 'var(--color-text-primary)' }}>{labelForKey(scene, layerKey)}</strong>
+      </Muted>
+      <Muted className="text-[9px]">
+        Generated code. Edit via the Code tab, or use the Prompt tab to regenerate with the agent.
+      </Muted>
     </div>
   )
 }
