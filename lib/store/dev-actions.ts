@@ -20,6 +20,9 @@ import { createAvatarShowcaseScenes } from '../avatarShowcaseScenes'
 import { createTalkingHeadLipSyncTestScene } from '../talkingHeadLipSyncTestScene'
 import { createReactShowcaseScenes } from '../reactShowcaseScenes'
 import type { Set, Get } from './types'
+import { createLogger } from '../logger'
+
+const log = createLogger('store.dev')
 
 // Seed/showcase helpers all write the same shape: one HTML file per scene
 // to the scenes directory. Fire-and-forget in every case (these are dev
@@ -351,11 +354,13 @@ export function createDevActions(set: Set, get: Get) {
             })
             if (!res.ok) {
               const err = await res.json().catch(() => ({}))
-              console.error('[seedWorldTestScenes] generate-world failed:', scene.id, res.status, err)
+              log.error('seedWorldTestScenes: generate-world failed', {
+                extra: { sceneId: scene.id, status: res.status, err },
+              })
             }
           }
         } catch (e) {
-          console.error('[seedWorldTestScenes] generate-world request failed:', scene.id, e)
+          log.error('seedWorldTestScenes: generate-world request failed', { extra: { sceneId: scene.id }, error: e })
         }
       }
       set((state) => {

@@ -14,6 +14,9 @@ import {
   ensureStoryboardSceneIdsForPair,
   getPersistedTheme,
 } from './helpers'
+import { createLogger } from '../logger'
+
+const log = createLogger('store.project')
 
 // IPC bridges — prefer `window.cenchApi.*` when Electron's preload has
 // attached it (both dev and packaged). Fall back to the legacy Next route
@@ -86,7 +89,7 @@ export function createProjectActions(set: Set, get: Get) {
         set({ publishedUrl: data.publishedUrl, showPublishPanel: true })
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Publish failed'
-        console.error('Publish error:', message)
+        log.error('publish error', { extra: { message }, error: err })
         set({ publishError: message })
       } finally {
         set({ isPublishing: false })
@@ -117,7 +120,7 @@ export function createProjectActions(set: Set, get: Get) {
           })),
         })
       } catch (e) {
-        console.error('Failed to fetch projects:', e)
+        log.error('failed to fetch projects', { error: e })
       } finally {
         set({ isLoadingProjects: false })
       }
@@ -189,7 +192,7 @@ export function createProjectActions(set: Set, get: Get) {
               })
               if (!res.ok) {
                 const err = await res.json().catch(() => ({}))
-                console.error('[createNewProject] POST /api/projects failed:', res.status, err)
+                log.error('createNewProject: POST /api/projects failed', { extra: { status: res.status, err } })
                 return null
               }
               return res.json()
@@ -203,7 +206,7 @@ export function createProjectActions(set: Set, get: Get) {
           await get().saveProjectToDb()
         }
       } catch (e) {
-        console.error('[createNewProject] persist error:', e)
+        log.error('createNewProject: persist error', { error: e })
         await get().saveProjectToDb()
       }
 
@@ -215,7 +218,7 @@ export function createProjectActions(set: Set, get: Get) {
     refreshProjectFromServer: async () => {
       const { project, _dbLoadComplete } = get()
       if (!project?.id || !_dbLoadComplete) return
-      console.log(`[Store] refreshProjectFromServer: chatMessages=${get().chatMessages.length} before refresh`)
+      log.debug('refreshProjectFromServer start', { extra: { chatMessages: get().chatMessages.length } })
       try {
         const ipc = projectsIpc()
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -293,9 +296,9 @@ export function createProjectActions(set: Set, get: Get) {
           runCheckpoint: loadedRunCheckpoint,
           brandKit: loadedProject.brandKit,
         })
-        console.log(
-          `[Store] refreshProjectFromServer: chatMessages=${get().chatMessages.length} after set (should be unchanged)`,
-        )
+        log.debug('refreshProjectFromServer after set', {
+          extra: { chatMessages: get().chatMessages.length },
+        })
         // Regenerate HTML directly from API data (bypasses store which persist may strip)
         try {
           const { generateSceneHTML } = await import('@/lib/sceneTemplate')
@@ -327,7 +330,7 @@ export function createProjectActions(set: Set, get: Get) {
                   }
                 })().catch(() => {})
               } catch (e) {
-                console.error(`[refreshProject] generateSceneHTML failed for ${scene.id}:`, e)
+                log.error('refreshProject: generateSceneHTML failed', { extra: { sceneId: scene.id }, error: e })
               }
             }
           }
@@ -340,7 +343,7 @@ export function createProjectActions(set: Set, get: Get) {
           }
         }
       } catch (e) {
-        console.error('[Store] refreshProjectFromServer failed:', e)
+        log.error('refreshProjectFromServer failed', { error: e })
       }
     },
 
@@ -373,7 +376,7 @@ export function createProjectActions(set: Set, get: Get) {
           try {
             data = await ipc.get(projectId)
           } catch (err) {
-            console.error('[loadProject] IPC get failed:', err)
+            log.error('loadProject: IPC get failed', { error: err })
             return
           }
         } else {
@@ -487,7 +490,7 @@ export function createProjectActions(set: Set, get: Get) {
                 })().catch(() => {})
                 savedAny = true
               } catch (e) {
-                console.error(`[loadProject] generateSceneHTML failed for ${scene.id}:`, e)
+                log.error('loadProject: generateSceneHTML failed', { extra: { sceneId: scene.id }, error: e })
               }
             }
           }
@@ -524,13 +527,13 @@ export function createProjectActions(set: Set, get: Get) {
               return s && !sceneHasRenderableContent(s)
             })
             if (clobbered) {
-              console.warn('[loadProject] Persist merge clobbered scene code — refreshing from server')
+              log.warn('loadProject: persist merge clobbered scene code, refreshing from server')
               get().refreshProjectFromServer()
             }
           }, 500)
         }
       } catch (e) {
-        console.error('Failed to load project:', e)
+        log.error('failed to load project', { error: e })
       }
     },
 
@@ -571,8 +574,8 @@ export function createProjectActions(set: Set, get: Get) {
 
       // Only skip when local looks like stripped localStorage (same scenes as DB, no code) but DB still has content.
       if (sameSceneIds && !localRich && dbRich) {
-        console.warn(
-          'saveProjectToDb: skipping save — local has no renderable content but DB does (likely stripped localStorage)',
+        log.warn(
+          'saveProjectToDb: skipping save, local has no renderable content but DB does (likely stripped localStorage)',
         )
         pullFromDb()
         return
@@ -588,7 +591,7 @@ export function createProjectActions(set: Set, get: Get) {
           }
 
           if (!localRich && dbRich && dbScenes.length > scenes.length) {
-            console.warn('saveProjectToDb: skipping — DB has more scenes than local (rehydration/stale client)')
+            log.warn('saveProjectToDb: skipping, DB has more scenes than local (rehydration/stale client)')
             pullFromDb()
             return
           }
@@ -597,7 +600,7 @@ export function createProjectActions(set: Set, get: Get) {
             const dbIds = new Set(dbScenes.map((s) => s.id))
             const sameSet = localIds.size === dbIds.size && [...localIds].every((id) => dbIds.has(id))
             if (sameSet) {
-              console.warn('saveProjectToDb: skipping — DB has scene content, local is empty (stripped localStorage)')
+              log.warn('saveProjectToDb: skipping, DB has scene content, local is empty (stripped localStorage)')
               pullFromDb()
               return
             }
@@ -644,7 +647,7 @@ export function createProjectActions(set: Set, get: Get) {
               const isConflict = msg.startsWith('Project was modified concurrently')
               const isNotFound = /^Project\s+[0-9a-f-]+\s+not found$/i.test(msg)
               if (isConflict && attempt < 2) {
-                console.warn(`[saveProjectToDb] conflict on attempt ${attempt + 1}, retrying…`)
+                log.warn('saveProjectToDb: conflict, retrying', { extra: { attempt: attempt + 1 } })
                 await new Promise((r) => setTimeout(r, 200 * Math.pow(2, attempt)))
                 try {
                   const fresh = (await ipc.get(project.id)) as { updatedAt?: string }
@@ -681,7 +684,7 @@ export function createProjectActions(set: Set, get: Get) {
               body: patchBody,
             })
             if (res.status === 409 && attempt < 2) {
-              console.warn(`[saveProjectToDb] 409 conflict on attempt ${attempt + 1}, retrying…`)
+              log.warn('saveProjectToDb: 409 conflict, retrying', { extra: { attempt: attempt + 1 } })
               await new Promise((r) => setTimeout(r, 200 * Math.pow(2, attempt)))
               try {
                 const refresh = await fetch(`/api/projects/${project.id}`, { method: 'GET' })
@@ -712,7 +715,7 @@ export function createProjectActions(set: Set, get: Get) {
           }
         }
       } catch (e) {
-        console.error('Failed to save project:', e)
+        log.error('failed to save project', { error: e })
       }
     },
 
@@ -726,7 +729,7 @@ export function createProjectActions(set: Set, get: Get) {
         }
         await get().fetchProjectList()
       } catch (e) {
-        console.error('Failed to delete project:', e)
+        log.error('failed to delete project', { error: e })
       }
     },
   }

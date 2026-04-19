@@ -9,6 +9,9 @@ import { mergeAvatarLayerUpdates } from '../avatar-layer-sync'
 import { compileD3SceneFromLayers } from '../charts/compile'
 import type { Set, Get } from './types'
 import { getResolvedStyle } from './helpers'
+import { createLogger } from '../logger'
+
+const log = createLogger('store.generation')
 
 export function createGenerationActions(set: Set, get: Get) {
   // Per-scene save deduplication: if a save is in flight, queue the next one
@@ -109,7 +112,7 @@ export function createGenerationActions(set: Set, get: Get) {
           // Summary is optional
         }
       } catch (err) {
-        console.error('Generation error:', err)
+        log.error('SVG generation error', { error: err })
         set({ lastGenerationError: err instanceof Error ? err.message : 'Generation failed' })
       } finally {
         set({ isGenerating: false, generatingSceneId: null })
@@ -176,7 +179,7 @@ export function createGenerationActions(set: Set, get: Get) {
           // Summary is optional
         }
       } catch (err) {
-        console.error('Canvas generation error:', err)
+        log.error('canvas generation error', { error: err })
         set({ lastGenerationError: err instanceof Error ? err.message : 'Canvas generation failed' })
       } finally {
         set({ isGenerating: false, generatingSceneId: null })
@@ -228,7 +231,7 @@ export function createGenerationActions(set: Set, get: Get) {
         })
         await get().saveSceneHTML(sceneId)
       } catch (err) {
-        console.error('Motion generation error:', err)
+        log.error('motion generation error', { error: err })
         set({ lastGenerationError: err instanceof Error ? err.message : 'Motion generation failed' })
       } finally {
         set({ isGenerating: false, generatingSceneId: null })
@@ -279,7 +282,7 @@ export function createGenerationActions(set: Set, get: Get) {
         })
         await get().saveSceneHTML(sceneId)
       } catch (err) {
-        console.error('React generation error:', err)
+        log.error('react generation error', { error: err })
         set({ lastGenerationError: err instanceof Error ? err.message : 'React generation failed' })
       } finally {
         set({ isGenerating: false, generatingSceneId: null })
@@ -344,7 +347,7 @@ export function createGenerationActions(set: Set, get: Get) {
         })
         await get().saveSceneHTML(sceneId)
       } catch (err) {
-        console.error('D3 generation error:', err)
+        log.error('d3 generation error', { error: err })
         set({ lastGenerationError: err instanceof Error ? err.message : 'D3 generation failed' })
       } finally {
         set({ isGenerating: false, generatingSceneId: null })
@@ -393,7 +396,7 @@ export function createGenerationActions(set: Set, get: Get) {
         })
         await get().saveSceneHTML(sceneId)
       } catch (err) {
-        console.error('Three.js generation error:', err)
+        log.error('three.js generation error', { error: err })
         set({ lastGenerationError: err instanceof Error ? err.message : 'Three.js generation failed' })
       } finally {
         set({ isGenerating: false, generatingSceneId: null })
@@ -441,7 +444,7 @@ export function createGenerationActions(set: Set, get: Get) {
         get().updateScene(sceneId, { svgContent: cleanedSvg, usage })
         await get().saveSceneHTML(sceneId)
       } catch (err) {
-        console.error('Lottie overlay generation error:', err)
+        log.error('lottie overlay generation error', { error: err })
         set({ lastGenerationError: err instanceof Error ? err.message : 'Lottie generation failed' })
       } finally {
         set({ isGenerating: false, generatingSceneId: null })
@@ -498,7 +501,7 @@ export function createGenerationActions(set: Set, get: Get) {
 
         await get().saveSceneHTML(sceneId)
       } catch (err) {
-        console.error('Edit error:', err)
+        log.error('edit error', { error: err })
         set({ lastGenerationError: err instanceof Error ? err.message : 'Edit failed' })
       } finally {
         set({ isGenerating: false, generatingSceneId: null })
@@ -525,7 +528,7 @@ export function createGenerationActions(set: Set, get: Get) {
             })()
         if (data?.result) get().updateScene(sceneId, { prompt: (data.result ?? '').trim() })
       } catch (err) {
-        console.error('Enhance error:', err)
+        log.error('enhance error', { error: err })
       }
     },
 
@@ -539,7 +542,7 @@ export function createGenerationActions(set: Set, get: Get) {
       const doSave = async () => {
         let scene = get().scenes.find((s) => s.id === sceneId)
         if (!scene) {
-          console.error('[saveSceneHTML] scene not found:', sceneId)
+          log.error('saveSceneHTML: scene not found', { extra: { sceneId } })
           return
         }
         if (scene.sceneType === 'd3' && (scene.chartLayers?.length ?? 0) > 0) {
@@ -581,12 +584,12 @@ export function createGenerationActions(set: Set, get: Get) {
             })
             if (!res.ok) {
               const body = await res.text().catch(() => '')
-              console.error('[saveSceneHTML] API error', res.status, body)
+              log.error('saveSceneHTML: API error', { extra: { status: res.status, body } })
               set({ sceneWriteErrors: { ...get().sceneWriteErrors, [sceneId]: `Save failed (${res.status})` } })
               return
             }
           }
-          console.log('[saveSceneHTML] saved', sceneId, `(${html.length} chars)`)
+          log.debug('saveSceneHTML saved', { extra: { sceneId, chars: html.length } })
           // Clear any previous error for this scene
           const { [sceneId]: _, ...rest } = get().sceneWriteErrors
           set({ sceneWriteErrors: rest })
@@ -594,7 +597,7 @@ export function createGenerationActions(set: Set, get: Get) {
             set({ sceneHtmlVersion: get().sceneHtmlVersion + 1 })
           }
         } catch (err) {
-          console.error('[saveSceneHTML] save failed:', err)
+          log.error('saveSceneHTML save failed', { error: err })
           set({
             sceneWriteErrors: {
               ...get().sceneWriteErrors,
@@ -652,7 +655,7 @@ export function createGenerationActions(set: Set, get: Get) {
 
         await get().saveSceneHTML(sceneId)
       } catch (err) {
-        console.error('SVG object generation error:', err)
+        log.error('SVG object generation error', { error: err })
         set({ lastGenerationError: err instanceof Error ? err.message : 'SVG object generation failed' })
       } finally {
         set({ isGenerating: false, generatingSceneId: null })
@@ -760,7 +763,7 @@ export function createGenerationActions(set: Set, get: Get) {
         // Regenerate scene HTML
         await get().saveSceneHTML(sceneId)
       } catch (err: any) {
-        console.error('AI image generation failed:', err)
+        log.error('AI image generation failed', { error: err })
         get().updateAILayer(sceneId, layerId, { status: 'error' } as Partial<AILayer>)
       }
     },

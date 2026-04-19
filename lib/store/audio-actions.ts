@@ -3,6 +3,9 @@
 import type { SFXTrack, MusicTrack, TTSProvider } from '../types'
 import { normalizeAudioLayer } from '../audio/normalize'
 import type { Set, Get } from './types'
+import { createLogger } from '../logger'
+
+const log = createLogger('store.audio')
 
 export function createAudioActions(set: Set, get: Get) {
   return {
@@ -147,7 +150,7 @@ export function createAudioActions(set: Set, get: Get) {
             tts: { ...currentAL.tts!, status: 'error' },
           },
         })
-        console.error('Narration generation failed:', err)
+        log.error('narration generation failed', { error: err })
       }
     },
 

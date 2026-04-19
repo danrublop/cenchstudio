@@ -1,6 +1,9 @@
 import type { StoreApi } from 'zustand'
 import type { VideoStore } from './types'
 import type { Workspace, WorkspaceListItem } from '../types'
+import { createLogger } from '../logger'
+
+const log = createLogger('store.workspace')
 
 type Set = StoreApi<VideoStore>['setState']
 type Get = () => VideoStore
@@ -17,7 +20,7 @@ export function createWorkspaceActions(set: Set, get: Get) {
         const list = ipc ? await ipc.list() : await fetch('/api/workspaces').then((r) => (r.ok ? r.json() : null))
         if (list) set({ workspaces: list as unknown as WorkspaceListItem[] })
       } catch (e) {
-        console.error('Failed to fetch workspaces:', e)
+        log.error('failed to fetch workspaces', { error: e })
       } finally {
         set({ isLoadingWorkspaces: false })
       }

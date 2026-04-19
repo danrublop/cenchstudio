@@ -34,6 +34,9 @@ import { createExportActions } from './export-actions'
 import { createInspectorActions } from './inspector-actions'
 import { createWorkspaceActions } from './workspace-actions'
 import { createDevActions } from './dev-actions'
+import { createLogger } from '../logger'
+
+const log = createLogger('store')
 
 export type { VideoStore, CenterTabId } from './types'
 export type { UndoableState, Set, Get } from './types'
@@ -269,7 +272,7 @@ export const useVideoStore = create<VideoStore>()(
             set({ projectAssets: ((data as { assets?: unknown[] }).assets ?? []) as any })
           }
         } catch (e) {
-          console.error('[loadProjectAssets]', e)
+          log.error('loadProjectAssets failed', { error: e })
         } finally {
           set({ assetsLoading: false })
         }
@@ -321,7 +324,7 @@ export const useVideoStore = create<VideoStore>()(
             })
           }
         } catch (e) {
-          console.error('[store] updateBrandKit failed:', e)
+          log.error('updateBrandKit failed', { error: e })
         }
       },
       applyBrandToStyle: () => {
