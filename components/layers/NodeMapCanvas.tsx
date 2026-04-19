@@ -285,6 +285,10 @@ interface PositionedColumn {
   label: string
   x: number
   headerY: number
+  collapsed: boolean
+  /** Size of the full group (before collapse), so the summary card can show the count. */
+  totalCount: number
+  /** Rendered nodes: full list when expanded, a single synthetic summary when collapsed. */
   nodes: PositionedNode[]
 }
 
@@ -293,6 +297,8 @@ interface ComputedLayout {
   rootCy: number
   totalHeight: number
   totalWidth: number
+  /** Summary keys keyed on group, for selection routing. */
+  summaryKeyByGroup: Record<string, string>
 }
 
 const COLUMN_GAP = 44
@@ -303,7 +309,16 @@ const COLUMN_TOP_PAD = 16
 const COLUMN_BOTTOM_PAD = 16
 const ROOT_X = 40
 
-function computeLayout(nodes: NodeMapEntry[], minH: number): ComputedLayout {
+function summaryKeyForGroup(group: NodeGroup): string {
+  return `group:${group}`
+}
+
+function representativeKindForGroup(group: NodeGroup, groupNodes: NodeMapEntry[]): string {
+  // Use the first node's kind as the color anchor when available, else fall back to group.
+  return groupNodes[0]?.kind ?? group
+}
+
+function computeLayout(nodes: NodeMapEntry[], minH: number, collapsed: Record<NodeGroup, boolean>): ComputedLayout {
   // Bucket nodes by group, preserve insertion order within each group.
   const buckets = new Map<NodeGroup, NodeMapEntry[]>()
   for (const g of GROUP_ORDER) buckets.set(g, [])
@@ -311,28 +326,37 @@ function computeLayout(nodes: NodeMapEntry[], minH: number): ComputedLayout {
   const activeGroups = GROUP_ORDER.filter((g) => (buckets.get(g)?.length ?? 0) > 0)
 
   const columns: PositionedColumn[] = []
+  const summaryKeyByGroup: Record<string, string> = {}
   let x = ROOT_X + ROOT_W + COLUMN_GAP
   let maxColumnHeight = 0
   for (const group of activeGroups) {
     const groupNodes = buckets.get(group) ?? []
+    const isCollapsed = !!collapsed[group]
+    // Rendered list: full when expanded; a single synthetic summary when collapsed.
+    const renderedNodes: NodeMapEntry[] = isCollapsed
+      ? [
+          {
+            key: summaryKeyForGroup(group) as NodeMapKey,
+            label: `${GROUP_LABELS[group]} · ${groupNodes.length}`,
+            kind: representativeKindForGroup(group, groupNodes),
+            ring: 'inner',
+            group,
+          },
+        ]
+      : groupNodes
+    summaryKeyByGroup[group] = summaryKeyForGroup(group)
+    const n = renderedNodes.length
     const columnHeight =
-      COLUMN_TOP_PAD +
-      COLUMN_HEADER_H +
-      COLUMN_HEADER_GAP +
-      groupNodes.length * CARD_H +
-      (groupNodes.length - 1) * NODE_GAP +
-      COLUMN_BOTTOM_PAD
+      COLUMN_TOP_PAD + COLUMN_HEADER_H + COLUMN_HEADER_GAP + n * CARD_H + (n - 1) * NODE_GAP + COLUMN_BOTTOM_PAD
     maxColumnHeight = Math.max(maxColumnHeight, columnHeight)
     columns.push({
       group,
       label: GROUP_LABELS[group],
       x,
       headerY: 0, // filled below once total height known
-      nodes: groupNodes.map((n, i) => ({
-        ...n,
-        x,
-        y: 0, // filled below
-      })),
+      collapsed: isCollapsed,
+      totalCount: groupNodes.length,
+      nodes: renderedNodes.map((n2) => ({ ...n2, x, y: 0 })),
     })
     x += CARD_W + COLUMN_GAP
   }
@@ -353,7 +377,7 @@ function computeLayout(nodes: NodeMapEntry[], minH: number): ComputedLayout {
   }
 
   const totalWidth = x + 40
-  return { columns, rootCy, totalHeight, totalWidth }
+  return { columns, rootCy, totalHeight, totalWidth, summaryKeyByGroup }
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -370,11 +394,22 @@ const ZOOM_MIN = 0.3
 const ZOOM_MAX = 2.5
 const ZOOM_STEP = 0.12
 
+const DEFAULT_COLLAPSED: Record<NodeGroup, boolean> = {
+  content: true,
+  text: true,
+  interaction: true,
+  bridge: true,
+  audio: true,
+  world: true,
+  meta: true,
+}
+
 export default function NodeMapCanvas({ scene, nodes, selectedKey, onSelect }: NodeMapCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ w: 500, h: CANVAS_H_DEFAULT })
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [zoom, setZoom] = useState(1)
+  const [collapsed, setCollapsed] = useState<Record<NodeGroup, boolean>>(DEFAULT_COLLAPSED)
   const dragRef = useRef<{ startX: number; startY: number; startPanX: number; startPanY: number } | null>(null)
 
   useEffect(() => {
@@ -388,8 +423,31 @@ export default function NodeMapCanvas({ scene, nodes, selectedKey, onSelect }: N
     return () => ro.disconnect()
   }, [])
 
+  // If a specific node is selected externally, auto-expand its group so the
+  // selection is visible.
+  useEffect(() => {
+    if (!selectedKey || selectedKey === 'root') return
+    const hit = nodes.find((n) => n.key === selectedKey)
+    if (hit && collapsed[hit.group]) {
+      setCollapsed((prev) => ({ ...prev, [hit.group]: false }))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedKey])
+
+  const toggleGroup = useCallback((group: NodeGroup) => {
+    setCollapsed((prev) => ({ ...prev, [group]: !prev[group] }))
+  }, [])
+
+  // Per-group counts for the toolbar chips.
+  const groupCounts = useMemo(() => {
+    const counts: Record<string, number> = {}
+    for (const g of GROUP_ORDER) counts[g] = 0
+    for (const n of nodes) counts[n.group] = (counts[n.group] ?? 0) + 1
+    return counts
+  }, [nodes])
+
   const minCanvasH = Math.max(CANVAS_H_DEFAULT, nodes.length * (CARD_H + NODE_GAP) + 40)
-  const layout = useMemo(() => computeLayout(nodes, minCanvasH), [nodes, minCanvasH])
+  const layout = useMemo(() => computeLayout(nodes, minCanvasH, collapsed), [nodes, minCanvasH, collapsed])
   const rootCy = layout.rootCy
   const rootPortX = ROOT_X + ROOT_W
 
@@ -416,6 +474,10 @@ export default function NodeMapCanvas({ scene, nodes, selectedKey, onSelect }: N
   )
 
   // Zoom with ctrl/meta + wheel, centered on cursor.
+  // Trackpad pinch-to-zoom arrives as wheel events with `ctrlKey=true` and tiny
+  // deltaY values (often <5); a classic mouse wheel arrives with large jumps
+  // (±100 in deltaMode=1 or ±1 in deltaMode=2). Scale by the magnitude so the
+  // same finger-gesture doesn't blow through the whole zoom range.
   const onWheel = useCallback((e: React.WheelEvent) => {
     if (!(e.ctrlKey || e.metaKey)) return
     e.preventDefault()
@@ -424,7 +486,13 @@ export default function NodeMapCanvas({ scene, nodes, selectedKey, onSelect }: N
     const rect = container.getBoundingClientRect()
     const cx = e.clientX - rect.left
     const cy = e.clientY - rect.top
-    const delta = -Math.sign(e.deltaY) * ZOOM_STEP
+    // Normalize across deltaMode (0 = pixel, 1 = line, 2 = page).
+    const modeScale = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 100 : 1
+    const pixelsDelta = e.deltaY * modeScale
+    // Clamp a single event to +/-24px so a violent flick can't jump multiple steps.
+    const clampedPixels = Math.max(-24, Math.min(24, pixelsDelta))
+    // Sensitivity: 400px of scroll ≈ full zoom-step, trackpad gestures nudge tens of px.
+    const delta = -clampedPixels / 400
     setZoom((z) => {
       const nextZoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z + delta))
       if (nextZoom === z) return z
@@ -623,78 +691,44 @@ export default function NodeMapCanvas({ scene, nodes, selectedKey, onSelect }: N
           {/* ── Column node cards ── */}
           {layout.columns.flatMap((col) =>
             col.nodes.map((n) => {
-              const Icon = getNodeIcon(scene, n)
-              const isSelected = selectedKey === n.key
-              const color = colorForKind(n.kind)
-              const isBg = n.kind === 'bg'
-              const bgSize = CARD_TITLE_H + 50
-              const nodeW = isBg ? 70 : CARD_W
-              const nodeH = isBg ? bgSize : CARD_H
-              const bodyH = isBg ? bgSize - CARD_TITLE_H : CARD_BODY_H
+              const isSummary = n.key.startsWith('group:')
               return (
-                <div
+                <NodeCard
                   key={n.key}
-                  data-node={n.key}
-                  className="absolute rounded-md overflow-hidden cursor-pointer"
-                  style={{
-                    left: n.x,
-                    top: n.y,
-                    width: nodeW,
-                    height: nodeH,
-                    border: `1px solid ${isSelected ? '#555' : '#333'}`,
-                    boxShadow: '0 1px 4px rgba(0,0,0,0.3)',
+                  scene={scene}
+                  node={n}
+                  isSelected={selectedKey === n.key}
+                  isSummary={isSummary}
+                  summaryCount={isSummary ? col.totalCount : 0}
+                  onClick={() => {
+                    if (isSummary) {
+                      toggleGroup(col.group)
+                    } else {
+                      onSelect(n.key)
+                    }
                   }}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onSelect(n.key)
-                  }}
-                >
-                  <div
-                    className="absolute rounded-full"
-                    style={{
-                      left: -PORT_R,
-                      top: CARD_TITLE_H / 2 - PORT_R,
-                      width: PORT_R * 2,
-                      height: PORT_R * 2,
-                      background: color,
-                      border: '2px solid #1a1a1e',
-                    }}
-                  />
-                  <div className="flex items-center gap-1 px-2" style={{ height: CARD_TITLE_H, background: color }}>
-                    <span className="text-[9px] font-semibold text-white truncate flex-1">{n.label}</span>
-                    {Icon && <Icon size={10} strokeWidth={2.5} color="rgba(255,255,255,0.7)" className="shrink-0" />}
-                  </div>
-                  {isBg ? (
-                    <div className="flex items-center justify-center" style={{ height: bodyH, background: '#2a2a2e' }}>
-                      <div
-                        className="rounded-full"
-                        style={{
-                          width: 32,
-                          height: 32,
-                          background: scene.bgColor || '#000',
-                          border: '2px solid #444',
-                        }}
-                      />
-                    </div>
-                  ) : (
-                    <div className="flex items-center px-2" style={{ height: bodyH, background: '#2a2a2e' }}>
-                      <span className="text-[8px] truncate" style={{ color: '#999' }}>
-                        {getNodeSummary(scene, n)}
-                      </span>
-                    </div>
-                  )}
-                </div>
+                />
               )
             }),
           )}
         </div>
       </div>
 
-      {/* Zoom toolbar */}
+      {/* Inline toolbar: group toggles + zoom controls */}
       <div
         className="absolute right-2 top-2 flex items-center gap-1 rounded px-1 py-0.5"
-        style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(4px)' }}
+        style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}
       >
+        {GROUP_ORDER.filter((g) => (groupCounts[g] ?? 0) > 0).map((g) => (
+          <GroupChip
+            key={g}
+            label={GROUP_LABELS[g]}
+            count={groupCounts[g] ?? 0}
+            open={!collapsed[g]}
+            onClick={() => toggleGroup(g)}
+          />
+        ))}
+        <div className="mx-1 h-4" style={{ width: 1, background: 'rgba(255,255,255,0.12)' }} />
         <ZoomButton onClick={zoomOut} label="Zoom out">
           <Minus size={11} />
         </ZoomButton>
@@ -734,6 +768,243 @@ function ZoomButton({ children, onClick, label }: { children: React.ReactNode; o
     >
       {children}
     </span>
+  )
+}
+
+function GroupChip({
+  label,
+  count,
+  open,
+  onClick,
+}: {
+  label: string
+  count: number
+  open: boolean
+  onClick: () => void
+}) {
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      title={`${open ? 'Collapse' : 'Expand'} ${label}`}
+      className="flex h-5 items-center gap-1 rounded px-1.5 text-[10px] font-medium cursor-pointer select-none"
+      style={{
+        color: open ? '#f5f2ea' : 'rgba(255,255,255,0.65)',
+        background: open ? 'rgba(232,69,69,0.55)' : 'rgba(255,255,255,0.06)',
+      }}
+      onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') onClick()
+      }}
+    >
+      <span>{label}</span>
+      <span
+        className="tabular-nums"
+        style={{
+          fontSize: 9,
+          opacity: 0.7,
+          padding: '0 4px',
+          borderRadius: 8,
+          background: 'rgba(0,0,0,0.25)',
+        }}
+      >
+        {count}
+      </span>
+    </span>
+  )
+}
+
+// ── Node card (handles summary + per-kind visual body) ──────────────────────
+
+function NodeCard({
+  scene,
+  node,
+  isSelected,
+  isSummary,
+  summaryCount,
+  onClick,
+}: {
+  scene: Scene
+  node: NodeMapEntry & { x: number; y: number }
+  isSelected: boolean
+  isSummary: boolean
+  summaryCount: number
+  onClick: () => void
+}) {
+  const Icon = getNodeIcon(scene, node)
+  const color = colorForKind(node.kind)
+  const isBg = node.kind === 'bg'
+  const bgSize = CARD_TITLE_H + 50
+  const nodeW = isBg ? 70 : CARD_W
+  const nodeH = isBg ? bgSize : CARD_H
+  const bodyH = isBg ? bgSize - CARD_TITLE_H : CARD_BODY_H
+  const title = isSummary ? `${node.label} · tap to expand` : node.label
+
+  return (
+    <div
+      data-node={node.key}
+      className="absolute rounded-md overflow-hidden cursor-pointer"
+      style={{
+        left: node.x,
+        top: node.y,
+        width: nodeW,
+        height: nodeH,
+        border: `1px solid ${isSelected ? '#555' : '#333'}`,
+        boxShadow: '0 1px 4px rgba(0,0,0,0.3)',
+      }}
+      onClick={(e) => {
+        e.stopPropagation()
+        onClick()
+      }}
+    >
+      {/* Input port */}
+      <div
+        className="absolute rounded-full"
+        style={{
+          left: -PORT_R,
+          top: CARD_TITLE_H / 2 - PORT_R,
+          width: PORT_R * 2,
+          height: PORT_R * 2,
+          background: color,
+          border: '2px solid #1a1a1e',
+        }}
+      />
+      {/* Title bar */}
+      <div className="flex items-center gap-1 px-2" style={{ height: CARD_TITLE_H, background: color }}>
+        <span className="text-[9px] font-semibold text-white truncate flex-1">{title}</span>
+        {isSummary ? (
+          <span className="text-[9px] font-semibold text-white/80 shrink-0 tabular-nums">{summaryCount}</span>
+        ) : (
+          Icon && <Icon size={10} strokeWidth={2.5} color="rgba(255,255,255,0.7)" className="shrink-0" />
+        )}
+      </div>
+      {/* Body — summary / bg / text / 3D iframe / generic */}
+      <NodeCardBody scene={scene} node={node} bodyH={bodyH} isSummary={isSummary} />
+    </div>
+  )
+}
+
+function NodeCardBody({
+  scene,
+  node,
+  bodyH,
+  isSummary,
+}: {
+  scene: Scene
+  node: NodeMapEntry
+  bodyH: number
+  isSummary: boolean
+}) {
+  if (isSummary) {
+    return (
+      <div className="flex items-center justify-center px-2" style={{ height: bodyH, background: '#2a2a2e' }}>
+        <span className="text-[8px]" style={{ color: '#888' }}>
+          Tap to expand
+        </span>
+      </div>
+    )
+  }
+
+  if (node.kind === 'bg') {
+    return (
+      <div className="flex items-center justify-center" style={{ height: bodyH, background: '#2a2a2e' }}>
+        <div
+          className="rounded-full"
+          style={{ width: 32, height: 32, background: scene.bgColor || '#000', border: '2px solid #444' }}
+        />
+      </div>
+    )
+  }
+
+  // Text overlay: render actual text in its font + color.
+  if (node.kind === 'text') {
+    const id = node.key.startsWith('text:') ? node.key.slice(5) : null
+    const overlay = scene.textOverlays?.find((t) => t.id === id)
+    if (overlay) {
+      return (
+        <div className="flex items-center px-2" style={{ height: bodyH, background: '#2a2a2e', overflow: 'hidden' }}>
+          <span
+            className="block truncate"
+            style={{
+              fontFamily: overlay.font || 'inherit',
+              color: overlay.color || '#f5f2ea',
+              fontSize: 11,
+              lineHeight: 1.1,
+              maxWidth: '100%',
+            }}
+          >
+            {overlay.content || '—'}
+          </span>
+        </div>
+      )
+    }
+  }
+
+  // rx heading / paragraph / text: strip "H1: " prefix from label and render plainly.
+  if (node.kind === 'rx_heading' || node.kind === 'rx_paragraph' || node.kind === 'rx_text') {
+    const text = node.label.replace(/^H[1-6]:\s*/i, '')
+    const isHeading = node.kind === 'rx_heading'
+    return (
+      <div className="flex items-center px-2" style={{ height: bodyH, background: '#2a2a2e', overflow: 'hidden' }}>
+        <span
+          className="block truncate"
+          style={{
+            fontFamily: 'inherit',
+            color: '#f5f2ea',
+            fontSize: isHeading ? 11 : 10,
+            fontWeight: isHeading ? 700 : 400,
+            lineHeight: 1.1,
+          }}
+        >
+          {text || '—'}
+        </span>
+      </div>
+    )
+  }
+
+  // 3D kinds: reuse the main scene iframe preview so users see the world.
+  if (
+    node.kind === '3d_env' ||
+    node.kind === '3d_obj' ||
+    node.kind === '3d_panel' ||
+    node.kind === '3d_avatar' ||
+    node.kind === '3d_camera'
+  ) {
+    return (
+      <div
+        style={{
+          height: bodyH,
+          background: '#2a2a2e',
+          position: 'relative',
+          overflow: 'hidden',
+        }}
+      >
+        <iframe
+          src={`/scenes/${scene.id}.html`}
+          title={`${node.label} preview`}
+          className="pointer-events-none"
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            border: 'none',
+            width: 1920,
+            height: 1080,
+            transformOrigin: '0 0',
+            transform: `scale(${Math.max(CARD_W / 1920, bodyH / 1080)})`,
+          }}
+        />
+      </div>
+    )
+  }
+
+  // Generic fallback: whatever one-line summary we have.
+  return (
+    <div className="flex items-center px-2" style={{ height: bodyH, background: '#2a2a2e' }}>
+      <span className="text-[8px] truncate" style={{ color: '#999' }}>
+        {getNodeSummary(scene, node)}
+      </span>
+    </div>
   )
 }
 
