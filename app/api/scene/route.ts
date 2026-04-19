@@ -10,6 +10,9 @@ import { readProjectSceneBlob, writeProjectSceneBlob } from '@/lib/db/project-sc
 import { readProjectScenesFromTables, writeProjectScenesToTables } from '@/lib/db/project-scene-table'
 import { assertProjectAccess } from '@/lib/auth-helpers'
 import { LIMITS, VALID_SCENE_TYPES, SCENE_ID_RE } from '@/lib/api/constants'
+import { createLogger } from '@/lib/logger'
+
+const log = createLogger('api.scene')
 
 // ── GET /api/scene ────────────────────────────────────────────────────────────
 // ?projectId=X           → list scenes from the project's JSONB blob
@@ -60,7 +63,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ scenes: summaries })
   } catch (err) {
-    console.error('[GET /api/scene]', err)
+    log.error('GET failed', { error: err })
     return NextResponse.json({ error: 'Failed to fetch scenes' }, { status: 500 })
   }
 }
@@ -98,7 +101,7 @@ export async function POST(req: NextRequest) {
       const scenesDir = path.join(process.cwd(), 'public', 'scenes')
       await fs.mkdir(scenesDir, { recursive: true })
       await fs.writeFile(path.join(scenesDir, `${id}.html`), html, 'utf-8')
-      console.log(`[POST /api/scene] Legacy write: id=${id} htmlLen=${html.length}`)
+      log.debug('POST legacy write', { extra: { id, htmlLen: html.length } })
       return NextResponse.json({ success: true, path: `/scenes/${id}.html` })
     }
 
@@ -300,17 +303,17 @@ export async function POST(req: NextRequest) {
       await fs.mkdir(scenesDir, { recursive: true })
       await fs.writeFile(path.join(scenesDir, `${sceneId}.html`), html, 'utf-8')
     } catch (e) {
-      console.error(`[POST /api/scene] Failed to write HTML for scene ${sceneId}:`, e)
+      log.error('POST: failed to write HTML', { extra: { sceneId }, error: e })
       // DB is saved — HTML can be regenerated on next load, so don't fail the request
     }
 
     try {
       await writeProjectScenesToTables(projectId, scenes as any, sceneGraph as any)
     } catch (e) {
-      console.error('[POST /api/scene] table sync failed:', e)
+      log.error('POST: table sync failed', { error: e })
     }
 
-    console.log(`[POST /api/scene] Created: sceneId=${sceneId} type=${type} name="${name}" htmlLen=${html.length}`)
+    log.debug('POST created', { extra: { sceneId, type, name, htmlLen: html.length } })
     return NextResponse.json({
       success: true,
       scene: {
@@ -322,7 +325,7 @@ export async function POST(req: NextRequest) {
       },
     })
   } catch (err: unknown) {
-    console.error('[POST /api/scene]', err)
+    log.error('POST failed', { error: err })
     const message = err instanceof Error ? err.message.slice(0, 200) : 'Internal error'
     return NextResponse.json({ error: message }, { status: 500 })
   }
@@ -353,6 +356,11 @@ export async function PATCH(req: NextRequest) {
       interactions: bodyInteractions,
       variables: bodyVariables,
       sceneGraph: bodySceneGraph,
+      styleOverride: bodyStyleOverride,
+      worldConfig: bodyWorldConfig,
+      chartLayers: bodyChartLayers,
+      physicsLayers: bodyPhysicsLayers,
+      threeEnvironmentPresetId: bodyThreeEnvPreset,
     } = body
 
     if (!projectId || !sceneId) {
@@ -404,7 +412,12 @@ export async function PATCH(req: NextRequest) {
       bodySceneType !== undefined ||
       bodyInteractions !== undefined ||
       bodyVariables !== undefined ||
-      bodySceneGraph !== undefined
+      bodySceneGraph !== undefined ||
+      bodyStyleOverride !== undefined ||
+      bodyWorldConfig !== undefined ||
+      bodyChartLayers !== undefined ||
+      bodyPhysicsLayers !== undefined ||
+      bodyThreeEnvPreset !== undefined
     if (!code && !hasPropertyUpdate) {
       return NextResponse.json(
         { error: 'generatedCode, svgContent, or a scene property update is required' },
@@ -434,9 +447,9 @@ export async function PATCH(req: NextRequest) {
     const scenes: any[] = existingData.scenes || []
     const sceneIdx = scenes.findIndex((s: any) => s.id === sceneId)
     if (sceneIdx === -1) {
-      console.warn(
-        `[PATCH /api/scene] Scene ${sceneId} not found (source=${useTableScenes ? 'tables' : 'blob'}, count=${scenes.length})`,
-      )
+      log.warn('PATCH: scene not found', {
+        extra: { sceneId, source: useTableScenes ? 'tables' : 'blob', count: scenes.length },
+      })
       return NextResponse.json({ error: `Scene ${sceneId} not found` }, { status: 404 })
     }
 
@@ -502,6 +515,17 @@ export async function PATCH(req: NextRequest) {
     if (bodyAiLayers !== undefined) scene.aiLayers = bodyAiLayers
     if (bodyInteractions !== undefined && Array.isArray(bodyInteractions)) scene.interactions = bodyInteractions
     if (bodyVariables !== undefined && Array.isArray(bodyVariables)) scene.variables = bodyVariables
+    if (bodyStyleOverride !== undefined && bodyStyleOverride && typeof bodyStyleOverride === 'object') {
+      scene.styleOverride = { ...scene.styleOverride, ...bodyStyleOverride }
+    }
+    if (bodyWorldConfig !== undefined) {
+      scene.worldConfig = bodyWorldConfig && typeof bodyWorldConfig === 'object' ? bodyWorldConfig : null
+    }
+    if (bodyChartLayers !== undefined && Array.isArray(bodyChartLayers)) scene.chartLayers = bodyChartLayers
+    if (bodyPhysicsLayers !== undefined && Array.isArray(bodyPhysicsLayers)) scene.physicsLayers = bodyPhysicsLayers
+    if (bodyThreeEnvPreset !== undefined) {
+      scene.threeEnvironmentPresetId = typeof bodyThreeEnvPreset === 'string' ? bodyThreeEnvPreset : null
+    }
 
     scenes[sceneIdx] = scene
 
@@ -523,7 +547,7 @@ export async function PATCH(req: NextRequest) {
         resolveDims(project.mp4Settings?.aspectRatio, project.mp4Settings?.resolution),
       )
     } catch (genErr) {
-      console.error(`[PATCH /api/scene] generateSceneHTML failed:`, genErr)
+      log.error('PATCH: generateSceneHTML failed', { error: genErr })
       return NextResponse.json({ error: `HTML generation failed: ${(genErr as Error).message}` }, { status: 500 })
     }
 
@@ -553,24 +577,24 @@ export async function PATCH(req: NextRequest) {
       await fs.writeFile(path.join(scenesDir, `${sceneId}.html`), html, 'utf-8')
     } catch (e) {
       // DB is saved — HTML can be regenerated on next load, so log but don't fail
-      console.error(`[PATCH /api/scene] Failed to write HTML for scene ${sceneId}:`, e)
+      log.error('PATCH: failed to write HTML', { extra: { sceneId }, error: e })
     }
 
     try {
       await writeProjectScenesToTables(projectId, scenes as any, existingData.sceneGraph as any)
     } catch (e) {
-      console.error('[PATCH /api/scene] table sync failed:', e)
+      log.error('PATCH: table sync failed', { error: e })
     }
 
-    console.log(
-      `[PATCH /api/scene] Updated: sceneId=${sceneId} type=${sceneType} codeLen=${code?.length ?? 0} htmlLen=${html.length}`,
-    )
+    log.debug('PATCH updated', {
+      extra: { sceneId, type: sceneType, codeLen: code?.length ?? 0, htmlLen: html.length },
+    })
     return NextResponse.json({
       success: true,
       scene: { id: sceneId, previewUrl: `/scenes/${sceneId}.html` },
     })
   } catch (err) {
-    console.error('[PATCH /api/scene]', err)
+    log.error('PATCH failed', { error: err })
     return NextResponse.json({ error: 'Failed to update scene' }, { status: 500 })
   }
 }
