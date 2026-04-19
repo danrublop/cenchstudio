@@ -95,14 +95,32 @@ export default function NodeMapControls({
   const sceneIdRef = useRef(scene.id)
   sceneIdRef.current = scene.id
 
-  // Clean up timers on unmount
-  useEffect(
-    () => () => {
-      if (_nodeMapSaveTimer) clearTimeout(_nodeMapSaveTimer)
-      if (_bgSaveTimer) clearTimeout(_bgSaveTimer)
-    },
-    [],
-  )
+  // Flush pending edits on unmount and on page unload so a quick refresh after
+  // editing doesn't lose the change. The debounce window is short (250ms) but
+  // still short enough that a user hitting reload within that window would
+  // otherwise lose the edit.
+  const flushPending = useCallback(() => {
+    if (_nodeMapSaveTimer) {
+      clearTimeout(_nodeMapSaveTimer)
+      _nodeMapSaveTimer = null
+      saveSceneHTML(sceneIdRef.current)
+      void saveProjectToDb()
+    }
+    if (_bgSaveTimer) {
+      clearTimeout(_bgSaveTimer)
+      _bgSaveTimer = null
+      void saveProjectToDb()
+    }
+  }, [saveSceneHTML, saveProjectToDb])
+
+  useEffect(() => {
+    const onBeforeUnload = () => flushPending()
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => {
+      window.removeEventListener('beforeunload', onBeforeUnload)
+      flushPending()
+    }
+  }, [flushPending])
 
   // ── Sync bgColor to live iframe via postMessage (handles undo too) ──
   const lastBgRef = useRef(scene.bgColor)
@@ -115,12 +133,15 @@ export default function NodeMapControls({
   const upd = useCallback(
     (updates: Partial<Scene>) => {
       updateScene(sceneIdRef.current, updates)
-      // Debounced save — regenerate HTML, reload preview, persist to DB
+      // Debounced save — regenerate HTML, reload preview, persist to DB.
+      // 250ms is short enough to feel instant on one-shot edits (dropdowns,
+      // color pickers) yet long enough to batch continuous typing.
       if (_nodeMapSaveTimer) clearTimeout(_nodeMapSaveTimer)
       _nodeMapSaveTimer = setTimeout(() => {
+        _nodeMapSaveTimer = null
         saveSceneHTML(sceneIdRef.current)
-        saveProjectToDb()
-      }, 600)
+        void saveProjectToDb()
+      }, 250)
     },
     [updateScene, saveSceneHTML, saveProjectToDb],
   )
@@ -343,10 +364,7 @@ export default function NodeMapControls({
 
               {/* ── Expanded settings panel ── */}
               {isExpanded && (
-                <div
-                  className="ml-8 pl-2 pb-2 pt-1 space-y-2"
-                  style={{ borderLeft: '1px solid var(--color-hairline)' }}
-                >
+                <div className="px-1 pb-2 pt-1 space-y-2">
                   <LayerSettings
                     scene={scene}
                     layerKey={key}
@@ -410,7 +428,7 @@ function LayerSettings({
             <TextInput value={overlay.content} onChange={(v) => updT({ content: v })} multiline placeholder="Text" />
           </FieldRow>
           <FieldRow label="Font">
-            <TextInput value={overlay.font ?? ''} onChange={(v) => updT({ font: v })} placeholder="Inter" />
+            <FontSelect value={overlay.font ?? ''} onChange={(v) => updT({ font: v })} />
           </FieldRow>
           <FieldRow label="Size">
             <NumberInput value={overlay.size ?? 24} onChange={(v) => updT({ size: v })} min={8} max={200} unit="px" />
@@ -2393,6 +2411,48 @@ function SelectInput({
       {options.map((o) => (
         <option key={o.value} value={o.value}>
           {o.label}
+        </option>
+      ))}
+    </select>
+  )
+}
+
+const FONT_OPTIONS = [
+  'Inter',
+  'Roboto',
+  'Open Sans',
+  'Montserrat',
+  'Poppins',
+  'Lato',
+  'Source Sans Pro',
+  'Nunito',
+  'Playfair Display',
+  'Merriweather',
+  'Georgia',
+  'Times New Roman',
+  'Courier New',
+  'JetBrains Mono',
+  'Fira Code',
+  'system-ui',
+  'sans-serif',
+  'serif',
+  'monospace',
+] as const
+
+function FontSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const current = value || 'Inter'
+  const isCustom = !!value && !FONT_OPTIONS.includes(value as (typeof FONT_OPTIONS)[number])
+  return (
+    <select
+      className="w-full rounded border px-2 py-1 text-[11px] bg-transparent outline-none"
+      style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-primary)', fontFamily: current }}
+      value={value || 'Inter'}
+      onChange={(e) => onChange(e.target.value)}
+    >
+      {isCustom && <option value={value}>{value} (custom)</option>}
+      {FONT_OPTIONS.map((f) => (
+        <option key={f} value={f} style={{ fontFamily: f }}>
+          {f}
         </option>
       ))}
     </select>
