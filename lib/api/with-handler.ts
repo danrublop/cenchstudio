@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { apiError, safeErrorMessage } from './response'
 import { logRequest } from './logger'
+import { createLogger } from '../logger'
+
+const log = createLogger('api')
 
 type RouteHandler = (req: NextRequest) => Promise<NextResponse>
 
@@ -37,7 +40,7 @@ export function withHandler(handler: RouteHandler): RouteHandler {
       const rawMessage = err instanceof Error ? err.message : 'Internal server error'
       const clientMessage = safeErrorMessage(err, 'Internal server error')
       const durationMs = Date.now() - start
-      console.error(`[API] ${req.method} ${path} failed (${durationMs}ms):`, err)
+      log.error('route failed', { extra: { method: req.method, path, durationMs }, error: err })
       logRequest({
         method: req.method,
         path,

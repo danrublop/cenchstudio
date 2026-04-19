@@ -2,6 +2,9 @@ import { drizzle } from 'drizzle-orm/node-postgres'
 import { Pool } from 'pg'
 import * as schema from './schema'
 import { eq, sql } from 'drizzle-orm'
+import { createLogger } from '../logger'
+
+const log = createLogger('db')
 
 type DrizzleDB = ReturnType<typeof drizzle<typeof schema>>
 
@@ -34,7 +37,7 @@ function initDb(): DrizzleDB {
     ssl: url.includes('localhost') || url.includes('127.0.0.1') ? false : { rejectUnauthorized: true },
   })
   pool.on('error', (err) => {
-    console.error('Unexpected Postgres pool error:', err)
+    log.error('unexpected Postgres pool error', { error: err })
   })
   const database = drizzle(pool, {
     schema,
@@ -121,7 +124,7 @@ export async function logSpend(
   } catch (trackerErr) {
     // Tracker is best-effort — never block the DB write on it, but do log so
     // we don't silently diverge from the in-memory snapshot in production.
-    console.warn(`[logSpend] budget tracker update failed for project=${projectId} api=${api}`, trackerErr)
+    log.warn('logSpend: budget tracker update failed', { extra: { projectId, api }, error: trackerErr })
   }
 }
 
@@ -275,7 +278,7 @@ export async function getAgentUsageSummary(projectId?: string): Promise<{
       byAgent,
     }
   } catch (e) {
-    console.error('[DB] getAgentUsageSummary failed (table may not exist):', e)
+    log.error('getAgentUsageSummary failed (table may not exist)', { error: e })
     return empty
   }
 }

@@ -8,6 +8,9 @@ import Anthropic from '@anthropic-ai/sdk'
 import type { SceneType } from '../types'
 import type { ZdogComposedSceneSpec } from '../types'
 import { logSpend } from '../db'
+import { createLogger } from '../logger'
+
+const log = createLogger('generation.code')
 import { getModelPricing, getModelProvider } from '../agents/types'
 import type { ModelId, ModelTier } from '../agents/types'
 import type { ModelConfig } from '../agents/model-config'
@@ -218,9 +221,7 @@ export async function generateCode(
   // ── Route to provider ──────────────────────────────────────────────────────
 
   const provider = getModelProvider(model as ModelId, options.modelConfigs)
-  console.log(
-    `[generateCode] Start: type=${layerType} model=${model} provider=${provider} prompt="${prompt.slice(0, 120)}"`,
-  )
+  log.info('start', { extra: { type: layerType, model, provider, promptHead: prompt.slice(0, 120) } })
 
   let raw: string
   let inputTokens: number
@@ -251,9 +252,17 @@ export async function generateCode(
   const pricing = getModelPricing(model as ModelId)
   const costUsd = (inputTokens / 1_000_000) * pricing.inputPer1M + (outputTokens / 1_000_000) * pricing.outputPer1M
 
-  console.log(
-    `[generateCode] Complete: type=${layerType} model=${model} tokens=${inputTokens}in/${outputTokens}out cost=$${costUsd.toFixed(4)} codeLen=${raw.length}${truncated ? ' TRUNCATED' : ''}`,
-  )
+  log.info('complete', {
+    extra: {
+      type: layerType,
+      model,
+      inputTokens,
+      outputTokens,
+      costUsd: Number(costUsd.toFixed(4)),
+      codeLen: raw.length,
+      truncated,
+    },
+  })
 
   if (projectId) {
     await logSpend(projectId, `generation:${layerType}`, costUsd, prompt.slice(0, 200))
@@ -278,7 +287,7 @@ export async function generateCode(
       try {
         JSON.parse(lottieRaw) // validate
       } catch {
-        console.error(`[generateCode] Lottie JSON parse failed, raw length: ${raw.length}`)
+        log.error('lottie JSON parse failed', { extra: { rawLength: raw.length } })
         throw new Error(
           truncated
             ? 'Lottie JSON was truncated — try a simpler animation'
@@ -301,7 +310,7 @@ export async function generateCode(
       try {
         parsed = JSON.parse(cleaned)
       } catch {
-        console.error(`[generateCode] D3 JSON parse failed, raw length: ${raw.length}`)
+        log.error('d3 JSON parse failed', { extra: { rawLength: raw.length } })
         throw new Error(
           truncated
             ? 'D3 scene code was too long and got cut off — try a simpler prompt'
@@ -327,7 +336,7 @@ export async function generateCode(
       try {
         parsed = JSON.parse(cleaned)
       } catch {
-        console.error(`[generateCode] Three.js JSON parse failed, raw length: ${raw.length}`)
+        log.error('three.js JSON parse failed', { extra: { rawLength: raw.length } })
         throw new Error(
           truncated
             ? 'Three.js scene code was too long and got cut off — try a simpler prompt'
@@ -347,7 +356,7 @@ export async function generateCode(
       try {
         parsed = JSON.parse(cleaned)
       } catch {
-        console.error(`[generateCode] Motion JSON parse failed, raw length: ${raw.length}`)
+        log.error('motion JSON parse failed', { extra: { rawLength: raw.length } })
         throw new Error(
           truncated
             ? 'Motion scene code was too long and got cut off — try a simpler prompt'
@@ -415,16 +424,14 @@ async function callAnthropic(
   try {
     result = await anthropicClient.messages.create(params, { timeout: 60_000 })
   } catch (firstErr) {
-    console.warn('[generateCode] First attempt failed, retrying in 1s:', (firstErr as Error).message)
+    log.warn('Anthropic first attempt failed, retrying in 1s', { extra: { message: (firstErr as Error).message } })
     await new Promise((resolve) => setTimeout(resolve, 1000))
     result = await anthropicClient.messages.create(params, { timeout: 60_000 })
   }
 
   const truncated = result.stop_reason === 'max_tokens'
   if (truncated) {
-    console.warn(
-      `[generateCode] Anthropic output truncated (hit max_tokens=${maxTokens}, used ${result.usage.output_tokens})`,
-    )
+    log.warn('Anthropic output truncated', { extra: { maxTokens, used: result.usage.output_tokens } })
   }
 
   const textBlock = result.content.find((b) => b.type === 'text')
@@ -458,7 +465,7 @@ async function callOpenAI(
       { timeout: 60_000 },
     )
   } catch (firstErr) {
-    console.warn('[generateCode] OpenAI first attempt failed, retrying in 1s:', (firstErr as Error).message)
+    log.warn('OpenAI first attempt failed, retrying in 1s', { extra: { message: (firstErr as Error).message } })
     await new Promise((resolve) => setTimeout(resolve, 1000))
     result = await client.chat.completions.create(
       {
@@ -476,7 +483,7 @@ async function callOpenAI(
   const finishReason = result.choices?.[0]?.finish_reason
   const truncated = finishReason === 'length'
   if (truncated) {
-    console.warn(`[generateCode] OpenAI output truncated (hit max_tokens=${maxTokens})`)
+    log.warn('OpenAI output truncated', { extra: { maxTokens } })
   }
 
   return {
@@ -505,7 +512,7 @@ async function callGoogle(
       },
     })
   } catch (firstErr) {
-    console.warn('[generateCode] Google first attempt failed, retrying in 1s:', (firstErr as Error).message)
+    log.warn('Google first attempt failed, retrying in 1s', { extra: { message: (firstErr as Error).message } })
     await new Promise((resolve) => setTimeout(resolve, 1000))
     result = await client.models.generateContent({
       model,
@@ -521,7 +528,7 @@ async function callGoogle(
   const finishReason = result?.candidates?.[0]?.finishReason
   const truncated = finishReason === 'MAX_TOKENS'
   if (truncated) {
-    console.warn(`[generateCode] Google output truncated (hit max_tokens)`)
+    log.warn('Google output truncated (hit max_tokens)')
   }
 
   return {
@@ -555,7 +562,7 @@ async function callLocal(
       { timeout: 120_000 },
     )
   } catch (firstErr) {
-    console.warn('[generateCode] Local LLM first attempt failed, retrying in 1s:', (firstErr as Error).message)
+    log.warn('Local LLM first attempt failed, retrying in 1s', { extra: { message: (firstErr as Error).message } })
     await new Promise((resolve) => setTimeout(resolve, 1000))
     result = await client.chat.completions.create(
       {
@@ -573,7 +580,7 @@ async function callLocal(
   const finishReason = result.choices?.[0]?.finish_reason
   const truncated = finishReason === 'length'
   if (truncated) {
-    console.warn(`[generateCode] Local LLM output truncated (hit max_tokens=${maxTokens})`)
+    log.warn('Local LLM output truncated', { extra: { maxTokens } })
   }
 
   return {

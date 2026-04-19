@@ -6,6 +6,9 @@ import os from 'os'
 import type { TTSProviderInterface, TTSParams, TTSResult, Voice } from '../types'
 import { safeAudioFilename } from '../sanitize'
 import { getAudioDir, audioUrlFor } from '../paths'
+import { createLogger } from '../../logger'
+
+const log = createLogger('audio.native-tts')
 
 const execFileAsync = promisify(execFile)
 
@@ -18,7 +21,7 @@ function sanitizeVoiceId(id: string): string {
   // Real voice names are alphanumeric with spaces, hyphens, periods, and underscores
   const cleaned = id.replace(/[^a-zA-Z0-9 \-_.]/g, '')
   if (cleaned !== id) {
-    console.warn(`[native-tts] Stripped unsafe characters from voiceId: "${id}" -> "${cleaned}"`)
+    log.warn('stripped unsafe characters from voiceId', { extra: { from: id, to: cleaned } })
   }
   return cleaned
 }

@@ -7,6 +7,9 @@ import { compileD3SceneFromLayers } from '../charts/compile'
 import { autoGridChartLayoutsForLayers, normalizeChartLayersFromStructuredResponse } from '../charts/structured-d3'
 import type { D3ChartLayer } from '../types'
 import { D3_STRUCTURED_CENCH_PROMPT } from './prompts'
+import { createLogger } from '../logger'
+
+const log = createLogger('generation.d3-structured')
 
 export type StructuredD3GenInput = {
   prompt: string
@@ -117,7 +120,7 @@ Your previous response did not include a valid non-empty "chartLayers" array. Re
       usage: { input_tokens: usageInput, output_tokens: usageOutput },
     }
   } catch (e) {
-    console.error('[runStructuredD3Generation] failed:', e)
+    log.error('failed', { error: e })
     throw e
   }
 }

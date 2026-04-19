@@ -13,6 +13,9 @@
  */
 
 import type { SSEEvent } from '@/lib/agents/types'
+import { createLogger } from './logger'
+
+const log = createLogger('agent-transport')
 
 export type AgentSseEvent = SSEEvent
 
@@ -28,12 +31,13 @@ function parseAgentSseEvent(jsonStr: string): AgentSseEvent | null {
   try {
     return JSON.parse(jsonStr) as AgentSseEvent
   } catch (e) {
-    console.warn(
-      '[agent-transport] SSE JSON parse failed:',
-      (e as Error).message,
-      `len=${jsonStr.length}`,
-      jsonStr.slice(0, 160),
-    )
+    log.warn('SSE JSON parse failed', {
+      extra: {
+        message: (e as Error).message,
+        len: jsonStr.length,
+        head: jsonStr.slice(0, 160),
+      },
+    })
     return null
   }
 }

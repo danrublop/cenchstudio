@@ -6,6 +6,9 @@ import type { Scene, SceneGraph, GlobalStyle } from '@/lib/types'
 import { normalizeScenesForPersistence } from '@/lib/charts/normalize-scenes'
 import { writeProjectSceneBlob } from '@/lib/db/project-scene-storage'
 import { writeProjectScenesToTablesTx } from '@/lib/db/project-scene-table'
+import { createLogger } from '@/lib/logger'
+
+const log = createLogger('db.projects')
 
 export type Project = InferSelectModel<typeof projects>
 export type NewProject = InferInsertModel<typeof projects>
@@ -140,7 +143,7 @@ export async function persistScenesFromAgentRun(
     if (txResult.updated) return true
   }
 
-  console.warn('[persistScenesFromAgentRun] optimistic lock failed after retries', projectId)
+  log.warn('persistScenesFromAgentRun: optimistic lock failed after retries', { extra: { projectId } })
   return false
 }
 
@@ -169,7 +172,7 @@ export async function getRunCheckpoint(projectId: string): Promise<RunCheckpoint
   if (!raw) return null
   const parsed = RunCheckpointSchema.safeParse(raw)
   if (!parsed.success) {
-    console.warn('[getRunCheckpoint] Invalid checkpoint data, ignoring:', parsed.error.issues)
+    log.warn('getRunCheckpoint: invalid checkpoint data, ignoring', { extra: { issues: parsed.error.issues } })
     return null
   }
   return parsed.data as unknown as RunCheckpoint
